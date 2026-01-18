@@ -831,6 +831,61 @@
             font-size: 0.9rem;
         }
 
+        /* TAM Section Mobile Fixes - Transform circles to cards */
+        @media (max-width: 480px) {
+            .tam-visual {
+                max-width: 100%;
+                aspect-ratio: auto;
+                display: flex;
+                flex-direction: column;
+                gap: var(--space-sm);
+            }
+
+            .tam-circle {
+                position: relative !important;
+                width: 100% !important;
+                height: auto !important;
+                top: auto !important;
+                left: auto !important;
+                border-radius: 12px;
+                padding: var(--space-sm) var(--space-md);
+                flex-direction: row;
+                justify-content: space-between;
+            }
+
+            .tam-circle-outer {
+                background: rgba(0, 229, 191, 0.05);
+                border-color: rgba(0, 229, 191, 0.2);
+            }
+
+            .tam-circle-mid {
+                background: rgba(0, 229, 191, 0.08);
+                border-color: rgba(0, 229, 191, 0.3);
+            }
+
+            .tam-circle-inner {
+                background: rgba(0, 229, 191, 0.12);
+                border-color: var(--accent-cyan);
+            }
+
+            .tam-circle-label {
+                font-size: 0.7rem;
+                text-align: left;
+                padding: 0;
+                display: flex;
+                align-items: center;
+                gap: var(--space-sm);
+            }
+
+            .tam-circle-label br {
+                display: none;
+            }
+
+            .tam-circle-value {
+                font-size: 1.1rem;
+            }
+        }
+
         /* ============================================
            DATA ASSET SECTION
            ============================================ */
