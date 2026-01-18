@@ -1,0 +1,1853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChiroFlow | When Your SOPs Run Themselves</title>
+    <meta name="description" content="AI-powered automation for chiropractic practices. Transform your decade of operational knowledge into autonomous agents.">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            /* Colors */
+            --bg-deep: #050508;
+            --bg-base: #0a0a0f;
+            --bg-elevated: #12121a;
+            --bg-card: rgba(18, 18, 26, 0.7);
+
+            --text-primary: #f4f4f6;
+            --text-secondary: #9898a6;
+            --text-muted: #5a5a6e;
+
+            --accent-cyan: #00e5bf;
+            --accent-cyan-dim: #00b396;
+            --accent-amber: #ffb347;
+            --accent-amber-dim: #cc8a2e;
+            --accent-purple: #a78bfa;
+
+            --gradient-cyan: linear-gradient(135deg, #00e5bf 0%, #00b396 100%);
+            --gradient-amber: linear-gradient(135deg, #ffb347 0%, #ff8c00 100%);
+            --gradient-mesh: radial-gradient(ellipse at 20% 0%, rgba(0, 229, 191, 0.15) 0%, transparent 50%),
+                            radial-gradient(ellipse at 80% 100%, rgba(255, 179, 71, 0.1) 0%, transparent 50%);
+
+            /* Typography */
+            --font-display: 'Instrument Serif', Georgia, serif;
+            --font-body: 'Space Grotesk', -apple-system, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+
+            /* Spacing */
+            --space-xs: 0.5rem;
+            --space-sm: 1rem;
+            --space-md: 1.5rem;
+            --space-lg: 2.5rem;
+            --space-xl: 4rem;
+            --space-2xl: 6rem;
+            --space-3xl: 10rem;
+
+            /* Borders */
+            --border-subtle: 1px solid rgba(255, 255, 255, 0.06);
+            --border-glow: 1px solid rgba(0, 229, 191, 0.3);
+
+            /* Shadows */
+            --shadow-glow-cyan: 0 0 60px rgba(0, 229, 191, 0.2);
+            --shadow-glow-amber: 0 0 60px rgba(255, 179, 71, 0.15);
+
+            /* Transitions */
+            --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+            --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html {
+            scroll-behavior: smooth;
+            scroll-padding-top: 2rem;
+        }
+
+        body {
+            font-family: var(--font-body);
+            background: var(--bg-deep);
+            color: var(--text-primary);
+            line-height: 1.6;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* Background Effects */
+        .bg-mesh {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--gradient-mesh);
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        .bg-grid {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image:
+                linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+            background-size: 60px 60px;
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        .bg-noise {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            opacity: 0.03;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        /* Container */
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 var(--space-md);
+        }
+
+        /* Section */
+        section {
+            padding: var(--space-2xl) 0;
+            position: relative;
+        }
+
+        @media (min-width: 768px) {
+            section {
+                padding: var(--space-3xl) 0;
+            }
+        }
+
+        /* Typography */
+        h1, h2, h3, h4 {
+            font-family: var(--font-display);
+            font-weight: 400;
+            line-height: 1.1;
+            letter-spacing: -0.02em;
+        }
+
+        h1 { font-size: clamp(2.5rem, 8vw, 5rem); }
+        h2 { font-size: clamp(2rem, 5vw, 3.5rem); }
+        h3 { font-size: clamp(1.5rem, 3vw, 2rem); }
+
+        .gradient-text {
+            background: var(--gradient-cyan);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .gradient-text-amber {
+            background: var(--gradient-amber);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .label {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: var(--accent-cyan);
+            margin-bottom: var(--space-sm);
+            display: inline-block;
+        }
+
+        .subtitle {
+            font-size: clamp(1.1rem, 2vw, 1.35rem);
+            color: var(--text-secondary);
+            max-width: 600px;
+            line-height: 1.7;
+        }
+
+        /* Animations */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+
+        @keyframes countUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes flowLine {
+            0% { stroke-dashoffset: 1000; }
+            100% { stroke-dashoffset: 0; }
+        }
+
+        .animate-in {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: opacity 0.8s var(--ease-out-expo), transform 0.8s var(--ease-out-expo);
+        }
+
+        .animate-in.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .delay-1 { transition-delay: 0.1s; }
+        .delay-2 { transition-delay: 0.2s; }
+        .delay-3 { transition-delay: 0.3s; }
+        .delay-4 { transition-delay: 0.4s; }
+        .delay-5 { transition-delay: 0.5s; }
+        .delay-6 { transition-delay: 0.6s; }
+
+        /* ============================================
+           HERO SECTION
+           ============================================ */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            position: relative;
+            padding-top: var(--space-xl);
+            padding-bottom: var(--space-xl);
+        }
+
+        .hero-content {
+            position: relative;
+            z-index: 2;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-xs);
+            background: var(--bg-card);
+            backdrop-filter: blur(10px);
+            border: var(--border-subtle);
+            border-radius: 100px;
+            padding: 0.5rem 1rem;
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: var(--space-lg);
+            animation: fadeInUp 0.8s var(--ease-out-expo) forwards;
+        }
+
+        .hero-badge::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            background: var(--accent-cyan);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .hero h1 {
+            margin-bottom: var(--space-md);
+            animation: fadeInUp 0.8s var(--ease-out-expo) 0.1s forwards;
+            opacity: 0;
+        }
+
+        .hero h1 em {
+            font-style: italic;
+            color: var(--accent-cyan);
+        }
+
+        .hero .subtitle {
+            animation: fadeInUp 0.8s var(--ease-out-expo) 0.2s forwards;
+            opacity: 0;
+            margin-bottom: var(--space-lg);
+        }
+
+        .hero-visual {
+            position: absolute;
+            top: 50%;
+            right: -10%;
+            transform: translateY(-50%);
+            width: 50%;
+            height: 60%;
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        .hero-orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(60px);
+            animation: float 8s ease-in-out infinite;
+        }
+
+        .hero-orb-1 {
+            width: 300px;
+            height: 300px;
+            background: var(--accent-cyan);
+            opacity: 0.15;
+            top: 20%;
+            right: 10%;
+        }
+
+        .hero-orb-2 {
+            width: 200px;
+            height: 200px;
+            background: var(--accent-amber);
+            opacity: 0.1;
+            bottom: 20%;
+            right: 30%;
+            animation-delay: -4s;
+        }
+
+        .scroll-indicator {
+            position: absolute;
+            bottom: var(--space-lg);
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: var(--space-sm);
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            animation: fadeIn 1s var(--ease-out-expo) 1s forwards;
+            opacity: 0;
+        }
+
+        .scroll-indicator::after {
+            content: '';
+            width: 1px;
+            height: 40px;
+            background: linear-gradient(to bottom, var(--accent-cyan), transparent);
+            animation: pulse 2s infinite;
+        }
+
+        /* ============================================
+           PARALLEL SECTION
+           ============================================ */
+        .parallel {
+            background: linear-gradient(180deg, transparent 0%, var(--bg-elevated) 50%, transparent 100%);
+        }
+
+        .parallel-header {
+            text-align: center;
+            margin-bottom: var(--space-xl);
+        }
+
+        .parallel-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: var(--space-md);
+        }
+
+        @media (min-width: 768px) {
+            .parallel-grid {
+                grid-template-columns: 1fr auto 1fr;
+                gap: var(--space-lg);
+                align-items: stretch;
+            }
+        }
+
+        .parallel-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            border: var(--border-subtle);
+            border-radius: 20px;
+            padding: var(--space-lg);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .parallel-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--accent-cyan), transparent);
+            opacity: 0.5;
+        }
+
+        .parallel-card.amber::before {
+            background: linear-gradient(90deg, transparent, var(--accent-amber), transparent);
+        }
+
+        .parallel-card-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            margin-bottom: var(--space-md);
+        }
+
+        .parallel-card-icon.cyan {
+            background: rgba(0, 229, 191, 0.1);
+            border: 1px solid rgba(0, 229, 191, 0.3);
+        }
+
+        .parallel-card-icon.amber {
+            background: rgba(255, 179, 71, 0.1);
+            border: 1px solid rgba(255, 179, 71, 0.3);
+        }
+
+        .parallel-card h3 {
+            margin-bottom: var(--space-sm);
+        }
+
+        .parallel-card p {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            margin-bottom: var(--space-md);
+        }
+
+        .parallel-list {
+            list-style: none;
+        }
+
+        .parallel-list li {
+            display: flex;
+            align-items: flex-start;
+            gap: var(--space-sm);
+            padding: var(--space-xs) 0;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .parallel-list li::before {
+            content: '→';
+            color: var(--accent-cyan);
+            flex-shrink: 0;
+        }
+
+        .parallel-card.amber .parallel-list li::before {
+            color: var(--accent-amber);
+        }
+
+        .parallel-connector {
+            display: none;
+        }
+
+        @media (min-width: 768px) {
+            .parallel-connector {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                padding: var(--space-lg) 0;
+            }
+
+            .parallel-connector-line {
+                width: 60px;
+                height: 2px;
+                background: linear-gradient(90deg, var(--accent-cyan), var(--accent-amber));
+                position: relative;
+            }
+
+            .parallel-connector-text {
+                font-family: var(--font-mono);
+                font-size: 0.75rem;
+                color: var(--text-muted);
+                text-transform: uppercase;
+                letter-spacing: 0.1em;
+                margin: var(--space-sm) 0;
+                white-space: nowrap;
+            }
+        }
+
+        /* ============================================
+           AUTOMATION BREAKDOWN
+           ============================================ */
+        .automation {
+            position: relative;
+        }
+
+        .automation-header {
+            text-align: center;
+            margin-bottom: var(--space-xl);
+        }
+
+        .automation-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: var(--space-md);
+        }
+
+        @media (min-width: 640px) {
+            .automation-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (min-width: 1024px) {
+            .automation-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        .automation-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            border: var(--border-subtle);
+            border-radius: 16px;
+            padding: var(--space-lg);
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.4s var(--ease-out-expo), border-color 0.4s ease;
+        }
+
+        .automation-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(0, 229, 191, 0.3);
+        }
+
+        .automation-card-hours {
+            position: absolute;
+            top: var(--space-md);
+            right: var(--space-md);
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--accent-amber);
+            background: rgba(255, 179, 71, 0.1);
+            padding: 0.25rem 0.75rem;
+            border-radius: 100px;
+            border: 1px solid rgba(255, 179, 71, 0.2);
+        }
+
+        .automation-card-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: rgba(0, 229, 191, 0.1);
+            border: 1px solid rgba(0, 229, 191, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            margin-bottom: var(--space-md);
+        }
+
+        .automation-card h4 {
+            font-family: var(--font-body);
+            font-weight: 500;
+            font-size: 1.1rem;
+            margin-bottom: var(--space-xs);
+        }
+
+        .automation-card p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+
+        .automation-card-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: var(--space-md);
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--accent-cyan);
+        }
+
+        .automation-card-status::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            background: var(--accent-cyan);
+            border-radius: 50%;
+        }
+
+        /* ============================================
+           THE MATH SECTION
+           ============================================ */
+        .math {
+            background: linear-gradient(180deg, transparent 0%, var(--bg-base) 20%, var(--bg-base) 80%, transparent 100%);
+            text-align: center;
+        }
+
+        .math-header {
+            margin-bottom: var(--space-xl);
+        }
+
+        .math-stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: var(--space-md);
+            margin-bottom: var(--space-xl);
+        }
+
+        @media (min-width: 768px) {
+            .math-stats {
+                grid-template-columns: repeat(4, 1fr);
+            }
+        }
+
+        .math-stat {
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            border: var(--border-subtle);
+            border-radius: 16px;
+            padding: var(--space-lg) var(--space-md);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .math-stat.highlight {
+            border-color: rgba(0, 229, 191, 0.3);
+            box-shadow: var(--shadow-glow-cyan);
+        }
+
+        .math-stat.highlight-amber {
+            border-color: rgba(255, 179, 71, 0.3);
+            box-shadow: var(--shadow-glow-amber);
+        }
+
+        .math-stat-value {
+            font-family: var(--font-display);
+            font-size: clamp(2rem, 5vw, 3rem);
+            line-height: 1;
+            margin-bottom: var(--space-xs);
+        }
+
+        .math-stat-value.cyan {
+            color: var(--accent-cyan);
+        }
+
+        .math-stat-value.amber {
+            color: var(--accent-amber);
+        }
+
+        .math-stat-label {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+        }
+
+        .math-equation {
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            border: var(--border-subtle);
+            border-radius: 20px;
+            padding: var(--space-lg);
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .math-equation-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: var(--space-md);
+            font-family: var(--font-mono);
+            font-size: clamp(0.9rem, 2vw, 1.1rem);
+        }
+
+        @media (min-width: 768px) {
+            .math-equation-content {
+                flex-direction: row;
+                justify-content: center;
+            }
+        }
+
+        .math-equation-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .math-equation-value {
+            font-size: 1.5em;
+            color: var(--accent-cyan);
+        }
+
+        .math-equation-label {
+            font-size: 0.7em;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        .math-equation-operator {
+            font-size: 1.5em;
+            color: var(--text-muted);
+        }
+
+        .math-equation-result {
+            color: var(--accent-amber);
+        }
+
+        /* ============================================
+           TAM SECTION
+           ============================================ */
+        .tam {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .tam-content {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: var(--space-xl);
+            align-items: center;
+        }
+
+        @media (min-width: 768px) {
+            .tam-content {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        .tam-visual {
+            position: relative;
+            aspect-ratio: 1;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+
+        .tam-circle {
+            position: absolute;
+            border-radius: 50%;
+            border: 1px solid;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+
+        .tam-circle-outer {
+            width: 100%;
+            height: 100%;
+            border-color: rgba(0, 229, 191, 0.2);
+            background: rgba(0, 229, 191, 0.02);
+        }
+
+        .tam-circle-mid {
+            width: 70%;
+            height: 70%;
+            top: 15%;
+            left: 15%;
+            border-color: rgba(0, 229, 191, 0.3);
+            background: rgba(0, 229, 191, 0.05);
+        }
+
+        .tam-circle-inner {
+            width: 40%;
+            height: 40%;
+            top: 30%;
+            left: 30%;
+            border-color: var(--accent-cyan);
+            background: rgba(0, 229, 191, 0.1);
+        }
+
+        .tam-circle-label {
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            text-align: center;
+            padding: var(--space-xs);
+        }
+
+        .tam-circle-value {
+            font-family: var(--font-display);
+            font-size: clamp(1rem, 3vw, 1.5rem);
+            color: var(--accent-cyan);
+        }
+
+        .tam-text h2 {
+            margin-bottom: var(--space-md);
+        }
+
+        .tam-text p {
+            color: var(--text-secondary);
+            margin-bottom: var(--space-md);
+        }
+
+        .tam-highlight-box {
+            background: rgba(255, 179, 71, 0.1);
+            border: 1px solid rgba(255, 179, 71, 0.3);
+            border-radius: 12px;
+            padding: var(--space-md);
+            margin-top: var(--space-lg);
+        }
+
+        .tam-highlight-box p {
+            margin: 0;
+            color: var(--accent-amber);
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+        }
+
+        /* ============================================
+           DATA ASSET SECTION
+           ============================================ */
+        .data-asset {
+            background: linear-gradient(180deg, transparent 0%, var(--bg-elevated) 30%, var(--bg-elevated) 70%, transparent 100%);
+        }
+
+        .data-asset-header {
+            text-align: center;
+            margin-bottom: var(--space-xl);
+        }
+
+        .data-asset-flow {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-md);
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        @media (min-width: 768px) {
+            .data-asset-flow {
+                flex-direction: row;
+                align-items: stretch;
+            }
+        }
+
+        .data-asset-step {
+            flex: 1;
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            border: var(--border-subtle);
+            border-radius: 16px;
+            padding: var(--space-lg);
+            position: relative;
+            text-align: center;
+        }
+
+        .data-asset-step::after {
+            content: '→';
+            position: absolute;
+            color: var(--accent-cyan);
+            font-size: 1.5rem;
+            bottom: -30px;
+            left: 50%;
+            transform: translateX(-50%) rotate(90deg);
+        }
+
+        @media (min-width: 768px) {
+            .data-asset-step::after {
+                right: -25px;
+                left: auto;
+                top: 50%;
+                bottom: auto;
+                transform: translateY(-50%) rotate(0deg);
+            }
+        }
+
+        .data-asset-step:last-child::after {
+            display: none;
+        }
+
+        .data-asset-step-icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 14px;
+            margin: 0 auto var(--space-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+
+        .data-asset-step:nth-child(1) .data-asset-step-icon {
+            background: rgba(167, 139, 250, 0.1);
+            border: 1px solid rgba(167, 139, 250, 0.3);
+        }
+
+        .data-asset-step:nth-child(2) .data-asset-step-icon {
+            background: rgba(0, 229, 191, 0.1);
+            border: 1px solid rgba(0, 229, 191, 0.3);
+        }
+
+        .data-asset-step:nth-child(3) .data-asset-step-icon {
+            background: rgba(255, 179, 71, 0.1);
+            border: 1px solid rgba(255, 179, 71, 0.3);
+        }
+
+        .data-asset-step h4 {
+            font-family: var(--font-body);
+            font-weight: 500;
+            margin-bottom: var(--space-xs);
+        }
+
+        .data-asset-step p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .data-asset-callout {
+            max-width: 700px;
+            margin: var(--space-xl) auto 0;
+            background: linear-gradient(135deg, rgba(167, 139, 250, 0.1), rgba(0, 229, 191, 0.1));
+            border: 1px solid rgba(167, 139, 250, 0.3);
+            border-radius: 20px;
+            padding: var(--space-lg);
+            text-align: center;
+        }
+
+        .data-asset-callout p {
+            font-size: 1.1rem;
+            color: var(--text-primary);
+            margin: 0;
+        }
+
+        .data-asset-callout strong {
+            color: var(--accent-purple);
+        }
+
+        /* ============================================
+           VISION SECTION
+           ============================================ */
+        .vision {
+            position: relative;
+        }
+
+        .vision-header {
+            text-align: center;
+            margin-bottom: var(--space-xl);
+        }
+
+        .vision-timeline {
+            position: relative;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        .vision-timeline::before {
+            content: '';
+            position: absolute;
+            left: 20px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(to bottom, var(--accent-cyan), var(--accent-amber));
+        }
+
+        @media (min-width: 768px) {
+            .vision-timeline::before {
+                left: 50%;
+                transform: translateX(-50%);
+            }
+        }
+
+        .vision-item {
+            position: relative;
+            padding-left: 60px;
+            padding-bottom: var(--space-xl);
+        }
+
+        @media (min-width: 768px) {
+            .vision-item {
+                padding-left: 0;
+                padding-right: 0;
+                width: 50%;
+            }
+
+            .vision-item:nth-child(odd) {
+                margin-left: 0;
+                padding-right: calc(50% + 40px);
+                text-align: right;
+            }
+
+            .vision-item:nth-child(even) {
+                margin-left: 50%;
+                padding-left: 40px;
+            }
+        }
+
+        .vision-item-dot {
+            position: absolute;
+            left: 12px;
+            top: 0;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: var(--bg-base);
+            border: 2px solid var(--accent-cyan);
+        }
+
+        @media (min-width: 768px) {
+            .vision-item-dot {
+                left: 50%;
+                transform: translateX(-50%);
+            }
+        }
+
+        .vision-item:nth-child(2) .vision-item-dot { border-color: var(--accent-purple); }
+        .vision-item:nth-child(3) .vision-item-dot { border-color: var(--accent-amber); }
+        .vision-item:nth-child(4) .vision-item-dot { border-color: var(--accent-amber); background: var(--accent-amber); }
+
+        .vision-item h4 {
+            font-family: var(--font-body);
+            font-weight: 600;
+            font-size: 1.1rem;
+            margin-bottom: var(--space-xs);
+        }
+
+        .vision-item p {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        .vision-item .label {
+            margin-bottom: var(--space-xs);
+        }
+
+        /* ============================================
+           HIPAA SECTION
+           ============================================ */
+        .hipaa {
+            background: linear-gradient(180deg, transparent 0%, var(--bg-base) 30%, var(--bg-base) 70%, transparent 100%);
+        }
+
+        .hipaa-content {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: var(--space-xl);
+            align-items: center;
+        }
+
+        @media (min-width: 768px) {
+            .hipaa-content {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        .hipaa-text h2 {
+            margin-bottom: var(--space-md);
+        }
+
+        .hipaa-text > p {
+            color: var(--text-secondary);
+            margin-bottom: var(--space-lg);
+        }
+
+        .hipaa-features {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-sm);
+        }
+
+        .hipaa-feature {
+            display: flex;
+            align-items: flex-start;
+            gap: var(--space-sm);
+            padding: var(--space-sm);
+            background: var(--bg-card);
+            border: var(--border-subtle);
+            border-radius: 12px;
+        }
+
+        .hipaa-feature-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background: rgba(0, 229, 191, 0.1);
+            border: 1px solid rgba(0, 229, 191, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            flex-shrink: 0;
+        }
+
+        .hipaa-feature-text h5 {
+            font-family: var(--font-body);
+            font-weight: 500;
+            font-size: 0.95rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .hipaa-feature-text p {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin: 0;
+        }
+
+        .hipaa-visual {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .hipaa-shield {
+            width: 200px;
+            height: 240px;
+            position: relative;
+        }
+
+        .hipaa-shield svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .hipaa-shield-glow {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 150%;
+            height: 150%;
+            background: radial-gradient(circle, rgba(0, 229, 191, 0.2) 0%, transparent 70%);
+            animation: pulse 3s infinite;
+        }
+
+        /* ============================================
+           HOW IT WORKS
+           ============================================ */
+        .how-it-works {
+            position: relative;
+        }
+
+        .how-it-works-header {
+            text-align: center;
+            margin-bottom: var(--space-xl);
+        }
+
+        .how-it-works-steps {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: var(--space-lg);
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        @media (min-width: 768px) {
+            .how-it-works-steps {
+                grid-template-columns: repeat(4, 1fr);
+                gap: var(--space-md);
+            }
+        }
+
+        .how-it-works-step {
+            text-align: center;
+            position: relative;
+        }
+
+        .how-it-works-step::after {
+            display: none;
+        }
+
+        @media (min-width: 768px) {
+            .how-it-works-step::after {
+                content: '';
+                display: block;
+                position: absolute;
+                top: 40px;
+                right: -20%;
+                width: 40%;
+                height: 2px;
+                background: linear-gradient(90deg, var(--accent-cyan), transparent);
+            }
+
+            .how-it-works-step:last-child::after {
+                display: none;
+            }
+        }
+
+        .how-it-works-step-number {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto var(--space-md);
+            border-radius: 50%;
+            background: var(--bg-card);
+            border: 2px solid var(--accent-cyan);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: var(--font-display);
+            font-size: 2rem;
+            color: var(--accent-cyan);
+            position: relative;
+        }
+
+        .how-it-works-step:nth-child(2) .how-it-works-step-number { border-color: var(--accent-purple); color: var(--accent-purple); }
+        .how-it-works-step:nth-child(3) .how-it-works-step-number { border-color: var(--accent-amber); color: var(--accent-amber); }
+        .how-it-works-step:nth-child(4) .how-it-works-step-number {
+            border-color: var(--accent-cyan);
+            background: var(--accent-cyan);
+            color: var(--bg-base);
+        }
+
+        .how-it-works-step h4 {
+            font-family: var(--font-body);
+            font-weight: 600;
+            font-size: 1rem;
+            margin-bottom: var(--space-xs);
+        }
+
+        .how-it-works-step p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        /* ============================================
+           CTA SECTION
+           ============================================ */
+        .cta {
+            text-align: center;
+            padding-bottom: var(--space-3xl);
+        }
+
+        .cta-box {
+            background: linear-gradient(135deg, rgba(0, 229, 191, 0.05), rgba(255, 179, 71, 0.05));
+            border: 1px solid rgba(0, 229, 191, 0.2);
+            border-radius: 24px;
+            padding: var(--space-xl);
+            max-width: 800px;
+            margin: 0 auto;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .cta-box::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--accent-cyan), var(--accent-amber), transparent);
+        }
+
+        .cta h2 {
+            margin-bottom: var(--space-md);
+        }
+
+        .cta p {
+            color: var(--text-secondary);
+            max-width: 500px;
+            margin: 0 auto var(--space-lg);
+        }
+
+        .cta-tagline {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--accent-cyan);
+            margin-top: var(--space-lg);
+        }
+
+        /* ============================================
+           FOOTER
+           ============================================ */
+        footer {
+            padding: var(--space-lg) 0;
+            border-top: var(--border-subtle);
+            text-align: center;
+        }
+
+        footer p {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        footer a {
+            color: var(--accent-cyan);
+            text-decoration: none;
+        }
+
+        /* ============================================
+           COUNTER ANIMATION
+           ============================================ */
+        .counter {
+            display: inline-block;
+        }
+
+        .counter.animate {
+            animation: countUp 0.6s var(--ease-out-expo) forwards;
+        }
+    </style>
+</head>
+<body>
+    <!-- Background Effects -->
+    <div class="bg-mesh"></div>
+    <div class="bg-grid"></div>
+    <div class="bg-noise"></div>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="container">
+            <div class="hero-content">
+                <div class="hero-badge">
+                    Built with the same tech powering ORB Sports Cards
+                </div>
+                <h1>
+                    What if your <em>SOPs</em><br>
+                    could run themselves?
+                </h1>
+                <p class="subtitle">
+                    Your decade of operational documentation isn't just paperwork—it's training data for AI agents that can automate 40+ hours of weekly labor.
+                </p>
+            </div>
+        </div>
+
+        <div class="hero-visual">
+            <div class="hero-orb hero-orb-1"></div>
+            <div class="hero-orb hero-orb-2"></div>
+        </div>
+
+        <div class="scroll-indicator">
+            <span>Explore</span>
+        </div>
+    </section>
+
+    <!-- The Parallel Section -->
+    <section class="parallel" id="parallel">
+        <div class="container">
+            <div class="parallel-header animate-in">
+                <span class="label">The Parallel</span>
+                <h2>Same Engine, Different Industry</h2>
+                <p class="subtitle" style="margin: var(--space-md) auto 0;">
+                    We built ORB Sports Cards with AI automation from day one. Your practice has even more potential—you've already documented everything.
+                </p>
+            </div>
+
+            <div class="parallel-grid">
+                <div class="parallel-card animate-in delay-1">
+                    <div class="parallel-card-icon cyan">🎴</div>
+                    <h3 class="gradient-text">ORB Sports Cards</h3>
+                    <p>AI-first trading card business with automated inventory, pricing, and consignment tracking.</p>
+                    <ul class="parallel-list">
+                        <li>Card identification via computer vision</li>
+                        <li>Real-time pricing from multiple sources</li>
+                        <li>Automated consignment payouts</li>
+                        <li>Multi-channel inventory sync</li>
+                        <li>Customer communication agents</li>
+                    </ul>
+                </div>
+
+                <div class="parallel-connector animate-in delay-2">
+                    <div class="parallel-connector-line"></div>
+                    <span class="parallel-connector-text">Same Tech</span>
+                    <div class="parallel-connector-line"></div>
+                </div>
+
+                <div class="parallel-card amber animate-in delay-3">
+                    <div class="parallel-card-icon amber">🏥</div>
+                    <h3 class="gradient-text-amber">Your Practice</h3>
+                    <p>A decade of SOPs and documentation ready to become autonomous operations.</p>
+                    <ul class="parallel-list">
+                        <li>Payment posting from EOBs</li>
+                        <li>Insurance verification batching</li>
+                        <li>AR aging and follow-up automation</li>
+                        <li>Multi-system data synchronization</li>
+                        <li>Production and commission reports</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Automation Breakdown -->
+    <section class="automation" id="automation">
+        <div class="container">
+            <div class="automation-header animate-in">
+                <span class="label">Ready Today</span>
+                <h2>What We Can Automate <em>Now</em></h2>
+                <p class="subtitle" style="margin: var(--space-md) auto 0;">
+                    These aren't future possibilities—these are automations we can build with existing tools, using your SOPs as the blueprint.
+                </p>
+            </div>
+
+            <div class="automation-grid">
+                <div class="automation-card animate-in delay-1">
+                    <span class="automation-card-hours">8-12 hrs/wk</span>
+                    <div class="automation-card-icon">💳</div>
+                    <h4>Payment Posting</h4>
+                    <p>Agent reads EOBs from insurance portals, extracts payment data, posts to your practice management system, flags discrepancies.</p>
+                    <span class="automation-card-status">Browser Automation Ready</span>
+                </div>
+
+                <div class="automation-card animate-in delay-2">
+                    <span class="automation-card-hours">6-8 hrs/wk</span>
+                    <div class="automation-card-icon">📊</div>
+                    <h4>AR Aging Management</h4>
+                    <p>Auto-generates aging reports, identifies accounts needing follow-up, drafts collection communications, tracks payment promises.</p>
+                    <span class="automation-card-status">Data Pipeline Ready</span>
+                </div>
+
+                <div class="automation-card animate-in delay-3">
+                    <span class="automation-card-hours">4-6 hrs/wk</span>
+                    <div class="automation-card-icon">🔍</div>
+                    <h4>Insurance Verification</h4>
+                    <p>Overnight batch verification for next day's patients, checks eligibility and benefits, flags issues before arrival.</p>
+                    <span class="automation-card-status">API Integration Ready</span>
+                </div>
+
+                <div class="automation-card animate-in delay-4">
+                    <span class="automation-card-hours">4-6 hrs/wk</span>
+                    <div class="automation-card-icon">📈</div>
+                    <h4>Production Reports</h4>
+                    <p>Pulls data from practice system, calculates provider production and commission splits, delivers formatted reports on schedule.</p>
+                    <span class="automation-card-status">Report Agent Ready</span>
+                </div>
+
+                <div class="automation-card animate-in delay-5">
+                    <span class="automation-card-hours">4-8 hrs/wk</span>
+                    <div class="automation-card-icon">🔄</div>
+                    <h4>Multi-System Sync</h4>
+                    <p>Keeps EHR, billing, and spreadsheets in sync. Detects changes, propagates automatically. Eliminates duplicate entry entirely.</p>
+                    <span class="automation-card-status">Sync Engine Ready</span>
+                </div>
+
+                <div class="automation-card animate-in delay-6">
+                    <span class="automation-card-hours">4-6 hrs/wk</span>
+                    <div class="automation-card-icon">📋</div>
+                    <h4>Claim Monitoring</h4>
+                    <p>Batch checks claim status overnight, identifies denials and delays, prioritizes follow-up queue, tracks resolution.</p>
+                    <span class="automation-card-status">Status Agent Ready</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- The Math Section -->
+    <section class="math" id="math">
+        <div class="container">
+            <div class="math-header animate-in">
+                <span class="label">The Numbers</span>
+                <h2>Nearly <span class="gradient-text-amber">1 FTE</span> of Recovered Time</h2>
+            </div>
+
+            <div class="math-stats">
+                <div class="math-stat highlight animate-in delay-1">
+                    <div class="math-stat-value cyan counter" data-target="38">0</div>
+                    <div class="math-stat-label">Hours/Week Saved</div>
+                </div>
+                <div class="math-stat animate-in delay-2">
+                    <div class="math-stat-value counter" data-target="1976">0</div>
+                    <div class="math-stat-label">Hours/Year</div>
+                </div>
+                <div class="math-stat animate-in delay-3">
+                    <div class="math-stat-value counter" data-target="95">0</div>
+                    <div class="math-stat-label">% of 1 FTE</div>
+                </div>
+                <div class="math-stat highlight-amber animate-in delay-4">
+                    <div class="math-stat-value amber">$<span class="counter" data-target="79">0</span>K+</div>
+                    <div class="math-stat-label">Annual Value</div>
+                </div>
+            </div>
+
+            <div class="math-equation animate-in delay-5">
+                <div class="math-equation-content">
+                    <div class="math-equation-item">
+                        <span class="math-equation-value">38 hrs</span>
+                        <span class="math-equation-label">Per Week</span>
+                    </div>
+                    <span class="math-equation-operator">×</span>
+                    <div class="math-equation-item">
+                        <span class="math-equation-value">52</span>
+                        <span class="math-equation-label">Weeks</span>
+                    </div>
+                    <span class="math-equation-operator">×</span>
+                    <div class="math-equation-item">
+                        <span class="math-equation-value">$40</span>
+                        <span class="math-equation-label">Avg Hourly</span>
+                    </div>
+                    <span class="math-equation-operator">=</span>
+                    <div class="math-equation-item math-equation-result">
+                        <span class="math-equation-value">$79,040</span>
+                        <span class="math-equation-label">Annual Value</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- TAM Section -->
+    <section class="tam" id="tam">
+        <div class="container">
+            <div class="tam-content">
+                <div class="tam-visual animate-in">
+                    <div class="tam-circle tam-circle-outer">
+                        <div class="tam-circle-label">
+                            Total Market<br>
+                            <span class="tam-circle-value">$1.6B+</span>
+                        </div>
+                    </div>
+                    <div class="tam-circle tam-circle-mid">
+                        <div class="tam-circle-label">
+                            Small Practices<br>
+                            <span class="tam-circle-value">40,000+</span>
+                        </div>
+                    </div>
+                    <div class="tam-circle tam-circle-inner">
+                        <div class="tam-circle-label">
+                            Initial Target<br>
+                            <span class="tam-circle-value">100</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tam-text animate-in delay-2">
+                    <span class="label">Market Opportunity</span>
+                    <h2>40,000+ Practices.<br><span class="gradient-text-amber">$40K+ Each.</span></h2>
+                    <p>
+                        There are over 70,000 licensed chiropractors in the US, with 40,000+ practices in the 1-3 chiropractor range—exactly your profile.
+                    </p>
+                    <p>
+                        If we can save each practice $40K+ annually in labor costs, and capture even 20% of that value as a service fee...
+                    </p>
+
+                    <div class="tam-highlight-box">
+                        <p>
+                            <strong>100 practices × $8K/year = $800K ARR</strong><br>
+                            That's just 0.25% of the addressable market.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Data Asset Section -->
+    <section class="data-asset" id="data-asset">
+        <div class="container">
+            <div class="data-asset-header animate-in">
+                <span class="label">The Hidden Value</span>
+                <h2>Your SOPs Are <span class="gradient-text">Training Data</span></h2>
+                <p class="subtitle" style="margin: var(--space-md) auto 0;">
+                    A decade of documented procedures isn't just paperwork—it's the exact specification AI agents need to replicate your operations.
+                </p>
+            </div>
+
+            <div class="data-asset-flow">
+                <div class="data-asset-step animate-in delay-1">
+                    <div class="data-asset-step-icon">📄</div>
+                    <h4>Your Documentation</h4>
+                    <p>10+ years of SOPs, checklists, training materials, and operational knowledge</p>
+                </div>
+
+                <div class="data-asset-step animate-in delay-2">
+                    <div class="data-asset-step-icon">🤖</div>
+                    <h4>AI Agent Training</h4>
+                    <p>Documents become instructions for autonomous agents that work exactly like your best employees</p>
+                </div>
+
+                <div class="data-asset-step animate-in delay-3">
+                    <div class="data-asset-step-icon">💰</div>
+                    <h4>Packaged Product</h4>
+                    <p>Your unique operational IP becomes software we can license to other practices</p>
+                </div>
+            </div>
+
+            <div class="data-asset-callout animate-in delay-4">
+                <p>
+                    You've been building a <strong>proprietary dataset</strong> for 10 years without realizing it. Now it can generate revenue.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Vision Section -->
+    <section class="vision" id="vision">
+        <div class="container">
+            <div class="vision-header animate-in">
+                <span class="label">The Vision</span>
+                <h2>From SOPs to <span class="gradient-text">Digital COO</span></h2>
+            </div>
+
+            <div class="vision-timeline">
+                <div class="vision-item animate-in delay-1">
+                    <div class="vision-item-dot"></div>
+                    <span class="label">Phase 1</span>
+                    <h4>SOPs → Agents</h4>
+                    <p>Your documentation becomes the training data. We build agents that execute your exact workflows.</p>
+                </div>
+
+                <div class="vision-item animate-in delay-2">
+                    <div class="vision-item-dot"></div>
+                    <span class="label" style="color: var(--accent-purple);">Phase 2</span>
+                    <h4>Agents → Software</h4>
+                    <p>We package the agents into usable software with dashboards, controls, and monitoring.</p>
+                </div>
+
+                <div class="vision-item animate-in delay-3">
+                    <div class="vision-item-dot"></div>
+                    <span class="label" style="color: var(--accent-amber);">Phase 3</span>
+                    <h4>Software → Product</h4>
+                    <p>The software becomes a product we can sell to other chiropractic practices. You get a cut.</p>
+                </div>
+
+                <div class="vision-item animate-in delay-4">
+                    <div class="vision-item-dot"></div>
+                    <span class="label" style="color: var(--accent-amber);">Future</span>
+                    <h4>Digital COO</h4>
+                    <p>The complete autonomous operations layer—the AI that runs the back office while humans focus on patients.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- HIPAA Section -->
+    <section class="hipaa" id="hipaa">
+        <div class="container">
+            <div class="hipaa-content">
+                <div class="hipaa-text animate-in">
+                    <span class="label">Compliance</span>
+                    <h2>HIPAA-Compliant <span class="gradient-text">By Design</span></h2>
+                    <p>
+                        This isn't our first time handling sensitive data. Everything is built with healthcare compliance as a foundation, not an afterthought.
+                    </p>
+
+                    <div class="hipaa-features">
+                        <div class="hipaa-feature">
+                            <div class="hipaa-feature-icon">🔐</div>
+                            <div class="hipaa-feature-text">
+                                <h5>End-to-End Encryption</h5>
+                                <p>All data encrypted in transit and at rest using industry-standard protocols</p>
+                            </div>
+                        </div>
+                        <div class="hipaa-feature">
+                            <div class="hipaa-feature-icon">📋</div>
+                            <div class="hipaa-feature-text">
+                                <h5>BAA-Ready Infrastructure</h5>
+                                <p>Built on HIPAA-compliant cloud services with Business Associate Agreements</p>
+                            </div>
+                        </div>
+                        <div class="hipaa-feature">
+                            <div class="hipaa-feature-icon">👁️</div>
+                            <div class="hipaa-feature-text">
+                                <h5>Audit Trail Everything</h5>
+                                <p>Complete logging of all agent actions for compliance and accountability</p>
+                            </div>
+                        </div>
+                        <div class="hipaa-feature">
+                            <div class="hipaa-feature-icon">🛡️</div>
+                            <div class="hipaa-feature-text">
+                                <h5>Access Controls</h5>
+                                <p>Role-based permissions ensuring agents only access what they need</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="hipaa-visual animate-in delay-2">
+                    <div class="hipaa-shield">
+                        <div class="hipaa-shield-glow"></div>
+                        <svg viewBox="0 0 100 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M50 5L10 25V55C10 80 50 115 50 115C50 115 90 80 90 55V25L50 5Z"
+                                  stroke="url(#shield-gradient)"
+                                  stroke-width="2"
+                                  fill="rgba(0, 229, 191, 0.05)"/>
+                            <path d="M35 60L45 70L65 50"
+                                  stroke="var(--accent-cyan)"
+                                  stroke-width="3"
+                                  stroke-linecap="round"
+                                  stroke-linejoin="round"/>
+                            <defs>
+                                <linearGradient id="shield-gradient" x1="50" y1="5" x2="50" y2="115">
+                                    <stop offset="0%" stop-color="var(--accent-cyan)"/>
+                                    <stop offset="100%" stop-color="var(--accent-cyan)" stop-opacity="0.3"/>
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works -->
+    <section class="how-it-works" id="how-it-works">
+        <div class="container">
+            <div class="how-it-works-header animate-in">
+                <span class="label">The Process</span>
+                <h2>From Documents to <span class="gradient-text-amber">Automation</span></h2>
+            </div>
+
+            <div class="how-it-works-steps">
+                <div class="how-it-works-step animate-in delay-1">
+                    <div class="how-it-works-step-number">1</div>
+                    <h4>Discovery</h4>
+                    <p>We map your systems, review your SOPs, and identify the highest-impact automations</p>
+                </div>
+
+                <div class="how-it-works-step animate-in delay-2">
+                    <div class="how-it-works-step-number">2</div>
+                    <h4>Build</h4>
+                    <p>Your SOPs become agent instructions. We build, test, and refine until it works perfectly</p>
+                </div>
+
+                <div class="how-it-works-step animate-in delay-3">
+                    <div class="how-it-works-step-number">3</div>
+                    <h4>Deploy</h4>
+                    <p>Agents run in parallel with staff initially, proving accuracy before full handoff</p>
+                </div>
+
+                <div class="how-it-works-step animate-in delay-4">
+                    <div class="how-it-works-step-number">✓</div>
+                    <h4>Scale</h4>
+                    <p>Add more automations, recover more time, then package for other practices</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta" id="cta">
+        <div class="container">
+            <div class="cta-box animate-in">
+                <span class="label">The Opportunity</span>
+                <h2>Your Data. <span class="gradient-text">Our Agents.</span><br><span class="gradient-text-amber">Shared Upside.</span></h2>
+                <p>
+                    This is a partnership, not a sales pitch. We build for free. You provide access to your SOPs and systems. When it works, we figure out how to share the value—both from your savings and from licensing to other practices.
+                </p>
+                <p class="cta-tagline">
+                    Built in 2026. By AI. For humans who'd rather focus on patients.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <p>ChiroFlow by <a href="https://cardflowlabs.com" target="_blank">CardFlow Labs</a> • Powered by the same tech running <a href="https://orbsportscards.com" target="_blank">ORB Sports Cards</a></p>
+        </div>
+    </footer>
+
+    <script>
+        // Intersection Observer for scroll animations
+        const observerOptions = {
+            root: null,
+            rootMargin: '0px',
+            threshold: 0.1
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+
+                    // Trigger counter animation for counters in this element
+                    const counters = entry.target.querySelectorAll('.counter');
+                    counters.forEach(counter => {
+                        animateCounter(counter);
+                    });
+                }
+            });
+        }, observerOptions);
+
+        document.querySelectorAll('.animate-in').forEach(el => {
+            observer.observe(el);
+        });
+
+        // Counter animation
+        function animateCounter(counter) {
+            if (counter.classList.contains('counted')) return;
+            counter.classList.add('counted');
+
+            const target = parseInt(counter.getAttribute('data-target'));
+            const duration = 2000;
+            const start = performance.now();
+
+            function update(currentTime) {
+                const elapsed = currentTime - start;
+                const progress = Math.min(elapsed / duration, 1);
+
+                // Easing function (ease-out-expo)
+                const easeOutExpo = 1 - Math.pow(2, -10 * progress);
+                const current = Math.floor(target * easeOutExpo);
+
+                counter.textContent = current.toLocaleString();
+
+                if (progress < 1) {
+                    requestAnimationFrame(update);
+                } else {
+                    counter.textContent = target.toLocaleString();
+                }
+            }
+
+            requestAnimationFrame(update);
+        }
+
+        // Smooth scroll for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+
+        // Parallax effect for hero orbs
+        document.addEventListener('mousemove', (e) => {
+            const orbs = document.querySelectorAll('.hero-orb');
+            const x = e.clientX / window.innerWidth - 0.5;
+            const y = e.clientY / window.innerHeight - 0.5;
+
+            orbs.forEach((orb, index) => {
+                const speed = (index + 1) * 20;
+                orb.style.transform = `translate(${x * speed}px, ${y * speed}px)`;
+            });
+        });
+
+        // Add loaded class to body for initial animations
+        window.addEventListener('load', () => {
+            document.body.classList.add('loaded');
+        });
+    </script>
+</body>
+</html>
