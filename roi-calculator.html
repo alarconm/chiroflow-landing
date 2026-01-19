@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChiroFlow ROI Calculator</title>
+    <style>
+        :root {
+            --bg-dark: #0a0a0f;
+            --bg-card: rgba(255, 255, 255, 0.03);
+            --accent-cyan: #00e5bf;
+            --accent-amber: #ffb347;
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.7);
+            --text-muted: rgba(255, 255, 255, 0.4);
+            --border-subtle: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-amber));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            margin-bottom: 2rem;
+        }
+
+        .calculator-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+        }
+
+        @media (max-width: 768px) {
+            .calculator-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .input-section, .results-section {
+            background: var(--bg-card);
+            border: var(--border-subtle);
+            border-radius: 16px;
+            padding: 1.5rem;
+        }
+
+        .section-title {
+            font-size: 1.1rem;
+            color: var(--accent-cyan);
+            margin-bottom: 1.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-weight: 600;
+        }
+
+        .input-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .input-group label {
+            display: block;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .input-group input, .input-group select {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 1rem;
+        }
+
+        .input-group input:focus, .input-group select:focus {
+            outline: none;
+            border-color: var(--accent-cyan);
+        }
+
+        .input-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .result-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 0;
+            border-bottom: var(--border-subtle);
+        }
+
+        .result-item:last-child {
+            border-bottom: none;
+        }
+
+        .result-label {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .result-value {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--accent-cyan);
+        }
+
+        .result-value.highlight {
+            font-size: 1.75rem;
+            color: var(--accent-amber);
+        }
+
+        .result-value.negative {
+            color: #ff6b6b;
+        }
+
+        .breakdown {
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: var(--border-subtle);
+        }
+
+        .breakdown-title {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 1rem;
+        }
+
+        .breakdown-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.5rem 0;
+            font-size: 0.9rem;
+        }
+
+        .breakdown-item .label {
+            color: var(--text-secondary);
+        }
+
+        .breakdown-item .value {
+            color: var(--text-primary);
+        }
+
+        .cta-section {
+            margin-top: 2rem;
+            text-align: center;
+            padding: 2rem;
+            background: linear-gradient(135deg, rgba(0, 229, 191, 0.1), rgba(255, 179, 71, 0.1));
+            border-radius: 16px;
+            border: 1px solid rgba(0, 229, 191, 0.2);
+        }
+
+        .cta-section h3 {
+            margin-bottom: 0.5rem;
+        }
+
+        .cta-section p {
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+        }
+
+        .roi-badge {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            background: var(--accent-cyan);
+            color: var(--bg-dark);
+            border-radius: 100px;
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+
+        .assumptions {
+            margin-top: 2rem;
+            padding: 1rem;
+            background: rgba(255, 179, 71, 0.05);
+            border-radius: 8px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .assumptions h4 {
+            color: var(--accent-amber);
+            margin-bottom: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ChiroFlow ROI Calculator</h1>
+        <p class="subtitle">See exactly how much time and money AI automation can save your practice</p>
+
+        <div class="calculator-grid">
+            <div class="input-section">
+                <h2 class="section-title">Your Practice</h2>
+
+                <div class="input-group">
+                    <label>Practice Name</label>
+                    <input type="text" id="practiceName" placeholder="e.g., Kent's Chiropractic">
+                </div>
+
+                <div class="input-row">
+                    <div class="input-group">
+                        <label>Number of Providers</label>
+                        <input type="number" id="providers" value="3" min="1" max="20">
+                    </div>
+                    <div class="input-group">
+                        <label>Total Staff</label>
+                        <input type="number" id="staff" value="12" min="1" max="50">
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label>Average Hourly Cost (salary + benefits)</label>
+                    <input type="number" id="hourlyCost" value="25" min="15" max="75">
+                </div>
+
+                <h2 class="section-title" style="margin-top: 2rem;">Weekly Hours Spent</h2>
+
+                <div class="input-row">
+                    <div class="input-group">
+                        <label>Payment Posting</label>
+                        <input type="number" id="hoursPosting" value="10" min="0" max="40">
+                    </div>
+                    <div class="input-group">
+                        <label>AR Management</label>
+                        <input type="number" id="hoursAR" value="8" min="0" max="40">
+                    </div>
+                </div>
+
+                <div class="input-row">
+                    <div class="input-group">
+                        <label>Insurance Verification</label>
+                        <input type="number" id="hoursVerify" value="6" min="0" max="40">
+                    </div>
+                    <div class="input-group">
+                        <label>Reporting</label>
+                        <input type="number" id="hoursReporting" value="5" min="0" max="40">
+                    </div>
+                </div>
+
+                <div class="input-row">
+                    <div class="input-group">
+                        <label>Claim Status Checks</label>
+                        <input type="number" id="hoursClaims" value="5" min="0" max="40">
+                    </div>
+                    <div class="input-group">
+                        <label>Data Entry/Sync</label>
+                        <input type="number" id="hoursDataEntry" value="4" min="0" max="40">
+                    </div>
+                </div>
+            </div>
+
+            <div class="results-section">
+                <h2 class="section-title">Your Savings</h2>
+
+                <div class="result-item">
+                    <span class="result-label">Weekly Hours Saved</span>
+                    <span class="result-value" id="weeklyHours">0 hrs</span>
+                </div>
+
+                <div class="result-item">
+                    <span class="result-label">Monthly Hours Saved</span>
+                    <span class="result-value" id="monthlyHours">0 hrs</span>
+                </div>
+
+                <div class="result-item">
+                    <span class="result-label">Annual Labor Savings</span>
+                    <span class="result-value highlight" id="annualSavings">$0</span>
+                </div>
+
+                <div class="breakdown">
+                    <h3 class="breakdown-title">Savings Breakdown</h3>
+                    <div class="breakdown-item">
+                        <span class="label">Payment Posting (85% automated)</span>
+                        <span class="value" id="savingsPosting">$0</span>
+                    </div>
+                    <div class="breakdown-item">
+                        <span class="label">AR Management (75% automated)</span>
+                        <span class="value" id="savingsAR">$0</span>
+                    </div>
+                    <div class="breakdown-item">
+                        <span class="label">Insurance Verification (90% automated)</span>
+                        <span class="value" id="savingsVerify">$0</span>
+                    </div>
+                    <div class="breakdown-item">
+                        <span class="label">Reporting (95% automated)</span>
+                        <span class="value" id="savingsReporting">$0</span>
+                    </div>
+                    <div class="breakdown-item">
+                        <span class="label">Claim Status (80% automated)</span>
+                        <span class="value" id="savingsClaims">$0</span>
+                    </div>
+                    <div class="breakdown-item">
+                        <span class="label">Data Entry (70% automated)</span>
+                        <span class="value" id="savingsDataEntry">$0</span>
+                    </div>
+                </div>
+
+                <div class="breakdown">
+                    <h3 class="breakdown-title">Investment & ROI</h3>
+                    <div class="breakdown-item">
+                        <span class="label">Estimated ChiroFlow Cost</span>
+                        <span class="value" id="chiroflowCost">$0/year</span>
+                    </div>
+                    <div class="breakdown-item">
+                        <span class="label">Net Annual Benefit</span>
+                        <span class="value" id="netBenefit" style="color: var(--accent-cyan);">$0</span>
+                    </div>
+                    <div class="breakdown-item">
+                        <span class="label">ROI</span>
+                        <span class="value" id="roi" style="color: var(--accent-amber);">0%</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="cta-section">
+            <h3>Your Estimated Annual Savings</h3>
+            <p id="ctaSummary">Enter your practice details to see your potential savings</p>
+            <div class="roi-badge" id="roiBadge">Calculate Above</div>
+        </div>
+
+        <div class="assumptions">
+            <h4>Assumptions</h4>
+            <p>
+                • Automation rates based on industry benchmarks and ChiroFlow pilot data<br>
+                • Hourly cost includes salary, benefits, and overhead (typically 1.3-1.5x base wage)<br>
+                • ChiroFlow pricing estimate: Base $399/mo + 10% of savings over $20K<br>
+                • Actual results may vary based on practice complexity and current processes
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // Automation percentages by task
+        const automationRates = {
+            posting: 0.85,
+            ar: 0.75,
+            verify: 0.90,
+            reporting: 0.95,
+            claims: 0.80,
+            dataEntry: 0.70
+        };
+
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            }).format(amount);
+        }
+
+        function calculate() {
+            // Get inputs
+            const hourlyCost = parseFloat(document.getElementById('hourlyCost').value) || 25;
+            const hoursPosting = parseFloat(document.getElementById('hoursPosting').value) || 0;
+            const hoursAR = parseFloat(document.getElementById('hoursAR').value) || 0;
+            const hoursVerify = parseFloat(document.getElementById('hoursVerify').value) || 0;
+            const hoursReporting = parseFloat(document.getElementById('hoursReporting').value) || 0;
+            const hoursClaims = parseFloat(document.getElementById('hoursClaims').value) || 0;
+            const hoursDataEntry = parseFloat(document.getElementById('hoursDataEntry').value) || 0;
+
+            // Calculate hours saved per week
+            const savedPosting = hoursPosting * automationRates.posting;
+            const savedAR = hoursAR * automationRates.ar;
+            const savedVerify = hoursVerify * automationRates.verify;
+            const savedReporting = hoursReporting * automationRates.reporting;
+            const savedClaims = hoursClaims * automationRates.claims;
+            const savedDataEntry = hoursDataEntry * automationRates.dataEntry;
+
+            const totalWeeklyHours = savedPosting + savedAR + savedVerify + savedReporting + savedClaims + savedDataEntry;
+            const totalMonthlyHours = totalWeeklyHours * 4.33;
+
+            // Calculate annual savings by category
+            const annualPosting = savedPosting * 52 * hourlyCost;
+            const annualAR = savedAR * 52 * hourlyCost;
+            const annualVerify = savedVerify * 52 * hourlyCost;
+            const annualReporting = savedReporting * 52 * hourlyCost;
+            const annualClaims = savedClaims * 52 * hourlyCost;
+            const annualDataEntry = savedDataEntry * 52 * hourlyCost;
+
+            const totalAnnualSavings = annualPosting + annualAR + annualVerify + annualReporting + annualClaims + annualDataEntry;
+
+            // Calculate ChiroFlow cost (hybrid model)
+            const baseCost = 399 * 12; // $399/month
+            const successFee = Math.max(0, (totalAnnualSavings - 20000) * 0.10); // 10% of savings over $20K
+            const totalChiroflowCost = baseCost + successFee;
+
+            // Calculate ROI
+            const netBenefit = totalAnnualSavings - totalChiroflowCost;
+            const roi = totalChiroflowCost > 0 ? ((netBenefit / totalChiroflowCost) * 100) : 0;
+
+            // Update UI
+            document.getElementById('weeklyHours').textContent = totalWeeklyHours.toFixed(1) + ' hrs';
+            document.getElementById('monthlyHours').textContent = totalMonthlyHours.toFixed(0) + ' hrs';
+            document.getElementById('annualSavings').textContent = formatCurrency(totalAnnualSavings);
+
+            document.getElementById('savingsPosting').textContent = formatCurrency(annualPosting);
+            document.getElementById('savingsAR').textContent = formatCurrency(annualAR);
+            document.getElementById('savingsVerify').textContent = formatCurrency(annualVerify);
+            document.getElementById('savingsReporting').textContent = formatCurrency(annualReporting);
+            document.getElementById('savingsClaims').textContent = formatCurrency(annualClaims);
+            document.getElementById('savingsDataEntry').textContent = formatCurrency(annualDataEntry);
+
+            document.getElementById('chiroflowCost').textContent = formatCurrency(totalChiroflowCost) + '/year';
+            document.getElementById('netBenefit').textContent = formatCurrency(netBenefit);
+            document.getElementById('roi').textContent = roi.toFixed(0) + '%';
+
+            // Update CTA
+            const practiceName = document.getElementById('practiceName').value || 'Your practice';
+            document.getElementById('ctaSummary').textContent =
+                `${practiceName} could save ${formatCurrency(totalAnnualSavings)} per year in labor costs`;
+            document.getElementById('roiBadge').textContent = `${roi.toFixed(0)}% ROI`;
+        }
+
+        // Add event listeners to all inputs
+        document.querySelectorAll('input').forEach(input => {
+            input.addEventListener('input', calculate);
+        });
+
+        // Initial calculation
+        calculate();
+    </script>
+</body>
+</html>
