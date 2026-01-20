@@ -1,0 +1,14 @@
+Continue the Ralph autonomous loop. Read prd.json and progress.txt to understand current state.
+
+Your task:
+1. Find the FIRST story where "passes" is false
+2. Implement that ONE story completely
+3. Run tests to verify
+4. Update progress.txt with what you did
+5. Commit the changes with message "feat: [story-id] - [description]"
+6. Update prd.json to mark the story as "passes": true
+
+If ALL stories have "passes": true, output exactly:
+<promise>COMPLETE</promise>
+
+Work autonomously. Do not ask questions. Make reasonable decisions.

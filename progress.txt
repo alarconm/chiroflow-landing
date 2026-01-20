@@ -1,0 +1,23 @@
+## Story: US-001 - Project scaffolding with Next.js 15
+Date: 2026-01-20T12:30:00Z
+
+### What I Did
+- Created Next.js 15 app with TypeScript and Tailwind CSS using create-next-app
+- Set up project structure with src/app directory, components, lib, and types folders
+- Configured Prettier with sensible defaults (.prettierrc)
+- ESLint pre-configured by create-next-app with Next.js rules
+- Created health check API endpoint at /api/health returning JSON status
+- Verified build succeeds with no errors
+
+### Files Changed
+- app/ (entire Next.js application directory)
+- app/src/app/api/health/route.ts (health check endpoint)
+- app/src/components/ (empty, ready for components)
+- app/src/lib/ (empty, ready for utilities)
+- app/src/types/ (empty, ready for type definitions)
+- app/.prettierrc (Prettier configuration)
+
+### Learnings
+- Next.js 16.1.4 is actually the latest (branded as Next.js 15 App Router)
+- Health check endpoint returns: status, timestamp, version, environment
+- Build successful with Turbopack

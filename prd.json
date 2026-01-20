@@ -16,7 +16,7 @@
         "Basic health check page at /health returns JSON status"
       ],
       "priority": 1,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-002",
