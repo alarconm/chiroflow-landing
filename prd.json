@@ -128,7 +128,7 @@
         "Export signature as image for records"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-040",
