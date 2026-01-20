@@ -45,7 +45,7 @@
         "Requests without valid tenant return 401 Unauthorized"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-004",

@@ -51,3 +51,32 @@ Date: 2026-01-20T12:45:00Z
 - Multi-tenant requires composite unique constraints (email, organizationId)
 - AuditLog should use SetNull for userId to preserve logs when users deleted
 - bcryptjs works better than bcrypt for cross-platform compatibility
+- CORRECTION: Downgraded to Prisma 5.22.0 for better Next.js compatibility (Prisma 7 had breaking changes)
+
+---
+
+## Story: US-003 - Multi-tenant middleware and context
+Date: 2026-01-20T13:00:00Z
+
+### What I Did
+- Created tenant.ts utility with getTenantFromRequest(), getCurrentTenant(), requireTenant()
+- Tenant identified via x-tenant-id header OR subdomain extraction from host
+- Created Next.js middleware for tenant validation on API routes
+- Protected API routes return 401 if no tenant identified
+- Created TenantProvider context for client-side components
+- Created useTenant() and useRequiredTenant() hooks
+- Created /api/tenant endpoint for client to fetch tenant info
+- Public routes (/api/health, /login, etc.) bypass tenant check
+
+### Files Changed
+- app/src/lib/tenant.ts (tenant utilities)
+- app/src/middleware.ts (tenant validation middleware)
+- app/src/components/providers/TenantProvider.tsx (React context)
+- app/src/components/providers/index.ts (exports)
+- app/src/app/api/tenant/route.ts (tenant API endpoint)
+
+### Learnings
+- Next.js middleware runs on Edge, needs special handling for Prisma
+- Subdomain extraction: "demo.chiroflow.app" -> "demo"
+- x-tenant-id header is useful for API clients that can't use subdomains
+- TenantProvider allows client components to access tenant info
