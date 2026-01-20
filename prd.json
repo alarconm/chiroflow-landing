@@ -94,7 +94,7 @@
         "Duplicate existing template to create new"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-038",
