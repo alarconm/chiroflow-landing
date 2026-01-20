@@ -180,7 +180,7 @@
         "PIN protection to exit kiosk mode"
       ],
       "priority": 10,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-043",

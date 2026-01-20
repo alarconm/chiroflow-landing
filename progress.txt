@@ -89,3 +89,4 @@ Date: 2026-01-20T13:00:00Z
 2026-01-20 16:00 - US-039: E-signature capture - COMPLETE
 2026-01-20 16:15 - US-040: Auto-populate patient record - COMPLETE
 2026-01-20 16:30 - US-041: Patient form filling UI - COMPLETE
+2026-01-20 16:45 - US-042: Kiosk mode - COMPLETE
