@@ -1,0 +1,188 @@
+{
+  "branch": "feature/platform-foundation",
+  "title": "Epic 01: Platform Foundation",
+  "description": "Core infrastructure for ChiroFlow - multi-tenant architecture, authentication, database schema, and API foundation. This epic establishes the foundation that all other features build upon.",
+  "epic": "01-platform-foundation",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Project scaffolding with Next.js 15",
+      "description": "Initialize the ChiroFlow application with Next.js 15, TypeScript, and Tailwind CSS. Set up the project structure with src/app directory, components, lib, and types folders.",
+      "acceptanceCriteria": [
+        "Next.js 15 app created with TypeScript and Tailwind CSS",
+        "Project structure follows app router conventions",
+        "ESLint and Prettier configured",
+        "Development server runs without errors",
+        "Basic health check page at /health returns JSON status"
+      ],
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-002",
+      "title": "Database schema with Prisma and PostgreSQL",
+      "description": "Set up Prisma ORM with PostgreSQL connection. Create initial schema with Organization (tenant), User, and AuditLog models. Include proper indexes and relationships.",
+      "acceptanceCriteria": [
+        "Prisma configured with PostgreSQL connection string from environment",
+        "Organization model with id, name, subdomain, settings, createdAt, updatedAt",
+        "User model with id, email, passwordHash, firstName, lastName, role, organizationId, createdAt, updatedAt",
+        "AuditLog model with id, userId, action, entityType, entityId, changes, ipAddress, userAgent, createdAt",
+        "Prisma migrations run successfully",
+        "Seed script creates test organization and admin user"
+      ],
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-003",
+      "title": "Multi-tenant middleware and context",
+      "description": "Implement multi-tenant architecture where each organization is isolated. Create middleware to identify tenant from subdomain or header, and provide tenant context throughout the app.",
+      "acceptanceCriteria": [
+        "Middleware extracts tenant from x-tenant-id header or subdomain",
+        "TenantContext provider wraps the application",
+        "useTenant hook provides current organization info",
+        "API routes automatically scope queries to current tenant",
+        "Requests without valid tenant return 401 Unauthorized"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-004",
+      "title": "Authentication with NextAuth.js",
+      "description": "Implement authentication using NextAuth.js with credentials provider. Support email/password login with password hashing using bcrypt.",
+      "acceptanceCriteria": [
+        "NextAuth.js configured with credentials provider",
+        "Login page at /login with email and password fields",
+        "Passwords hashed with bcrypt before storage",
+        "Session includes user id, email, name, role, and organizationId",
+        "Protected routes redirect to login if not authenticated",
+        "Logout functionality clears session"
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-005",
+      "title": "Role-based access control (RBAC)",
+      "description": "Implement RBAC with roles: OWNER, ADMIN, PROVIDER, STAFF, BILLER. Create middleware and hooks to check permissions.",
+      "acceptanceCriteria": [
+        "Role enum defined in Prisma schema",
+        "Permission definitions map roles to allowed actions",
+        "withAuth higher-order component checks authentication",
+        "withRole higher-order component checks role requirements",
+        "usePermissions hook returns current user permissions",
+        "API routes can require specific roles"
+      ],
+      "priority": 5,
+      "passes": false
+    },
+    {
+      "id": "US-006",
+      "title": "Audit logging system",
+      "description": "Create comprehensive audit logging that tracks all data changes. Log user actions, entity changes, timestamps, and request metadata for HIPAA compliance.",
+      "acceptanceCriteria": [
+        "createAuditLog function logs actions to AuditLog table",
+        "Prisma middleware automatically logs create/update/delete operations",
+        "Logs include userId, action, entityType, entityId, before/after changes",
+        "Logs capture IP address and user agent from request",
+        "Audit logs are immutable (no update/delete allowed)",
+        "API endpoint to query audit logs with filters"
+      ],
+      "priority": 6,
+      "passes": false
+    },
+    {
+      "id": "US-007",
+      "title": "API foundation with tRPC",
+      "description": "Set up tRPC for type-safe API routes. Create base router structure with auth, user, and organization routers.",
+      "acceptanceCriteria": [
+        "tRPC configured with Next.js app router",
+        "Base router exports merged routers",
+        "Auth router with login, logout, me procedures",
+        "User router with list, get, create, update procedures",
+        "Organization router with get, update procedures",
+        "All procedures properly typed with Zod validation",
+        "Protected procedures require authentication"
+      ],
+      "priority": 7,
+      "passes": false
+    },
+    {
+      "id": "US-008",
+      "title": "Error handling and monitoring",
+      "description": "Implement global error handling with custom error classes. Set up error boundaries for React components and proper API error responses.",
+      "acceptanceCriteria": [
+        "Custom error classes: AppError, AuthError, ValidationError, NotFoundError",
+        "Global error boundary catches React errors",
+        "API errors return consistent JSON format with code, message, details",
+        "Unhandled errors log stack traces in development",
+        "Production errors log to console without stack traces",
+        "404 and 500 error pages styled consistently"
+      ],
+      "priority": 8,
+      "passes": false
+    },
+    {
+      "id": "US-009",
+      "title": "Environment configuration",
+      "description": "Set up environment variable management with validation. Create .env.example with all required variables documented.",
+      "acceptanceCriteria": [
+        ".env.example file with all environment variables",
+        "env.ts validates and exports typed environment variables",
+        "Zod schema validates env vars at startup",
+        "Missing required variables throw descriptive errors",
+        "DATABASE_URL, NEXTAUTH_SECRET, NEXTAUTH_URL configured",
+        "Separate configs for development and production"
+      ],
+      "priority": 9,
+      "passes": false
+    },
+    {
+      "id": "US-010",
+      "title": "Basic UI layout and navigation",
+      "description": "Create the main application layout with sidebar navigation, header with user menu, and responsive design. Use shadcn/ui components.",
+      "acceptanceCriteria": [
+        "shadcn/ui installed and configured",
+        "Main layout with collapsible sidebar",
+        "Header with organization name and user dropdown",
+        "User dropdown shows name, email, and logout option",
+        "Sidebar navigation items for Dashboard, Patients, Schedule, Settings",
+        "Mobile-responsive with hamburger menu",
+        "Dark mode support with toggle"
+      ],
+      "priority": 10,
+      "passes": false
+    },
+    {
+      "id": "US-011",
+      "title": "Dashboard page placeholder",
+      "description": "Create a dashboard page that displays welcome message and placeholder cards for key metrics. This will be enhanced in later epics.",
+      "acceptanceCriteria": [
+        "Dashboard page at /dashboard route",
+        "Welcome message with user's first name",
+        "Placeholder cards for: Today's Appointments, Pending Claims, Outstanding Balance, Recent Patients",
+        "Cards show mock data with proper styling",
+        "Quick action buttons for common tasks",
+        "Page is protected and requires authentication"
+      ],
+      "priority": 11,
+      "passes": false
+    },
+    {
+      "id": "US-012",
+      "title": "Settings page with organization profile",
+      "description": "Create settings page where organization details can be viewed and updated. Include practice name, address, phone, and timezone.",
+      "acceptanceCriteria": [
+        "Settings page at /settings route",
+        "Organization profile form with name, address, phone, timezone",
+        "Form validation with error messages",
+        "Success toast on save",
+        "Only OWNER and ADMIN roles can edit settings",
+        "Cancel button reverts unsaved changes"
+      ],
+      "priority": 12,
+      "passes": false
+    }
+  ]
+}
