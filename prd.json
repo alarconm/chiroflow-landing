@@ -111,7 +111,7 @@
         "Track submission source (kiosk, email, portal)"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-039",

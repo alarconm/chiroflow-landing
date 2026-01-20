@@ -5,6 +5,7 @@ import { organizationRouter } from './organization';
 import { patientRouter } from './patient';
 import { schedulingRouter } from './scheduling';
 import { formTemplateRouter } from './formTemplate';
+import { formSubmissionRouter } from './formSubmission';
 
 export const appRouter = router({
   auth: authRouter,
@@ -13,6 +14,7 @@ export const appRouter = router({
   patient: patientRouter,
   scheduling: schedulingRouter,
   formTemplate: formTemplateRouter,
+  formSubmission: formSubmissionRouter,
 });
 
 export type AppRouter = typeof appRouter;
