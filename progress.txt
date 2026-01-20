@@ -21,3 +21,33 @@ Date: 2026-01-20T12:30:00Z
 - Next.js 16.1.4 is actually the latest (branded as Next.js 15 App Router)
 - Health check endpoint returns: status, timestamp, version, environment
 - Build successful with Turbopack
+
+---
+
+## Story: US-002 - Database schema with Prisma and PostgreSQL
+Date: 2026-01-20T12:45:00Z
+
+### What I Did
+- Installed Prisma 7.2.0 with PostgreSQL provider
+- Created Organization model with id, name, subdomain, settings, timestamps
+- Created User model with email, passwordHash, role, organizationId, timestamps
+- Created AuditLog model for HIPAA compliance with full change tracking
+- Created Role enum: OWNER, ADMIN, PROVIDER, STAFF, BILLER
+- Set up prisma.config.ts for Prisma 7 configuration
+- Created seed script with test organization and 3 users (admin, provider, staff)
+- Created Prisma client singleton in src/lib/prisma.ts
+- Added database scripts to package.json (db:generate, db:push, db:seed, etc.)
+
+### Files Changed
+- app/prisma/schema.prisma (complete schema with 3 models)
+- app/prisma/seed.ts (seed script with test data)
+- app/prisma.config.ts (Prisma 7 config)
+- app/src/lib/prisma.ts (Prisma client singleton)
+- app/package.json (added db scripts)
+- app/.env (database connection URL)
+
+### Learnings
+- Prisma 7 removed url from schema.prisma, now in prisma.config.ts
+- Multi-tenant requires composite unique constraints (email, organizationId)
+- AuditLog should use SetNull for userId to preserve logs when users deleted
+- bcryptjs works better than bcrypt for cross-platform compatibility

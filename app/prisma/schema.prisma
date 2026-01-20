@@ -1,0 +1,83 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Multi-tenant organization (practice)
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  subdomain String   @unique
+  settings  Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  users     User[]
+  auditLogs AuditLog[]
+
+  @@index([subdomain])
+}
+
+// User roles for RBAC
+enum Role {
+  OWNER    // Full access, can delete organization
+  ADMIN    // Full access except organization deletion
+  PROVIDER // Clinical access, can see all patients
+  STAFF    // Front desk, limited patient access
+  BILLER   // Billing and claims access only
+}
+
+// User account
+model User {
+  id             String    @id @default(cuid())
+  email          String
+  passwordHash   String
+  firstName      String
+  lastName       String
+  role           Role      @default(STAFF)
+  isActive       Boolean   @default(true)
+  lastLoginAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  auditLogs AuditLog[]
+
+  @@unique([email, organizationId])
+  @@index([organizationId])
+  @@index([email])
+}
+
+// Audit log for HIPAA compliance
+model AuditLog {
+  id         String   @id @default(cuid())
+  action     String   // CREATE, UPDATE, DELETE, VIEW, LOGIN, LOGOUT, etc.
+  entityType String   // User, Patient, Appointment, etc.
+  entityId   String?  // ID of the affected entity
+  changes    Json?    // Before/after state for mutations
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  // Relations
+  userId         String?
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
