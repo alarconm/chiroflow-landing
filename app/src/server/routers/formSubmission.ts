@@ -113,11 +113,11 @@ export const formSubmissionRouter = router({
   // GET - Get a submission by ID
   // ==========================================
   get: protectedProcedure
-    .input(z.object({ id: z.string() }))
+    .input(z.string())
     .query(async ({ ctx, input }) => {
       const submission = await prisma.formSubmission.findFirst({
         where: {
-          id: input.id,
+          id: input,
           organizationId: ctx.user.organizationId,
         },
         include: {
@@ -231,6 +231,7 @@ export const formSubmissionRouter = router({
           startDate: z.date().optional(),
           endDate: z.date().optional(),
           limit: z.number().min(1).max(100).optional().default(50),
+          offset: z.number().min(0).optional().default(0),
           cursor: z.string().optional(),
         })
         .optional()
@@ -252,46 +253,63 @@ export const formSubmissionRouter = router({
           : {}),
       };
 
-      const submissions = await prisma.formSubmission.findMany({
-        where,
-        include: {
-          template: {
-            select: {
-              id: true,
-              name: true,
+      const [submissions, total] = await Promise.all([
+        prisma.formSubmission.findMany({
+          where,
+          include: {
+            template: {
+              select: {
+                id: true,
+                name: true,
+                version: true,
+              },
             },
-          },
-          patient: {
-            select: {
-              id: true,
-              mrn: true,
-              demographics: {
-                select: {
-                  firstName: true,
-                  lastName: true,
+            patient: {
+              select: {
+                id: true,
+                mrn: true,
+                demographics: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                  },
                 },
               },
             },
-          },
-          _count: {
-            select: {
-              responses: true,
-              signatures: true,
+            _count: {
+              select: {
+                responses: true,
+                signatures: true,
+              },
             },
           },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: (input?.limit || 50) + 1,
-        ...(input?.cursor && { cursor: { id: input.cursor }, skip: 1 }),
-      });
+          orderBy: { createdAt: 'desc' },
+          take: input?.limit || 50,
+          skip: input?.offset || 0,
+          ...(input?.cursor && { cursor: { id: input.cursor }, skip: 1 }),
+        }),
+        prisma.formSubmission.count({ where }),
+      ]);
+
+      // Transform submissions to flatten patient names
+      const transformedSubmissions = submissions.map((s) => ({
+        ...s,
+        patient: s.patient
+          ? {
+              id: s.patient.id,
+              mrn: s.patient.mrn,
+              firstName: s.patient.demographics?.firstName || '',
+              lastName: s.patient.demographics?.lastName || '',
+            }
+          : null,
+      }));
 
       let nextCursor: string | undefined;
-      if (submissions.length > (input?.limit || 50)) {
-        const lastItem = submissions.pop();
-        nextCursor = lastItem?.id;
+      if (submissions.length === (input?.limit || 50)) {
+        nextCursor = submissions[submissions.length - 1]?.id;
       }
 
-      return { submissions, nextCursor };
+      return { submissions: transformedSubmissions, total, nextCursor };
     }),
 
   // ==========================================
@@ -534,6 +552,52 @@ export const formSubmissionRouter = router({
         changes: {
           before: { status: existing.status },
           after: { status: input.status },
+        },
+      });
+
+      return submission;
+    }),
+
+  // ==========================================
+  // ADD NOTE - Add staff notes to submission
+  // ==========================================
+  addNote: protectedProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        note: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const existing = await prisma.formSubmission.findFirst({
+        where: {
+          id: input.id,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!existing) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Form submission not found',
+        });
+      }
+
+      const submission = await prisma.formSubmission.update({
+        where: { id: input.id },
+        data: {
+          staffNotes: input.note,
+        },
+      });
+
+      await createAuditLog({
+        action: 'UPDATE' as AuditAction,
+        entityType: 'FormSubmission',
+        entityId: input.id,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          staffNotes: input.note,
         },
       });
 

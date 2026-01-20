@@ -214,7 +214,7 @@
         "Link submission to appointment if applicable"
       ],
       "priority": 12,
-      "passes": false
+      "passes": true
     }
   ]
 }
