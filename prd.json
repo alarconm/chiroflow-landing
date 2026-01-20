@@ -145,7 +145,7 @@
         "Show confirmation of what will be updated before saving"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-041",

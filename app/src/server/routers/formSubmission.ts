@@ -685,4 +685,47 @@ export const formSubmissionRouter = router({
         ),
       };
     }),
+
+  // ==========================================
+  // PREVIEW PATIENT MAPPING - Show what will be updated
+  // ==========================================
+  previewPatientMapping: protectedProcedure
+    .input(z.object({ submissionId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const { generatePatientUpdatePreview } = await import('@/lib/patient-mapping');
+      return generatePatientUpdatePreview(input.submissionId, ctx.user.organizationId);
+    }),
+
+  // ==========================================
+  // APPLY PATIENT MAPPING - Create/update patient from submission
+  // ==========================================
+  applyPatientMapping: protectedProcedure
+    .input(
+      z.object({
+        submissionId: z.string(),
+        createIfNotExists: z.boolean().optional().default(false),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { applyPatientMapping } = await import('@/lib/patient-mapping');
+      const result = await applyPatientMapping(
+        input.submissionId,
+        ctx.user.organizationId,
+        input.createIfNotExists
+      );
+
+      await createAuditLog({
+        action: 'UPDATE' as AuditAction,
+        entityType: 'Patient',
+        entityId: result.patientId,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          action: result.created ? 'created_from_form' : 'updated_from_form',
+          submissionId: input.submissionId,
+        },
+      });
+
+      return result;
+    }),
 });
