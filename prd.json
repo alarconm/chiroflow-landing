@@ -38,7 +38,7 @@
         "All operations create audit log entries"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-035",
