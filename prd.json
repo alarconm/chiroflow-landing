@@ -59,7 +59,7 @@
         "Conditional visibility (show field B only if field A = X)"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-036",

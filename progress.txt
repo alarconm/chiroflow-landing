@@ -82,3 +82,4 @@ Date: 2026-01-20T13:00:00Z
 - TenantProvider allows client components to access tenant info
 2026-01-20 14:56 - US-033: Intake form database schema - COMPLETE
 2026-01-20 15:00 - US-034: Form template CRUD - COMPLETE
+2026-01-20 15:02 - US-035: Form field types and validation - COMPLETE
