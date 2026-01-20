@@ -20,33 +20,50 @@ model Organization {
   updatedAt DateTime @updatedAt
 
   // Relations
-  users     User[]
-  auditLogs AuditLog[]
+  users      User[]
+  auditLogs  AuditLog[]
+  patients   Patient[]
+  households Household[]
+
+  // Scheduling relations
+  providers        Provider[]
+  appointmentTypes AppointmentType[]
+  rooms            Room[]
+  resources        Resource[]
+  appointments     Appointment[]
+  recurringSeries  RecurringSeries[]
+  scheduleBlocks   ScheduleBlock[]
+  waitlistEntries  WaitlistEntry[]
+
+  // Intake form relations
+  formTemplates   FormTemplate[]
+  formSubmissions FormSubmission[]
+  formDeliveries  FormDelivery[]
 
   @@index([subdomain])
 }
 
 // User roles for RBAC
 enum Role {
-  OWNER    // Full access, can delete organization
-  ADMIN    // Full access except organization deletion
+  OWNER // Full access, can delete organization
+  ADMIN // Full access except organization deletion
   PROVIDER // Clinical access, can see all patients
-  STAFF    // Front desk, limited patient access
-  BILLER   // Billing and claims access only
+  STAFF // Front desk, limited patient access
+  BILLER // Billing and claims access only
 }
 
 // User account
 model User {
-  id             String    @id @default(cuid())
-  email          String
-  passwordHash   String
-  firstName      String
-  lastName       String
-  role           Role      @default(STAFF)
-  isActive       Boolean   @default(true)
-  lastLoginAt    DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id           String    @id @default(cuid())
+  email        String
+  passwordHash String
+  firstName    String
+  lastName     String
+  role         Role      @default(STAFF)
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   // Multi-tenant relation
   organizationId String
@@ -54,6 +71,7 @@ model User {
 
   // Relations
   auditLogs AuditLog[]
+  provider  Provider? // If user is a clinical provider
 
   @@unique([email, organizationId])
   @@index([organizationId])
@@ -63,10 +81,10 @@ model User {
 // Audit log for HIPAA compliance
 model AuditLog {
   id         String   @id @default(cuid())
-  action     String   // CREATE, UPDATE, DELETE, VIEW, LOGIN, LOGOUT, etc.
-  entityType String   // User, Patient, Appointment, etc.
-  entityId   String?  // ID of the affected entity
-  changes    Json?    // Before/after state for mutations
+  action     String // CREATE, UPDATE, DELETE, VIEW, LOGIN, LOGOUT, etc.
+  entityType String // User, Patient, Appointment, etc.
+  entityId   String? // ID of the affected entity
+  changes    Json? // Before/after state for mutations
   ipAddress  String?
   userAgent  String?
   createdAt  DateTime @default(now())
@@ -81,4 +99,1004 @@ model AuditLog {
   @@index([userId])
   @@index([entityType, entityId])
   @@index([createdAt])
+}
+
+// ============================================
+// EPIC 02: PATIENT MANAGEMENT
+// ============================================
+
+// Patient status
+enum PatientStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+  DECEASED
+}
+
+// Gender options
+enum Gender {
+  MALE
+  FEMALE
+  NON_BINARY
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+// Contact preference
+enum ContactPreference {
+  EMAIL
+  PHONE
+  SMS
+  MAIL
+}
+
+// Insurance type
+enum InsuranceType {
+  PRIMARY
+  SECONDARY
+  TERTIARY
+}
+
+// Subscriber relationship to patient
+enum SubscriberRelationship {
+  SELF
+  SPOUSE
+  CHILD
+  OTHER
+}
+
+// Family relationship type
+enum FamilyRelationship {
+  SPOUSE
+  PARENT
+  CHILD
+  SIBLING
+  GUARDIAN
+  OTHER
+}
+
+// Document type
+enum DocumentType {
+  INSURANCE_CARD_FRONT
+  INSURANCE_CARD_BACK
+  PHOTO_ID
+  CONSENT_FORM
+  INTAKE_FORM
+  CLINICAL_NOTE
+  LAB_RESULT
+  IMAGING
+  REFERRAL
+  OTHER
+}
+
+// Core Patient model
+model Patient {
+  id         String        @id @default(cuid())
+  mrn        String // Medical Record Number (org-unique)
+  status     PatientStatus @default(ACTIVE)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  archivedAt DateTime?
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  demographics      PatientDemographics?
+  contacts          PatientContact[]
+  emergencyContacts EmergencyContact[]
+  insurances        PatientInsurance[]
+  documents         PatientDocument[]
+  householdMembers  HouseholdMember[]
+  mergeHistory      PatientMerge[]       @relation("MergedIntoPatient")
+  mergedFrom        PatientMerge[]       @relation("SourcePatient")
+
+  // Scheduling relations
+  appointments    Appointment[]
+  waitlistEntries WaitlistEntry[]
+
+  // Intake form relations
+  formSubmissions FormSubmission[]
+  formDeliveries  FormDelivery[]
+
+  @@unique([mrn, organizationId])
+  @@index([organizationId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Patient demographics (1:1 with Patient)
+model PatientDemographics {
+  id            String   @id @default(cuid())
+  firstName     String
+  middleName    String?
+  lastName      String
+  preferredName String?
+  dateOfBirth   DateTime
+  gender        Gender   @default(PREFER_NOT_TO_SAY)
+  pronouns      String?
+  ssn           String? // Encrypted, store last 4 for display
+  ssnLast4      String? // Last 4 digits for display
+  language      String   @default("en")
+  ethnicity     String?
+  race          String?
+  maritalStatus String?
+  occupation    String?
+  employer      String?
+  notes         String? // Internal notes
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  patientId String  @unique
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  // Search indexes for phonetic matching
+  firstNameSoundex String? // Soundex code for first name
+  lastNameSoundex  String? // Soundex code for last name
+
+  @@index([firstName, lastName])
+  @@index([dateOfBirth])
+  @@index([firstNameSoundex])
+  @@index([lastNameSoundex])
+}
+
+// Patient contact information (1:many - can have multiple addresses/phones)
+model PatientContact {
+  id                String            @id @default(cuid())
+  isPrimary         Boolean           @default(false)
+  contactPreference ContactPreference @default(PHONE)
+
+  // Address
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  zipCode      String?
+  country      String  @default("US")
+
+  // Phone
+  homePhone   String?
+  mobilePhone String?
+  workPhone   String?
+
+  // Email
+  email String?
+
+  // Opt-in preferences
+  allowSms       Boolean @default(true)
+  allowEmail     Boolean @default(true)
+  allowVoicemail Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@index([email])
+  @@index([mobilePhone])
+}
+
+// Emergency contacts
+model EmergencyContact {
+  id           String   @id @default(cuid())
+  name         String
+  relationship String
+  phone        String
+  altPhone     String?
+  isPrimary    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+}
+
+// Patient insurance information
+model PatientInsurance {
+  id       String        @id @default(cuid())
+  type     InsuranceType @default(PRIMARY)
+  isActive Boolean       @default(true)
+
+  // Insurance company info
+  payerName String
+  payerId   String? // Payer ID for EDI
+  planName  String?
+  planType  String? // PPO, HMO, EPO, etc.
+
+  // Policy details
+  policyNumber String
+  groupNumber  String?
+
+  // Subscriber info (may be different from patient)
+  subscriberRelationship SubscriberRelationship @default(SELF)
+  subscriberId           String?
+  subscriberFirstName    String?
+  subscriberLastName     String?
+  subscriberDob          DateTime?
+
+  // Coverage dates
+  effectiveDate   DateTime?
+  terminationDate DateTime?
+
+  // Benefits
+  copay          Decimal? @db.Decimal(10, 2)
+  deductible     Decimal? @db.Decimal(10, 2)
+  deductibleMet  Decimal? @db.Decimal(10, 2)
+  outOfPocketMax Decimal? @db.Decimal(10, 2)
+  outOfPocketMet Decimal? @db.Decimal(10, 2)
+
+  // Verification
+  verifiedAt        DateTime?
+  verifiedBy        String?
+  verificationNotes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@index([type])
+  @@index([payerName])
+}
+
+// Patient documents
+model PatientDocument {
+  id          String       @id @default(cuid())
+  type        DocumentType
+  fileName    String
+  fileSize    Int // Size in bytes
+  mimeType    String
+  storageKey  String // S3 key or local path
+  description String?
+
+  // Upload info
+  uploadedById String
+  uploadedAt   DateTime @default(now())
+
+  // Access control
+  isConfidential Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@index([type])
+  @@index([uploadedAt])
+}
+
+// Household for family linking
+model Household {
+  id        String   @id @default(cuid())
+  name      String? // Optional household name
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  members HouseholdMember[]
+
+  @@index([organizationId])
+}
+
+// Household membership (links patients to households)
+model HouseholdMember {
+  id            String             @id @default(cuid())
+  relationship  FamilyRelationship
+  isHeadOfHouse Boolean            @default(false)
+  isGuarantor   Boolean            @default(false) // Responsible for billing
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  // Relations
+  patientId   String
+  patient     Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  householdId String
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  @@unique([patientId, householdId])
+  @@index([householdId])
+  @@index([patientId])
+}
+
+// Patient merge tracking
+model PatientMerge {
+  id             String   @id @default(cuid())
+  mergedAt       DateTime @default(now())
+  mergedBy       String // User ID who performed merge
+  reason         String? // Why merge was performed
+  sourceSnapshot Json // Snapshot of source patient before merge
+  fieldsKept     Json // Which fields were kept from source
+
+  // Relations
+  sourcePatientId String
+  sourcePatient   Patient @relation("SourcePatient", fields: [sourcePatientId], references: [id])
+  targetPatientId String
+  targetPatient   Patient @relation("MergedIntoPatient", fields: [targetPatientId], references: [id])
+
+  @@index([sourcePatientId])
+  @@index([targetPatientId])
+  @@index([mergedAt])
+}
+
+// ============================================
+// EPIC 03: SCHEDULING ENGINE
+// ============================================
+
+// Appointment status workflow
+enum AppointmentStatus {
+  SCHEDULED // Booked but not confirmed
+  CONFIRMED // Patient confirmed attendance
+  CHECKED_IN // Patient arrived
+  IN_PROGRESS // Currently being seen
+  COMPLETED // Visit finished
+  CANCELLED // Cancelled by patient or staff
+  NO_SHOW // Patient didn't arrive
+  RESCHEDULED // Moved to different time
+}
+
+// Recurring frequency
+enum RecurringFrequency {
+  WEEKLY
+  BI_WEEKLY
+  MONTHLY
+}
+
+// Schedule block types (non-patient time)
+enum BlockType {
+  LUNCH
+  MEETING
+  ADMIN
+  PERSONAL
+  BREAK
+  TRAINING
+  OTHER
+}
+
+// Waitlist priority
+enum WaitlistPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+// Day of week for recurring schedules
+enum DayOfWeek {
+  SUNDAY
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+}
+
+// Provider profile (extends User for clinical staff)
+model Provider {
+  id            String   @id @default(cuid())
+  title         String? // Dr., DC, etc.
+  specialty     String? // Chiropractic, PT, etc.
+  npiNumber     String? // National Provider Identifier
+  licenseNumber String?
+  color         String   @default("#3B82F6") // Calendar color
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  bio           String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Link to user account
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  schedules           ProviderSchedule[]
+  exceptions          ProviderException[]
+  appointments        Appointment[]
+  scheduleBlocks      ScheduleBlock[]
+  waitlistPreferences WaitlistEntry[]
+
+  @@index([organizationId])
+  @@index([isActive])
+}
+
+// Provider weekly recurring schedule
+model ProviderSchedule {
+  id        String    @id @default(cuid())
+  dayOfWeek DayOfWeek
+  startTime String // "09:00" format (24hr)
+  endTime   String // "17:00" format (24hr)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // Relations
+  providerId String
+  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId])
+  @@index([dayOfWeek])
+}
+
+// Provider one-off schedule exceptions
+model ProviderException {
+  id          String   @id @default(cuid())
+  date        DateTime @db.Date
+  isAvailable Boolean  @default(false) // false = off, true = custom hours
+  startTime   String? // Override start time if available
+  endTime     String? // Override end time if available
+  reason      String? // Vacation, sick, etc.
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  providerId String
+  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, date])
+  @@index([date])
+}
+
+// Appointment types (New Patient, Follow-up, etc.)
+model AppointmentType {
+  id           String   @id @default(cuid())
+  name         String // "New Patient Exam"
+  code         String? // Short code "NPE"
+  description  String?
+  duration     Int // Duration in minutes
+  color        String   @default("#10B981") // Display color
+  requiresRoom Boolean  @default(true)
+  isActive     Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  defaultPrice Decimal? @db.Decimal(10, 2)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  appointments    Appointment[]
+  waitlistEntries WaitlistEntry[]
+
+  @@unique([code, organizationId])
+  @@index([organizationId])
+  @@index([isActive])
+}
+
+// Treatment rooms
+model Room {
+  id          String   @id @default(cuid())
+  name        String // "Room 1", "Adjustment Bay A"
+  description String?
+  capacity    Int      @default(1)
+  equipment   String[] // List of equipment in room
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  color       String   @default("#6366F1")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  appointments Appointment[]
+
+  @@index([organizationId])
+  @@index([isActive])
+}
+
+// Shared resources (equipment that needs scheduling)
+model Resource {
+  id          String   @id @default(cuid())
+  name        String // "X-Ray Machine", "TENS Unit"
+  type        String? // Category
+  description String?
+  quantity    Int      @default(1) // How many available
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  appointments AppointmentResource[]
+
+  @@index([organizationId])
+  @@index([isActive])
+}
+
+// Recurring appointment series
+model RecurringSeries {
+  id             String             @id @default(cuid())
+  frequency      RecurringFrequency
+  endDate        DateTime? // Series end date
+  maxOccurrences Int? // Or max number of appointments
+  notes          String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  appointments Appointment[]
+
+  @@index([organizationId])
+}
+
+// Core Appointment model
+model Appointment {
+  id             String            @id @default(cuid())
+  startTime      DateTime
+  endTime        DateTime
+  status         AppointmentStatus @default(SCHEDULED)
+  notes          String? // Staff notes
+  patientNotes   String? // Patient-provided notes
+  chiefComplaint String? // Reason for visit
+
+  // Confirmation tracking
+  confirmedAt DateTime?
+  confirmedBy String? // User ID or "PATIENT"
+
+  // Check-in tracking
+  checkedInAt DateTime?
+  checkedInBy String?
+
+  // Completion tracking
+  completedAt DateTime?
+  completedBy String?
+
+  // Cancellation tracking
+  cancelledAt  DateTime?
+  cancelledBy  String?
+  cancelReason String?
+
+  // Billing reference
+  chargeAmount Decimal? @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String? // User ID who created
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id])
+
+  providerId String
+  provider   Provider @relation(fields: [providerId], references: [id])
+
+  appointmentTypeId String
+  appointmentType   AppointmentType @relation(fields: [appointmentTypeId], references: [id])
+
+  roomId String?
+  room   Room?   @relation(fields: [roomId], references: [id])
+
+  recurringSeriesId String?
+  recurringSeries   RecurringSeries? @relation(fields: [recurringSeriesId], references: [id])
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  resources AppointmentResource[]
+
+  @@index([organizationId])
+  @@index([startTime])
+  @@index([endTime])
+  @@index([status])
+  @@index([patientId])
+  @@index([providerId])
+  @@index([roomId])
+  @@index([appointmentTypeId])
+  @@index([recurringSeriesId])
+  // Composite index for calendar queries
+  @@index([organizationId, startTime, endTime])
+  @@index([providerId, startTime, endTime])
+}
+
+// Join table for appointment resources
+model AppointmentResource {
+  id        String   @id @default(cuid())
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+
+  // Relations
+  appointmentId String
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  resourceId String
+  resource   Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([appointmentId, resourceId])
+  @@index([resourceId])
+}
+
+// Schedule blocks (non-patient time)
+model ScheduleBlock {
+  id             String    @id @default(cuid())
+  title          String // "Lunch", "Staff Meeting"
+  blockType      BlockType
+  startTime      DateTime
+  endTime        DateTime
+  isRecurring    Boolean   @default(false)
+  recurrenceRule String? // iCal RRULE format for complex recurrence
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // Provider-specific or org-wide
+  providerId String?
+  provider   Provider? @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([providerId])
+  @@index([startTime])
+  @@index([endTime])
+}
+
+// Waitlist for patients wanting appointments
+model WaitlistEntry {
+  id       String           @id @default(cuid())
+  priority WaitlistPriority @default(NORMAL)
+  notes    String?
+
+  // Time preferences
+  preferredDays      DayOfWeek[] // Preferred days of week
+  preferredTimeStart String? // Earliest acceptable time "09:00"
+  preferredTimeEnd   String? // Latest acceptable time "17:00"
+
+  // Status
+  isActive    Boolean   @default(true)
+  expiresAt   DateTime? // Auto-expire date
+  scheduledAt DateTime? // When they were scheduled
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id])
+
+  appointmentTypeId String
+  appointmentType   AppointmentType @relation(fields: [appointmentTypeId], references: [id])
+
+  preferredProviderId String?
+  preferredProvider   Provider? @relation(fields: [preferredProviderId], references: [id])
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([isActive])
+  @@index([priority])
+  @@index([patientId])
+  @@index([createdAt])
+}
+
+// ============================================
+// EPIC 04: DIGITAL INTAKE SYSTEM
+// ============================================
+
+// Form field types
+enum FormFieldType {
+  TEXT
+  TEXTAREA
+  SELECT
+  RADIO
+  CHECKBOX
+  CHECKBOX_GROUP
+  DATE
+  TIME
+  DATETIME
+  PHONE
+  EMAIL
+  SSN
+  NUMBER
+  CURRENCY
+  SIGNATURE
+  FILE
+  HEADING
+  PARAGRAPH
+  DIVIDER
+}
+
+// Form submission status
+enum FormSubmissionStatus {
+  DRAFT // Started but not submitted
+  PENDING // Submitted, awaiting review
+  COMPLETED // Reviewed and accepted
+  REJECTED // Rejected, needs resubmission
+  EXPIRED // Form link expired
+}
+
+// Form delivery method
+enum FormDeliveryMethod {
+  EMAIL
+  SMS
+  KIOSK
+  PORTAL
+  IN_PERSON
+}
+
+// Form template (reusable form structure)
+model FormTemplate {
+  id          String  @id @default(cuid())
+  name        String // "New Patient Health History"
+  description String?
+  version     Int     @default(1)
+  isActive    Boolean @default(true)
+  isSystem    Boolean @default(false) // System templates can't be deleted
+  isDraft     Boolean @default(true) // Draft until published
+
+  // Auto-population config
+  patientMapping Json? // Map fields to patient demographics
+
+  // Expiration settings
+  expiresInDays Int? // Form expires N days after sent
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  publishedAt DateTime?
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  sections    FormSection[]
+  fields      FormField[]
+  submissions FormSubmission[]
+  deliveries  FormDelivery[]
+
+  @@index([organizationId])
+  @@index([isActive])
+  @@index([isSystem])
+}
+
+// Form section (grouping of fields)
+model FormSection {
+  id            String  @id @default(cuid())
+  title         String // "Personal Information"
+  description   String?
+  order         Int     @default(0)
+  isCollapsible Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  templateId String
+  template   FormTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  fields FormField[]
+
+  @@index([templateId])
+  @@index([order])
+}
+
+// Form field definition
+model FormField {
+  id          String        @id @default(cuid())
+  fieldType   FormFieldType
+  label       String // Display label
+  name        String // Field name for data storage
+  placeholder String?
+  helpText    String?
+  order       Int           @default(0)
+
+  // Validation
+  isRequired     Boolean  @default(false)
+  minLength      Int?
+  maxLength      Int?
+  minValue       Decimal? @db.Decimal(10, 2)
+  maxValue       Decimal? @db.Decimal(10, 2)
+  pattern        String? // Regex pattern
+  patternMessage String? // Custom error message
+
+  // Select/Radio/Checkbox options
+  options Json? // Array of { value, label }
+
+  // Conditional display
+  conditionalOn    String? // Field name to check
+  conditionalValue String? // Value that must match
+  conditionalOp    String? // equals, not_equals, contains, etc.
+
+  // Patient mapping
+  mapsToPatient String? // Demographics field this maps to
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  templateId String
+  template   FormTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  sectionId String?
+  section   FormSection? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+
+  responses FormResponse[]
+
+  @@index([templateId])
+  @@index([sectionId])
+  @@index([order])
+}
+
+// Form submission (patient's filled form)
+model FormSubmission {
+  id          String               @id @default(cuid())
+  status      FormSubmissionStatus @default(PENDING)
+  accessToken String               @unique @default(cuid()) // Unique URL token
+
+  // Submission source
+  source    FormDeliveryMethod @default(PORTAL)
+  ipAddress String?
+  userAgent String?
+
+  // Timestamps
+  startedAt   DateTime  @default(now())
+  submittedAt DateTime?
+  reviewedAt  DateTime?
+  reviewedBy  String? // User ID
+
+  // Review notes
+  staffNotes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  templateId String
+  template   FormTemplate @relation(fields: [templateId], references: [id])
+
+  patientId String?
+  patient   Patient? @relation(fields: [patientId], references: [id])
+
+  // Form delivery that triggered this submission
+  deliveryId String?
+  delivery   FormDelivery? @relation(fields: [deliveryId], references: [id])
+
+  // Linked appointment (if form was for specific visit)
+  appointmentId String?
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  responses  FormResponse[]
+  signatures ESignature[]
+
+  @@index([organizationId])
+  @@index([templateId])
+  @@index([patientId])
+  @@index([status])
+  @@index([accessToken])
+  @@index([submittedAt])
+}
+
+// Individual field response
+model FormResponse {
+  id        String  @id @default(cuid())
+  value     String? // String representation of value
+  valueJson Json? // Complex values (file metadata, arrays)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  submissionId String
+  submission   FormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  fieldId String
+  field   FormField @relation(fields: [fieldId], references: [id])
+
+  @@unique([submissionId, fieldId])
+  @@index([fieldId])
+}
+
+// Electronic signature
+model ESignature {
+  id            String   @id @default(cuid())
+  signatureData String   @db.Text // Base64 encoded image
+  signedAt      DateTime @default(now())
+
+  // Legal compliance
+  ipAddress   String?
+  userAgent   String?
+  consentText String? // Text shown before signing
+
+  // Signer info (may differ from patient for guardians)
+  signerName   String?
+  signerEmail  String?
+  relationship String? // "Self", "Parent", "Guardian"
+
+  createdAt DateTime @default(now())
+
+  // Relations
+  submissionId String
+  submission   FormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+  @@index([signedAt])
+}
+
+// Form delivery tracking
+model FormDelivery {
+  id     String             @id @default(cuid())
+  method FormDeliveryMethod
+
+  // Delivery details
+  sentTo       String? // Email or phone number
+  scheduledFor DateTime? // If scheduled for future
+  sentAt       DateTime?
+  openedAt     DateTime?
+  completedAt  DateTime?
+
+  // Status tracking
+  sendStatus String? // pending, sent, failed, bounced
+  sendError  String? // Error message if failed
+
+  // Reminder tracking
+  reminderSentAt DateTime?
+  reminderCount  Int       @default(0)
+  maxReminders   Int       @default(2)
+  nextReminderAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  templateId String
+  template   FormTemplate @relation(fields: [templateId], references: [id])
+
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id])
+
+  // Resulting submissions
+  submissions FormSubmission[]
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([templateId])
+  @@index([patientId])
+  @@index([sentAt])
+  @@index([completedAt])
 }

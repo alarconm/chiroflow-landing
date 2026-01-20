@@ -80,3 +80,4 @@ Date: 2026-01-20T13:00:00Z
 - Subdomain extraction: "demo.chiroflow.app" -> "demo"
 - x-tenant-id header is useful for API clients that can't use subdomains
 - TenantProvider allows client components to access tenant info
+2026-01-20 14:56 - US-033: Intake form database schema - COMPLETE
