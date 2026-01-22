@@ -639,3 +639,147 @@ Implemented comprehensive payment webhook handling with support for Stripe event
 --- Iteration 7 completed at 2026-01-21 ---
 Story: US-091 - Payment webhook handling
 
+--- Iteration 7 completed at 2026-01-21 21:43:58 ---
+Story: US-091 - Payment webhook handling
+
+## 2026-01-21: US-092 - Payment dashboard UI
+
+**Status:** COMPLETE
+
+### What was done:
+
+Implemented a comprehensive payment dashboard UI with all required components for processing payments and managing payment settings.
+
+#### 1. Payment Terminal Component (`app/src/components/payments/PaymentTerminal.tsx`)
+
+Full-featured payment terminal for processing card payments:
+- Patient search with autocomplete
+- Saved payment method selection with card details display
+- Open charges list with selection checkboxes
+- Auto-allocate option for oldest-first allocation
+- Amount and description fields
+- Real-time payment processing with loading states
+- Success/error toast notifications
+- Automatic query invalidation after payment
+
+#### 2. Saved Payment Methods Manager (`app/src/components/payments/SavedPaymentMethodsManager.tsx`)
+
+Card management interface:
+- List all saved payment methods with card details
+- Default card badge indicator
+- Expired/expiring soon warnings
+- Card type badges (Credit, Debit, HSA, FSA)
+- Set as default action
+- Edit nickname functionality
+- Delete card with confirmation dialog
+- Add card dialog placeholder (for Stripe Elements integration)
+
+#### 3. Payment Plan Wizard (`app/src/components/payments/PaymentPlanWizard.tsx`)
+
+Multi-step payment plan creation wizard:
+- Step 1: Amount - Set total and down payment
+- Step 2: Schedule - Choose installments, frequency, start date
+- Step 3: Payment Method - Select card for auto-pay (optional)
+- Step 4: Review - Full summary with payment schedule table
+- Real-time installment calculation
+- Support for weekly, bi-weekly, monthly frequencies
+- Progress indicator bar
+- Creates plan via `createPaymentPlan` procedure
+
+#### 4. Payment History Table (`app/src/components/payments/PaymentHistoryTable.tsx`)
+
+Transaction history with filtering and export:
+- Search by transaction ID or patient name
+- Status filter (Completed, Pending, Failed, Refunded, Disputed)
+- Quick date range filters (Today, Week, Month, All Time)
+- Paginated results with page controls
+- Transaction details: date, ID, patient, payment method, amount, status
+- Actions dropdown: View Receipt, View Details, Process Refund
+- CSV export functionality
+- Color-coded status badges
+
+#### 5. Refund Dialog (`app/src/components/payments/RefundDialog.tsx`)
+
+Refund processing with reason selection:
+- Transaction details display (ID, amount, date, method, patient)
+- Full/partial refund radio selection
+- Refund amount input with validation
+- Reason category dropdown (Duplicate, Overpayment, Service Cancelled, etc.)
+- Required notes/additional details field
+- Two-step confirmation process
+- Processing states and error handling
+- Automatic query invalidation after refund
+
+#### 6. Payment Processor Settings (`app/src/components/payments/PaymentProcessorSettings.tsx`)
+
+Processor configuration in settings:
+- Current processor status display (Connected/Not Configured)
+- Processor type, mode (Test/Live), accepted cards
+- Masked API key display
+- Test connection button
+- Connect/Update settings dialog:
+  - Processor selection (Stripe, Square, Authorize.Net, Mock)
+  - API key and secret key inputs with show/hide toggle
+  - Webhook secret input
+  - Test mode toggle
+  - Accepted card types selection
+- Webhook configuration section:
+  - Webhook URL display with copy button
+  - Supported events documentation
+
+#### 7. Payment Dashboard (`app/src/components/payments/PaymentDashboard.tsx`)
+
+Main dashboard integrating all components:
+- Stats cards: Total Collected, Refunded, Active Plans, Success Rate
+- Tabbed interface:
+  - Terminal: Payment terminal + Today's Activity
+  - History: Full payment history table with refund integration
+  - Plans: Payment plans overview with upcoming payments
+  - Settings: Processor configuration
+- Real-time activity list showing recent transactions
+- Payment plan statistics and upcoming payments list
+- RefundDialog integrated with history table
+
+### Files Created:
+- `app/src/components/payments/PaymentTerminal.tsx`
+- `app/src/components/payments/SavedPaymentMethodsManager.tsx`
+- `app/src/components/payments/PaymentPlanWizard.tsx`
+- `app/src/components/payments/PaymentHistoryTable.tsx`
+- `app/src/components/payments/RefundDialog.tsx`
+- `app/src/components/payments/PaymentProcessorSettings.tsx`
+- `app/src/components/payments/PaymentDashboard.tsx`
+- `app/src/components/payments/index.ts`
+
+### Files Modified:
+- `app/src/server/routers/payment-processing.ts`
+  - Added `listTransactions` procedure for paginated transaction history
+  - Added `getTransaction` procedure for single transaction details
+  - Added `getProcessorConfig` procedure for processor settings
+  - Added `updateProcessorConfig` procedure for updating processor
+  - Added `testProcessorConnection` procedure for connection testing
+
+### New tRPC Procedures:
+- `listTransactions` - Paginated transaction list with filtering
+- `getTransaction` - Get single transaction by ID
+- `getProcessorConfig` - Get processor configuration
+- `updateProcessorConfig` - Update processor credentials
+- `testProcessorConnection` - Test processor connection
+
+### Acceptance Criteria Met:
+✅ Payment terminal component for taking payments
+✅ Saved payment methods display and management
+✅ Payment plan creation wizard
+✅ Payment history with filtering and export
+✅ Refund interface with reason selection
+✅ Payment processor configuration in settings
+
+### Validation:
+- TypeScript compiles without errors
+- All components export from `@/components/payments`
+- Consistent styling with ChiroFlow brand colors
+- Responsive design with mobile considerations
+- Proper loading and error states
+
+--- Iteration 8 completed at 2026-01-21 ---
+Story: US-092 - Payment dashboard UI
+
