@@ -122,6 +122,21 @@ export type AuditAction =
   | 'AI_SOAP_REJECT'
   | 'AI_SOAP_APPLY'
   | 'AI_SOAP_REGENERATE'
+  // AI Code Suggestion actions (Epic 32 - US-318)
+  | 'AI_CODE_SUGGEST'
+  | 'AI_CODE_ACCEPT'
+  | 'AI_CODE_REJECT'
+  | 'AI_CODE_MODIFY'
+  | 'AI_CODE_ACCEPT_ALL'
+  | 'AI_CODE_FLAG'
+  // AI Compliance actions (Epic 32 - US-319)
+  | 'AI_COMPLIANCE_RESOLVE'
+  | 'AI_COMPLIANCE_AUTOFIX'
+  // AI Provider Preference Learning actions (Epic 32 - US-320)
+  | 'AI_PREFERENCE_LEARN'
+  | 'AI_PREFERENCE_SET'
+  | 'AI_PREFERENCE_REMOVE'
+  | 'AI_STYLE_ANALYSIS'
   // AI Billing actions (Epic 09)
   | 'AI_BILLING_SCRUB'
   | 'AI_BILLING_BATCH_SCRUB'

@@ -2696,7 +2696,1343 @@ export const aiDocRouter = router({
         generalTips,
       };
     }),
+
+  // ============================================
+  // US-320: Provider Preference Learning
+  // ============================================
+
+  /**
+   * Track edits to AI-generated content to learn provider preferences
+   * Analyzes the changes between original and edited content
+   */
+  trackProviderEdit: providerProcedure
+    .input(
+      z.object({
+        draftNoteId: z.string(),
+        // Additional context for learning
+        editContext: z.object({
+          section: z.enum(['subjective', 'objective', 'assessment', 'plan']),
+          originalText: z.string(),
+          editedText: z.string(),
+          editReason: z.string().optional(),
+        }).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { draftNoteId, editContext } = input;
+
+      // Get the draft note with edit history
+      const draftNote = await ctx.prisma.aIDraftNote.findFirst({
+        where: {
+          id: draftNoteId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          encounter: {
+            include: {
+              provider: true,
+            },
+          },
+        },
+      });
+
+      if (!draftNote) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Draft note not found',
+        });
+      }
+
+      const providerId = draftNote.encounter.providerId;
+      const learnedPreferences: Array<{
+        category: string;
+        key: string;
+        value: Record<string, unknown>;
+        description: string;
+      }> = [];
+
+      // If explicit edit context provided, analyze that
+      if (editContext) {
+        const analysis = analyzeEdit(
+          editContext.section,
+          editContext.originalText,
+          editContext.editedText,
+          editContext.editReason
+        );
+        learnedPreferences.push(...analysis);
+      }
+
+      // Also analyze the stored edit history in the draft note
+      const editedContent = draftNote.editedContent as Record<string, {
+        original: string;
+        edited: string;
+        editedAt: string;
+      }> | null;
+
+      if (editedContent) {
+        for (const [section, edit] of Object.entries(editedContent)) {
+          if (edit.original && edit.edited) {
+            const analysis = analyzeEdit(
+              section as 'subjective' | 'objective' | 'assessment' | 'plan',
+              edit.original,
+              edit.edited
+            );
+            learnedPreferences.push(...analysis);
+          }
+        }
+      }
+
+      // Store or update learned preferences
+      const savedPreferences = [];
+      for (const pref of learnedPreferences) {
+        const saved = await upsertProviderPreference(
+          ctx.prisma,
+          providerId,
+          ctx.user.organizationId,
+          pref.category,
+          pref.key,
+          pref.value,
+          pref.description,
+          'edit_tracking'
+        );
+        savedPreferences.push(saved);
+      }
+
+      // Log the learning action
+      await auditLog('AI_PREFERENCE_LEARN', 'ProviderPreference', {
+        entityId: draftNoteId,
+        changes: {
+          learnedCount: learnedPreferences.length,
+          categories: [...new Set(learnedPreferences.map(p => p.category))],
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        learnedPreferences: savedPreferences.length,
+        categories: [...new Set(learnedPreferences.map(p => p.category))],
+        details: learnedPreferences.map(p => ({
+          category: p.category,
+          key: p.key,
+          description: p.description,
+        })),
+      };
+    }),
+
+  /**
+   * Get provider preferences for a specific provider
+   */
+  getProviderPreferences: providerProcedure
+    .input(
+      z.object({
+        providerId: z.string().optional(), // Defaults to current user's provider
+        category: z.string().optional(),
+        activeOnly: z.boolean().default(true),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { providerId, category, activeOnly } = input;
+
+      // Get provider ID - either specified or current user
+      let targetProviderId = providerId;
+      if (!targetProviderId) {
+        const provider = await ctx.prisma.provider.findFirst({
+          where: {
+            userId: ctx.user.id,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+        if (!provider) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Provider not found for current user',
+          });
+        }
+        targetProviderId = provider.id;
+      }
+
+      const preferences = await ctx.prisma.providerPreference.findMany({
+        where: {
+          providerId: targetProviderId,
+          organizationId: ctx.user.organizationId,
+          ...(category ? { category } : {}),
+          ...(activeOnly ? { isActive: true } : {}),
+        },
+        orderBy: [
+          { category: 'asc' },
+          { confidenceScore: 'desc' },
+        ],
+      });
+
+      // Group by category
+      const grouped: Record<string, typeof preferences> = {};
+      for (const pref of preferences) {
+        if (!grouped[pref.category]) {
+          grouped[pref.category] = [];
+        }
+        grouped[pref.category].push(pref);
+      }
+
+      return {
+        preferences,
+        byCategory: grouped,
+        summary: {
+          total: preferences.length,
+          categories: Object.keys(grouped),
+          avgConfidence: preferences.length > 0
+            ? preferences.reduce((sum, p) => sum + p.confidenceScore, 0) / preferences.length
+            : 0,
+        },
+      };
+    }),
+
+  /**
+   * Set an explicit provider preference
+   * Allows providers to manually configure their preferences
+   */
+  setProviderPreference: providerProcedure
+    .input(
+      z.object({
+        category: z.enum(['terminology', 'style', 'format', 'template', 'phrases', 'depth']),
+        preferenceKey: z.string(),
+        preferenceValue: z.record(z.string(), z.unknown()),
+        description: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { category, preferenceKey, preferenceValue, description } = input;
+
+      // Get current user's provider
+      const provider = await ctx.prisma.provider.findFirst({
+        where: {
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!provider) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Provider not found for current user',
+        });
+      }
+
+      const saved = await upsertProviderPreference(
+        ctx.prisma,
+        provider.id,
+        ctx.user.organizationId,
+        category,
+        preferenceKey,
+        preferenceValue,
+        description,
+        'explicit_setting'
+      );
+
+      await auditLog('AI_PREFERENCE_SET', 'ProviderPreference', {
+        entityId: saved.id,
+        changes: { category, preferenceKey },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return saved;
+    }),
+
+  /**
+   * Delete or deactivate a provider preference
+   */
+  removeProviderPreference: providerProcedure
+    .input(
+      z.object({
+        preferenceId: z.string(),
+        permanent: z.boolean().default(false),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { preferenceId, permanent } = input;
+
+      const preference = await ctx.prisma.providerPreference.findFirst({
+        where: {
+          id: preferenceId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!preference) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Preference not found',
+        });
+      }
+
+      if (permanent) {
+        await ctx.prisma.providerPreference.delete({
+          where: { id: preferenceId },
+        });
+      } else {
+        await ctx.prisma.providerPreference.update({
+          where: { id: preferenceId },
+          data: { isActive: false },
+        });
+      }
+
+      await auditLog('AI_PREFERENCE_REMOVE', 'ProviderPreference', {
+        entityId: preferenceId,
+        changes: { permanent },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { success: true, permanent };
+    }),
+
+  /**
+   * Track when an AI suggestion is accepted or rejected
+   * Used to update preference confidence scores
+   */
+  recordPreferenceFeedback: providerProcedure
+    .input(
+      z.object({
+        preferenceId: z.string(),
+        accepted: z.boolean(),
+        context: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { preferenceId, accepted, context } = input;
+
+      const preference = await ctx.prisma.providerPreference.findFirst({
+        where: {
+          id: preferenceId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!preference) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Preference not found',
+        });
+      }
+
+      // Update usage tracking
+      const updates: Prisma.ProviderPreferenceUpdateInput = {
+        timesApplied: preference.timesApplied + 1,
+        lastUpdated: new Date(),
+      };
+
+      if (accepted) {
+        updates.timesAccepted = preference.timesAccepted + 1;
+        // Increase confidence when accepted
+        updates.confidenceScore = Math.min(1.0, preference.confidenceScore + 0.05);
+      } else {
+        updates.timesRejected = preference.timesRejected + 1;
+        // Decrease confidence when rejected
+        updates.confidenceScore = Math.max(0.1, preference.confidenceScore - 0.1);
+      }
+
+      const updated = await ctx.prisma.providerPreference.update({
+        where: { id: preferenceId },
+        data: updates,
+      });
+
+      return {
+        preferenceId: updated.id,
+        newConfidence: updated.confidenceScore,
+        acceptanceRate: updated.timesApplied > 0
+          ? updated.timesAccepted / updated.timesApplied
+          : 0,
+      };
+    }),
+
+  /**
+   * Analyze provider's documentation style from historical notes
+   * Used to bootstrap preferences for new providers or enhance learning
+   */
+  analyzeDocumentationStyle: providerProcedure
+    .input(
+      z.object({
+        providerId: z.string().optional(),
+        noteCount: z.number().default(20),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { noteCount } = input;
+
+      // Get provider
+      let providerId = input.providerId;
+      if (!providerId) {
+        const provider = await ctx.prisma.provider.findFirst({
+          where: {
+            userId: ctx.user.id,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+        if (!provider) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Provider not found',
+          });
+        }
+        providerId = provider.id;
+      }
+
+      // Get recent SOAP notes by this provider
+      const notes = await ctx.prisma.sOAPNote.findMany({
+        where: {
+          encounter: {
+            providerId,
+            organizationId: ctx.user.organizationId,
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: noteCount,
+        select: {
+          subjective: true,
+          objective: true,
+          assessment: true,
+          plan: true,
+        },
+      });
+
+      if (notes.length < 3) {
+        return {
+          success: false,
+          message: 'Not enough notes to analyze (minimum 3 required)',
+          noteCount: notes.length,
+          preferences: [],
+        };
+      }
+
+      // Analyze patterns
+      const learnedPreferences: Array<{
+        category: string;
+        key: string;
+        value: Record<string, unknown>;
+        description: string;
+      }> = [];
+
+      // Analyze style patterns
+      const styleAnalysis = analyzeStylePatterns(notes);
+      learnedPreferences.push(...styleAnalysis);
+
+      // Analyze terminology patterns
+      const terminologyAnalysis = analyzeTerminologyPatterns(notes);
+      learnedPreferences.push(...terminologyAnalysis);
+
+      // Analyze depth/detail level
+      const depthAnalysis = analyzeDocumentationDepth(notes);
+      learnedPreferences.push(...depthAnalysis);
+
+      // Analyze phrase patterns
+      const phraseAnalysis = analyzePhrasePatterns(notes);
+      learnedPreferences.push(...phraseAnalysis);
+
+      // Save learned preferences
+      const savedPreferences = [];
+      for (const pref of learnedPreferences) {
+        const saved = await upsertProviderPreference(
+          ctx.prisma,
+          providerId,
+          ctx.user.organizationId,
+          pref.category,
+          pref.key,
+          pref.value,
+          pref.description,
+          'style_analysis'
+        );
+        savedPreferences.push(saved);
+      }
+
+      await auditLog('AI_STYLE_ANALYSIS', 'ProviderPreference', {
+        entityId: providerId,
+        changes: {
+          notesAnalyzed: notes.length,
+          preferencesLearned: savedPreferences.length,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        success: true,
+        notesAnalyzed: notes.length,
+        preferencesLearned: savedPreferences.length,
+        preferences: savedPreferences.map(p => ({
+          id: p.id,
+          category: p.category,
+          key: p.preferenceKey,
+          confidence: p.confidenceScore,
+          description: p.description,
+        })),
+      };
+    }),
+
+  /**
+   * Get learning statistics for a provider
+   */
+  getPreferenceLearningStats: providerProcedure
+    .input(
+      z.object({
+        providerId: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      // Get provider
+      let providerId = input.providerId;
+      if (!providerId) {
+        const provider = await ctx.prisma.provider.findFirst({
+          where: {
+            userId: ctx.user.id,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+        if (!provider) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Provider not found',
+          });
+        }
+        providerId = provider.id;
+      }
+
+      // Get all preferences
+      const preferences = await ctx.prisma.providerPreference.findMany({
+        where: {
+          providerId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      // Get draft notes to calculate edit rate
+      const draftNotes = await ctx.prisma.aIDraftNote.findMany({
+        where: {
+          encounter: {
+            providerId,
+          },
+          organizationId: ctx.user.organizationId,
+        },
+        select: {
+          status: true,
+          editCount: true,
+          styleMatchScore: true,
+        },
+      });
+
+      // Calculate statistics
+      const totalPreferences = preferences.length;
+      const activePreferences = preferences.filter(p => p.isActive).length;
+      const avgConfidence = preferences.length > 0
+        ? preferences.reduce((sum, p) => sum + p.confidenceScore, 0) / preferences.length
+        : 0;
+
+      const totalApplications = preferences.reduce((sum, p) => sum + p.timesApplied, 0);
+      const totalAccepted = preferences.reduce((sum, p) => sum + p.timesAccepted, 0);
+      const overallAcceptanceRate = totalApplications > 0
+        ? totalAccepted / totalApplications
+        : 0;
+
+      const categoryStats: Record<string, {
+        count: number;
+        avgConfidence: number;
+        acceptanceRate: number;
+      }> = {};
+
+      for (const pref of preferences) {
+        if (!categoryStats[pref.category]) {
+          categoryStats[pref.category] = { count: 0, avgConfidence: 0, acceptanceRate: 0 };
+        }
+        categoryStats[pref.category].count++;
+        categoryStats[pref.category].avgConfidence += pref.confidenceScore;
+      }
+
+      // Finalize category averages
+      for (const cat of Object.keys(categoryStats)) {
+        const catPrefs = preferences.filter(p => p.category === cat);
+        categoryStats[cat].avgConfidence /= categoryStats[cat].count;
+        const catApplied = catPrefs.reduce((sum, p) => sum + p.timesApplied, 0);
+        const catAccepted = catPrefs.reduce((sum, p) => sum + p.timesAccepted, 0);
+        categoryStats[cat].acceptanceRate = catApplied > 0 ? catAccepted / catApplied : 0;
+      }
+
+      // Draft note stats
+      const totalDrafts = draftNotes.length;
+      const editedDrafts = draftNotes.filter(d => d.editCount > 0).length;
+      const avgEditsPerDraft = totalDrafts > 0
+        ? draftNotes.reduce((sum, d) => sum + d.editCount, 0) / totalDrafts
+        : 0;
+      const avgStyleMatch = draftNotes.filter(d => d.styleMatchScore !== null).length > 0
+        ? draftNotes
+            .filter(d => d.styleMatchScore !== null)
+            .reduce((sum, d) => sum + (d.styleMatchScore || 0), 0) /
+          draftNotes.filter(d => d.styleMatchScore !== null).length
+        : 0;
+
+      return {
+        preferences: {
+          total: totalPreferences,
+          active: activePreferences,
+          avgConfidence,
+          overallAcceptanceRate,
+        },
+        byCategory: categoryStats,
+        drafts: {
+          total: totalDrafts,
+          edited: editedDrafts,
+          editRate: totalDrafts > 0 ? editedDrafts / totalDrafts : 0,
+          avgEditsPerDraft,
+          avgStyleMatch,
+        },
+        learningProgress: {
+          hasEnoughData: totalPreferences >= 5,
+          suggestedAction: totalPreferences < 5
+            ? 'Run style analysis to bootstrap preferences'
+            : avgConfidence < 0.6
+            ? 'Continue using AI to improve confidence scores'
+            : 'Preferences well-established',
+        },
+      };
+    }),
+
+  /**
+   * Apply preferences to transform content
+   * Used internally but exposed for testing/preview
+   */
+  applyPreferencesToContent: providerProcedure
+    .input(
+      z.object({
+        content: z.object({
+          subjective: z.string().optional(),
+          objective: z.string().optional(),
+          assessment: z.string().optional(),
+          plan: z.string().optional(),
+        }),
+        providerId: z.string().optional(),
+        preview: z.boolean().default(false),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { content, preview } = input;
+
+      // Get provider
+      let providerId = input.providerId;
+      if (!providerId) {
+        const provider = await ctx.prisma.provider.findFirst({
+          where: {
+            userId: ctx.user.id,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+        if (!provider) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Provider not found',
+          });
+        }
+        providerId = provider.id;
+      }
+
+      // Get active preferences
+      const preferences = await ctx.prisma.providerPreference.findMany({
+        where: {
+          providerId,
+          organizationId: ctx.user.organizationId,
+          isActive: true,
+          confidenceScore: { gte: 0.3 }, // Only apply confident preferences
+        },
+        orderBy: { confidenceScore: 'desc' },
+      });
+
+      if (preferences.length === 0) {
+        return {
+          transformed: content,
+          appliedPreferences: [],
+          matchScore: 0,
+        };
+      }
+
+      // Convert to format expected by applyProviderStyle
+      const formattedPrefs = preferences.map(p => ({
+        category: p.category,
+        key: p.preferenceKey,
+        value: p.preferenceValue as Record<string, unknown>,
+      }));
+
+      const result = applyProviderStyle(
+        { ...content, confidence: 1.0 },
+        formattedPrefs
+      );
+
+      // If not preview, record preference applications
+      if (!preview) {
+        for (const pref of preferences) {
+          if (result.appliedElements.some(e => e.includes(pref.preferenceKey) || e.includes(pref.category))) {
+            await ctx.prisma.providerPreference.update({
+              where: { id: pref.id },
+              data: { timesApplied: pref.timesApplied + 1 },
+            });
+          }
+        }
+      }
+
+      return {
+        transformed: {
+          subjective: result.subjective || content.subjective,
+          objective: result.objective || content.objective,
+          assessment: result.assessment || content.assessment,
+          plan: result.plan || content.plan,
+        },
+        appliedPreferences: result.appliedElements,
+        matchScore: result.matchScore,
+      };
+    }),
+
+  /**
+   * Get template preferences based on encounter type
+   */
+  getTemplatePreferences: providerProcedure
+    .input(
+      z.object({
+        encounterType: z.string(),
+        providerId: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { encounterType } = input;
+
+      // Get provider
+      let providerId = input.providerId;
+      if (!providerId) {
+        const provider = await ctx.prisma.provider.findFirst({
+          where: {
+            userId: ctx.user.id,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+        if (!provider) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Provider not found',
+          });
+        }
+        providerId = provider.id;
+      }
+
+      // Get template preferences for this encounter type
+      const preferences = await ctx.prisma.providerPreference.findMany({
+        where: {
+          providerId,
+          organizationId: ctx.user.organizationId,
+          category: 'template',
+          isActive: true,
+          preferenceKey: { startsWith: encounterType },
+        },
+      });
+
+      // Get depth preference
+      const depthPref = await ctx.prisma.providerPreference.findFirst({
+        where: {
+          providerId,
+          organizationId: ctx.user.organizationId,
+          category: 'depth',
+          isActive: true,
+        },
+        orderBy: { confidenceScore: 'desc' },
+      });
+
+      return {
+        templatePreferences: preferences.map(p => ({
+          id: p.id,
+          key: p.preferenceKey,
+          value: p.preferenceValue,
+          confidence: p.confidenceScore,
+        })),
+        depthPreference: depthPref ? {
+          level: (depthPref.preferenceValue as Record<string, unknown>).level || 'standard',
+          avgWordCount: (depthPref.preferenceValue as Record<string, unknown>).avgWordCount,
+          confidence: depthPref.confidenceScore,
+        } : {
+          level: 'standard',
+          avgWordCount: null,
+          confidence: 0,
+        },
+      };
+    }),
 });
+
+// ============================================
+// US-320: Provider Preference Learning Helpers
+// ============================================
+
+/**
+ * Analyze an edit to extract learning patterns
+ */
+function analyzeEdit(
+  section: 'subjective' | 'objective' | 'assessment' | 'plan',
+  original: string,
+  edited: string,
+  reason?: string
+): Array<{
+  category: string;
+  key: string;
+  value: Record<string, unknown>;
+  description: string;
+}> {
+  const preferences: Array<{
+    category: string;
+    key: string;
+    value: Record<string, unknown>;
+    description: string;
+  }> = [];
+
+  if (!original || !edited || original === edited) {
+    return preferences;
+  }
+
+  // Detect terminology changes
+  const termChanges = detectTerminologyChanges(original, edited);
+  if (termChanges.length > 0) {
+    preferences.push({
+      category: 'terminology',
+      key: `${section}_replacements`,
+      value: { replacements: Object.fromEntries(termChanges) },
+      description: `Learned terminology preferences from ${section} edits`,
+    });
+  }
+
+  // Detect style changes (bullet points vs paragraphs)
+  const styleChange = detectStyleChange(original, edited);
+  if (styleChange) {
+    preferences.push({
+      category: 'style',
+      key: `${section}_format`,
+      value: styleChange,
+      description: `Learned ${section} formatting preference`,
+    });
+  }
+
+  // Detect phrase additions
+  const addedPhrases = detectAddedPhrases(original, edited);
+  if (addedPhrases.length > 0) {
+    preferences.push({
+      category: 'phrases',
+      key: `${section}_additions`,
+      value: { phrases: addedPhrases },
+      description: `Learned preferred phrases for ${section}`,
+    });
+  }
+
+  return preferences;
+}
+
+/**
+ * Detect terminology replacements in an edit
+ */
+function detectTerminologyChanges(original: string, edited: string): [string, string][] {
+  const changes: [string, string][] = [];
+
+  // Simple word-level diff
+  const originalWords = original.toLowerCase().split(/\s+/);
+  const editedWords = edited.toLowerCase().split(/\s+/);
+
+  // Build word frequency maps
+  const originalFreq = new Map<string, number>();
+  const editedFreq = new Map<string, number>();
+
+  for (const word of originalWords) {
+    originalFreq.set(word, (originalFreq.get(word) || 0) + 1);
+  }
+  for (const word of editedWords) {
+    editedFreq.set(word, (editedFreq.get(word) || 0) + 1);
+  }
+
+  // Find words that decreased in original and increased in edited
+  const removedWords = new Set<string>();
+  const addedWords = new Set<string>();
+
+  for (const [word, count] of originalFreq) {
+    const editedCount = editedFreq.get(word) || 0;
+    if (editedCount < count && word.length > 3) {
+      removedWords.add(word);
+    }
+  }
+
+  for (const [word, count] of editedFreq) {
+    const originalCount = originalFreq.get(word) || 0;
+    if (count > originalCount && word.length > 3) {
+      addedWords.add(word);
+    }
+  }
+
+  // Try to match removed words with added words (potential replacements)
+  for (const removed of removedWords) {
+    for (const added of addedWords) {
+      // Simple heuristic: similar length or medical-sounding
+      if (Math.abs(removed.length - added.length) <= 3) {
+        changes.push([removed, added]);
+        addedWords.delete(added);
+        break;
+      }
+    }
+  }
+
+  return changes;
+}
+
+/**
+ * Detect style changes (e.g., bullet points vs paragraphs)
+ */
+function detectStyleChange(original: string, edited: string): Record<string, unknown> | null {
+  const originalHasBullets = /^[\s]*[•\-\*]/m.test(original);
+  const editedHasBullets = /^[\s]*[•\-\*]/m.test(edited);
+
+  if (!originalHasBullets && editedHasBullets) {
+    return { useBulletPoints: true, enabled: true };
+  }
+
+  if (originalHasBullets && !editedHasBullets) {
+    return { useBulletPoints: false, enabled: false };
+  }
+
+  // Check for numbered lists
+  const originalHasNumbers = /^\s*\d+[.)]/m.test(original);
+  const editedHasNumbers = /^\s*\d+[.)]/m.test(edited);
+
+  if (!originalHasNumbers && editedHasNumbers) {
+    return { useNumberedLists: true, enabled: true };
+  }
+
+  return null;
+}
+
+/**
+ * Detect phrases that were added to the edited version
+ */
+function detectAddedPhrases(original: string, edited: string): string[] {
+  const addedPhrases: string[] = [];
+
+  // Split into sentences
+  const originalSentences = new Set(
+    original.split(/[.!?]\s+/).map(s => s.trim().toLowerCase())
+  );
+  const editedSentences = edited.split(/[.!?]\s+/).map(s => s.trim());
+
+  for (const sentence of editedSentences) {
+    if (sentence.length > 10 && !originalSentences.has(sentence.toLowerCase())) {
+      // This sentence was added
+      addedPhrases.push(sentence);
+    }
+  }
+
+  // Also look for specific phrase patterns (closing phrases, standard notes)
+  const closingPatterns = [
+    /will follow up/i,
+    /return in/i,
+    /patient tolerated/i,
+    /continue current/i,
+    /as needed/i,
+    /prn/i,
+  ];
+
+  for (const pattern of closingPatterns) {
+    if (!pattern.test(original) && pattern.test(edited)) {
+      const match = edited.match(pattern);
+      if (match) {
+        // Extract the full sentence containing this pattern
+        const idx = edited.toLowerCase().indexOf(match[0].toLowerCase());
+        const start = edited.lastIndexOf('.', idx) + 1;
+        const end = edited.indexOf('.', idx);
+        if (end > start) {
+          addedPhrases.push(edited.slice(start, end).trim());
+        }
+      }
+    }
+  }
+
+  return [...new Set(addedPhrases)].slice(0, 5); // Limit to 5 phrases
+}
+
+/**
+ * Analyze style patterns from historical notes
+ */
+function analyzeStylePatterns(
+  notes: Array<{
+    subjective: string | null;
+    objective: string | null;
+    assessment: string | null;
+    plan: string | null;
+  }>
+): Array<{
+  category: string;
+  key: string;
+  value: Record<string, unknown>;
+  description: string;
+}> {
+  const preferences: Array<{
+    category: string;
+    key: string;
+    value: Record<string, unknown>;
+    description: string;
+  }> = [];
+
+  // Count bullet point usage
+  let bulletCount = 0;
+  let numberedCount = 0;
+  let totalSections = 0;
+
+  for (const note of notes) {
+    for (const section of [note.subjective, note.objective, note.assessment, note.plan]) {
+      if (section) {
+        totalSections++;
+        if (/^[\s]*[•\-\*]/m.test(section)) bulletCount++;
+        if (/^\s*\d+[.)]/m.test(section)) numberedCount++;
+      }
+    }
+  }
+
+  if (totalSections > 0) {
+    if (bulletCount / totalSections > 0.5) {
+      preferences.push({
+        category: 'style',
+        key: 'useBulletPoints',
+        value: { enabled: true, frequency: bulletCount / totalSections },
+        description: 'Prefers bullet point formatting',
+      });
+    }
+
+    if (numberedCount / totalSections > 0.5) {
+      preferences.push({
+        category: 'style',
+        key: 'useNumberedLists',
+        value: { enabled: true, frequency: numberedCount / totalSections },
+        description: 'Prefers numbered list formatting',
+      });
+    }
+  }
+
+  return preferences;
+}
+
+/**
+ * Analyze terminology patterns from historical notes
+ */
+function analyzeTerminologyPatterns(
+  notes: Array<{
+    subjective: string | null;
+    objective: string | null;
+    assessment: string | null;
+    plan: string | null;
+  }>
+): Array<{
+  category: string;
+  key: string;
+  value: Record<string, unknown>;
+  description: string;
+}> {
+  const preferences: Array<{
+    category: string;
+    key: string;
+    value: Record<string, unknown>;
+    description: string;
+  }> = [];
+
+  // Common medical abbreviations and their full forms
+  const abbreviationPairs: [string, string][] = [
+    ['c/o', 'complains of'],
+    ['pt', 'patient'],
+    ['hx', 'history'],
+    ['dx', 'diagnosis'],
+    ['tx', 'treatment'],
+    ['rx', 'prescription'],
+    ['rom', 'range of motion'],
+    ['wdwn', 'well-developed, well-nourished'],
+    ['wnl', 'within normal limits'],
+    ['nad', 'no acute distress'],
+  ];
+
+  // Count usage
+  const usageCount: Record<string, { abbr: number; full: number }> = {};
+
+  for (const [abbr, full] of abbreviationPairs) {
+    usageCount[abbr] = { abbr: 0, full: 0 };
+    for (const note of notes) {
+      const allText = [note.subjective, note.objective, note.assessment, note.plan]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      if (new RegExp(`\\b${abbr}\\b`, 'i').test(allText)) usageCount[abbr].abbr++;
+      if (allText.includes(full.toLowerCase())) usageCount[abbr].full++;
+    }
+  }
+
+  // Determine preferences
+  const replacements: Record<string, string> = {};
+  for (const [abbr, full] of abbreviationPairs) {
+    const counts = usageCount[abbr];
+    if (counts.abbr > counts.full && counts.abbr >= 3) {
+      // Provider prefers abbreviations
+      replacements[full] = abbr;
+    } else if (counts.full > counts.abbr && counts.full >= 3) {
+      // Provider prefers full forms
+      replacements[abbr] = full;
+    }
+  }
+
+  if (Object.keys(replacements).length > 0) {
+    preferences.push({
+      category: 'terminology',
+      key: 'abbreviation_preferences',
+      value: { replacements },
+      description: 'Learned abbreviation vs full form preferences',
+    });
+  }
+
+  return preferences;
+}
+
+/**
+ * Analyze documentation depth preferences
+ */
+function analyzeDocumentationDepth(
+  notes: Array<{
+    subjective: string | null;
+    objective: string | null;
+    assessment: string | null;
+    plan: string | null;
+  }>
+): Array<{
+  category: string;
+  key: string;
+  value: Record<string, unknown>;
+  description: string;
+}> {
+  const preferences: Array<{
+    category: string;
+    key: string;
+    value: Record<string, unknown>;
+    description: string;
+  }> = [];
+
+  // Calculate average word counts per section
+  const wordCounts: Record<string, number[]> = {
+    subjective: [],
+    objective: [],
+    assessment: [],
+    plan: [],
+  };
+
+  for (const note of notes) {
+    if (note.subjective) wordCounts.subjective.push(note.subjective.split(/\s+/).length);
+    if (note.objective) wordCounts.objective.push(note.objective.split(/\s+/).length);
+    if (note.assessment) wordCounts.assessment.push(note.assessment.split(/\s+/).length);
+    if (note.plan) wordCounts.plan.push(note.plan.split(/\s+/).length);
+  }
+
+  const avgCounts: Record<string, number> = {};
+  for (const [section, counts] of Object.entries(wordCounts)) {
+    if (counts.length > 0) {
+      avgCounts[section] = Math.round(counts.reduce((a, b) => a + b, 0) / counts.length);
+    }
+  }
+
+  const totalAvg = Object.values(avgCounts).reduce((a, b) => a + b, 0);
+
+  // Classify depth level
+  let level: 'brief' | 'standard' | 'detailed' | 'comprehensive';
+  if (totalAvg < 100) {
+    level = 'brief';
+  } else if (totalAvg < 200) {
+    level = 'standard';
+  } else if (totalAvg < 350) {
+    level = 'detailed';
+  } else {
+    level = 'comprehensive';
+  }
+
+  preferences.push({
+    category: 'depth',
+    key: 'documentation_depth',
+    value: {
+      level,
+      avgWordCount: totalAvg,
+      sectionCounts: avgCounts,
+    },
+    description: `Documentation depth: ${level} (avg ${totalAvg} words)`,
+  });
+
+  return preferences;
+}
+
+/**
+ * Analyze common phrase patterns
+ */
+function analyzePhrasePatterns(
+  notes: Array<{
+    subjective: string | null;
+    objective: string | null;
+    assessment: string | null;
+    plan: string | null;
+  }>
+): Array<{
+  category: string;
+  key: string;
+  value: Record<string, unknown>;
+  description: string;
+}> {
+  const preferences: Array<{
+    category: string;
+    key: string;
+    value: Record<string, unknown>;
+    description: string;
+  }> = [];
+
+  // Look for common closing phrases in plan
+  const closingPhrases: Record<string, number> = {};
+  const planRegex = /(?:will|should|recommend|advised|instructed)[^.!?]*[.!?]/gi;
+
+  for (const note of notes) {
+    if (note.plan) {
+      const matches = note.plan.match(planRegex);
+      if (matches) {
+        for (const match of matches) {
+          const normalized = match.toLowerCase().trim();
+          closingPhrases[normalized] = (closingPhrases[normalized] || 0) + 1;
+        }
+      }
+    }
+  }
+
+  // Find phrases used in >30% of notes
+  const threshold = Math.max(2, notes.length * 0.3);
+  const commonPhrases = Object.entries(closingPhrases)
+    .filter(([, count]) => count >= threshold)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([phrase]) => phrase);
+
+  if (commonPhrases.length > 0) {
+    preferences.push({
+      category: 'phrases',
+      key: 'common_closing_phrases',
+      value: { phrases: commonPhrases },
+      description: 'Commonly used closing phrases',
+    });
+  }
+
+  // Look for opening phrases in subjective
+  const openingPhrases: Record<string, number> = {};
+
+  for (const note of notes) {
+    if (note.subjective) {
+      // Get first sentence
+      const firstSentence = note.subjective.split(/[.!?]/)[0].toLowerCase().trim();
+      if (firstSentence.length > 10 && firstSentence.length < 100) {
+        openingPhrases[firstSentence] = (openingPhrases[firstSentence] || 0) + 1;
+      }
+    }
+  }
+
+  const commonOpenings = Object.entries(openingPhrases)
+    .filter(([, count]) => count >= threshold)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([phrase]) => phrase);
+
+  if (commonOpenings.length > 0) {
+    preferences.push({
+      category: 'phrases',
+      key: 'common_opening_phrases',
+      value: { phrases: commonOpenings },
+      description: 'Commonly used opening phrases in subjective',
+    });
+  }
+
+  return preferences;
+}
+
+/**
+ * Upsert a provider preference
+ */
+async function upsertProviderPreference(
+  prisma: import('@prisma/client').PrismaClient,
+  providerId: string,
+  organizationId: string,
+  category: string,
+  preferenceKey: string,
+  preferenceValue: Record<string, unknown>,
+  description: string | undefined,
+  source: string
+): Promise<{
+  id: string;
+  category: string;
+  preferenceKey: string;
+  preferenceValue: Prisma.JsonValue;
+  confidenceScore: number;
+  description: string | null;
+}> {
+  // Check if preference already exists
+  const existing = await prisma.providerPreference.findFirst({
+    where: {
+      providerId,
+      category,
+      preferenceKey,
+    },
+  });
+
+  if (existing) {
+    // Update existing preference
+    const currentExamples = (existing.examples as unknown[] | null) || [];
+    const newExamples = [...currentExamples, preferenceValue].slice(-10); // Keep last 10
+
+    return prisma.providerPreference.update({
+      where: { id: existing.id },
+      data: {
+        preferenceValue: preferenceValue as Prisma.InputJsonValue,
+        learnedFrom: existing.learnedFrom + 1,
+        confidenceScore: Math.min(1.0, existing.confidenceScore + 0.05),
+        lastUpdated: new Date(),
+        examples: newExamples as Prisma.InputJsonValue,
+        source,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        category: true,
+        preferenceKey: true,
+        preferenceValue: true,
+        confidenceScore: true,
+        description: true,
+      },
+    });
+  }
+
+  // Create new preference
+  return prisma.providerPreference.create({
+    data: {
+      providerId,
+      organizationId,
+      category,
+      preferenceKey,
+      preferenceValue: preferenceValue as Prisma.InputJsonValue,
+      description,
+      source,
+      learnedFrom: 1,
+      confidenceScore: 0.5,
+      examples: [preferenceValue] as Prisma.InputJsonValue,
+      isActive: true,
+    },
+    select: {
+      id: true,
+      category: true,
+      preferenceKey: true,
+      preferenceValue: true,
+      confidenceScore: true,
+      description: true,
+    },
+  });
+}
 
 // ============================================
 // Helper Functions
