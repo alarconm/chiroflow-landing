@@ -16,6 +16,7 @@ import {
   CreditCard,
   BarChart3,
   Stethoscope,
+  Building2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
@@ -31,6 +32,7 @@ const navItems: NavItem[] = [
   { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, group: 'main' },
   { title: 'Patients', href: '/patients', icon: Users, group: 'main' },
   { title: 'Schedule', href: '/schedule', icon: Calendar, group: 'main' },
+  { title: 'Enterprise', href: '/enterprise', icon: Building2, group: 'main' },
   { title: 'Clinical', href: '/dashboard/clinical', icon: Stethoscope, group: 'clinical' },
   { title: 'Documents', href: '/documents', icon: FileText, group: 'clinical' },
   { title: 'Billing', href: '/billing', icon: DollarSign, group: 'financial' },

@@ -131,7 +131,7 @@
         "Location health status indicators"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }

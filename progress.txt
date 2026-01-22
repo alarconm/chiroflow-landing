@@ -689,3 +689,105 @@ Date: 2026-01-22
 --- Iteration 7 completed at 2026-01-22 ---
 Story: US-254 - Inter-location inventory
 
+--- Iteration 7 completed at 2026-01-22 06:14:07 ---
+Story: US-254 - Inter-location inventory
+
+## US-255: Enterprise dashboard UI - COMPLETED
+Date: 2026-01-22
+
+### Changes Made:
+
+1. **Created enterprise components directory** (`app/src/components/enterprise/`)
+   - New component folder for all enterprise-related UI components
+
+2. **Created LocationSwitcher component** (`app/src/components/enterprise/LocationSwitcher.tsx`)
+   - Dropdown-style location selector with "All Locations" option
+   - Shows HQ badge for primary locations
+   - Integrates with location.list tRPC query
+   - Supports single location or all-locations selection
+
+3. **Created EnterpriseOverviewMetrics component** (`app/src/components/enterprise/EnterpriseOverviewMetrics.tsx`)
+   - All-locations aggregated metrics display
+   - Shows: location count, total revenue, appointments, patients, collection rate
+   - Integrates with enterpriseReporting.getEnterprise query
+   - Supports filtering by selected locations
+
+4. **Created LocationComparisonChart component** (`app/src/components/enterprise/LocationComparisonChart.tsx`)
+   - Side-by-side location comparison table
+   - Configurable metrics selection
+   - Shows: appointments, visits, no-show rate, charges, collections, etc.
+   - Progress bars and trend indicators
+   - Highlights top performers with badges
+   - Integrates with enterpriseReporting.compareLocations query
+
+5. **Created LocationDashboardCards component** (`app/src/components/enterprise/LocationDashboardCards.tsx`)
+   - Quick access cards for each location
+   - Shows key metrics: appointments, revenue, collection rate
+   - Health status indicators (healthy/warning/critical)
+   - Health issues list when attention needed
+   - Links to individual location dashboards
+   - Collection rate progress bars with color coding
+
+6. **Created EnterpriseSettingsPanel component** (`app/src/components/enterprise/EnterpriseSettingsPanel.tsx`)
+   - Enterprise configuration management UI
+   - Location management section (add/edit/deactivate)
+   - Cross-location access settings (patient sharing, scheduling, inventory)
+   - Billing & finance settings (consolidated billing, unified reporting)
+   - Security settings (SSO, centralized user management)
+   - Uses accordion layout for organized settings groups
+
+7. **Created LocationHealthIndicators component** (`app/src/components/enterprise/LocationHealthIndicators.tsx`)
+   - Detailed health status for each location
+   - Metrics tracked: collection rate, no-show rate, appointment completion
+   - Health levels: excellent, good, fair, poor, critical
+   - Visual health bars with color coding
+   - Sorted by health status (worst first)
+   - Shows target vs actual for each metric
+
+8. **Created EnterpriseDashboard component** (`app/src/components/enterprise/EnterpriseDashboard.tsx`)
+   - Main dashboard container component
+   - Tabbed interface: Overview, Comparison, Health, Settings
+   - Location switcher in header
+   - Date range picker integration
+   - Export functionality (CSV/PDF)
+   - Integrates all sub-components
+
+9. **Created enterprise page** (`app/src/app/(dashboard)/enterprise/page.tsx`)
+   - Route: /enterprise
+   - Uses DashboardLayout (authentication required)
+   - Renders EnterpriseDashboard component
+
+10. **Updated Sidebar navigation** (`app/src/components/layout/Sidebar.tsx`)
+    - Added Building2 icon import from lucide-react
+    - Added "Enterprise" nav item linking to /enterprise
+    - Positioned in main navigation group after Schedule
+
+11. **Created component index** (`app/src/components/enterprise/index.ts`)
+    - Exports all enterprise components for clean imports
+
+### Files Created:
+- app/src/components/enterprise/LocationSwitcher.tsx
+- app/src/components/enterprise/EnterpriseOverviewMetrics.tsx
+- app/src/components/enterprise/LocationComparisonChart.tsx
+- app/src/components/enterprise/LocationDashboardCards.tsx
+- app/src/components/enterprise/EnterpriseSettingsPanel.tsx
+- app/src/components/enterprise/LocationHealthIndicators.tsx
+- app/src/components/enterprise/EnterpriseDashboard.tsx
+- app/src/components/enterprise/index.ts
+- app/src/app/(dashboard)/enterprise/page.tsx
+
+### Files Modified:
+- app/src/components/layout/Sidebar.tsx
+
+### Acceptance Criteria Status:
+- [x] Enterprise dashboard at /enterprise
+- [x] Location switcher in navigation
+- [x] All-locations overview metrics
+- [x] Location comparison charts
+- [x] Quick access to location dashboards
+- [x] Enterprise settings management
+- [x] Location health status indicators
+
+--- Iteration 8 completed at 2026-01-22 ---
+Story: US-255 - Enterprise dashboard UI
+
