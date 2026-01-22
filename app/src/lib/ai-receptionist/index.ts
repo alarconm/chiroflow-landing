@@ -13,3 +13,13 @@ export {
   createVoiceService,
   getVoiceConfig,
 } from './voice-service';
+
+// Scheduling Agent (US-302)
+export {
+  SchedulingAgent,
+  createSchedulingAgent,
+  type SchedulingRequest,
+  type SchedulingResponse,
+  type PatientInfo,
+  type SchedulingAgentConfig,
+} from './scheduling-agent';

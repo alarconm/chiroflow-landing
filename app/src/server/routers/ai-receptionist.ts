@@ -12,9 +12,11 @@ import { auditLog } from '@/lib/audit';
 import {
   createVoiceService,
   getVoiceConfig,
+  createSchedulingAgent,
   type VoiceServiceConfig,
   type BusinessHours,
   type EscalationRule,
+  type SchedulingRequest,
 } from '@/lib/ai-receptionist';
 import type { Prisma, AIConversationStatus, ConversationChannel } from '@prisma/client';
 
@@ -771,6 +773,441 @@ export const aiReceptionistRouter = router({
       });
 
       return { success: true };
+    }),
+
+  // ==================== Appointment Scheduling Agent ====================
+
+  /**
+   * Book an appointment through AI conversation
+   * US-302: Appointment scheduling agent
+   */
+  bookAppointment: protectedProcedure
+    .input(
+      z.object({
+        conversationId: z.string().optional(),
+        callSid: z.string().optional(),
+        patientId: z.string().optional(),
+        appointmentTypeId: z.string().optional(),
+        appointmentTypeName: z.string().optional(),
+        providerId: z.string().optional(),
+        providerName: z.string().optional(),
+        preferredDate: z.coerce.date().optional(),
+        preferredTimeStart: z.string().optional(),
+        preferredTimeEnd: z.string().optional(),
+        notes: z.string().optional(),
+        awaitingConfirmation: z.boolean().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const schedulingAgent = createSchedulingAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const request: SchedulingRequest = {
+        type: 'book',
+        patientId: input.patientId,
+        appointmentTypeId: input.appointmentTypeId,
+        appointmentTypeName: input.appointmentTypeName,
+        providerId: input.providerId,
+        providerName: input.providerName,
+        preferredDate: input.preferredDate,
+        preferredTimeStart: input.preferredTimeStart,
+        preferredTimeEnd: input.preferredTimeEnd,
+        notes: input.notes,
+      };
+
+      // Build a minimal call state
+      const callState = {
+        callSid: input.callSid || `API-${Date.now()}`,
+        organizationId: ctx.user.organizationId,
+        patientId: input.patientId,
+        phoneNumber: '',
+        status: 'in-progress' as const,
+        direction: 'inbound' as const,
+        startedAt: new Date(),
+        recordingConsent: false,
+        transcript: [],
+        context: {
+          patientIdentified: !!input.patientId,
+          intents: ['BOOK_APPOINTMENT' as const],
+          turnCount: 1,
+          frustrationLevel: 0,
+          silenceCount: 0,
+          retryCount: 0,
+          pendingAction: input.awaitingConfirmation
+            ? { type: 'BOOK_APPOINTMENT' as const, parameters: {}, awaitingConfirmation: true }
+            : undefined,
+        },
+      };
+
+      const result = await schedulingAgent.bookAppointment(request, callState);
+
+      // Record the action
+      if (input.conversationId) {
+        await ctx.prisma.aIReceptionistAction.create({
+          data: {
+            organizationId: ctx.user.organizationId,
+            conversationId: input.conversationId,
+            actionType: 'BOOK_APPOINTMENT',
+            parameters: input as object,
+            result: result.actionResult,
+            confidence: 0.9,
+            appointmentId: result.appointmentId,
+            patientId: input.patientId,
+          },
+        });
+      }
+
+      await auditLog('CREATE', 'AppointmentBooking', {
+        entityId: result.appointmentId || 'pending',
+        changes: { request: input, result: result.actionResult },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return result;
+    }),
+
+  /**
+   * Reschedule an existing appointment
+   * US-302: Appointment scheduling agent
+   */
+  rescheduleAppointment: protectedProcedure
+    .input(
+      z.object({
+        conversationId: z.string().optional(),
+        callSid: z.string().optional(),
+        patientId: z.string(),
+        appointmentId: z.string().optional(),
+        preferredDate: z.coerce.date().optional(),
+        preferredTimeStart: z.string().optional(),
+        preferredTimeEnd: z.string().optional(),
+        awaitingConfirmation: z.boolean().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const schedulingAgent = createSchedulingAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const request: SchedulingRequest = {
+        type: 'reschedule',
+        patientId: input.patientId,
+        appointmentId: input.appointmentId,
+        preferredDate: input.preferredDate,
+        preferredTimeStart: input.preferredTimeStart,
+        preferredTimeEnd: input.preferredTimeEnd,
+      };
+
+      const callState = {
+        callSid: input.callSid || `API-${Date.now()}`,
+        organizationId: ctx.user.organizationId,
+        patientId: input.patientId,
+        phoneNumber: '',
+        status: 'in-progress' as const,
+        direction: 'inbound' as const,
+        startedAt: new Date(),
+        recordingConsent: false,
+        transcript: [],
+        context: {
+          patientIdentified: true,
+          intents: ['RESCHEDULE_APPOINTMENT' as const],
+          turnCount: 1,
+          frustrationLevel: 0,
+          silenceCount: 0,
+          retryCount: 0,
+          pendingAction: input.awaitingConfirmation
+            ? { type: 'RESCHEDULE_APPOINTMENT' as const, parameters: {}, awaitingConfirmation: true }
+            : undefined,
+        },
+      };
+
+      const result = await schedulingAgent.rescheduleAppointment(request, callState);
+
+      if (input.conversationId) {
+        await ctx.prisma.aIReceptionistAction.create({
+          data: {
+            organizationId: ctx.user.organizationId,
+            conversationId: input.conversationId,
+            actionType: 'RESCHEDULE_APPOINTMENT',
+            parameters: input as object,
+            result: result.actionResult,
+            confidence: 0.9,
+            appointmentId: result.appointmentId || input.appointmentId,
+            patientId: input.patientId,
+          },
+        });
+      }
+
+      await auditLog('UPDATE', 'AppointmentReschedule', {
+        entityId: result.appointmentId || input.appointmentId || 'pending',
+        changes: { request: input, result: result.actionResult },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return result;
+    }),
+
+  /**
+   * Cancel an appointment
+   * US-302: Appointment scheduling agent
+   */
+  cancelAppointment: protectedProcedure
+    .input(
+      z.object({
+        conversationId: z.string().optional(),
+        callSid: z.string().optional(),
+        patientId: z.string(),
+        appointmentId: z.string().optional(),
+        awaitingConfirmation: z.boolean().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const schedulingAgent = createSchedulingAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const request: SchedulingRequest = {
+        type: 'cancel',
+        patientId: input.patientId,
+        appointmentId: input.appointmentId,
+      };
+
+      const callState = {
+        callSid: input.callSid || `API-${Date.now()}`,
+        organizationId: ctx.user.organizationId,
+        patientId: input.patientId,
+        phoneNumber: '',
+        status: 'in-progress' as const,
+        direction: 'inbound' as const,
+        startedAt: new Date(),
+        recordingConsent: false,
+        transcript: [],
+        context: {
+          patientIdentified: true,
+          intents: ['CANCEL_APPOINTMENT' as const],
+          turnCount: 1,
+          frustrationLevel: 0,
+          silenceCount: 0,
+          retryCount: 0,
+          pendingAction: input.awaitingConfirmation
+            ? { type: 'CANCEL_APPOINTMENT' as const, parameters: {}, awaitingConfirmation: true }
+            : undefined,
+        },
+      };
+
+      const result = await schedulingAgent.cancelAppointment(request, callState);
+
+      if (input.conversationId) {
+        await ctx.prisma.aIReceptionistAction.create({
+          data: {
+            organizationId: ctx.user.organizationId,
+            conversationId: input.conversationId,
+            actionType: 'CANCEL_APPOINTMENT',
+            parameters: input as object,
+            result: result.actionResult,
+            confidence: 0.9,
+            appointmentId: result.appointmentId || input.appointmentId,
+            patientId: input.patientId,
+          },
+        });
+      }
+
+      await auditLog('DELETE', 'AppointmentCancellation', {
+        entityId: result.appointmentId || input.appointmentId || 'pending',
+        changes: { request: input, result: result.actionResult },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return result;
+    }),
+
+  /**
+   * Parse natural language scheduling request
+   * US-302: Appointment scheduling agent
+   */
+  parseSchedulingRequest: protectedProcedure
+    .input(
+      z.object({
+        userInput: z.string(),
+        currentContext: z
+          .object({
+            appointmentTypeId: z.string().optional(),
+            appointmentTypeName: z.string().optional(),
+            providerId: z.string().optional(),
+            providerName: z.string().optional(),
+            preferredDate: z.coerce.date().optional(),
+            preferredTimeRange: z
+              .object({
+                start: z.string(),
+                end: z.string(),
+              })
+              .optional(),
+            step: z.enum(['type', 'provider', 'date', 'time', 'confirm']).optional(),
+          })
+          .optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const schedulingAgent = createSchedulingAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const callContext = {
+        patientIdentified: false,
+        intents: [] as ('BOOK_APPOINTMENT' | 'RESCHEDULE_APPOINTMENT' | 'CANCEL_APPOINTMENT' | 'ANSWER_QUESTION' | 'IDENTIFY_PATIENT' | 'CREATE_PATIENT' | 'VERIFY_INSURANCE' | 'SEND_CONFIRMATION' | 'TRANSFER_CALL' | 'TAKE_MESSAGE' | 'COLLECT_INFO')[],
+        turnCount: 1,
+        frustrationLevel: 0,
+        silenceCount: 0,
+        retryCount: 0,
+        appointmentContext: input.currentContext
+          ? {
+              appointmentTypeId: input.currentContext.appointmentTypeId,
+              appointmentTypeName: input.currentContext.appointmentTypeName,
+              providerId: input.currentContext.providerId,
+              providerName: input.currentContext.providerName,
+              preferredDate: input.currentContext.preferredDate,
+              preferredTimeRange: input.currentContext.preferredTimeRange,
+              step: input.currentContext.step || 'type',
+            }
+          : undefined,
+      };
+
+      const parsed = schedulingAgent.parseSchedulingRequest(input.userInput, callContext);
+
+      return parsed;
+    }),
+
+  /**
+   * Find available appointment slots
+   * US-302: Appointment scheduling agent
+   */
+  findAvailableSlots: protectedProcedure
+    .input(
+      z.object({
+        appointmentTypeId: z.string(),
+        duration: z.number().min(5).max(480).optional(),
+        providerId: z.string().optional(),
+        preferredDate: z.coerce.date().optional(),
+        preferredTimeStart: z.string().optional(),
+        preferredTimeEnd: z.string().optional(),
+        maxResults: z.number().min(1).max(20).optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      // Get appointment type for duration if not provided
+      let duration = input.duration;
+      if (!duration) {
+        const apptType = await ctx.prisma.appointmentType.findFirst({
+          where: { id: input.appointmentTypeId, organizationId: ctx.user.organizationId },
+        });
+        duration = apptType?.duration || 30;
+      }
+
+      const schedulingAgent = createSchedulingAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+        maxSuggestions: input.maxResults || 5,
+      });
+
+      const slots = await schedulingAgent.findAvailableSlots({
+        appointmentTypeId: input.appointmentTypeId,
+        duration,
+        providerId: input.providerId,
+        preferredDate: input.preferredDate,
+        preferredTimeStart: input.preferredTimeStart,
+        preferredTimeEnd: input.preferredTimeEnd,
+      });
+
+      return slots;
+    }),
+
+  /**
+   * Collect new patient information from conversation
+   * US-302: Appointment scheduling agent
+   */
+  collectPatientInfo: protectedProcedure
+    .input(
+      z.object({
+        userInput: z.string(),
+        currentInfo: z
+          .object({
+            firstName: z.string().optional(),
+            lastName: z.string().optional(),
+            dateOfBirth: z.coerce.date().optional(),
+            phone: z.string().optional(),
+            email: z.string().optional(),
+            insuranceProvider: z.string().optional(),
+            insuranceMemberId: z.string().optional(),
+            isNewPatient: z.boolean().optional(),
+          })
+          .optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const schedulingAgent = createSchedulingAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const result = await schedulingAgent.collectPatientInfo(
+        input.userInput,
+        input.currentInfo || { isNewPatient: true }
+      );
+
+      return result;
+    }),
+
+  /**
+   * Confirm insurance information
+   * US-302: Appointment scheduling agent
+   */
+  confirmInsurance: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        userInput: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const schedulingAgent = createSchedulingAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const result = await schedulingAgent.confirmInsurance(input.patientId, input.userInput);
+
+      return result;
+    }),
+
+  /**
+   * Send appointment confirmation
+   * US-302: Appointment scheduling agent
+   */
+  sendConfirmation: protectedProcedure
+    .input(
+      z.object({
+        appointmentId: z.string(),
+        patientId: z.string(),
+        method: z.enum(['sms', 'email', 'both']).default('both'),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const schedulingAgent = createSchedulingAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const result = await schedulingAgent.sendConfirmation(input);
+
+      if (result.success) {
+        await auditLog('CREATE', 'AppointmentConfirmation', {
+          entityId: input.appointmentId,
+          changes: { method: input.method, sentVia: result.methods },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+      }
+
+      return result;
     }),
 
   // ==================== Analytics ====================
