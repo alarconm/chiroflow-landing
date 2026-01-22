@@ -20,7 +20,7 @@
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-201",
@@ -36,7 +36,7 @@
         "Provider favorites for quick access"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-202",
@@ -53,7 +53,7 @@
         "Comparison view between visits"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-203",
@@ -69,7 +69,7 @@
         "Quick entry templates for common adjustment patterns"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-204",
@@ -85,7 +85,7 @@
         "Auto-suggest related segments based on biomechanics"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-205",
@@ -102,7 +102,7 @@
         "Generate exam summary for notes"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-206",
@@ -118,7 +118,7 @@
         "Print-ready patient education diagram"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-207",
@@ -134,7 +134,7 @@
         "Integration with SOAP note workflow"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }
