@@ -99,6 +99,8 @@ import { mobilePatientHealthRouter } from './mobilePatientHealth';
 import { offlineRouter } from './offline';
 // AI Receptionist Agent (Epic 30)
 import { aiReceptionistRouter } from './ai-receptionist';
+// AI Care Coordinator Agent (Epic 33)
+import { aiCareRouter } from './aiCare';
 
 export const appRouter = router({
   auth: authRouter,
@@ -202,6 +204,8 @@ export const appRouter = router({
   aiReceptionist: aiReceptionistRouter,
   // AI Documentation Agent (Epic 32)
   aiDoc: aiDocRouter,
+  // AI Care Coordinator Agent (Epic 33)
+  aiCare: aiCareRouter,
 });
 
 

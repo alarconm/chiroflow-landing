@@ -34,3 +34,54 @@
 
 ### Note:
 Pre-existing build error in audit.ts (unrelated to this change) - next/headers import issue in client component context.
+--- Iteration 1 completed at 2026-01-22 13:36:43 ---
+Story: US-323 - AI care coordinator schema
+
+## US-324: Treatment plan monitoring - COMPLETED
+
+### What was implemented:
+
+1. **aiCare tRPC router created** (`app/src/server/routers/aiCare.ts`):
+   - `monitorPlan` - Comprehensive treatment plan compliance monitoring with risk levels
+   - `getVisitFrequencyCompliance` - Track visit frequency against treatment plan requirements
+   - `getOutcomeTrends` - Analyze outcome assessment trends (improving/stable/declining)
+   - `getMissedAppointmentAlerts` - Alert on patients with missed appointments
+   - `getPatientsBehindPlan` - Identify patients falling behind their treatment plan
+   - `getMilestoneProgress` - Track treatment plan goal/milestone progress
+   - `getOutreachRecommendations` - Auto-recommend outreach based on adherence
+   - `getAtRiskPatientNotifications` - Provider notifications for at-risk patients
+
+2. **Risk calculation logic:**
+   - Compliance rate factor (50%, 70%, 85% thresholds)
+   - Days since last visit factor (7, 14, 30 day thresholds)
+   - Missed appointments factor (1, 2, 3+ thresholds)
+   - Combined risk levels: LOW, MEDIUM, HIGH, CRITICAL
+
+3. **New audit action types added** to `app/src/lib/audit.ts`:
+   - AI_CARE_MONITOR_PLAN
+   - AI_CARE_RISK_NOTIFICATION
+   - AI_CARE_OUTREACH_RECOMMEND
+   - AI_CARE_GAP_IDENTIFY
+   - AI_CARE_ENGAGEMENT_CALCULATE
+   - AI_CARE_JOURNEY_UPDATE
+
+4. **Router registered** in `app/src/server/routers/index.ts` as `aiCare`
+
+### Files modified:
+- app/src/server/routers/aiCare.ts (new)
+- app/src/server/routers/index.ts
+- app/src/lib/audit.ts
+
+### Features implemented per acceptance criteria:
+- ✅ aiCare.monitorPlan - Track treatment plan progress
+- ✅ Visit frequency compliance tracking
+- ✅ Outcome measure trending
+- ✅ Alert on missed appointments
+- ✅ Identify patients falling behind plan
+- ✅ Progress milestone tracking
+- ✅ Auto-adjust outreach based on adherence
+- ✅ Provider notifications for at-risk patients
+
+--- Iteration 2 completed at 2026-01-22 ---
+Story: US-324 - Treatment plan monitoring
+
