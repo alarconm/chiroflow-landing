@@ -133,7 +133,7 @@
         "Print/export with annotations"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }

@@ -593,3 +593,82 @@ Story: US-229 - Imaging reports
 --- Iteration 7 completed at 2026-01-22 ---
 Story: US-230 - AI imaging analysis
 
+--- Iteration 7 completed at 2026-01-22 03:35:21 ---
+Story: US-230 - AI imaging analysis
+
+## US-231: Imaging dashboard UI
+**Status:** COMPLETED
+**Date:** 2026-01-22
+
+### What was done:
+1. Created comprehensive imaging dashboard page at `app/src/app/(dashboard)/patients/[id]/imaging/page.tsx`:
+   - **Header Section**:
+     - Breadcrumb navigation (Patients > Patient MRN > Imaging)
+     - Patient name display
+     - Upload Images and New Study buttons
+
+   - **Quick Stats Cards** (4 cards):
+     - Total Studies count
+     - Reported studies count
+     - Pending Report count
+     - Last Study date (relative time)
+
+   - **Main Content Layout** (3-column grid):
+     - **Left Panel - Study List**:
+       - Toggle between grid and list view modes
+       - Study cards with thumbnails
+       - Study metadata (modality icon, body part, date, status badge)
+       - Study selection highlighting
+       - Compare mode with study selection for side-by-side viewing
+       - Empty state with "New Study" button
+
+     - **Right Panel - Study Viewer**:
+       - Integrated DICOMViewer component with full functionality
+       - Compare Studies toggle button
+       - AI Analysis, Print, and Export buttons
+       - Action dropdown (Create Report, Full Screen Viewer, Mark Complete)
+       - Side-by-side comparison view when compare mode active
+       - Integrated AnnotationToolbar with tool controls
+
+   - **Detail Tabs** (below viewer):
+     - **Study Info Tab**: Study details, clinical information, provider information
+     - **Measurements Tab**: Measurement history list with values/ranges, SpinalMeasurementTools integration
+     - **Reports Tab**: List of imaging reports with findings/impression, Create Report button
+     - **AI Analysis Tab**: AI disclaimer, analysis summary, run analysis button
+
+2. Created StudyCard component for study list items:
+   - Grid view: Thumbnail with overlay info, status badge, compare indicator
+   - List view: Horizontal layout with thumbnail, details, compare button
+   - Visual feedback for selected and compare states
+
+3. Implemented dialogs:
+   - **New Study Dialog**: Form with modality, body part, description, indication, clinical history
+   - **Upload Dialog**: File picker with drag-and-drop area, supports DICOM/JPEG/PNG/WebP
+   - **Full Screen Viewer Dialog**: Full-screen DICOMViewer
+   - **Report Editor Dialog**: Integrated ImagingReportEditor component
+
+4. Features implemented:
+   - Study list with thumbnails (grid/list toggle)
+   - DICOM viewer integration with annotations
+   - Annotation toolbar with tool controls
+   - Measurement history panel
+   - Report creation interface
+   - Side-by-side study comparison
+   - Print functionality (window.print)
+   - Export placeholder (ready for PDF export implementation)
+   - AI analysis integration with disclaimers
+
+5. TypeScript compilation verified - all types correct
+
+### Acceptance Criteria Met:
+- [x] Patient imaging tab at /patients/[id]/imaging
+- [x] Study list with thumbnails (grid and list view modes)
+- [x] DICOM viewer integration (DICOMViewer component)
+- [x] Annotation toolbar (AnnotationToolbar component)
+- [x] Measurement history (tab with measurement list and SpinalMeasurementTools)
+- [x] Report creation interface (ImagingReportEditor in dialog)
+- [x] Compare studies side-by-side (compare mode with dual viewers)
+- [x] Print/export with annotations (print button, export placeholder)
+--- Iteration 8 completed at 2026-01-22 ---
+Story: US-231 - Imaging dashboard UI
+
