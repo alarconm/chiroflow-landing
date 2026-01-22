@@ -240,7 +240,66 @@
 
 ---
 
-## Next Story: US-261 (BAA management)
+### US-261: BAA management
+- Status: COMPLETE
+- Date: 2026-01-22
+
+#### What was implemented:
+1. **BAA tRPC Router** (`app/src/server/routers/baa.ts`)
+   - `baa.create` - Create new BAA with vendor info, dates, risk level
+   - `baa.get` - Get single BAA with calculated fields
+   - `baa.list` - List BAAs with filtering (status, risk, search, expiring soon)
+   - `baa.update` - Update BAA details
+   - `baa.updateStatus` - Change BAA status (DRAFT -> ACTIVE -> EXPIRED, etc.)
+   - `baa.delete` - Soft delete (terminates BAA)
+
+2. **Expiration Tracking**
+   - `baa.getExpiringBaas` - Get BAAs expiring within N days
+   - `baa.getRenewalDue` - Get BAAs due for renewal
+   - `baa.getExpiredBaas` - Get already expired BAAs (auto-updates status)
+   - Calculated fields: `daysUntilExpiration`, `daysUntilRenewal`
+
+3. **Vendor Risk Assessment**
+   - `baa.performRiskAssessment` - Record risk level (LOW/MEDIUM/HIGH/CRITICAL)
+   - Risk score calculation based on: risk level, expiration proximity, assessment staleness
+   - `lastRiskAssessment` date tracking
+
+4. **Compliance Dashboard**
+   - `baa.getDashboardStats` - Comprehensive stats (active, expired, expiring, risk summary)
+   - `baa.getComplianceAlerts` - Automated compliance alerts
+   - Compliance score calculation (0-100%)
+   - `baa.getAvailableVendors` - Get vendors for BAA linking
+
+5. **BAA Compliance Dashboard UI** (`app/src/app/(dashboard)/admin/compliance/page.tsx`)
+   - Compliance score display with color-coded status
+   - Statistics cards (Active BAAs, Expired, Expiring Soon, High/Critical Risk)
+   - Alert banner for compliance issues
+   - Tabbed interface:
+     - **All BAAs**: Searchable/filterable BAA list with CRUD
+     - **Expiring Soon**: 30-day and renewal warnings
+     - **Risk Assessment**: Risk level overview and assessment workflow
+   - Create/Edit BAA dialogs with full field support
+   - Risk assessment dialog with notes
+
+#### Alert Types:
+- EXPIRED_BAA (Critical)
+- EXPIRING_BAA (Warning/Critical based on days)
+- RISK_ASSESSMENT_NEEDED (Warning)
+- CRITICAL_RISK (Critical)
+
+#### Security Features:
+- Admin-only access for modifications
+- Security event logging for all BAA operations
+- Audit trail via auditLog function
+- Soft delete to preserve history
+
+#### Verification:
+- TypeScript compiles without errors
+- Router integrated into app router index
+
+---
+
+## Next Story: US-262 (Access control enhancements)
 --- Iteration 1 completed at 2026-01-22 06:26:20 ---
 Story: US-256 - Security schema
 
@@ -264,4 +323,10 @@ Story: US-259 - Session security
 
 --- Iteration 5 completed at 2026-01-22 ---
 Story: US-260 - Security event logging
+
+--- Iteration 5 completed at 2026-01-22 06:49:23 ---
+Story: US-260 - Security event logging
+
+--- Iteration 6 completed at 2026-01-22 ---
+Story: US-261 - BAA management
 

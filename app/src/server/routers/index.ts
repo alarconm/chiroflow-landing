@@ -85,6 +85,7 @@ import { enterpriseReportingRouter } from './enterpriseReporting';
 import { interLocationInventoryRouter } from './interLocationInventory';
 // Advanced Security & Compliance (Epic 26)
 import { securityRouter } from './security';
+import { baaRouter } from './baa';
 
 export const appRouter = router({
   auth: authRouter,
@@ -173,6 +174,7 @@ export const appRouter = router({
   interLocationInventory: interLocationInventoryRouter,
   // Advanced Security & Compliance (Epic 26)
   security: securityRouter,
+  baa: baaRouter,
 });
 
 
