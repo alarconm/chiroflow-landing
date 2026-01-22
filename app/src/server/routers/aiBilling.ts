@@ -18,6 +18,7 @@ import {
   UnderpaymentDetector,
   ClaimSubmitter,
   DenialAnalyzer,
+  AutomatedAppealGenerator,
 } from '@/lib/ai-billing';
 
 // ============================================
@@ -1888,4 +1889,387 @@ export const aiBillingRouter = router({
       })),
     };
   }),
+
+  // ============================================
+  // US-310: Automated Appeal Generation
+  // ============================================
+
+  /**
+   * Generate an automated appeal letter for a denied claim
+   */
+  generateAutomatedAppeal: billerProcedure
+    .input(
+      z.object({
+        claimId: z.string(),
+        denialId: z.string().optional(),
+        denialCode: z.string().optional(),
+        denialReason: z.string().optional(),
+        denialAmount: z.number().optional(),
+        appealType: z.enum(['FIRST_LEVEL', 'SECOND_LEVEL', 'EXTERNAL']).default('FIRST_LEVEL'),
+        payerId: z.string().optional(),
+        includeAllDocumentation: z.boolean().default(true),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const generator = new AutomatedAppealGenerator(ctx.prisma, ctx.user.organizationId);
+        const result = await generator.generateAppeal(input);
+
+        // Audit log
+        await ctx.prisma.aIBillingAudit.create({
+          data: {
+            action: 'GENERATE_AUTOMATED_APPEAL',
+            entityType: 'Claim',
+            entityId: input.claimId,
+            decision: `Generated ${input.appealType} appeal`,
+            confidence: result.successLikelihood,
+            reasoning: `Appeal generated for claim ${input.claimId}. Success likelihood: ${(result.successLikelihood * 100).toFixed(0)}%`,
+            inputData: input,
+            outputData: {
+              appealId: result.appealId,
+              appealType: result.appealType,
+              successLikelihood: result.successLikelihood,
+              argumentCount: result.arguments.length,
+              citationCount: result.citations.length,
+            },
+            processingTimeMs: result.processingTimeMs,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+
+        await auditLog('AI_BILLING_GENERATE_APPEAL', 'Claim', {
+          entityId: input.claimId,
+          changes: {
+            action: 'generate_automated_appeal',
+            appealId: result.appealId,
+            appealType: result.appealType,
+            successLikelihood: result.successLikelihood,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return result;
+      } catch (error) {
+        console.error('Automated appeal generation failed:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to generate automated appeal',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Get appeal success metrics for reporting
+   */
+  getAppealSuccessMetrics: billerProcedure
+    .input(
+      z.object({
+        payerId: z.string().optional(),
+        denialCode: z.string().optional(),
+        appealType: z.enum(['FIRST_LEVEL', 'SECOND_LEVEL', 'EXTERNAL']).optional(),
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      try {
+        const generator = new AutomatedAppealGenerator(ctx.prisma, ctx.user.organizationId);
+        return generator.getAppealSuccessMetrics(input);
+      } catch (error) {
+        console.error('Failed to get appeal success metrics:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to get appeal success metrics',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Submit an appeal (update status)
+   */
+  submitAutomatedAppeal: billerProcedure
+    .input(
+      z.object({
+        appealId: z.string(),
+        submissionMethod: z.enum(['mail', 'fax', 'portal', 'electronic']),
+        confirmationNumber: z.string().optional(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const generator = new AutomatedAppealGenerator(ctx.prisma, ctx.user.organizationId);
+        const result = await generator.submitAppeal(input.appealId, {
+          submissionMethod: input.submissionMethod,
+          confirmationNumber: input.confirmationNumber,
+          notes: input.notes,
+        });
+
+        await auditLog('AI_BILLING_SUBMIT_APPEAL', 'AIAppeal', {
+          entityId: input.appealId,
+          changes: {
+            action: 'submit_appeal',
+            submissionMethod: input.submissionMethod,
+            confirmationNumber: input.confirmationNumber,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return result;
+      } catch (error) {
+        console.error('Failed to submit appeal:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to submit appeal',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Record appeal outcome for learning
+   */
+  recordAutomatedAppealOutcome: billerProcedure
+    .input(
+      z.object({
+        appealId: z.string(),
+        status: z.enum(['APPROVED', 'DENIED', 'PARTIAL']),
+        responseDetails: z.string().optional(),
+        recoveredAmount: z.number().optional(),
+        adjustmentCodes: z.array(z.string()).optional(),
+        successFactors: z.array(z.string()).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const generator = new AutomatedAppealGenerator(ctx.prisma, ctx.user.organizationId);
+        const result = await generator.recordAppealOutcome(input.appealId, {
+          status: input.status,
+          responseDetails: input.responseDetails,
+          recoveredAmount: input.recoveredAmount,
+          adjustmentCodes: input.adjustmentCodes,
+          successFactors: input.successFactors,
+        });
+
+        await auditLog('AI_BILLING_APPEAL_OUTCOME', 'AIAppeal', {
+          entityId: input.appealId,
+          changes: {
+            action: 'record_outcome',
+            status: input.status,
+            recoveredAmount: input.recoveredAmount,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return result;
+      } catch (error) {
+        console.error('Failed to record appeal outcome:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to record appeal outcome',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Get appeals pending submission with deadline tracking
+   */
+  getAppealsPendingSubmission: billerProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(100).default(20),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      try {
+        const generator = new AutomatedAppealGenerator(ctx.prisma, ctx.user.organizationId);
+        return generator.getAppealsPendingSubmission(input.limit);
+      } catch (error) {
+        console.error('Failed to get appeals pending submission:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to get appeals pending submission',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Batch generate appeals for multiple claims
+   */
+  batchGenerateAppeals: billerProcedure
+    .input(
+      z.object({
+        claimIds: z.array(z.string()).min(1).max(50),
+        appealType: z.enum(['FIRST_LEVEL', 'SECOND_LEVEL', 'EXTERNAL']).default('FIRST_LEVEL'),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const generator = new AutomatedAppealGenerator(ctx.prisma, ctx.user.organizationId);
+        const resultsMap = await generator.batchGenerateAppeals(input.claimIds, input.appealType);
+
+        // Convert Map to object for serialization
+        const results: Record<string, { success: boolean; appealId?: string; error?: string }> = {};
+        for (const [claimId, result] of resultsMap) {
+          if ('error' in result) {
+            results[claimId] = { success: false, error: result.error };
+          } else {
+            results[claimId] = { success: true, appealId: result.appealId };
+          }
+        }
+
+        const successCount = Object.values(results).filter(r => r.success).length;
+        const failureCount = Object.values(results).filter(r => !r.success).length;
+
+        // Audit log
+        await ctx.prisma.aIBillingAudit.create({
+          data: {
+            action: 'BATCH_GENERATE_APPEALS',
+            entityType: 'Batch',
+            entityId: 'batch',
+            decision: `Generated ${successCount} appeals, ${failureCount} failed`,
+            reasoning: `Batch appeal generation for ${input.claimIds.length} claims`,
+            inputData: input,
+            outputData: {
+              successCount,
+              failureCount,
+              results,
+            },
+            organizationId: ctx.user.organizationId,
+          },
+        });
+
+        await auditLog('AI_BILLING_BATCH_APPEALS', 'Batch', {
+          entityId: 'batch',
+          changes: {
+            action: 'batch_generate',
+            totalClaims: input.claimIds.length,
+            successCount,
+            failureCount,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return {
+          totalRequested: input.claimIds.length,
+          successCount,
+          failureCount,
+          results,
+        };
+      } catch (error) {
+        console.error('Batch appeal generation failed:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to batch generate appeals',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Get AI appeals list with filtering
+   */
+  getAIAppeals: billerProcedure
+    .input(
+      z.object({
+        status: z.enum(['DRAFT', 'READY', 'SUBMITTED', 'ACKNOWLEDGED', 'IN_REVIEW', 'ADDITIONAL_INFO', 'APPROVED', 'PARTIAL', 'DENIED', 'ESCALATED']).optional(),
+        claimId: z.string().optional(),
+        payerId: z.string().optional(),
+        limit: z.number().min(1).max(100).default(20),
+        offset: z.number().min(0).default(0),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const where: Record<string, unknown> = {
+        organizationId: ctx.user.organizationId,
+      };
+
+      if (input.status) {
+        where.status = input.status;
+      }
+      if (input.claimId) {
+        where.claimId = input.claimId;
+      }
+      if (input.payerId) {
+        where.claim = { payerId: input.payerId };
+      }
+
+      const [appeals, total] = await Promise.all([
+        ctx.prisma.aIAppeal.findMany({
+          where,
+          include: {
+            claim: {
+              select: {
+                id: true,
+                claimNumber: true,
+                patient: {
+                  include: { demographics: true },
+                },
+                payer: true,
+              },
+            },
+          },
+          orderBy: [
+            { appealDeadline: 'asc' },
+            { createdAt: 'desc' },
+          ],
+          take: input.limit,
+          skip: input.offset,
+        }),
+        ctx.prisma.aIAppeal.count({ where }),
+      ]);
+
+      return {
+        appeals,
+        total,
+        hasMore: input.offset + appeals.length < total,
+      };
+    }),
+
+  /**
+   * Get a single AI appeal by ID
+   */
+  getAIAppeal: billerProcedure
+    .input(z.object({ appealId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const appeal = await ctx.prisma.aIAppeal.findFirst({
+        where: {
+          id: input.appealId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          claim: {
+            include: {
+              patient: { include: { demographics: true } },
+              payer: true,
+              insurancePolicy: true,
+              encounter: {
+                include: {
+                  provider: { include: { user: { select: { firstName: true, lastName: true } } } },
+                  diagnoses: true,
+                  charges: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!appeal) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Appeal not found',
+        });
+      }
+
+      return appeal;
+    }),
 });

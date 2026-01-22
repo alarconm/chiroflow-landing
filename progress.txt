@@ -161,8 +161,88 @@ Implemented comprehensive denial analysis and routing system with intelligent ca
 - TypeScript compiles successfully for new files
 - Pre-existing TypeScript errors unrelated to this change
 
+### US-310 - Automated appeal generation
+**Status**: COMPLETED
+**Date**: 2026-01-22
+
+**Implementation Summary**:
+Implemented comprehensive automated appeal generation system with payer-specific templates, medical necessity extraction from clinical documentation, success rate tracking, and learning from successful appeals.
+
+**Files Created**:
+- `app/src/lib/ai-billing/automated-appeal-generator.ts` - New AutomatedAppealGenerator service class (~1400 lines)
+
+**Files Modified**:
+- `app/src/lib/ai-billing/index.ts` - Added AutomatedAppealGenerator exports and types
+- `app/src/server/routers/aiBilling.ts` - Added 8 new endpoints for automated appeal generation
+- `app/src/lib/audit.ts` - Added AI_BILLING_GENERATE_APPEAL, AI_BILLING_SUBMIT_APPEAL, AI_BILLING_APPEAL_OUTCOME, AI_BILLING_BATCH_APPEALS audit actions
+
+**AutomatedAppealGenerator Service Features**:
+1. `generateAppeal()` - Main automated appeal generation with full context extraction
+2. `getPayerTemplate()` - Get payer-specific appeal templates (Medicare, BCBS, UHC, Aetna, Cigna, Default)
+3. `buildAppealArguments()` - Build arguments from clinical documentation with learned patterns
+4. `extractMedicalNecessity()` - Extract medical necessity statement from SOAP notes
+5. `extractClinicalRationale()` - Extract clinical rationale from assessment/plan
+6. `buildClinicalSummary()` - Build clinical summary from encounter data
+7. `selectCitations()` - Select relevant medical/legal citations for the appeal
+8. `getRequiredDocuments()` - Determine required supporting documents
+9. `selectAttachments()` - Select available attachments for the appeal
+10. `calculateAppealDeadline()` - Calculate appeal deadline from denial date and payer rules
+11. `calculateSuccessLikelihood()` - Calculate success likelihood based on historical data
+12. `getLearnedPatterns()` - Learn from successful appeals for future improvements
+13. `submitAppeal()` - Update appeal status and record submission details
+14. `recordAppealOutcome()` - Record outcome for learning system
+15. `getAppealSuccessMetrics()` - Get detailed success metrics for reporting
+16. `getAppealsPendingSubmission()` - Get appeals pending submission with deadline tracking
+17. `batchGenerateAppeals()` - Batch generate appeals for multiple claims
+
+**Payer-Specific Templates**:
+- Medicare - 120-day filing, CMS-specific requirements
+- Blue Cross Blue Shield - 180-day filing, portal preferred
+- UnitedHealthcare - 180-day filing, reconsideration form
+- Aetna - 180-day filing, appeal form required
+- Cigna - 180-day filing, physician statement emphasis
+- Default - 60-day filing, standard format
+
+**Denial Code Strategies**:
+- Maps 10+ CARC codes to appeal strategies
+- Code 50, 96 - Medical necessity arguments
+- Code 29 - Timely filing arguments
+- Code 197 - Authorization arguments
+- Code 18 - Duplicate claim arguments
+- Code 97 - Bundling/unbundling arguments
+- Code 26 - Eligibility arguments
+- Code 4 - Coding arguments
+
+**New tRPC Endpoints**:
+1. `generateAutomatedAppeal` - Generate appeal for denied claim (mutation)
+2. `getAppealSuccessMetrics` - Get success metrics for reporting (query)
+3. `submitAutomatedAppeal` - Submit an appeal and update status (mutation)
+4. `recordAutomatedAppealOutcome` - Record outcome for learning (mutation)
+5. `getAppealsPendingSubmission` - Get pending appeals with deadlines (query)
+6. `batchGenerateAppeals` - Batch generate appeals (mutation)
+7. `getAIAppeals` - List AI appeals with filtering (query)
+8. `getAIAppeal` - Get single AI appeal by ID (query)
+
+**Type Exports Added**:
+- AppealType, AutomatedAppealInput, AutomatedAppealOutput
+- AppealAttachment, AppealSuccessMetrics, PayerAppealTemplate
+- LearnedAppealPattern
+
+**Acceptance Criteria Met**:
+- ✅ aiBilling.generateAppeal - Auto-generate appeal
+- ✅ Payer-specific appeal templates (6 payers + default)
+- ✅ Medical necessity arguments from notes (extracted from SOAP)
+- ✅ Supporting documentation selection (with required docs)
+- ✅ Clinical rationale from notes (assessment/plan extraction)
+- ✅ Compliance with appeal deadlines (calculated from payer rules)
+- ✅ Track appeal success rates (via getAppealSuccessMetrics)
+- ✅ Learn from successful appeals (via getLearnedPatterns)
+
+**Validation**:
+- TypeScript compiles successfully for new files
+- Pre-existing TypeScript errors unrelated to this change
+
 ## Next Stories to Implement
-- US-310 - Automated appeal generation
 - US-311 - Claim follow-up automation
 - US-312 - Smart payment posting
 - US-313 - Billing optimization recommendations
@@ -176,3 +256,6 @@ Story: US-308 - Autonomous claim submission
 
 --- Iteration 3 completed at 2026-01-22 10:24:06 ---
 Story: US-309 - Denial analysis and routing
+--- Iteration 3 completed at 2026-01-22 10:24:47 ---
+Story: US-309 - Denial analysis and routing
+
