@@ -249,6 +249,13 @@ model Organization {
   aiBillingRules     AIBillingRule[]
   aiBillingMetrics   AIBillingMetric[]
 
+  // AI Documentation Agent relations (Epic 32)
+  aiTranscriptions     AITranscription[]
+  aiDraftNotes         AIDraftNote[]
+  aiCodeSuggestions    AICodeSuggestion[]
+  aiComplianceChecks   AIComplianceCheck[]
+  providerPreferences  ProviderPreference[]
+
   @@index([subdomain])
 }
 
@@ -918,6 +925,9 @@ model Provider {
   prescribedArticles    PrescribedArticle[]
   homeCareInstructions  HomeCareInstruction[]
 
+  // AI Documentation Agent relations (Epic 32)
+  providerPreferences ProviderPreference[]
+
   @@index([organizationId])
   @@index([isActive])
 }
@@ -1408,6 +1418,12 @@ model Encounter {
   prescribedArticles    PrescribedArticle[]
   homeCareInstructions  HomeCareInstruction[]
 
+  // AI Documentation Agent relations (Epic 32)
+  aiTranscriptions   AITranscription[]
+  aiDraftNotes       AIDraftNote[]
+  aiCodeSuggestions  AICodeSuggestion[]
+  aiComplianceChecks AIComplianceCheck[]
+
   @@index([organizationId])
   @@index([patientId])
   @@index([providerId])
@@ -1448,6 +1464,9 @@ model SOAPNote {
   // Relations
   encounterId String    @unique
   encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+
+  // AI Documentation Agent relations (Epic 32)
+  aiComplianceChecks AIComplianceCheck[]
 
   @@index([templateId])
 }
@@ -11492,4 +11511,335 @@ model AIBillingMetric {
   @@index([organizationId])
   @@index([metricDate])
   @@index([periodType])
+}
+
+// ============================================
+// EPIC 32: AI DOCUMENTATION AGENT
+// ============================================
+
+// Transcription status enum
+enum TranscriptionStatus {
+  RECORDING // Currently recording
+  PROCESSING // Being transcribed
+  COMPLETED // Transcription complete
+  FAILED // Transcription failed
+  PAUSED // Recording paused
+}
+
+// AI Draft Note status enum
+enum DraftNoteStatus {
+  GENERATING // Being generated
+  PENDING_REVIEW // Awaiting provider review
+  APPROVED // Accepted by provider
+  REJECTED // Rejected by provider
+  EDITED // Edited by provider
+  APPLIED // Applied to encounter
+}
+
+// Code suggestion status enum
+enum CodeSuggestionStatus {
+  PENDING // Awaiting review
+  ACCEPTED // Code accepted
+  REJECTED // Code rejected
+  MODIFIED // Code modified before accepting
+}
+
+// Compliance issue severity enum
+enum ComplianceSeverity {
+  INFO // Informational only
+  WARNING // Should be addressed
+  ERROR // Must be fixed before billing
+  CRITICAL // Prevents claim submission
+}
+
+// AI Transcription - Stores real-time encounter transcriptions
+model AITranscription {
+  id     String              @id @default(cuid())
+  status TranscriptionStatus @default(RECORDING)
+
+  // Audio information
+  audioUrl     String? // URL to stored audio file
+  audioDuration Int     @default(0) // Duration in seconds
+
+  // Transcription content
+  transcript   String? @db.Text // Full transcript text
+  segments     Json? // Array of { speaker, text, startTime, endTime, confidence }
+
+  // Speaker diarization
+  speakerCount    Int     @default(2) // Number of speakers detected
+  speakerLabels   Json? // { "SPEAKER_1": "provider", "SPEAKER_2": "patient" }
+
+  // Processing metadata
+  transcriptionModel String? // e.g., "whisper-1", "deepgram"
+  language           String  @default("en-US")
+  accuracy           Float? // Overall transcription accuracy 0-1
+
+  // Medical terminology processing
+  medicalTermsFound   Json? // Array of detected medical terms
+  correctedTerms      Json? // Auto-corrections made { original, corrected }
+
+  // Timing
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  processingMs Int? // Time to process transcription
+
+  // Error tracking
+  errorMessage String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  encounterId String
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Related draft notes generated from this transcription
+  draftNotes AIDraftNote[]
+
+  @@index([organizationId])
+  @@index([encounterId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// AI Draft Note - AI-generated SOAP notes from transcriptions
+model AIDraftNote {
+  id     String          @id @default(cuid())
+  status DraftNoteStatus @default(GENERATING)
+
+  // SOAP content
+  subjective String? @db.Text
+  objective  String? @db.Text
+  assessment String? @db.Text
+  plan       String? @db.Text
+
+  // Structured content (for template matching)
+  soapJson Json? // Complete structured SOAP content
+
+  // Confidence scores (0-1)
+  subjectiveConfidence Float?
+  objectiveConfidence  Float?
+  assessmentConfidence Float?
+  planConfidence       Float?
+  overallConfidence    Float?
+
+  // Provider style matching
+  styleMatchScore Float? // How well it matches provider's style 0-1
+  styleElements   Json? // Which style elements were applied
+
+  // Provider review
+  reviewedAt      DateTime?
+  reviewedByUserId String?
+  reviewNotes     String? @db.Text
+
+  // Edits tracking
+  editedContent   Json? // Provider's edited version
+  editCount       Int   @default(0)
+  editReasons     Json? // Array of edit reasons for learning
+
+  // AI metadata
+  aiModelUsed      String?
+  processingTimeMs Int?
+  promptVersion    String? // Version of prompt used
+  tokensUsed       Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  encounterId String
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+
+  transcriptionId String?
+  transcription   AITranscription? @relation(fields: [transcriptionId], references: [id])
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([encounterId])
+  @@index([transcriptionId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// AI Code Suggestion - Diagnosis and procedure code suggestions
+model AICodeSuggestion {
+  id     String               @id @default(cuid())
+  status CodeSuggestionStatus @default(PENDING)
+
+  // Code type
+  codeType String // "ICD10", "CPT", "MODIFIER"
+
+  // Suggested code(s)
+  suggestedCode   String // Primary code suggested
+  suggestedCodes  Json? // Array of codes if multiple
+  codeDescription String? // Human-readable description
+
+  // Reasoning
+  reasoning      String @db.Text // Why this code was suggested
+  evidenceQuotes Json? // Quotes from documentation supporting this code
+  relevantText   String? @db.Text // Text that triggered suggestion
+
+  // Confidence and ranking
+  confidence Float // 0-1 confidence score
+  rank       Int   @default(1) // Ranking among alternatives
+
+  // Alternative suggestions
+  alternatives Json? // Array of { code, description, confidence, reasoning }
+
+  // Code validation
+  codeValid      Boolean @default(true) // Is the code currently valid
+  specificityOk  Boolean @default(true) // Is specificity appropriate
+  modifiersNeeded Json? // Suggested modifiers
+
+  // Compliance flags
+  upcodingRisk   Boolean @default(false)
+  downcodingRisk Boolean @default(false)
+  auditRisk      String? // low, medium, high
+
+  // Provider response
+  acceptedAt   DateTime?
+  rejectedAt   DateTime?
+  modifiedCode String? // If provider modified the code
+  modifyReason String? // Why it was modified
+
+  // AI metadata
+  aiModelUsed      String?
+  processingTimeMs Int?
+  promptVersion    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  encounterId String
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([encounterId])
+  @@index([codeType])
+  @@index([status])
+  @@index([confidence])
+  @@index([createdAt])
+}
+
+// AI Compliance Check - Documentation compliance validation
+model AIComplianceCheck {
+  id String @id @default(cuid())
+
+  // Issue details
+  issueType   String // e.g., "MISSING_ELEMENT", "SPECIFICITY", "MEDICAL_NECESSITY"
+  severity    ComplianceSeverity
+  title       String
+  description String @db.Text
+
+  // Location of issue
+  soapSection String? // subjective, objective, assessment, plan
+  fieldPath   String? // Specific field within section
+  lineNumber  Int? // If applicable
+
+  // Compliance context
+  requirementSource String? // CMS, payer, state law, etc.
+  requirementCode   String? // Specific requirement reference
+  payerSpecific     String? // Which payer this applies to (null = all)
+
+  // Suggestions
+  suggestion     String? @db.Text // How to fix the issue
+  exampleFix     String? @db.Text // Example correction
+  autoFixable    Boolean @default(false) // Can AI auto-fix
+  suggestedText  String? @db.Text // If autoFixable, the suggested text
+
+  // Resolution
+  resolved       Boolean   @default(false)
+  resolvedAt     DateTime?
+  resolvedBy     String? // User ID who resolved
+  resolution     String? // How it was resolved
+  wasDismissed   Boolean   @default(false) // Dismissed without fixing
+
+  // Risk scoring
+  auditRiskImpact Int? // Impact on audit risk 0-100
+  denialRisk      Float? // Probability of denial 0-1
+
+  // AI metadata
+  aiModelUsed      String?
+  processingTimeMs Int?
+  rulesApplied     Json? // Which rules detected this issue
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations - can link to SOAPNote or Encounter
+  encounterId String?
+  encounter   Encounter? @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+
+  noteId   String?
+  soapNote SOAPNote? @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([encounterId])
+  @@index([noteId])
+  @@index([severity])
+  @@index([resolved])
+  @@index([createdAt])
+}
+
+// Provider Preference - Learns and stores provider documentation preferences
+model ProviderPreference {
+  id String @id @default(cuid())
+
+  // Preference category
+  category String // terminology, style, format, template, phrases
+
+  // Preference key-value
+  preferenceKey   String // Specific preference identifier
+  preferenceValue Json // The learned value/pattern
+
+  // Learning data
+  learnedFrom    Int      @default(0) // Number of examples this was learned from
+  confidenceScore Float   @default(0.5) // How confident we are in this preference
+  lastUpdated    DateTime @default(now()) // When preference was last updated
+
+  // Usage tracking
+  timesApplied  Int       @default(0) // Times this preference was applied
+  timesAccepted Int       @default(0) // Times the result was accepted
+  timesRejected Int       @default(0) // Times the result was rejected/edited
+
+  // Example data
+  examples Json? // Array of examples that formed this preference
+
+  // Metadata
+  isActive    Boolean @default(true)
+  description String? // Human-readable description
+  source      String? // How this was learned (edits, explicit setting, etc.)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  providerId String
+  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, category, preferenceKey])
+  @@index([organizationId])
+  @@index([providerId])
+  @@index([category])
+  @@index([isActive])
 }
