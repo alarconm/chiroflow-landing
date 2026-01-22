@@ -391,3 +391,62 @@ Story: US-244 - Activity correlation analysis
 --- Iteration 6 completed at 2026-01-22 ---
 Story: US-245 - Activity goals and alerts
 
+--- Iteration 6 completed at 2026-01-22 05:10:06 ---
+Story: US-245 - Activity goals and alerts
+
+## US-246: Device data dashboard - COMPLETED
+
+### What was done:
+1. Created `app/src/components/wearables/WearableDataDashboard.tsx`:
+   - Main dashboard component with activity trends, sleep visualization, posture history
+   - Date range selector (7d, 14d, 30d)
+   - Summary cards showing avg steps, sleep quality, posture score, weekly trend
+   - Activity bar chart with goal tracking visualization
+   - Sleep quality horizontal bar chart
+   - Posture score heatmap grid (7-day view)
+   - Goals progress section with achievement tracking
+   - Tabbed interface: Overview, Activity, Sleep, Posture, Devices
+   - Activity details tab with daily breakdown (steps, calories, active minutes)
+   - Sleep details tab with duration, deep sleep, REM, awakenings
+   - Posture details tab with daily scores and alert counts
+   - Empty state when no devices connected
+   - Loading skeletons for all data sections
+
+2. Created `app/src/components/wearables/DeviceConnectionManager.tsx`:
+   - Connect new devices dialog with available device types
+   - Device type configurations (Apple Health, Google Fit, Fitbit, Whoop, Posture Sensor)
+   - Status indicators with icons (Connected, Pending, Expired, Disconnected, Error)
+   - Sync button for manual data refresh
+   - Disconnect dialog with confirmation
+   - Data sync status summary (activity, sleep, heart rate, posture counts)
+   - Last sync timestamp display
+
+3. Created `app/src/components/wearables/index.ts` for exports
+
+4. Added Wearables tab to patient detail page:
+   - Updated `app/src/app/(dashboard)/patients/[id]/page.tsx`
+   - Added Watch icon import
+   - Added WearableDataDashboard import
+   - Expanded TabsList to 8 columns
+   - Added Wearables tab trigger with Watch icon
+   - Added Wearables tab content with WearableDataDashboard component
+
+5. TypeScript compilation verified - no errors
+
+### Acceptance Criteria Met:
+- [x] Display activity trends (steps, calories, active minutes)
+- [x] Sleep quality visualization
+- [x] Posture score history
+- [x] Device connection status
+- [x] Last sync time
+- [x] Manual sync button
+- [x] Device management (connect/disconnect)
+- [x] Add to patient detail page as new tab
+
+---
+
+## Remaining Stories:
+- US-247: Device connection portal
+--- Iteration 7 completed at 2026-01-22 ---
+Story: US-246 - Device data dashboard
+

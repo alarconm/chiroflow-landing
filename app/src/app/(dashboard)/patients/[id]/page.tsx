@@ -21,6 +21,7 @@ import {
   Undo,
   Plus,
   Stethoscope,
+  Watch,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -39,6 +40,7 @@ import { cn } from '@/lib/utils';
 import { DocumentList } from '@/components/patients';
 import { ClinicalHistoryView } from '@/components/clinical';
 import { PatientEligibilityCard } from '@/components/clearinghouse';
+import { WearableDataDashboard } from '@/components/wearables';
 import { usePermissions } from '@/hooks';
 
 const statusColors: Record<string, string> = {
@@ -216,11 +218,15 @@ export default function PatientDetailPage() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-7">
+        <TabsList className="grid w-full grid-cols-8">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="clinical" className="flex items-center gap-1">
             <Stethoscope className="h-4 w-4" />
             Clinical
+          </TabsTrigger>
+          <TabsTrigger value="wearables" className="flex items-center gap-1">
+            <Watch className="h-4 w-4" />
+            Wearables
           </TabsTrigger>
           <TabsTrigger value="demographics">Demographics</TabsTrigger>
           <TabsTrigger value="insurance">Insurance</TabsTrigger>
@@ -387,6 +393,11 @@ export default function PatientDetailPage() {
         {/* Clinical Tab */}
         <TabsContent value="clinical">
           <ClinicalHistoryView patientId={patientId} />
+        </TabsContent>
+
+        {/* Wearables Tab */}
+        <TabsContent value="wearables">
+          <WearableDataDashboard patientId={patientId} />
         </TabsContent>
 
         {/* Demographics Tab */}
