@@ -155,6 +155,12 @@ model Organization {
   rangeOfMotions      RangeOfMotion[]
   functionalMovements FunctionalMovement[]
 
+  // Telehealth & Virtual Care relations (Epic 21)
+  telehealthSessions  TelehealthSession[]
+  virtualWaitingRooms VirtualWaitingRoom[]
+  telehealthConsents  TelehealthConsent[]
+  sessionRecordings   SessionRecording[]
+
   @@index([subdomain])
 }
 
@@ -384,6 +390,10 @@ model Patient {
   postureAssessments  PostureAssessment[]
   rangeOfMotions      RangeOfMotion[]
   functionalMovements FunctionalMovement[]
+
+  // Telehealth & Virtual Care relations (Epic 21)
+  virtualWaitingRooms VirtualWaitingRoom[]
+  telehealthConsents  TelehealthConsent[]
 
   @@unique([mrn, organizationId])
   @@index([organizationId])
@@ -895,6 +905,9 @@ model Appointment {
   // Billing reference
   chargeAmount Decimal? @db.Decimal(10, 2)
 
+  // Telehealth flag (Epic 21)
+  isTelehealth Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   createdBy String? // User ID who created
@@ -930,6 +943,9 @@ model Appointment {
 
   // AI Scheduling relations (Epic 13)
   noShowPrediction NoShowPrediction?
+
+  // Telehealth & Virtual Care relations (Epic 21)
+  telehealthSession TelehealthSession?
 
   @@index([organizationId])
   @@index([startTime])
@@ -7507,4 +7523,241 @@ model FunctionalMovement {
   @@index([encounterId])
   @@index([testName])
   @@index([assessmentDate])
+}
+
+// ============================================
+// EPIC 21: TELEHEALTH & VIRTUAL CARE
+// ============================================
+
+// Telehealth provider for video conferencing
+enum TelehealthProvider {
+  TWILIO // Twilio Video (primary)
+  ZOOM // Zoom SDK
+  GOOGLE_MEET // Google Meet
+  CUSTOM // Custom/self-hosted solution
+}
+
+// Telehealth session status
+enum TelehealthSessionStatus {
+  SCHEDULED // Session scheduled, not started
+  WAITING // Patient in waiting room
+  IN_PROGRESS // Video session active
+  COMPLETED // Session ended normally
+  NO_SHOW // Patient didn't join
+  CANCELLED // Session cancelled
+  TECHNICAL_ISSUES // Ended due to technical problems
+}
+
+// Virtual waiting room status
+enum WaitingRoomStatus {
+  WAITING // Patient is waiting
+  ADMITTED // Patient admitted to session
+  LEFT // Patient left waiting room
+  TIMED_OUT // Session timed out
+}
+
+// Consent type for telehealth
+enum TelehealthConsentType {
+  GENERAL // General telehealth consent
+  HIPAA // HIPAA acknowledgment for telehealth
+  RECORDING // Consent to record session
+  STATE_SPECIFIC // State-specific telehealth consent
+}
+
+// Consent status
+enum ConsentStatus {
+  PENDING // Consent requested but not signed
+  SIGNED // Consent signed and active
+  DECLINED // Patient declined consent
+  EXPIRED // Consent has expired
+  REVOKED // Patient revoked consent
+}
+
+// Telehealth session - tracks individual video consultations
+model TelehealthSession {
+  id        String                  @id @default(cuid())
+  status    TelehealthSessionStatus @default(SCHEDULED)
+  provider  TelehealthProvider      @default(TWILIO)
+  roomUrl   String // Unique room/meeting URL
+  roomToken String? // Access token for the room (encrypted)
+
+  // Timing
+  scheduledStartTime DateTime
+  scheduledEndTime   DateTime
+  actualStartTime    DateTime?
+  actualEndTime      DateTime?
+
+  // Session details
+  joinInstructions String? @db.Text // Instructions for joining
+  technicalNotes   String? @db.Text // Notes about technical issues
+
+  // Quality metrics
+  connectionQuality String? // good, fair, poor
+  audioQuality      String?
+  videoQuality      String?
+
+  // Billing support
+  placeOfServiceCode String? // CMS place of service for telehealth (typically "02")
+  telehealthModifier String? // Billing modifier (95, GT, etc.)
+
+  // Locations (required for billing compliance)
+  patientLocation  String? // Where patient is located (city, state)
+  providerLocation String? // Where provider is located (city, state)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  appointmentId String      @unique
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Related records
+  waitingRoom VirtualWaitingRoom?
+  recordings  SessionRecording[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([scheduledStartTime])
+  @@index([appointmentId])
+}
+
+// Virtual waiting room for patients before telehealth visits
+model VirtualWaitingRoom {
+  id     String            @id @default(cuid())
+  status WaitingRoomStatus @default(WAITING)
+
+  // Timing
+  joinTime    DateTime  @default(now()) // When patient joined waiting room
+  admitTime   DateTime? // When patient was admitted to session
+  leaveTime   DateTime? // When patient left waiting room
+  waitSeconds Int? // Total wait time in seconds
+
+  // Pre-visit checklist
+  cameraChecked     Boolean @default(false)
+  microphoneChecked Boolean @default(false)
+  connectionChecked Boolean @default(false)
+
+  // Pre-visit questionnaire
+  preVisitQuestionnaireCompleted Boolean @default(false)
+  preVisitResponses              Json? // Responses to pre-visit questions
+
+  // Device/connection info
+  deviceType     String? // mobile, desktop, tablet
+  browserInfo    String? // Browser name and version
+  connectionType String? // wifi, cellular, ethernet
+
+  notes String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  sessionId String            @unique
+  session   TelehealthSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([status])
+  @@index([joinTime])
+}
+
+// Telehealth consent tracking
+model TelehealthConsent {
+  id          String                @id @default(cuid())
+  consentType TelehealthConsentType
+  status      ConsentStatus         @default(PENDING)
+
+  // Consent details
+  consentFormVersion String? // Version of consent form used
+  consentText        String? @db.Text // Full text of consent (snapshot)
+
+  // Signature
+  signatureData   String?   @db.Text // Base64 signature image or signature data
+  signatureType   String? // electronic, digital, typed
+  signedAt        DateTime?
+  signerName      String? // Name as signed
+  signerIpAddress String?
+
+  // Validity
+  effectiveDate  DateTime  @default(now())
+  expirationDate DateTime? // When consent expires
+  revokedAt      DateTime? // When consent was revoked
+  revokedReason  String?
+
+  // State-specific requirements
+  stateCode         String? // State for state-specific consent
+  stateRequirements Json? // State-specific requirement details
+
+  // Audit trail
+  sentAt     DateTime? // When consent request was sent
+  viewedAt   DateTime? // When patient viewed consent
+  remindedAt DateTime? // When reminder was sent
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([consentType])
+  @@index([status])
+  @@index([expirationDate])
+}
+
+// Session recording (if enabled and consented)
+model SessionRecording {
+  id     String @id @default(cuid())
+  status String @default("processing") // processing, available, failed, deleted
+
+  // Recording details
+  recordingUrl String? // URL to recording (encrypted storage)
+  recordingKey String? // Encryption key reference
+  duration     Int? // Duration in seconds
+  fileSize     Int? // Size in bytes
+  format       String? // mp4, webm, etc.
+  resolution   String? // 720p, 1080p, etc.
+
+  // Timestamps
+  recordingStartTime  DateTime?
+  recordingEndTime    DateTime?
+  processedAt         DateTime?
+  deletionScheduledAt DateTime? // When recording will be auto-deleted
+
+  // Retention policy
+  retentionDays Int       @default(30) // Days to keep recording
+  isDeleted     Boolean   @default(false)
+  deletedAt     DateTime?
+  deletedReason String?
+
+  notes String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  sessionId String
+  session   TelehealthSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([sessionId])
+  @@index([status])
+  @@index([deletionScheduledAt])
 }
