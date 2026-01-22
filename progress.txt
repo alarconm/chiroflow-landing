@@ -95,3 +95,42 @@ COMPLETED: Added comprehensive service mix optimization to aiRevenue.ts:
 - Creates OptimizationAction records for tracking
 - TypeScript compilation passes
 
+--- Iteration 9 completed at 2026-01-22 14:44:03 ---
+Story: US-342 - Service mix optimization
+
+--- Iteration 10 completed at 2026-01-22 ---
+Story: US-343 - Coding optimization
+COMPLETED: Added comprehensive coding optimization to aiRevenue.ts:
+- aiRevenue.optimizeCoding - Main coding analysis procedure
+  - E&M level optimization with benchmark comparisons (Medicare audit guidelines)
+  - Distribution analysis for new patient (99201-99205) and established (99211-99215)
+  - Detects undercoding and overcoding with variance calculation
+  - Modifier usage analysis:
+    - -25 modifier analysis for E&M billed with CMT
+    - -AT modifier analysis for Medicare CMT claims
+    - Tracks missed opportunities and potential revenue
+  - Bundling/unbundling review:
+    - Checks for bundling issues (97140+98941, 97110+97530, etc.)
+    - Identifies unbundling opportunities (therapy units)
+    - Provides action recommendations for each issue
+  - Provider coding comparison:
+    - E&M level distribution by provider
+    - Modifier usage rate by provider
+    - Compliance score calculation (0-100)
+    - Identifies outliers and training needs
+  - Documentation improvement suggestions:
+    - SOAP note completeness tracking
+    - Diagnosis code utilization
+    - High-level E&M with minimal documentation detection
+  - Compliant revenue increase opportunities:
+    - E&M optimization opportunities
+    - Modifier improvement opportunities
+    - Therapy unit optimization opportunities
+    - Risk assessment and implementation steps
+- aiRevenue.getCodingOptimizationSummary - Dashboard summary
+- aiRevenue.getProviderCodingComparison - Provider comparison query
+- aiRevenue.actOnCodingRecommendation - Act on opportunities
+- Creates RevenueOpportunity records for top recommendations
+- Creates OptimizationAction records for tracking
+- TypeScript compilation passes
+

@@ -2387,4 +2387,1063 @@ export const aiRevenueRouter = router({
         opportunity: updated,
       };
     }),
+
+  // ============================================
+  // US-343: Coding Optimization
+  // ============================================
+
+  /**
+   * Analyze coding patterns and identify optimization opportunities
+   * Reviews E&M levels, modifier usage, bundling, and provider coding patterns
+   */
+  optimizeCoding: billerProcedure
+    .input(
+      z.object({
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+        providerId: z.string().optional(),
+        minVolumeThreshold: z.number().default(10),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { dateFrom, dateTo, providerId, minVolumeThreshold } = input;
+      const organizationId = ctx.user.organizationId;
+
+      // Default date range: last 6 months
+      const endDate = dateTo || new Date();
+      const startDate = dateFrom || new Date(endDate.getTime() - 180 * 24 * 60 * 60 * 1000);
+
+      // ============================================
+      // E&M Level Distribution Benchmarks
+      // ============================================
+      const EM_BENCHMARKS = {
+        // Typical E&M distribution for chiropractic (Medicare audit guidelines)
+        newPatient: {
+          '99201': 0.02, // 2%
+          '99202': 0.08, // 8%
+          '99203': 0.35, // 35%
+          '99204': 0.40, // 40%
+          '99205': 0.15, // 15%
+        },
+        established: {
+          '99211': 0.02, // 2%
+          '99212': 0.10, // 10%
+          '99213': 0.45, // 45%
+          '99214': 0.35, // 35%
+          '99215': 0.08, // 8%
+        },
+      };
+
+      // Modifier definitions for chiropractic
+      const MODIFIER_GUIDANCE: Record<string, { description: string; whenToUse: string; revenueImpact: string }> = {
+        '-25': {
+          description: 'Significant, Separately Identifiable E&M Service',
+          whenToUse: 'When E&M is billed same day as CMT with separate documentation',
+          revenueImpact: 'Prevents denial of E&M when billed with CMT',
+        },
+        '-59': {
+          description: 'Distinct Procedural Service',
+          whenToUse: 'When procedures are performed on different anatomic sites',
+          revenueImpact: 'Prevents bundling denials',
+        },
+        '-GP': {
+          description: 'Services under Physical Therapy Plan',
+          whenToUse: 'For therapy services under PT supervision',
+          revenueImpact: 'Required by some payers for therapy codes',
+        },
+        '-AT': {
+          description: 'Acute Treatment',
+          whenToUse: 'For CMT codes billed to Medicare',
+          revenueImpact: 'Required for Medicare coverage of CMT',
+        },
+        '-XE': {
+          description: 'Separate Encounter',
+          whenToUse: 'When service is distinct because performed during separate encounter',
+          revenueImpact: 'Alternative to -59 for unbundling',
+        },
+        '-XS': {
+          description: 'Separate Structure',
+          whenToUse: 'When service is distinct because performed on separate organ/structure',
+          revenueImpact: 'Alternative to -59 for anatomic distinction',
+        },
+      };
+
+      // Bundling rules for common chiropractic services
+      const BUNDLING_RULES: Array<{ codes: string[]; rule: string; action: string }> = [
+        {
+          codes: ['97140', '98941'],
+          rule: 'Manual therapy (97140) may be bundled with CMT if same spinal region',
+          action: 'Ensure documentation supports separate anatomic sites or use -59 modifier',
+        },
+        {
+          codes: ['97110', '97530'],
+          rule: 'Therapeutic exercise and activities may be considered duplicative',
+          action: 'Document distinct goals and activities for each code',
+        },
+        {
+          codes: ['97112', '97530'],
+          rule: 'Neuromuscular re-education may overlap with therapeutic activities',
+          action: 'Ensure documentation shows different therapeutic purposes',
+        },
+        {
+          codes: ['97014', '97032'],
+          rule: 'Cannot bill unattended and attended electrical stim same session',
+          action: 'Choose one based on supervision level provided',
+        },
+      ];
+
+      // ============================================
+      // 1. E&M Level Optimization Analysis
+      // ============================================
+
+      interface EMAnalysis {
+        codeType: 'new' | 'established';
+        distribution: Record<string, number>;
+        benchmark: Record<string, number>;
+        totalVolume: number;
+        avgLevel: number;
+        benchmarkAvgLevel: number;
+        variance: number;
+        undercoding: boolean;
+        overcoding: boolean;
+        potentialRevenue: number;
+        recommendations: string[];
+        priority: 'low' | 'medium' | 'high' | 'critical';
+      }
+
+      // Get E&M charge distribution
+      const emCharges = await ctx.prisma.charge.findMany({
+        where: {
+          organizationId,
+          serviceDate: {
+            gte: startDate,
+            lte: endDate,
+          },
+          ...(providerId && { providerId }),
+          cptCode: {
+            in: [
+              '99201', '99202', '99203', '99204', '99205', // New patient
+              '99211', '99212', '99213', '99214', '99215', // Established
+            ],
+          },
+        },
+        include: {
+          provider: {
+            include: {
+              user: true,
+            },
+          },
+          encounter: {
+            include: {
+              diagnoses: true,
+              soapNote: true,
+            },
+          },
+        },
+      });
+
+      // Separate new patient vs established
+      const newPatientCodes = ['99201', '99202', '99203', '99204', '99205'];
+      const establishedCodes = ['99211', '99212', '99213', '99214', '99215'];
+
+      const newPatientCharges = emCharges.filter(c => newPatientCodes.includes(c.cptCode));
+      const establishedCharges = emCharges.filter(c => establishedCodes.includes(c.cptCode));
+
+      function analyzeEMDistribution(
+        charges: typeof emCharges,
+        benchmark: Record<string, number>,
+        codeType: 'new' | 'established'
+      ): EMAnalysis {
+        const distribution: Record<string, number> = {};
+        const codes = codeType === 'new' ? newPatientCodes : establishedCodes;
+        const totalVolume = charges.length;
+
+        // Count by code
+        for (const code of codes) {
+          const count = charges.filter(c => c.cptCode === code).length;
+          distribution[code] = totalVolume > 0 ? count / totalVolume : 0;
+        }
+
+        // Calculate average level (1-5)
+        const levelMap: Record<string, number> = codeType === 'new'
+          ? { '99201': 1, '99202': 2, '99203': 3, '99204': 4, '99205': 5 }
+          : { '99211': 1, '99212': 2, '99213': 3, '99214': 4, '99215': 5 };
+
+        let avgLevel = 0;
+        let benchmarkAvgLevel = 0;
+        for (const [code, count] of Object.entries(distribution)) {
+          avgLevel += levelMap[code] * count;
+          benchmarkAvgLevel += levelMap[code] * (benchmark[code] || 0);
+        }
+
+        const variance = avgLevel - benchmarkAvgLevel;
+        const undercoding = variance < -0.3;
+        const overcoding = variance > 0.5;
+
+        // Estimate potential revenue from optimized coding
+        // Average revenue increase per level is ~$30-40
+        const revenuePerLevelIncrease = 35;
+        const potentialRevenue = undercoding
+          ? Math.abs(variance) * totalVolume * revenuePerLevelIncrease * (12 / 6) // Annualized
+          : 0;
+
+        const recommendations: string[] = [];
+        let priority: 'low' | 'medium' | 'high' | 'critical' = 'low';
+
+        if (undercoding) {
+          recommendations.push(`E&M levels are ${Math.abs(variance).toFixed(2)} levels below benchmark. Review documentation to support higher level coding.`);
+          recommendations.push('Ensure medical decision making complexity is fully documented.');
+          recommendations.push('Review time-based billing options for complex cases.');
+          priority = potentialRevenue > 5000 ? 'high' : 'medium';
+        } else if (overcoding) {
+          recommendations.push(`E&M levels are ${variance.toFixed(2)} levels above benchmark. Review documentation support to ensure compliance.`);
+          recommendations.push('Audit charts for documentation completeness to avoid downcoding on audit.');
+          priority = 'critical'; // Compliance risk
+        } else {
+          recommendations.push('E&M level distribution is within normal parameters.');
+        }
+
+        return {
+          codeType,
+          distribution,
+          benchmark,
+          totalVolume,
+          avgLevel,
+          benchmarkAvgLevel,
+          variance,
+          undercoding,
+          overcoding,
+          potentialRevenue,
+          recommendations,
+          priority,
+        };
+      }
+
+      const newPatientAnalysis = analyzeEMDistribution(
+        newPatientCharges,
+        EM_BENCHMARKS.newPatient,
+        'new'
+      );
+      const establishedAnalysis = analyzeEMDistribution(
+        establishedCharges,
+        EM_BENCHMARKS.established,
+        'established'
+      );
+
+      // ============================================
+      // 2. Modifier Usage Analysis
+      // ============================================
+
+      interface ModifierAnalysis {
+        modifier: string;
+        description: string;
+        currentUsage: number;
+        missedOpportunities: number;
+        potentialRevenue: number;
+        recommendations: string[];
+        priority: 'low' | 'medium' | 'high' | 'critical';
+      }
+
+      const modifierAnalysis: ModifierAnalysis[] = [];
+
+      // Analyze -25 modifier usage on E&M codes billed with CMT
+      const cmtCodes = ['98940', '98941', '98942', '98943'];
+      const encountersWithCMT = await ctx.prisma.encounter.findMany({
+        where: {
+          organizationId,
+          encounterDate: {
+            gte: startDate,
+            lte: endDate,
+          },
+          ...(providerId && { providerId }),
+          charges: {
+            some: {
+              cptCode: { in: cmtCodes },
+            },
+          },
+        },
+        include: {
+          charges: true,
+        },
+      });
+
+      let mod25Used = 0;
+      let mod25Missed = 0;
+      let mod25MissedRevenue = 0;
+
+      for (const encounter of encountersWithCMT) {
+        const hasCMT = encounter.charges.some(c => cmtCodes.includes(c.cptCode));
+        const hasEM = encounter.charges.find(c =>
+          [...newPatientCodes, ...establishedCodes].includes(c.cptCode)
+        );
+
+        if (hasCMT && hasEM) {
+          const emHasMod25 = hasEM.modifiers?.includes('-25') || hasEM.modifiers?.includes('25');
+          if (emHasMod25) {
+            mod25Used++;
+          } else {
+            mod25Missed++;
+            // Estimate revenue impact (E&M often denied without -25)
+            mod25MissedRevenue += Number(hasEM.fee) * 0.5; // 50% denial risk
+          }
+        }
+      }
+
+      if (mod25Missed > 0 || mod25Used > 0) {
+        modifierAnalysis.push({
+          modifier: '-25',
+          description: MODIFIER_GUIDANCE['-25'].description,
+          currentUsage: mod25Used,
+          missedOpportunities: mod25Missed,
+          potentialRevenue: mod25MissedRevenue * (12 / 6), // Annualized
+          recommendations: mod25Missed > 0
+            ? [
+                `Found ${mod25Missed} E&M services billed same day as CMT without -25 modifier.`,
+                'Review documentation to ensure E&M is separately identifiable.',
+                'Add -25 modifier when documentation supports separate E&M service.',
+              ]
+            : ['Good -25 modifier usage on E&M + CMT encounters.'],
+          priority: mod25Missed > 10 ? 'high' : mod25Missed > 0 ? 'medium' : 'low',
+        });
+      }
+
+      // Analyze -AT modifier for Medicare CMT
+      const medicareClaims = await ctx.prisma.claim.findMany({
+        where: {
+          organizationId,
+          createdDate: {
+            gte: startDate,
+            lte: endDate,
+          },
+          payer: {
+            name: { contains: 'Medicare' },
+          },
+        },
+        include: {
+          claimLines: {
+            where: {
+              cptCode: { in: cmtCodes },
+            },
+          },
+        },
+      });
+
+      let modATUsed = 0;
+      let modATMissed = 0;
+
+      for (const claim of medicareClaims) {
+        for (const line of claim.claimLines) {
+          const hasAT = line.modifiers?.includes('-AT') || line.modifiers?.includes('AT');
+          if (hasAT) {
+            modATUsed++;
+          } else if (line.cptCode && cmtCodes.includes(line.cptCode)) {
+            modATMissed++;
+          }
+        }
+      }
+
+      if (modATMissed > 0 || modATUsed > 0) {
+        modifierAnalysis.push({
+          modifier: '-AT',
+          description: MODIFIER_GUIDANCE['-AT'].description,
+          currentUsage: modATUsed,
+          missedOpportunities: modATMissed,
+          potentialRevenue: modATMissed * 40, // Average Medicare CMT rate
+          recommendations: modATMissed > 0
+            ? [
+                `Found ${modATMissed} Medicare CMT claims without -AT modifier.`,
+                '-AT modifier is required for Medicare coverage of CMT.',
+                'Ensure -AT is added to all Medicare CMT claims.',
+              ]
+            : ['Good -AT modifier usage on Medicare CMT claims.'],
+          priority: modATMissed > 5 ? 'critical' : modATMissed > 0 ? 'high' : 'low',
+        });
+      }
+
+      // ============================================
+      // 3. Bundling/Unbundling Review
+      // ============================================
+
+      interface BundlingIssue {
+        rule: string;
+        codes: string[];
+        occurrences: number;
+        action: string;
+        riskLevel: 'potential_denial' | 'compliance_risk' | 'unbundling_opportunity';
+        potentialImpact: number;
+        priority: 'low' | 'medium' | 'high' | 'critical';
+      }
+
+      const bundlingIssues: BundlingIssue[] = [];
+
+      // Check for bundling issues in same-day encounters
+      const encountersForBundling = await ctx.prisma.encounter.findMany({
+        where: {
+          organizationId,
+          encounterDate: {
+            gte: startDate,
+            lte: endDate,
+          },
+          ...(providerId && { providerId }),
+        },
+        include: {
+          charges: true,
+        },
+      });
+
+      const bundlingCounts: Record<string, number> = {};
+
+      for (const encounter of encountersForBundling) {
+        const codes = encounter.charges.map(c => c.cptCode);
+
+        for (const rule of BUNDLING_RULES) {
+          const hasAllCodes = rule.codes.every(c => codes.includes(c));
+          if (hasAllCodes) {
+            const key = rule.codes.join('+');
+            bundlingCounts[key] = (bundlingCounts[key] || 0) + 1;
+          }
+        }
+      }
+
+      for (const rule of BUNDLING_RULES) {
+        const key = rule.codes.join('+');
+        const count = bundlingCounts[key] || 0;
+
+        if (count >= minVolumeThreshold) {
+          bundlingIssues.push({
+            rule: rule.rule,
+            codes: rule.codes,
+            occurrences: count,
+            action: rule.action,
+            riskLevel: 'potential_denial',
+            potentialImpact: count * 25, // Average denial/reduction per occurrence
+            priority: count > 50 ? 'high' : count > 20 ? 'medium' : 'low',
+          });
+        }
+      }
+
+      // Check for potential unbundling opportunities (97110 without units)
+      const therapyCharges = await ctx.prisma.charge.findMany({
+        where: {
+          organizationId,
+          serviceDate: {
+            gte: startDate,
+            lte: endDate,
+          },
+          cptCode: { in: ['97110', '97112', '97140', '97530'] },
+          units: 1,
+        },
+        include: {
+          encounter: true,
+        },
+      });
+
+      // Count encounters where therapy could potentially support more units
+      const therapyEncounterIds = new Set(therapyCharges.map(c => c.encounterId));
+      if (therapyEncounterIds.size > minVolumeThreshold) {
+        bundlingIssues.push({
+          rule: 'Therapy services billed at single unit may support additional units',
+          codes: ['97110', '97112', '97140', '97530'],
+          occurrences: therapyCharges.length,
+          action: 'Review encounter documentation for time spent on therapeutic services. Each 15-minute interval supports one unit.',
+          riskLevel: 'unbundling_opportunity',
+          potentialImpact: therapyCharges.length * 15 * (12 / 6), // $15 per additional unit, annualized
+          priority: therapyCharges.length > 100 ? 'high' : 'medium',
+        });
+      }
+
+      // ============================================
+      // 4. Provider Coding Comparison
+      // ============================================
+
+      interface ProviderCodingAnalysis {
+        providerId: string;
+        providerName: string;
+        totalCharges: number;
+        emDistribution: {
+          avgLevel: number;
+          variance: number;
+        };
+        modifierUsageRate: number;
+        avgUnitsPerEncounter: number;
+        avgRevenuePerEncounter: number;
+        complianceScore: number; // 0-100
+        recommendations: string[];
+        priority: 'low' | 'medium' | 'high' | 'critical';
+      }
+
+      // Get all providers with charges in the period
+      const providerCharges = await ctx.prisma.charge.groupBy({
+        by: ['providerId'],
+        where: {
+          organizationId,
+          serviceDate: {
+            gte: startDate,
+            lte: endDate,
+          },
+          providerId: { not: null },
+        },
+        _count: { id: true },
+        _sum: { fee: true, units: true },
+      });
+
+      const providerCodingAnalysis: ProviderCodingAnalysis[] = [];
+
+      for (const provData of providerCharges) {
+        if (!provData.providerId) continue;
+        if (provData._count.id < minVolumeThreshold) continue;
+
+        // Get provider details
+        const provider = await ctx.prisma.provider.findUnique({
+          where: { id: provData.providerId },
+          include: { user: true },
+        });
+
+        const providerName = provider?.user
+          ? `${provider.user.firstName || ''} ${provider.user.lastName || ''}`.trim()
+          : 'Unknown Provider';
+
+        // Get E&M distribution for this provider
+        const providerEM = emCharges.filter(c => c.providerId === provData.providerId);
+        const providerEstablished = providerEM.filter(c => establishedCodes.includes(c.cptCode));
+
+        let avgLevel = 0;
+        if (providerEstablished.length > 0) {
+          const levelMap: Record<string, number> = {
+            '99211': 1, '99212': 2, '99213': 3, '99214': 4, '99215': 5,
+          };
+          avgLevel = providerEstablished.reduce((sum, c) => sum + (levelMap[c.cptCode] || 3), 0) / providerEstablished.length;
+        }
+        const variance = avgLevel - establishedAnalysis.benchmarkAvgLevel;
+
+        // Calculate modifier usage rate
+        const providerChargesWithModifiers = await ctx.prisma.charge.count({
+          where: {
+            organizationId,
+            providerId: provData.providerId,
+            serviceDate: { gte: startDate, lte: endDate },
+            modifiers: { isEmpty: false },
+          },
+        });
+        const modifierUsageRate = provData._count.id > 0
+          ? (providerChargesWithModifiers / provData._count.id) * 100
+          : 0;
+
+        // Calculate avg units and revenue per encounter
+        const providerEncounterCount = await ctx.prisma.encounter.count({
+          where: {
+            organizationId,
+            providerId: provData.providerId,
+            encounterDate: { gte: startDate, lte: endDate },
+          },
+        });
+
+        const avgUnitsPerEncounter = providerEncounterCount > 0
+          ? (provData._sum.units || 0) / providerEncounterCount
+          : 0;
+        const avgRevenuePerEncounter = providerEncounterCount > 0
+          ? Number(provData._sum.fee || 0) / providerEncounterCount
+          : 0;
+
+        // Calculate compliance score (0-100)
+        let complianceScore = 100;
+        if (Math.abs(variance) > 1.0) complianceScore -= 30; // Large variance from benchmark
+        else if (Math.abs(variance) > 0.5) complianceScore -= 15;
+        if (modifierUsageRate < 10) complianceScore -= 10; // Low modifier usage
+        if (variance > 0.5) complianceScore -= 20; // Potential upcoding
+
+        const recommendations: string[] = [];
+        let priority: 'low' | 'medium' | 'high' | 'critical' = 'low';
+
+        if (variance < -0.5) {
+          recommendations.push('E&M coding is significantly below benchmark. Consider education on documentation requirements for higher levels.');
+          priority = 'medium';
+        } else if (variance > 0.5) {
+          recommendations.push('E&M coding is above benchmark. Audit documentation to ensure compliance.');
+          priority = 'high';
+        }
+
+        if (modifierUsageRate < 10) {
+          recommendations.push('Low modifier usage. Review modifier guidelines and implement training.');
+          priority = priority === 'low' ? 'medium' : priority;
+        }
+
+        if (avgUnitsPerEncounter < 3) {
+          recommendations.push('Low average units per encounter. Review documentation of time-based services.');
+        }
+
+        if (recommendations.length === 0) {
+          recommendations.push('Coding patterns are within normal parameters.');
+        }
+
+        providerCodingAnalysis.push({
+          providerId: provData.providerId,
+          providerName,
+          totalCharges: provData._count.id,
+          emDistribution: {
+            avgLevel,
+            variance,
+          },
+          modifierUsageRate,
+          avgUnitsPerEncounter,
+          avgRevenuePerEncounter,
+          complianceScore: Math.max(0, complianceScore),
+          recommendations,
+          priority,
+        });
+      }
+
+      // Sort by compliance score (lowest first for attention)
+      providerCodingAnalysis.sort((a, b) => a.complianceScore - b.complianceScore);
+
+      // ============================================
+      // 5. Documentation Improvement Suggestions
+      // ============================================
+
+      interface DocumentationSuggestion {
+        category: string;
+        issue: string;
+        frequency: number;
+        recommendation: string;
+        potentialImpact: number;
+        trainingResource?: string;
+        priority: 'low' | 'medium' | 'high' | 'critical';
+      }
+
+      const documentationSuggestions: DocumentationSuggestion[] = [];
+
+      // Check for encounters with low documentation
+      const encountersWithSOAP = await ctx.prisma.encounter.findMany({
+        where: {
+          organizationId,
+          encounterDate: { gte: startDate, lte: endDate },
+          ...(providerId && { providerId }),
+        },
+        include: {
+          soapNote: true,
+          diagnoses: true,
+          charges: true,
+        },
+      });
+
+      let noSoapCount = 0;
+      let minimalDiagnosisCount = 0;
+      let highEMWithLowDocCount = 0;
+
+      for (const encounter of encountersWithSOAP) {
+        if (!encounter.soapNote) {
+          noSoapCount++;
+        }
+
+        if (encounter.diagnoses.length < 2) {
+          minimalDiagnosisCount++;
+        }
+
+        // Check for high-level E&M with minimal documentation
+        const highLevelEM = encounter.charges.find(c =>
+          ['99204', '99205', '99214', '99215'].includes(c.cptCode)
+        );
+        if (highLevelEM && (!encounter.soapNote || encounter.diagnoses.length < 2)) {
+          highEMWithLowDocCount++;
+        }
+      }
+
+      if (noSoapCount > 10) {
+        documentationSuggestions.push({
+          category: 'SOAP Notes',
+          issue: `${noSoapCount} encounters without SOAP documentation`,
+          frequency: noSoapCount,
+          recommendation: 'Implement required SOAP note completion before charge entry. Consider voice-to-text or templates.',
+          potentialImpact: noSoapCount * 50, // Risk of denials and audits
+          trainingResource: 'SOAP Note Documentation Guidelines',
+          priority: noSoapCount > 50 ? 'critical' : 'high',
+        });
+      }
+
+      if (minimalDiagnosisCount > encountersWithSOAP.length * 0.3) {
+        documentationSuggestions.push({
+          category: 'Diagnosis Coding',
+          issue: `${minimalDiagnosisCount} encounters with fewer than 2 diagnosis codes`,
+          frequency: minimalDiagnosisCount,
+          recommendation: 'Document all relevant diagnoses to support medical necessity and optimize coding.',
+          potentialImpact: minimalDiagnosisCount * 20,
+          trainingResource: 'ICD-10 Coding for Chiropractic',
+          priority: 'medium',
+        });
+      }
+
+      if (highEMWithLowDocCount > 10) {
+        documentationSuggestions.push({
+          category: 'E&M Documentation',
+          issue: `${highEMWithLowDocCount} high-level E&M codes with minimal documentation`,
+          frequency: highEMWithLowDocCount,
+          recommendation: 'High-level E&M (99214/99215) requires comprehensive documentation. Implement documentation review before claim submission.',
+          potentialImpact: highEMWithLowDocCount * 75, // High audit risk
+          trainingResource: 'E&M Documentation Requirements 2023',
+          priority: 'critical',
+        });
+      }
+
+      // ============================================
+      // 6. Compliant Revenue Increase Opportunities
+      // ============================================
+
+      interface RevenueOpportunity {
+        category: string;
+        title: string;
+        description: string;
+        estimatedAnnualRevenue: number;
+        complianceRisk: 'none' | 'low' | 'medium' | 'high';
+        implementationEffort: 'easy' | 'moderate' | 'complex';
+        steps: string[];
+        priority: 'low' | 'medium' | 'high' | 'critical';
+      }
+
+      const revenueOpportunities: RevenueOpportunity[] = [];
+
+      // Opportunity from E&M optimization
+      if (newPatientAnalysis.undercoding || establishedAnalysis.undercoding) {
+        const totalPotential = newPatientAnalysis.potentialRevenue + establishedAnalysis.potentialRevenue;
+        if (totalPotential > 1000) {
+          revenueOpportunities.push({
+            category: 'E&M Optimization',
+            title: 'Optimize E&M Level Coding',
+            description: 'E&M levels are below benchmark, suggesting potential undercoding.',
+            estimatedAnnualRevenue: totalPotential,
+            complianceRisk: 'none',
+            implementationEffort: 'moderate',
+            steps: [
+              'Review E&M documentation requirements for each level',
+              'Implement documentation templates that capture MDM elements',
+              'Consider time-based billing for complex encounters',
+              'Provide coding education to providers',
+            ],
+            priority: totalPotential > 5000 ? 'high' : 'medium',
+          });
+        }
+      }
+
+      // Opportunity from modifier usage
+      const modifierPotential = modifierAnalysis.reduce((sum, m) => sum + m.potentialRevenue, 0);
+      if (modifierPotential > 1000) {
+        revenueOpportunities.push({
+          category: 'Modifier Usage',
+          title: 'Improve Modifier Application',
+          description: 'Missed modifier opportunities are causing preventable denials.',
+          estimatedAnnualRevenue: modifierPotential,
+          complianceRisk: 'none',
+          implementationEffort: 'easy',
+          steps: [
+            'Create modifier decision tree for common scenarios',
+            'Add modifier prompts to charge entry workflow',
+            'Train billing staff on modifier requirements',
+            'Implement automated modifier checks before claim submission',
+          ],
+          priority: modifierPotential > 3000 ? 'high' : 'medium',
+        });
+      }
+
+      // Opportunity from therapy unit optimization
+      const unbundlingIssue = bundlingIssues.find(b => b.riskLevel === 'unbundling_opportunity');
+      if (unbundlingIssue && unbundlingIssue.potentialImpact > 1000) {
+        revenueOpportunities.push({
+          category: 'Therapy Billing',
+          title: 'Optimize Therapy Unit Billing',
+          description: 'Many therapy services billed at single unit may support additional units based on time.',
+          estimatedAnnualRevenue: unbundlingIssue.potentialImpact,
+          complianceRisk: 'low',
+          implementationEffort: 'moderate',
+          steps: [
+            'Implement time tracking for therapy services',
+            'Train providers on time documentation requirements',
+            'Update charge entry to prompt for time spent',
+            'Review 8-minute rule for unit calculation',
+          ],
+          priority: 'medium',
+        });
+      }
+
+      // Sort by estimated revenue
+      revenueOpportunities.sort((a, b) => b.estimatedAnnualRevenue - a.estimatedAnnualRevenue);
+
+      // ============================================
+      // 7. Persist Results and Generate Summary
+      // ============================================
+
+      // Create revenue opportunities in database
+      for (const opp of revenueOpportunities.slice(0, 5)) {
+        await ctx.prisma.revenueOpportunity.create({
+          data: {
+            opportunityType: `coding_${opp.category.toLowerCase().replace(/\s+/g, '_')}`,
+            title: opp.title,
+            description: opp.description,
+            estimatedValue: new Decimal(opp.estimatedAnnualRevenue),
+            confidence: new Decimal(opp.complianceRisk === 'none' ? 85 : opp.complianceRisk === 'low' ? 75 : 60),
+            status: 'identified',
+            notes: opp.steps.join('\n'),
+            organizationId,
+          },
+        });
+      }
+
+      // Calculate summary metrics
+      const totalPotentialRevenue = revenueOpportunities.reduce((sum, o) => sum + o.estimatedAnnualRevenue, 0);
+      const criticalIssues = [
+        ...providerCodingAnalysis.filter(p => p.priority === 'critical'),
+        ...documentationSuggestions.filter(d => d.priority === 'critical'),
+        ...modifierAnalysis.filter(m => m.priority === 'critical'),
+      ].length;
+
+      const summary = {
+        dateRange: { from: startDate, to: endDate },
+        chargesAnalyzed: emCharges.length + therapyCharges.length,
+        encountersAnalyzed: encountersWithSOAP.length,
+        providersAnalyzed: providerCodingAnalysis.length,
+        criticalIssuesFound: criticalIssues,
+        totalPotentialRevenue,
+        emOptimization: {
+          newPatient: {
+            avgLevel: newPatientAnalysis.avgLevel,
+            variance: newPatientAnalysis.variance,
+            undercoding: newPatientAnalysis.undercoding,
+          },
+          established: {
+            avgLevel: establishedAnalysis.avgLevel,
+            variance: establishedAnalysis.variance,
+            undercoding: establishedAnalysis.undercoding,
+          },
+        },
+        modifierIssues: modifierAnalysis.filter(m => m.missedOpportunities > 0).length,
+        bundlingIssues: bundlingIssues.length,
+        documentationIssues: documentationSuggestions.length,
+      };
+
+      return {
+        success: true,
+        summary,
+        emAnalysis: {
+          newPatient: newPatientAnalysis,
+          established: establishedAnalysis,
+        },
+        modifierAnalysis,
+        bundlingIssues,
+        providerCodingAnalysis,
+        documentationSuggestions,
+        revenueOpportunities,
+        analyzedAt: new Date(),
+      };
+    }),
+
+  /**
+   * Get coding optimization summary
+   */
+  getCodingOptimizationSummary: billerProcedure.query(async ({ ctx }) => {
+    const organizationId = ctx.user.organizationId;
+
+    // Get coding-related opportunities
+    const opportunities = await ctx.prisma.revenueOpportunity.findMany({
+      where: {
+        organizationId,
+        opportunityType: {
+          startsWith: 'coding_',
+        },
+        status: {
+          in: ['identified', 'in_progress'],
+        },
+      },
+      orderBy: { estimatedValue: 'desc' },
+    });
+
+    // Get captured value from coding optimizations in last 12 months
+    const yearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+    const capturedOpportunities = await ctx.prisma.revenueOpportunity.findMany({
+      where: {
+        organizationId,
+        opportunityType: {
+          startsWith: 'coding_',
+        },
+        status: 'captured',
+        capturedAt: {
+          gte: yearAgo,
+        },
+      },
+    });
+
+    return {
+      activeOpportunities: opportunities.length,
+      totalEstimatedValue: opportunities.reduce((sum, o) => sum + Number(o.estimatedValue), 0),
+      capturedThisYear: capturedOpportunities.reduce((sum, o) => sum + Number(o.capturedValue || 0), 0),
+      opportunities: opportunities.slice(0, 10).map(o => ({
+        id: o.id,
+        type: o.opportunityType,
+        title: o.title,
+        estimatedValue: Number(o.estimatedValue),
+        status: o.status,
+      })),
+    };
+  }),
+
+  /**
+   * Get provider coding comparison
+   */
+  getProviderCodingComparison: billerProcedure
+    .input(
+      z.object({
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { dateFrom, dateTo } = input;
+      const organizationId = ctx.user.organizationId;
+
+      const endDate = dateTo || new Date();
+      const startDate = dateFrom || new Date(endDate.getTime() - 90 * 24 * 60 * 60 * 1000);
+
+      // Get E&M distribution by provider
+      const providers = await ctx.prisma.provider.findMany({
+        where: { organizationId },
+        include: { user: true },
+      });
+
+      const comparison: Array<{
+        providerId: string;
+        providerName: string;
+        emVolume: number;
+        avgLevel: number;
+        modifierUsage: number;
+        avgChargeAmount: number;
+      }> = [];
+
+      for (const provider of providers) {
+        const providerCharges = await ctx.prisma.charge.findMany({
+          where: {
+            organizationId,
+            providerId: provider.id,
+            serviceDate: { gte: startDate, lte: endDate },
+            cptCode: {
+              in: ['99211', '99212', '99213', '99214', '99215'],
+            },
+          },
+        });
+
+        if (providerCharges.length < 10) continue;
+
+        const levelMap: Record<string, number> = {
+          '99211': 1, '99212': 2, '99213': 3, '99214': 4, '99215': 5,
+        };
+        const avgLevel = providerCharges.reduce(
+          (sum, c) => sum + (levelMap[c.cptCode] || 3), 0
+        ) / providerCharges.length;
+
+        const withModifiers = providerCharges.filter(c => c.modifiers && c.modifiers.length > 0).length;
+        const modifierUsage = (withModifiers / providerCharges.length) * 100;
+
+        const avgChargeAmount = providerCharges.reduce(
+          (sum, c) => sum + Number(c.fee), 0
+        ) / providerCharges.length;
+
+        comparison.push({
+          providerId: provider.id,
+          providerName: provider.user
+            ? `${provider.user.firstName || ''} ${provider.user.lastName || ''}`.trim()
+            : 'Unknown',
+          emVolume: providerCharges.length,
+          avgLevel,
+          modifierUsage,
+          avgChargeAmount,
+        });
+      }
+
+      // Calculate benchmarks
+      const avgLevelBenchmark = comparison.length > 0
+        ? comparison.reduce((sum, c) => sum + c.avgLevel, 0) / comparison.length
+        : 3.0;
+
+      return {
+        comparison: comparison.sort((a, b) => b.emVolume - a.emVolume),
+        benchmark: {
+          avgLevel: avgLevelBenchmark,
+          modifierUsage: 15, // Industry benchmark
+        },
+        dateRange: { from: startDate, to: endDate },
+      };
+    }),
+
+  /**
+   * Act on a coding optimization recommendation
+   */
+  actOnCodingRecommendation: billerProcedure
+    .input(
+      z.object({
+        opportunityId: z.string(),
+        action: z.enum(['start', 'complete', 'decline']),
+        capturedValue: z.number().optional(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { opportunityId, action, capturedValue, notes } = input;
+
+      const opportunity = await ctx.prisma.revenueOpportunity.findFirst({
+        where: {
+          id: opportunityId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!opportunity) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Opportunity not found',
+        });
+      }
+
+      let newStatus: string;
+      switch (action) {
+        case 'start':
+          newStatus = 'in_progress';
+          break;
+        case 'complete':
+          newStatus = 'captured';
+          break;
+        case 'decline':
+          newStatus = 'declined';
+          break;
+      }
+
+      const updated = await ctx.prisma.revenueOpportunity.update({
+        where: { id: opportunityId },
+        data: {
+          status: newStatus,
+          ...(action === 'complete' && {
+            capturedValue: capturedValue ? new Decimal(capturedValue) : null,
+            capturedAt: new Date(),
+            capturedBy: ctx.user.id,
+          }),
+          notes: notes || opportunity.notes,
+        },
+      });
+
+      // Create optimization action record
+      if (action === 'complete') {
+        await ctx.prisma.optimizationAction.create({
+          data: {
+            actionType: 'coding_optimization',
+            action: `Completed: ${opportunity.title}`,
+            projectedImpact: opportunity.estimatedValue,
+            actualImpact: capturedValue ? new Decimal(capturedValue) : null,
+            status: 'completed',
+            completedAt: new Date(),
+            completedBy: ctx.user.id,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+      }
+
+      return {
+        success: true,
+        opportunity: updated,
+      };
+    }),
 });
