@@ -34,3 +34,90 @@ Date: 2026-01-22
 - [x] RangeOfMotion model with joint, movement, degrees, normal, restricted
 - [x] FunctionalMovement model with test name, score, notes
 - [x] Prisma migrations run successfully
+--- Iteration 1 completed at 2026-01-22 00:51:48 ---
+Story: US-208 - Posture analysis schema
+
+## US-209: Photo capture and upload - COMPLETED
+Date: 2026-01-22
+
+### Changes Made:
+1. Created posture image upload API route at `app/src/app/api/posture/upload/route.ts`:
+   - Handles multipart form data uploads
+   - Validates file types (JPEG, PNG, WebP) and size (20MB max)
+   - Auto-orients images using EXIF data via sharp
+   - Generates thumbnails (300px width)
+   - Creates storage structure: uploads/{orgId}/posture/{patientId}/
+   - Auto-creates PostureAssessment if not provided
+   - HIPAA-compliant with audit logging
+
+2. Created posture image serve route at `app/src/app/api/posture/images/[...path]/route.ts`:
+   - Secure image retrieval with org/patient verification
+   - Path traversal prevention
+   - Proper cache headers for HIPAA compliance
+   - Content-type detection from file extension
+
+3. Created posture tRPC router at `app/src/server/routers/posture.ts`:
+   - createAssessment: Create new posture assessment
+   - getAssessment: Get assessment with images and deviations
+   - listByPatient: List patient's posture assessments
+   - deleteImage: Remove image from assessment
+   - updateImageNotes: Update notes for an image
+   - getViewTypes: Get view type metadata with positioning guides
+   - getImagesByView: Get images filtered by view type
+   - completeAssessment: Mark assessment complete
+   - updateAssessment: Update assessment notes/findings
+   - deleteAssessment: Delete assessment (cascade deletes images)
+   - getPatientSummary: Summary stats for dashboard
+
+4. Created PostureCapture component at `app/src/components/posture/PostureCapture.tsx`:
+   - Camera capture mode with getUserMedia API
+   - File upload mode with react-dropzone
+   - Support for all four view types (ANTERIOR, POSTERIOR, LATERAL_LEFT, LATERAL_RIGHT)
+   - Auto-advance to next view after capture
+   - Batch upload capability
+   - Image preview with view selection
+   - Notes per image
+   - Upload progress tracking
+
+5. Created PosturePositioningGuide component at `app/src/components/posture/PosturePositioningGuide.tsx`:
+   - SVG body silhouettes for front, back, and side views
+   - Grid overlay with landmark alignment lines (eyes, shoulders, hips, knees)
+   - Foot positioning marks
+   - Instructions panel per view
+   - Plumb line reference for lateral views
+
+6. Updated audit.ts with posture-related actions:
+   - POSTURE_IMAGE_UPLOAD
+   - POSTURE_ASSESSMENT_CREATE
+   - POSTURE_ASSESSMENT_UPDATE
+   - POSTURE_ASSESSMENT_DELETE
+   - POSTURE_ASSESSMENT_COMPLETE
+
+7. Registered posture router in index.ts
+
+8. TypeScript compilation passes
+
+### Files Created:
+- app/src/app/api/posture/upload/route.ts
+- app/src/app/api/posture/images/[...path]/route.ts
+- app/src/server/routers/posture.ts
+- app/src/components/posture/PostureCapture.tsx
+- app/src/components/posture/PosturePositioningGuide.tsx
+- app/src/components/posture/index.ts
+
+### Files Modified:
+- app/src/server/routers/index.ts (added posture router)
+- app/src/lib/audit.ts (added posture audit actions)
+
+### Acceptance Criteria Met:
+- [x] posture.uploadImage - Upload posture photo (via API route)
+- [x] Camera capture component for in-office photos
+- [x] Support anterior, posterior, lateral views
+- [x] Standardized positioning guide overlay
+- [x] Image cropping and orientation correction (auto-orient via sharp)
+- [x] HIPAA-compliant image storage (org/patient scoped, audit logged)
+- [x] Batch upload for multiple views
+
+--- Iteration 2 completed at 2026-01-22 ---
+Story: US-209 - Photo capture and upload
+
