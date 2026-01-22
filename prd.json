@@ -92,7 +92,7 @@
         "Handle plan completion"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-091",

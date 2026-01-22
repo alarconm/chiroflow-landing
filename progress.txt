@@ -369,3 +369,143 @@ Two new procedures:
 --- Iteration 5 completed at 2026-01-21 ---
 Story: US-089 - Payment plans creation and management
 
+--- Iteration 5 completed at 2026-01-21 21:23:57 ---
+Story: US-089 - Payment plans creation and management
+
+## 2026-01-21: US-090 - Automated payment plan billing
+
+**Status:** COMPLETE
+
+### What was done:
+
+Implemented the complete automated payment plan billing system with scheduled job processing, retry logic, notifications, and plan completion handling.
+
+#### 1. Scheduled job to process due installments (NEW)
+
+**Core Service (`app/src/lib/payment/plan-billing-scheduler.ts`):**
+- `processDueInstallments()` - Main entry point for scheduled billing job
+- `getDueInstallments()` - Fetches installments where status=SCHEDULED and dueDate <= now
+- `getRetryReadyInstallments()` - Fetches failed installments ready for retry
+- `processInstallmentPayment()` - Processes individual installment using payment provider
+- Creates `PaymentTransaction` records for all attempts (success and failure)
+- Updates installment status (SCHEDULED → PENDING → PAID/FAILED)
+- Updates plan progress (amountPaid, amountRemaining, installmentsPaid)
+
+**API Endpoint (`app/src/app/api/cron/payment-plan-billing/route.ts`):**
+- GET/POST endpoint for cron job triggering
+- Secret-based authentication (`CRON_SECRET` env var or `x-cron-secret` header)
+- Supports config overrides via query params
+- Returns detailed job results with timing
+- Vercel Cron-compatible
+
+**tRPC Procedures (`app/src/server/routers/payment-processing.ts`):**
+- `runBillingJob` - Manual trigger with dry-run support
+- `getUpcomingBillingItems` - Preview upcoming installments
+- `getBillingStats` - Dashboard metrics (active plans, collected amounts, etc.)
+- `getBillingConfig` / `updateBillingConfig` - Manage organization settings
+
+#### 2. Retry failed payments with configurable attempts (NEW)
+
+**Configuration (`BillingJobConfig`):**
+- `maxRetryAttempts` (default: 3) - Maximum retry attempts per installment
+- `retryIntervalDays` (default: 3) - Days between retry attempts
+
+**Implementation:**
+- Failed installments get `nextRetryAt` set based on retry interval
+- `attemptCount` tracks number of attempts
+- Retry continues until `attemptCount >= maxRetryAttempts`
+- Final failure triggers patient notification and staff alert
+
+#### 3. Send payment reminder before due date (NEW)
+
+**Configuration:**
+- `reminderDaysBeforeDue` (default: 3) - Days before due date to send reminder
+- `sendReminders` (default: true) - Enable/disable reminders
+
+**Implementation (`sendPaymentReminders()`):**
+- Finds SCHEDULED installments with dueDate in reminder window
+- Skips installments already reminded today
+- Sends beautiful HTML email with:
+  - Reminder icon and header
+  - Payment amount and due date
+  - Plan progress details
+  - Auto-payment notice
+- Respects patient `allowEmail` preference
+
+#### 4. Send confirmation on successful payment (NEW)
+
+**Implementation (`sendPaymentConfirmation()`):**
+- Triggered after successful payment processing
+- Beautiful HTML email with:
+  - Success checkmark icon
+  - Payment amount and date
+  - Payment method (masked card number)
+  - Transaction reference
+  - Plan progress bar visualization
+  - Remaining balance (or completion message)
+- Fire-and-forget (non-blocking)
+- Respects patient `allowEmail` preference
+
+#### 5. Alert staff on failed payments (NEW)
+
+**Configuration:**
+- `alertStaffOnFailure` (default: true) - Enable/disable staff alerts
+- `staffAlertEmail` - Optional override for alert destination
+
+**Implementation (`alertStaffOnFailure()`):**
+- Only triggered on final failure (after all retries exhausted)
+- Fetches staff email from org settings or config
+- Detailed alert email with:
+  - Patient name and ID
+  - Plan details
+  - Failed amount
+  - Error message
+  - Attempt count
+  - Action required notice
+
+#### 6. Handle plan completion (NEW)
+
+**Implementation:**
+- `checkAndCompletePlan()` - Called after each successful payment
+- Checks if all installments are PAID or SKIPPED
+- Updates plan status to COMPLETED
+- Sets endDate to current date
+- Sends completion notification email with:
+  - Celebration emoji and banner
+  - Total paid summary
+  - Plan progress (100%)
+  - Congratulations message
+- Audit log captures completion event
+
+### Files Created:
+- `app/src/lib/payment/plan-billing-scheduler.ts` - Complete billing scheduler service
+- `app/src/app/api/cron/payment-plan-billing/route.ts` - Cron endpoint
+
+### Files Modified:
+- `app/src/lib/payment/index.ts` - Added plan-billing-scheduler exports
+- `app/src/server/routers/payment-processing.ts` - Added billing management procedures
+
+### New tRPC Procedures:
+- `getBillingConfig` - Get organization billing configuration
+- `updateBillingConfig` - Update billing configuration
+- `runBillingJob` - Manual trigger with dry-run option
+- `getUpcomingBillingItems` - Preview upcoming payments
+- `getBillingStats` - Billing dashboard statistics
+
+### Acceptance Criteria Met:
+✅ Scheduled job to process due installments
+✅ Retry failed payments with configurable attempts
+✅ Send payment reminder before due date
+✅ Send confirmation on successful payment
+✅ Alert staff on failed payments
+✅ Handle plan completion
+
+### Validation:
+- TypeScript compiles without errors
+- All exports available from `@/lib/payment`
+- Cron endpoint secured with secret authentication
+- Organization-scoped configuration
+
+--- Iteration 6 completed at 2026-01-21 ---
+Story: US-090 - Automated payment plan billing
+

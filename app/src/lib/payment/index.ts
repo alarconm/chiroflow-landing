@@ -19,6 +19,16 @@ export { MockPaymentProvider } from './mock-provider';
 export { StripePaymentProvider } from './stripe-provider';
 export { QuickBooksSyncService, getQuickBooksService } from './quickbooks';
 
+// Payment Plan Billing Scheduler (US-090)
+export {
+  processDueInstallments,
+  getBillingConfig,
+  updateBillingConfig,
+  type BillingJobConfig,
+  type BillingJobResult,
+  type InstallmentProcessResult,
+} from './plan-billing-scheduler';
+
 // Credential encryption utilities
 export {
   encryptPaymentCredential,

@@ -2528,6 +2528,283 @@ This is an automated notification. Please do not reply to this email.`,
 
       return transactions;
     }),
+
+  // ============================================
+  // Automated Payment Plan Billing (US-090)
+  // ============================================
+
+  /**
+   * Get billing configuration for the organization
+   */
+  getBillingConfig: billerProcedure.query(async ({ ctx }) => {
+    const { getBillingConfig } = await import('@/lib/payment/plan-billing-scheduler');
+    return getBillingConfig(ctx.user.organizationId);
+  }),
+
+  /**
+   * Update billing configuration
+   */
+  updateBillingConfig: billerProcedure
+    .input(
+      z.object({
+        maxRetryAttempts: z.number().int().min(1).max(10).optional(),
+        retryIntervalDays: z.number().int().min(1).max(14).optional(),
+        reminderDaysBeforeDue: z.number().int().min(1).max(14).optional(),
+        sendReminders: z.boolean().optional(),
+        alertStaffOnFailure: z.boolean().optional(),
+        staffAlertEmail: z.string().email().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { updateBillingConfig } = await import('@/lib/payment/plan-billing-scheduler');
+      await updateBillingConfig(ctx.user.organizationId, input);
+
+      await auditLog(PAYMENT_AUDIT_ACTIONS.PAYMENT_PLAN_UPDATE, 'Organization', {
+        entityId: ctx.user.organizationId,
+        changes: {
+          action: 'update_billing_config',
+          ...input,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { success: true };
+    }),
+
+  /**
+   * Manually trigger billing job (for testing or manual runs)
+   * In production, this would be called by a cron job
+   */
+  runBillingJob: billerProcedure
+    .input(
+      z.object({
+        dryRun: z.boolean().default(false),
+      }).optional()
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { processDueInstallments, getBillingConfig } = await import(
+        '@/lib/payment/plan-billing-scheduler'
+      );
+
+      // Get org config
+      const config = await getBillingConfig(ctx.user.organizationId);
+
+      if (input?.dryRun) {
+        // In dry run mode, just return what would be processed
+        const dueCount = await ctx.prisma.paymentPlanInstallment.count({
+          where: {
+            status: InstallmentStatus.SCHEDULED,
+            dueDate: { lte: new Date() },
+            paymentPlan: {
+              organizationId: ctx.user.organizationId,
+              status: PaymentPlanStatus.ACTIVE,
+            },
+          },
+        });
+
+        const retryCount = await ctx.prisma.paymentPlanInstallment.count({
+          where: {
+            status: InstallmentStatus.FAILED,
+            attemptCount: { lt: config?.maxRetryAttempts ?? 3 },
+            nextRetryAt: { lte: new Date() },
+            paymentPlan: {
+              organizationId: ctx.user.organizationId,
+              status: PaymentPlanStatus.ACTIVE,
+            },
+          },
+        });
+
+        return {
+          dryRun: true,
+          wouldProcess: {
+            dueInstallments: dueCount,
+            retryInstallments: retryCount,
+            total: dueCount + retryCount,
+          },
+        };
+      }
+
+      // Run the actual billing job
+      const result = await processDueInstallments(config || undefined);
+
+      await auditLog(PAYMENT_AUDIT_ACTIONS.PAYMENT_PLAN_UPDATE, 'Organization', {
+        entityId: ctx.user.organizationId,
+        changes: {
+          action: 'manual_billing_job_run',
+          result: {
+            processed: result.processedInstallments,
+            successful: result.successfulPayments,
+            failed: result.failedPayments,
+            retried: result.retriedPayments,
+            completed: result.completedPlans,
+            reminders: result.remindersSent,
+          },
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        dryRun: false,
+        result,
+      };
+    }),
+
+  /**
+   * Get upcoming installments that will be processed
+   */
+  getUpcomingBillingItems: protectedProcedure
+    .input(
+      z.object({
+        daysAhead: z.number().int().min(1).max(30).default(7),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + input.daysAhead);
+
+      const installments = await ctx.prisma.paymentPlanInstallment.findMany({
+        where: {
+          status: { in: [InstallmentStatus.SCHEDULED, InstallmentStatus.FAILED] },
+          OR: [
+            {
+              status: InstallmentStatus.SCHEDULED,
+              dueDate: { lte: futureDate },
+            },
+            {
+              status: InstallmentStatus.FAILED,
+              nextRetryAt: { lte: futureDate },
+            },
+          ],
+          paymentPlan: {
+            organizationId: ctx.user.organizationId,
+            status: PaymentPlanStatus.ACTIVE,
+          },
+        },
+        include: {
+          paymentPlan: {
+            include: {
+              patient: {
+                include: { demographics: true },
+              },
+            },
+          },
+        },
+        orderBy: [
+          { status: 'asc' }, // Failed first (need attention)
+          { dueDate: 'asc' },
+        ],
+      });
+
+      const now = new Date();
+      return installments.map((i) => ({
+        installmentId: i.id,
+        planId: i.paymentPlanId,
+        planName: i.paymentPlan.name,
+        patientId: i.paymentPlan.patientId,
+        patientName: i.paymentPlan.patient.demographics
+          ? `${i.paymentPlan.patient.demographics.firstName} ${i.paymentPlan.patient.demographics.lastName}`
+          : 'Unknown Patient',
+        installmentNumber: i.installmentNumber,
+        totalInstallments: i.paymentPlan.numberOfInstallments,
+        amount: Number(i.amount),
+        dueDate: i.dueDate,
+        status: i.status,
+        isOverdue: i.status === InstallmentStatus.SCHEDULED && i.dueDate < now,
+        isRetry: i.status === InstallmentStatus.FAILED,
+        attemptCount: i.attemptCount,
+        nextRetryAt: i.nextRetryAt,
+      }));
+    }),
+
+  /**
+   * Get billing job history/stats
+   */
+  getBillingStats: billerProcedure
+    .input(
+      z.object({
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { startDate = new Date(new Date().setDate(1)), endDate = new Date() } = input;
+
+      const [
+        totalPlansActive,
+        installmentsPaidInPeriod,
+        installmentsFailedInPeriod,
+        plansCompletedInPeriod,
+        totalAmountCollected,
+        upcomingDue,
+      ] = await Promise.all([
+        // Active plans
+        ctx.prisma.paymentPlan.count({
+          where: {
+            organizationId: ctx.user.organizationId,
+            status: PaymentPlanStatus.ACTIVE,
+          },
+        }),
+        // Installments paid in period
+        ctx.prisma.paymentPlanInstallment.count({
+          where: {
+            paymentPlan: { organizationId: ctx.user.organizationId },
+            status: InstallmentStatus.PAID,
+            paidAt: { gte: startDate, lte: endDate },
+          },
+        }),
+        // Installments failed (currently in failed state)
+        ctx.prisma.paymentPlanInstallment.count({
+          where: {
+            paymentPlan: { organizationId: ctx.user.organizationId },
+            status: InstallmentStatus.FAILED,
+          },
+        }),
+        // Plans completed in period
+        ctx.prisma.paymentPlan.count({
+          where: {
+            organizationId: ctx.user.organizationId,
+            status: PaymentPlanStatus.COMPLETED,
+            endDate: { gte: startDate, lte: endDate },
+          },
+        }),
+        // Total amount collected
+        ctx.prisma.paymentPlanInstallment.aggregate({
+          where: {
+            paymentPlan: { organizationId: ctx.user.organizationId },
+            status: InstallmentStatus.PAID,
+            paidAt: { gte: startDate, lte: endDate },
+          },
+          _sum: { paidAmount: true },
+        }),
+        // Upcoming due (next 7 days)
+        ctx.prisma.paymentPlanInstallment.count({
+          where: {
+            paymentPlan: {
+              organizationId: ctx.user.organizationId,
+              status: PaymentPlanStatus.ACTIVE,
+            },
+            status: InstallmentStatus.SCHEDULED,
+            dueDate: {
+              gte: new Date(),
+              lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+            },
+          },
+        }),
+      ]);
+
+      return {
+        periodStart: startDate,
+        periodEnd: endDate,
+        activePlans: totalPlansActive,
+        installmentsPaid: installmentsPaidInPeriod,
+        installmentsFailed: installmentsFailedInPeriod,
+        plansCompleted: plansCompletedInPeriod,
+        amountCollected: Number(totalAmountCollected._sum.paidAmount ?? 0),
+        upcomingDue,
+      };
+    }),
 });
 
 // Helper function to map card type to existing PaymentMethod enum
