@@ -43,3 +43,61 @@ All acceptance criteria met:
 ✓ Rate limiting for mobile
 ✓ Offline-first data sync endpoints
 ✓ Push notification registration endpoint
+--- Iteration 1 completed at 2026-01-22 07:28:46 ---
+Story: US-264 - Mobile API layer
+
+2026-01-22: US-265 - Push notification system
+---------------------------------------------
+Implemented complete push notification system for Epic 27 (Mobile Applications).
+
+Files Created:
+- app/src/lib/push-notifications.ts - FCM/APNS integration library
+- app/src/server/routers/notifications.ts - tRPC router for notifications
+
+Files Modified:
+- app/prisma/schema.prisma (added NotificationPreference and NotificationLog models)
+- app/src/server/routers/index.ts (added notificationsRouter)
+- app/src/lib/audit.ts (added notification audit actions)
+
+Prisma Models Added:
+- NotificationPreference - User notification preferences with quiet hours, channel settings
+- NotificationLog - Notification delivery tracking and history
+
+Key Features:
+1. notifications.register - Register device token (FCM/APNS)
+2. notifications.send - Send push notification to single user
+3. notifications.sendBulk - Send push notification to multiple users
+4. Firebase Cloud Messaging (FCM) integration for Android/Web
+5. Apple Push Notification Service (APNS) integration for iOS
+6. Per-user notification preferences with type-specific toggles
+7. Quiet hours support (don't disturb during specified times)
+8. Notification types: appointment, message, form, treatment, alert, general
+9. Full notification history with read/unread tracking
+10. Admin statistics and cleanup utilities
+
+tRPC Procedures:
+- notifications.register - Register device for push notifications
+- notifications.unregister - Unregister device
+- notifications.send - Send notification (admin only)
+- notifications.sendBulk - Send bulk notifications (admin only)
+- notifications.getPreferences - Get user notification preferences
+- notifications.updatePreferences - Update user preferences
+- notifications.getHistory - Get notification history
+- notifications.getUnreadCount - Get unread count
+- notifications.markRead - Mark notification as read
+- notifications.markAllRead - Mark all notifications as read
+- notifications.cleanupOld - Delete old notifications (admin)
+- notifications.getUserPreferences - Get specific user preferences (admin)
+- notifications.getStats - Get notification statistics (admin)
+
+All acceptance criteria met:
+✓ notifications.register - Register device token
+✓ notifications.send - Send push notification
+✓ Firebase Cloud Messaging integration
+✓ Apple Push Notification Service integration
+✓ Notification preferences per user
+✓ Notification types (appointment, message, alert)
+✓ Notification history
+--- Iteration 2 completed at 2026-01-22 ---
+Story: US-265 - Push notification system
+

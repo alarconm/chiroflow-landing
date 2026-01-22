@@ -89,6 +89,7 @@ import { baaRouter } from './baa';
 import { accessControlRouter } from './accessControl';
 // Mobile Applications (Epic 27)
 import { mobileRouter } from './mobile';
+import { notificationsRouter } from './notifications';
 
 export const appRouter = router({
   auth: authRouter,
@@ -181,6 +182,7 @@ export const appRouter = router({
   accessControl: accessControlRouter,
   // Mobile Applications (Epic 27)
   mobile: mobileRouter,
+  notifications: notificationsRouter,
 });
 
 

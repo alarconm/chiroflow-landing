@@ -222,6 +222,8 @@ model Organization {
   mobileRateLimits     MobileRateLimit[]
   offlineSyncQueues    OfflineSyncQueue[]
   pushNotifications    PushNotification[]
+  notificationPreferences NotificationPreference[]
+  notificationLogs     NotificationLog[]
 
   @@index([subdomain])
 }
@@ -289,6 +291,8 @@ model User {
   mobileDevices            MobileDevice[]
   mobileRefreshTokens      MobileRefreshToken[]
   pushNotifications        PushNotification[]
+  notificationPreference   NotificationPreference?
+  notificationLogs         NotificationLog[]
 
   @@unique([email, organizationId])
   @@index([organizationId])
@@ -10225,5 +10229,101 @@ model PushNotification {
   @@index([deliveryStatus])
   @@index([type])
   @@index([scheduledFor])
+  @@index([createdAt])
+}
+
+// Notification preferences per user (US-265)
+model NotificationPreference {
+  id              String          @id @default(cuid())
+
+  // Notification type preferences
+  appointmentReminders     Boolean @default(true)
+  appointmentConfirmations Boolean @default(true)
+  appointmentCancellations Boolean @default(true)
+  messageNotifications     Boolean @default(true)
+  formNotifications        Boolean @default(true)
+  treatmentReminders       Boolean @default(true)
+  generalAlerts            Boolean @default(true)
+  marketingMessages        Boolean @default(false)
+
+  // Quiet hours (don't send during these times)
+  quietHoursEnabled        Boolean @default(false)
+  quietHoursStart          String?  // HH:MM format
+  quietHoursEnd            String?  // HH:MM format
+  quietHoursTimezone       String?  // IANA timezone
+
+  // Frequency settings
+  appointmentReminderTiming Int     @default(24)  // Hours before appointment
+  dailyDigest              Boolean @default(false)
+  digestTime               String? // HH:MM format for digest
+
+  // Channel preferences (which channels to use)
+  pushEnabled              Boolean @default(true)
+  emailEnabled             Boolean @default(true)
+  smsEnabled               Boolean @default(true)
+
+  // Timestamps
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // User relation
+  userId          String    @unique
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Multi-tenant relation
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+// Notification history/log for tracking sent notifications (US-265)
+model NotificationLog {
+  id              String                    @id @default(cuid())
+
+  // Notification details
+  notificationType NotificationType
+  title           String
+  body            String
+  data            Json?                     // Additional payload sent
+
+  // Delivery details
+  channel         String                    // 'push', 'email', 'sms'
+  platform        DevicePlatform?           // For push: IOS, ANDROID
+  deviceId        String?                   // Device that received it
+
+  // Status tracking
+  status          NotificationDeliveryStatus @default(PENDING)
+  sentAt          DateTime?
+  deliveredAt     DateTime?
+  readAt          DateTime?
+  failedAt        DateTime?
+  failureReason   String?
+
+  // External IDs
+  fcmMessageId    String?                   // Firebase message ID
+  apnsMessageId   String?                   // APNS message ID
+  externalId      String?                   // Any other external tracking ID
+
+  // Related entities
+  relatedEntityType String?
+  relatedEntityId   String?
+  pushNotificationId String?                // Link to PushNotification if applicable
+
+  // Timestamps
+  createdAt       DateTime                  @default(now())
+
+  // User relation
+  userId          String
+  user            User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Multi-tenant relation
+  organizationId  String
+  organization    Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([status])
+  @@index([notificationType])
   @@index([createdAt])
 }
