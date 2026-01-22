@@ -79,10 +79,69 @@
 
 ---
 
-## Next Story: US-258 (Field-level encryption)
+### US-258: Field-level encryption
+- Status: COMPLETE
+- Date: 2026-01-22
+
+#### What was implemented:
+1. **Encryption Library** (`app/src/lib/security/encryption.ts`)
+   - AES-256-GCM encryption/decryption functions
+   - Key generation and management utilities
+   - Key identifier generation with purpose tracking
+   - Encrypted data format: `enc:v1:keyId:iv:authTag:ciphertext`
+   - Key validation and fingerprinting
+   - Field-level encryption/decryption helpers
+   - SSN-specific encryption with last 4 extraction
+   - Batch encryption/decryption operations
+   - Key wrapping for secure key storage
+   - Re-encryption support for key rotation
+
+2. **Security Router Extensions** (`app/src/server/routers/security.ts`)
+   - `security.createEncryptionKey` - Create new encryption key for organization
+   - `security.listEncryptionKeys` - List all encryption keys with filtering
+   - `security.getEncryptionKey` - Get key for authorized users (role-based access)
+   - `security.rotateEncryptionKey` - Rotate key with version tracking
+   - `security.retireEncryptionKey` - Retire a key (keeps for decryption)
+   - `security.markKeyCompromised` - Mark key as compromised with critical logging
+   - `security.encryptValue` - Encrypt a value using specified key
+   - `security.decryptValue` - Decrypt a value (auto-detects key from ciphertext)
+   - `security.encryptSSN` - Encrypt SSN with last 4 extraction for display
+   - `security.getEncryptionKeyAuditLog` - Get access audit log for a key
+   - `security.getKeysForRotation` - List keys due for rotation
+
+#### Security Features:
+- Envelope encryption: DEKs encrypted with master key (environment variable)
+- Role-based key access control
+- Key rotation with version tracking
+- Comprehensive audit logging for all encryption operations
+- PHI access logging for HIPAA compliance
+- Support for multiple key purposes (SSN, PHI, Payment, API Keys, Secrets)
+- Automatic key rotation scheduling (Monthly, Quarterly, Yearly)
+- Compromised key tracking
+
+#### Key Purposes Supported:
+- PHI_ENCRYPTION - General Protected Health Information
+- SSN_ENCRYPTION - Social Security Numbers
+- PAYMENT_CREDENTIAL_ENCRYPTION - Payment card tokens
+- API_KEY_ENCRYPTION - Third-party API keys
+- SECRET_ENCRYPTION - General secrets
+
+#### Verification:
+- TypeScript compiles without errors
+- Encryption functions exported from security index
+
+---
+
+## Next Story: US-259 (Session security)
 --- Iteration 1 completed at 2026-01-22 06:26:20 ---
 Story: US-256 - Security schema
 
 --- Iteration 2 completed at 2026-01-22 ---
 Story: US-257 - Multi-factor authentication
+
+--- Iteration 2 completed at 2026-01-22 06:34:09 ---
+Story: US-257 - Multi-factor authentication
+
+--- Iteration 3 completed at 2026-01-22 ---
+Story: US-258 - Field-level encryption
 

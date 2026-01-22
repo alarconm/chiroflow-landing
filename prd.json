@@ -52,7 +52,7 @@
         "Audit access to encrypted fields"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-259",

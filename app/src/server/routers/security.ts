@@ -13,6 +13,18 @@ import {
   generateDeviceFingerprint,
   generateSessionToken,
   hashSessionToken,
+  // Field-level encryption imports
+  generateEncryptionKey,
+  generateKeyIdentifier,
+  encrypt,
+  decrypt,
+  isEncrypted,
+  extractKeyId,
+  reencrypt,
+  encryptSSN,
+  validateEncryptionKey,
+  keyFingerprint,
+  type EncryptionKeyPurpose,
 } from '@/lib/security';
 import type { PrismaClient, SecurityEventType, Role, Prisma } from '@prisma/client';
 
@@ -1033,6 +1045,754 @@ export const securityRouter = router({
       hasVerifiedMFA: !!verifiedMFA,
       gracePeriodDays: securitySetting.mfaGracePeriodDays,
     };
+  }),
+
+  // ============================================
+  // Field-Level Encryption
+  // ============================================
+
+  // Create a new encryption key for the organization
+  createEncryptionKey: adminProcedure
+    .input(
+      z.object({
+        purpose: z.enum([
+          'PHI_ENCRYPTION',
+          'SSN_ENCRYPTION',
+          'PAYMENT_CREDENTIAL_ENCRYPTION',
+          'API_KEY_ENCRYPTION',
+          'SECRET_ENCRYPTION',
+        ]),
+        rotationSchedule: z.enum(['MONTHLY', 'QUARTERLY', 'YEARLY']).optional(),
+        allowedRoles: z.array(z.enum(['OWNER', 'ADMIN', 'PROVIDER', 'STAFF', 'BILLER'])).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Generate a new encryption key
+      const rawKey = generateEncryptionKey();
+      const keyIdentifier = generateKeyIdentifier(input.purpose as EncryptionKeyPurpose);
+
+      // Get master key from environment (in production, use HSM/KMS)
+      const masterKey = process.env.ENCRYPTION_MASTER_KEY;
+      if (!masterKey) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Encryption master key not configured',
+        });
+      }
+
+      // Store the key metadata (actual key should be stored in HSM/KMS)
+      // For this implementation, we encrypt the DEK with the master key
+      const encryptedKey = encrypt(rawKey, masterKey, 'master');
+
+      // Calculate next rotation date
+      let nextRotationAt: Date | null = null;
+      if (input.rotationSchedule) {
+        const now = new Date();
+        switch (input.rotationSchedule) {
+          case 'MONTHLY':
+            nextRotationAt = new Date(now.setMonth(now.getMonth() + 1));
+            break;
+          case 'QUARTERLY':
+            nextRotationAt = new Date(now.setMonth(now.getMonth() + 3));
+            break;
+          case 'YEARLY':
+            nextRotationAt = new Date(now.setFullYear(now.getFullYear() + 1));
+            break;
+        }
+      }
+
+      const encryptionKey = await ctx.prisma.encryptionKey.create({
+        data: {
+          keyIdentifier,
+          status: 'ACTIVE',
+          algorithm: 'AES-256-GCM',
+          keyVersion: 1,
+          purpose: input.purpose,
+          organizationId: ctx.user.organizationId,
+          activatedAt: new Date(),
+          rotationSchedule: input.rotationSchedule,
+          nextRotationAt,
+          allowedRoles: input.allowedRoles || ['OWNER', 'ADMIN'],
+          // Store encrypted key in metadata (in production, reference KMS key ID)
+          allowedUsers: [encryptedKey], // Using allowedUsers to store encrypted key temporarily
+        },
+      });
+
+      await logSecurityEvent(
+        ctx.prisma as unknown as PrismaClient,
+        'CONFIG_CHANGED',
+        ctx.user.id,
+        ctx.user.organizationId,
+        true,
+        { type: 'encryption_key_created', keyId: keyIdentifier, purpose: input.purpose }
+      );
+
+      await auditLog('CREATE', 'EncryptionKey', {
+        entityId: encryptionKey.id,
+        changes: { purpose: input.purpose, keyIdentifier },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        id: encryptionKey.id,
+        keyIdentifier,
+        purpose: input.purpose,
+        fingerprint: keyFingerprint(rawKey),
+      };
+    }),
+
+  // List encryption keys for the organization
+  listEncryptionKeys: adminProcedure
+    .input(
+      z.object({
+        purpose: z.string().optional(),
+        status: z.enum(['ACTIVE', 'ROTATING', 'RETIRED', 'COMPROMISED']).optional(),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const where: Record<string, unknown> = {
+        organizationId: ctx.user.organizationId,
+      };
+
+      if (input?.purpose) {
+        where.purpose = input.purpose;
+      }
+
+      if (input?.status) {
+        where.status = input.status;
+      }
+
+      const keys = await ctx.prisma.encryptionKey.findMany({
+        where,
+        select: {
+          id: true,
+          keyIdentifier: true,
+          status: true,
+          algorithm: true,
+          keyVersion: true,
+          purpose: true,
+          createdAt: true,
+          activatedAt: true,
+          rotatedAt: true,
+          retiredAt: true,
+          expiresAt: true,
+          rotationSchedule: true,
+          nextRotationAt: true,
+          allowedRoles: true,
+          lastAccessedAt: true,
+          accessCount: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      return keys;
+    }),
+
+  // Get encryption key for use (returns key only to authorized users)
+  getEncryptionKey: protectedProcedure
+    .input(
+      z.object({
+        keyIdentifier: z.string(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const encryptionKey = await ctx.prisma.encryptionKey.findFirst({
+        where: {
+          keyIdentifier: input.keyIdentifier,
+          organizationId: ctx.user.organizationId,
+          status: 'ACTIVE',
+        },
+      });
+
+      if (!encryptionKey) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Encryption key not found or not active',
+        });
+      }
+
+      // Check role authorization
+      const allowedRoles = encryptionKey.allowedRoles as Role[];
+      if (!allowedRoles.includes(ctx.user.role as Role)) {
+        await logSecurityEvent(
+          ctx.prisma as unknown as PrismaClient,
+          'PHI_ACCESSED',
+          ctx.user.id,
+          ctx.user.organizationId,
+          false,
+          { type: 'encryption_key_access_denied', keyId: input.keyIdentifier }
+        );
+
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'You do not have permission to access this encryption key',
+        });
+      }
+
+      // Get master key from environment
+      const masterKey = process.env.ENCRYPTION_MASTER_KEY;
+      if (!masterKey) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Encryption master key not configured',
+        });
+      }
+
+      // Decrypt the data encryption key
+      const encryptedKey = encryptionKey.allowedUsers[0]; // Stored in allowedUsers temporarily
+      if (!encryptedKey) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Encryption key data not found',
+        });
+      }
+
+      const decryptedKey = decrypt(encryptedKey, masterKey);
+
+      // Update access tracking
+      await ctx.prisma.encryptionKey.update({
+        where: { id: encryptionKey.id },
+        data: {
+          lastAccessedAt: new Date(),
+          accessCount: { increment: 1 },
+        },
+      });
+
+      // Log access
+      await logSecurityEvent(
+        ctx.prisma as unknown as PrismaClient,
+        'PHI_ACCESSED',
+        ctx.user.id,
+        ctx.user.organizationId,
+        true,
+        { type: 'encryption_key_accessed', keyId: input.keyIdentifier, purpose: encryptionKey.purpose }
+      );
+
+      return {
+        keyIdentifier: encryptionKey.keyIdentifier,
+        key: decryptedKey,
+        algorithm: encryptionKey.algorithm,
+        purpose: encryptionKey.purpose,
+      };
+    }),
+
+  // Rotate encryption key
+  rotateEncryptionKey: adminProcedure
+    .input(
+      z.object({
+        keyIdentifier: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const existingKey = await ctx.prisma.encryptionKey.findFirst({
+        where: {
+          keyIdentifier: input.keyIdentifier,
+          organizationId: ctx.user.organizationId,
+          status: 'ACTIVE',
+        },
+      });
+
+      if (!existingKey) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Encryption key not found or not active',
+        });
+      }
+
+      // Get master key
+      const masterKey = process.env.ENCRYPTION_MASTER_KEY;
+      if (!masterKey) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Encryption master key not configured',
+        });
+      }
+
+      // Generate new key
+      const newRawKey = generateEncryptionKey();
+      const newKeyIdentifier = generateKeyIdentifier(existingKey.purpose as EncryptionKeyPurpose);
+      const encryptedNewKey = encrypt(newRawKey, masterKey, 'master');
+
+      // Calculate next rotation date
+      let nextRotationAt: Date | null = null;
+      if (existingKey.rotationSchedule) {
+        const now = new Date();
+        switch (existingKey.rotationSchedule) {
+          case 'MONTHLY':
+            nextRotationAt = new Date(now.setMonth(now.getMonth() + 1));
+            break;
+          case 'QUARTERLY':
+            nextRotationAt = new Date(now.setMonth(now.getMonth() + 3));
+            break;
+          case 'YEARLY':
+            nextRotationAt = new Date(now.setFullYear(now.getFullYear() + 1));
+            break;
+        }
+      }
+
+      // Mark old key as rotating, create new key
+      const [_updatedOldKey, newKey] = await ctx.prisma.$transaction([
+        ctx.prisma.encryptionKey.update({
+          where: { id: existingKey.id },
+          data: {
+            status: 'ROTATING',
+            rotatedAt: new Date(),
+          },
+        }),
+        ctx.prisma.encryptionKey.create({
+          data: {
+            keyIdentifier: newKeyIdentifier,
+            status: 'ACTIVE',
+            algorithm: existingKey.algorithm,
+            keyVersion: existingKey.keyVersion + 1,
+            purpose: existingKey.purpose,
+            organizationId: ctx.user.organizationId,
+            activatedAt: new Date(),
+            rotationSchedule: existingKey.rotationSchedule,
+            nextRotationAt,
+            previousKeyId: existingKey.id,
+            allowedRoles: existingKey.allowedRoles,
+            allowedUsers: [encryptedNewKey],
+          },
+        }),
+      ]);
+
+      await logSecurityEvent(
+        ctx.prisma as unknown as PrismaClient,
+        'CONFIG_CHANGED',
+        ctx.user.id,
+        ctx.user.organizationId,
+        true,
+        {
+          type: 'encryption_key_rotated',
+          oldKeyId: input.keyIdentifier,
+          newKeyId: newKeyIdentifier,
+          purpose: existingKey.purpose,
+        }
+      );
+
+      await auditLog('UPDATE', 'EncryptionKey', {
+        entityId: existingKey.id,
+        changes: { action: 'key_rotated', newKeyIdentifier },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        oldKeyIdentifier: input.keyIdentifier,
+        newKeyIdentifier,
+        newKeyId: newKey.id,
+        fingerprint: keyFingerprint(newRawKey),
+      };
+    }),
+
+  // Retire an encryption key
+  retireEncryptionKey: adminProcedure
+    .input(
+      z.object({
+        keyIdentifier: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const encryptionKey = await ctx.prisma.encryptionKey.findFirst({
+        where: {
+          keyIdentifier: input.keyIdentifier,
+          organizationId: ctx.user.organizationId,
+          status: { in: ['ACTIVE', 'ROTATING'] },
+        },
+      });
+
+      if (!encryptionKey) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Encryption key not found',
+        });
+      }
+
+      await ctx.prisma.encryptionKey.update({
+        where: { id: encryptionKey.id },
+        data: {
+          status: 'RETIRED',
+          retiredAt: new Date(),
+        },
+      });
+
+      await logSecurityEvent(
+        ctx.prisma as unknown as PrismaClient,
+        'CONFIG_CHANGED',
+        ctx.user.id,
+        ctx.user.organizationId,
+        true,
+        { type: 'encryption_key_retired', keyId: input.keyIdentifier }
+      );
+
+      await auditLog('UPDATE', 'EncryptionKey', {
+        entityId: encryptionKey.id,
+        changes: { action: 'key_retired' },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { success: true };
+    }),
+
+  // Mark key as compromised
+  markKeyCompromised: adminProcedure
+    .input(
+      z.object({
+        keyIdentifier: z.string(),
+        reason: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const encryptionKey = await ctx.prisma.encryptionKey.findFirst({
+        where: {
+          keyIdentifier: input.keyIdentifier,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!encryptionKey) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Encryption key not found',
+        });
+      }
+
+      await ctx.prisma.encryptionKey.update({
+        where: { id: encryptionKey.id },
+        data: {
+          status: 'COMPROMISED',
+          retiredAt: new Date(),
+        },
+      });
+
+      await logSecurityEvent(
+        ctx.prisma as unknown as PrismaClient,
+        'PHI_EXPORTED',
+        ctx.user.id,
+        ctx.user.organizationId,
+        false,
+        {
+          type: 'encryption_key_compromised',
+          keyId: input.keyIdentifier,
+          reason: input.reason,
+          severity: 'CRITICAL',
+        }
+      );
+
+      await auditLog('UPDATE', 'EncryptionKey', {
+        entityId: encryptionKey.id,
+        changes: { action: 'key_compromised', reason: input.reason },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { success: true };
+    }),
+
+  // ============================================
+  // Encrypt/Decrypt Operations
+  // ============================================
+
+  // Encrypt a value (for API use)
+  encryptValue: protectedProcedure
+    .input(
+      z.object({
+        value: z.string(),
+        keyIdentifier: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Get the key
+      const encryptionKey = await ctx.prisma.encryptionKey.findFirst({
+        where: {
+          keyIdentifier: input.keyIdentifier,
+          organizationId: ctx.user.organizationId,
+          status: 'ACTIVE',
+        },
+      });
+
+      if (!encryptionKey) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Encryption key not found or not active',
+        });
+      }
+
+      // Check authorization
+      const allowedRoles = encryptionKey.allowedRoles as Role[];
+      if (!allowedRoles.includes(ctx.user.role as Role)) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'You do not have permission to use this encryption key',
+        });
+      }
+
+      // Get and decrypt the DEK
+      const masterKey = process.env.ENCRYPTION_MASTER_KEY;
+      if (!masterKey) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Encryption master key not configured',
+        });
+      }
+
+      const encryptedDEK = encryptionKey.allowedUsers[0];
+      if (!encryptedDEK) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Encryption key data not found',
+        });
+      }
+
+      const dek = decrypt(encryptedDEK, masterKey);
+      const encryptedValue = encrypt(input.value, dek, input.keyIdentifier);
+
+      // Log the operation
+      await logSecurityEvent(
+        ctx.prisma as unknown as PrismaClient,
+        'PHI_ACCESSED',
+        ctx.user.id,
+        ctx.user.organizationId,
+        true,
+        { type: 'data_encrypted', keyId: input.keyIdentifier }
+      );
+
+      return { encryptedValue };
+    }),
+
+  // Decrypt a value (for API use)
+  decryptValue: protectedProcedure
+    .input(
+      z.object({
+        encryptedValue: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Extract key ID from encrypted value
+      const keyId = extractKeyId(input.encryptedValue);
+      if (!keyId) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Value is not encrypted or has invalid format',
+        });
+      }
+
+      // Find the key
+      const encryptionKey = await ctx.prisma.encryptionKey.findFirst({
+        where: {
+          keyIdentifier: keyId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!encryptionKey) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Encryption key not found',
+        });
+      }
+
+      // Check authorization
+      const allowedRoles = encryptionKey.allowedRoles as Role[];
+      if (!allowedRoles.includes(ctx.user.role as Role)) {
+        await logSecurityEvent(
+          ctx.prisma as unknown as PrismaClient,
+          'PHI_ACCESSED',
+          ctx.user.id,
+          ctx.user.organizationId,
+          false,
+          { type: 'decrypt_access_denied', keyId }
+        );
+
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'You do not have permission to decrypt this data',
+        });
+      }
+
+      // Get and decrypt the DEK
+      const masterKey = process.env.ENCRYPTION_MASTER_KEY;
+      if (!masterKey) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Encryption master key not configured',
+        });
+      }
+
+      const encryptedDEK = encryptionKey.allowedUsers[0];
+      if (!encryptedDEK) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Encryption key data not found',
+        });
+      }
+
+      const dek = decrypt(encryptedDEK, masterKey);
+      const decryptedValue = decrypt(input.encryptedValue, dek);
+
+      // Log the operation
+      await logSecurityEvent(
+        ctx.prisma as unknown as PrismaClient,
+        'PHI_ACCESSED',
+        ctx.user.id,
+        ctx.user.organizationId,
+        true,
+        { type: 'data_decrypted', keyId }
+      );
+
+      return { value: decryptedValue };
+    }),
+
+  // Encrypt SSN with last 4 extraction
+  encryptSSN: protectedProcedure
+    .input(
+      z.object({
+        ssn: z.string().regex(/^\d{3}-?\d{2}-?\d{4}$/, 'Invalid SSN format'),
+        keyIdentifier: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Get the key
+      const encryptionKey = await ctx.prisma.encryptionKey.findFirst({
+        where: {
+          keyIdentifier: input.keyIdentifier,
+          organizationId: ctx.user.organizationId,
+          status: 'ACTIVE',
+          purpose: { in: ['SSN_ENCRYPTION', 'PHI_ENCRYPTION'] },
+        },
+      });
+
+      if (!encryptionKey) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Encryption key not found or not suitable for SSN encryption',
+        });
+      }
+
+      // Check authorization
+      const allowedRoles = encryptionKey.allowedRoles as Role[];
+      if (!allowedRoles.includes(ctx.user.role as Role)) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'You do not have permission to encrypt SSN data',
+        });
+      }
+
+      // Get and decrypt the DEK
+      const masterKey = process.env.ENCRYPTION_MASTER_KEY;
+      if (!masterKey) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Encryption master key not configured',
+        });
+      }
+
+      const encryptedDEK = encryptionKey.allowedUsers[0];
+      if (!encryptedDEK) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Encryption key data not found',
+        });
+      }
+
+      const dek = decrypt(encryptedDEK, masterKey);
+      const result = encryptSSN(input.ssn, dek, input.keyIdentifier);
+
+      // Log the operation
+      await logSecurityEvent(
+        ctx.prisma as unknown as PrismaClient,
+        'PHI_ACCESSED',
+        ctx.user.id,
+        ctx.user.organizationId,
+        true,
+        { type: 'ssn_encrypted', keyId: input.keyIdentifier }
+      );
+
+      return {
+        encrypted: result.encrypted,
+        last4: result.last4,
+      };
+    }),
+
+  // Get encryption key audit log
+  getEncryptionKeyAuditLog: adminProcedure
+    .input(
+      z.object({
+        keyIdentifier: z.string(),
+        limit: z.number().min(1).max(100).default(50),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      // Verify key belongs to organization
+      const encryptionKey = await ctx.prisma.encryptionKey.findFirst({
+        where: {
+          keyIdentifier: input.keyIdentifier,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!encryptionKey) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Encryption key not found',
+        });
+      }
+
+      // Get security events related to this key
+      const events = await ctx.prisma.securityEvent.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          eventType: { in: ['PHI_ACCESSED', 'CONFIG_CHANGED', 'PHI_EXPORTED'] },
+          metadata: {
+            path: ['keyId'],
+            equals: input.keyIdentifier,
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: input.limit,
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      });
+
+      return events;
+    }),
+
+  // Get keys due for rotation
+  getKeysForRotation: adminProcedure.query(async ({ ctx }) => {
+    const now = new Date();
+
+    const keysDueForRotation = await ctx.prisma.encryptionKey.findMany({
+      where: {
+        organizationId: ctx.user.organizationId,
+        status: 'ACTIVE',
+        nextRotationAt: {
+          lte: now,
+        },
+      },
+      select: {
+        id: true,
+        keyIdentifier: true,
+        purpose: true,
+        rotationSchedule: true,
+        nextRotationAt: true,
+        keyVersion: true,
+        createdAt: true,
+      },
+      orderBy: { nextRotationAt: 'asc' },
+    });
+
+    return keysDueForRotation;
   }),
 });
 
