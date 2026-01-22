@@ -17,6 +17,7 @@ import {
   PaymentMatcher,
   UnderpaymentDetector,
   ClaimSubmitter,
+  DenialAnalyzer,
 } from '@/lib/ai-billing';
 
 // ============================================
@@ -99,6 +100,26 @@ const autoSubmitRuleInputSchema = z.object({
   maxClaimsPerRun: z.number().min(1).max(1000).default(100),
   scheduleCron: z.string().optional(),
 });
+
+// ============================================
+// US-309 Helper Functions
+// ============================================
+
+function getSuggestionForCategory(category: string): string {
+  const suggestions: Record<string, string> = {
+    CODING: 'Use claim scrubbing before submission and review payer-specific coding guidelines',
+    ELIGIBILITY: 'Verify eligibility before each visit and implement real-time eligibility checks',
+    AUTHORIZATION: 'Check authorization requirements before scheduling and maintain tracking system',
+    MEDICAL_NECESSITY: 'Document medical necessity clearly in notes and link diagnoses appropriately',
+    TIMELY_FILING: 'Implement claims aging alerts and submit claims within 24-48 hours',
+    DUPLICATE: 'Track claim status carefully and use frequency codes for corrections',
+    BUNDLING: 'Use CCI edits checking before submission and apply correct modifiers',
+    DOCUMENTATION: 'Ensure all required documents are attached and create checklists by payer',
+    COORDINATION_OF_BENEFITS: 'Verify primary/secondary insurance at check-in and update COB regularly',
+    OTHER: 'Review denial reason and implement appropriate prevention measures',
+  };
+  return suggestions[category] || suggestions.OTHER;
+}
 
 // ============================================
 // Router
@@ -1547,4 +1568,324 @@ export const aiBillingRouter = router({
 
       return alerts;
     }),
+
+  // ============================================
+  // US-309: Denial Analysis and Routing
+  // ============================================
+
+  /**
+   * Analyze a denial and determine appropriate routing
+   */
+  analyzeDenial: billerProcedure
+    .input(
+      z.object({
+        denialId: z.string(),
+        includeHistoricalAnalysis: z.boolean().default(true),
+        includePreventionStrategies: z.boolean().default(true),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const analyzer = new DenialAnalyzer(ctx.prisma, ctx.user.organizationId);
+        const result = await analyzer.analyzeDenial(input);
+
+        // Audit log
+        await ctx.prisma.aIBillingAudit.create({
+          data: {
+            action: 'ANALYZE_DENIAL',
+            entityType: 'Denial',
+            entityId: input.denialId,
+            decision: result.recommendedWorkflow,
+            confidence: result.confidence,
+            reasoning: result.reasoning,
+            inputData: input,
+            outputData: {
+              category: result.category,
+              isCorrectable: result.isCorrectable,
+              recommendedWorkflow: result.recommendedWorkflow,
+              priority: result.priority,
+              riskFactorCount: result.riskFactors.length,
+            },
+            processingTimeMs: result.processingTimeMs,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+
+        await auditLog('AI_BILLING_ANALYZE_DENIAL', 'Denial', {
+          entityId: input.denialId,
+          changes: {
+            action: 'analyze',
+            category: result.category,
+            workflow: result.recommendedWorkflow,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return result;
+      } catch (error) {
+        console.error('Denial analysis failed:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to analyze denial',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Route a denial to a specific workflow
+   */
+  routeDenial: billerProcedure
+    .input(
+      z.object({
+        denialId: z.string(),
+        workflow: z.enum([
+          'CORRECT_AND_RESUBMIT',
+          'APPEAL',
+          'PATIENT_RESPONSIBILITY',
+          'WRITE_OFF',
+          'ESCALATE',
+          'NEEDS_REVIEW',
+        ]),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const analyzer = new DenialAnalyzer(ctx.prisma, ctx.user.organizationId);
+        await analyzer.routeDenial(input.denialId, input.workflow);
+
+        await auditLog('AI_BILLING_ROUTE_DENIAL', 'Denial', {
+          entityId: input.denialId,
+          changes: {
+            action: 'route',
+            workflow: input.workflow,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return { success: true, workflow: input.workflow };
+      } catch (error) {
+        console.error('Denial routing failed:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to route denial',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Get denial pattern analysis
+   */
+  getDenialPatterns: billerProcedure
+    .input(
+      z.object({
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      try {
+        const analyzer = new DenialAnalyzer(ctx.prisma, ctx.user.organizationId);
+        return analyzer.getPatternAnalysis(input.dateFrom, input.dateTo);
+      } catch (error) {
+        console.error('Pattern analysis failed:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to get denial patterns',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Record denial outcome for learning
+   */
+  recordDenialOutcome: billerProcedure
+    .input(
+      z.object({
+        denialId: z.string(),
+        wasSuccessful: z.boolean(),
+        actualWorkflow: z.string(),
+        recoveredAmount: z.number().optional(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const analyzer = new DenialAnalyzer(ctx.prisma, ctx.user.organizationId);
+        await analyzer.recordOutcome(input.denialId, input);
+
+        await auditLog('AI_BILLING_DENIAL_OUTCOME', 'Denial', {
+          entityId: input.denialId,
+          changes: {
+            wasSuccessful: input.wasSuccessful,
+            actualWorkflow: input.actualWorkflow,
+            recoveredAmount: input.recoveredAmount,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return { success: true };
+      } catch (error) {
+        console.error('Recording denial outcome failed:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to record denial outcome',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Get denials pending analysis
+   */
+  getDenialsPendingAnalysis: billerProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(100).default(20),
+        priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const denials = await ctx.prisma.denial.findMany({
+        where: {
+          claim: { organizationId: ctx.user.organizationId },
+          status: { in: ['NEW', 'UNDER_REVIEW'] },
+        },
+        include: {
+          claim: {
+            include: {
+              patient: { include: { demographics: true } },
+              payer: true,
+            },
+          },
+        },
+        orderBy: [
+          { appealDeadline: 'asc' },
+          { deniedAmount: 'desc' },
+          { createdAt: 'asc' },
+        ],
+        take: input.limit,
+      });
+
+      return denials;
+    }),
+
+  /**
+   * Get provider denial trending
+   */
+  getProviderDenialTrending: billerProcedure
+    .input(
+      z.object({
+        providerId: z.string().optional(),
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const threeMonthsAgo = input.dateFrom || new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+      const endDate = input.dateTo || new Date();
+
+      const where = {
+        claim: {
+          organizationId: ctx.user.organizationId,
+          ...(input.providerId && { encounter: { providerId: input.providerId } }),
+        },
+        createdAt: { gte: threeMonthsAgo, lte: endDate },
+      };
+
+      // Get denials grouped by provider
+      const denials = await ctx.prisma.denial.findMany({
+        where,
+        include: {
+          claim: {
+            include: {
+              encounter: { include: { provider: { include: { user: { select: { firstName: true, lastName: true } } } } } },
+            },
+          },
+        },
+      });
+
+      // Group by provider
+      const providerMap = new Map<string, {
+        id: string;
+        name: string;
+        denials: number;
+        totalAmount: number;
+        codes: Map<string, number>;
+      }>();
+
+      for (const d of denials) {
+        const provider = d.claim?.encounter?.provider;
+        if (!provider) continue;
+
+        const existing = providerMap.get(provider.id) || {
+          id: provider.id,
+          name: `${provider.user?.firstName || ''} ${provider.user?.lastName || ''}`.trim() || 'Unknown Provider',
+          denials: 0,
+          totalAmount: 0,
+          codes: new Map(),
+        };
+
+        existing.denials++;
+        existing.totalAmount += d.deniedAmount?.toNumber() || 0;
+        if (d.denialCode) {
+          existing.codes.set(d.denialCode, (existing.codes.get(d.denialCode) || 0) + 1);
+        }
+
+        providerMap.set(provider.id, existing);
+      }
+
+      // Get total claims per provider for denial rate
+      const results = await Promise.all(
+        Array.from(providerMap.entries()).map(async ([providerId, stats]) => {
+          const totalClaims = await ctx.prisma.claim.count({
+            where: {
+              organizationId: ctx.user.organizationId,
+              encounter: { providerId },
+              createdAt: { gte: threeMonthsAgo, lte: endDate },
+            },
+          });
+
+          const topCodes = Array.from(stats.codes.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([code, count]) => ({ code, count }));
+
+          return {
+            providerId: stats.id,
+            providerName: stats.name,
+            totalDenials: stats.denials,
+            totalAmount: stats.totalAmount,
+            totalClaims,
+            denialRate: totalClaims > 0 ? (stats.denials / totalClaims) * 100 : 0,
+            topDenialCodes: topCodes,
+          };
+        })
+      );
+
+      return results.sort((a, b) => b.denialRate - a.denialRate);
+    }),
+
+  /**
+   * Get denial prevention suggestions
+   */
+  getPreventionSuggestions: billerProcedure.query(async ({ ctx }) => {
+    const analyzer = new DenialAnalyzer(ctx.prisma, ctx.user.organizationId);
+    const patterns = await analyzer.getPatternAnalysis();
+
+    return {
+      topOpportunities: patterns.topPreventionOpportunities,
+      byCategory: patterns.byCategory.slice(0, 5).map(cat => ({
+        category: cat.category,
+        count: cat.count,
+        amount: cat.amount,
+        suggestion: getSuggestionForCategory(cat.category),
+      })),
+    };
+  }),
 });

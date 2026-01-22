@@ -98,8 +98,70 @@ Implemented autonomous claim submission system for AI billing agent with pre-sub
 - TypeScript compiles successfully for new files
 - Pre-existing TypeScript errors unrelated to this change
 
+### US-309 - Denial analysis and routing
+**Status**: COMPLETED
+**Date**: 2026-01-22
+
+**Implementation Summary**:
+Implemented comprehensive denial analysis and routing system with intelligent categorization, workflow routing, pattern analysis, and provider-level trending.
+
+**Files Created**:
+- `app/src/lib/ai-billing/denial-analyzer.ts` - New DenialAnalyzer service class (~1300 lines)
+
+**Files Modified**:
+- `app/src/lib/ai-billing/index.ts` - Added DenialAnalyzer exports and types
+- `app/src/server/routers/aiBilling.ts` - Added 7 new endpoints for denial analysis
+- `app/src/lib/audit.ts` - Added AI_BILLING_ANALYZE_DENIAL, AI_BILLING_ROUTE_DENIAL, AI_BILLING_DENIAL_OUTCOME audit actions
+
+**DenialAnalyzer Service Features**:
+1. `analyzeDenial()` - Main denial analysis with categorization, workflow routing, corrections, appeal recommendations
+2. `categorizeDenial()` - Map denial codes to 10+ categories:
+   - CODING, ELIGIBILITY, AUTHORIZATION, MEDICAL_NECESSITY
+   - DUPLICATE, TIMELY_FILING, BUNDLING, MODIFIER
+   - DOCUMENTATION, COORDINATION_OF_BENEFITS, CONTRACT, OTHER
+3. `determineCorrectable()` - Analyze if denial can be corrected or needs appeal
+4. `determineWorkflow()` - Route to appropriate workflow:
+   - CORRECT_AND_RESUBMIT, APPEAL, PATIENT_RESPONSIBILITY, WRITE_OFF, ESCALATE
+5. `generateCorrectionActions()` - Suggest specific corrections based on denial type
+6. `generateAppealRecommendation()` - Create appeal strategy with arguments and evidence
+7. `findRelatedDenials()` - Find similar denials for pattern analysis
+8. `routeDenial()` - Update denial status and route to workflow
+9. `getPatternAnalysis()` - Organization-level denial patterns with prevention opportunities
+10. `getProviderTrending()` - Provider-specific denial trends and rates
+11. `recordOutcome()` - Track denial resolution outcomes for learning
+
+**CARC Code Mapping**:
+- Maps 50+ Claim Adjustment Reason Codes (CARC) to denial categories
+- Supports standard codes like CO-4, CO-16, CO-18, CO-29, CO-50, CO-96, CO-109, etc.
+
+**New tRPC Endpoints**:
+1. `analyzeDenial` - Analyze denial reason and route (mutation)
+2. `routeDenial` - Update denial workflow status (mutation)
+3. `getDenialPatterns` - Get organization denial patterns (query)
+4. `recordDenialOutcome` - Record resolution outcome (mutation)
+5. `getDenialsPendingAnalysis` - Get unanalyzed denials (query)
+6. `getProviderDenialTrending` - Get provider-level denial trends (query)
+7. `getPreventionSuggestions` - Get denial prevention suggestions (query)
+
+**Type Exports Added**:
+- DenialCategory, DenialWorkflow, DenialAnalysisInput, DenialAnalysisOutput
+- CorrectionAction, AppealRecommendation, RelatedDenial
+- ProviderDenialTrend, RiskFactor, DenialPatternAnalysis
+
+**Acceptance Criteria Met**:
+- ✅ aiBilling.analyzeDenial - Analyze denial reason
+- ✅ Categorize denial type (coding, eligibility, authorization + 9 more)
+- ✅ Determine if correctable or needs appeal (via determineCorrectable)
+- ✅ Route to appropriate workflow (5 workflow types)
+- ✅ Learn from denial patterns (via getPatternAnalysis, findRelatedDenials)
+- ✅ Suggest prevention strategies (via getPreventionSuggestions)
+- ✅ Provider-level denial trending (via getProviderDenialTrending)
+
+**Validation**:
+- TypeScript compiles successfully for new files
+- Pre-existing TypeScript errors unrelated to this change
+
 ## Next Stories to Implement
-- US-309 - Denial analysis and routing
 - US-310 - Automated appeal generation
 - US-311 - Claim follow-up automation
 - US-312 - Smart payment posting
@@ -108,3 +170,9 @@ Implemented autonomous claim submission system for AI billing agent with pre-sub
 --- Iteration 1 completed at 2026-01-22 10:01:45 ---
 Story: US-308 - AI billing agent schema
 
+--- Iteration 2 completed at 2026-01-22 10:14:24 ---
+Story: US-308 - Autonomous claim submission
+
+
+--- Iteration 3 completed at 2026-01-22 10:24:06 ---
+Story: US-309 - Denial analysis and routing

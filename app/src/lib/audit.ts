@@ -119,6 +119,9 @@ export type AuditAction =
   | 'AI_BILLING_BATCH_JOB'
   // AI Billing Agent actions (Epic 31)
   | 'AI_BILLING_SUBMIT'
+  | 'AI_BILLING_ANALYZE_DENIAL'
+  | 'AI_BILLING_ROUTE_DENIAL'
+  | 'AI_BILLING_DENIAL_OUTCOME'
   // AI Insights actions (Epic 10)
   | 'AI_INSIGHT_STATUS_UPDATE'
   | 'AI_NL_QUERY'

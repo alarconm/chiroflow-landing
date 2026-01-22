@@ -52,7 +52,7 @@
         "Provider-level denial trending"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-310",

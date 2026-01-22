@@ -14,6 +14,7 @@ export { AppealGenerator } from './appeal-generator';
 export { PaymentMatcher } from './payment-matcher';
 export { UnderpaymentDetector } from './underpayment-detector';
 export { ClaimSubmitter } from './claim-submitter';
+export { DenialAnalyzer } from './denial-analyzer';
 
 // Convenience type re-exports for common usage
 export type {
@@ -52,3 +53,17 @@ export type {
   RuleCondition,
   SubmissionStats,
 } from './claim-submitter';
+
+// Denial Analyzer types (Epic 31: US-309)
+export type {
+  DenialCategory,
+  DenialWorkflow,
+  DenialAnalysisInput,
+  DenialAnalysisOutput,
+  CorrectionAction,
+  AppealRecommendation,
+  RelatedDenial,
+  ProviderDenialTrend,
+  RiskFactor as DenialRiskFactor,
+  DenialPatternAnalysis,
+} from './denial-analyzer';
