@@ -95,6 +95,8 @@ import { mobileChartingRouter } from './mobileCharting';
 import { mobilePatientAppointmentsRouter } from './mobilePatientAppointments';
 import { mobilePatientHealthRouter } from './mobilePatientHealth';
 import { offlineRouter } from './offline';
+// AI Receptionist Agent (Epic 30)
+import { aiReceptionistRouter } from './ai-receptionist';
 
 export const appRouter = router({
   auth: authRouter,
@@ -194,6 +196,8 @@ export const appRouter = router({
   mobilePatientHealth: mobilePatientHealthRouter,
   // Offline Mode (US-270)
   offline: offlineRouter,
+  // AI Receptionist Agent (Epic 30)
+  aiReceptionist: aiReceptionistRouter,
 });
 
 

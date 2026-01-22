@@ -37,8 +37,48 @@
 - Prisma schema validated successfully
 - Prisma client generated successfully
 
+#### US-301: Voice AI integration (COMPLETED)
+- Created comprehensive types in `app/src/lib/ai-receptionist/types.ts`:
+  - VoiceConfig, BusinessHours, EscalationRule types
+  - CallState for managing active call state
+  - TranscriptEntry for conversation transcripts
+  - TwilioWebhookPayload and TwilioStreamPayload for Twilio integration
+  - OpenAI Realtime API types (OpenAISessionConfig, OpenAITool, events)
+  - SpeechToText and TextToSpeech service interfaces
+  - VoiceServiceConfig combining all configuration
+  - CallAnalytics and VoiceMetrics for reporting
+- Created VoiceService class in `app/src/lib/ai-receptionist/voice-service.ts`:
+  - handleIncomingCall - Handles Twilio webhook, identifies patient, builds greeting
+  - processSpeech - Processes speech input, detects intent and sentiment
+  - generateResponse - AI response generation based on detected intent
+  - Intent handlers for booking, rescheduling, canceling, questions
+  - transferCall - Transfer call to human staff with context handoff
+  - startRecording - Recording with consent management
+  - endCall - Save conversation and analytics to database
+  - isWithinBusinessHours - Business hours checking
+  - checkEscalationRules - Automatic escalation triggers
+  - getOpenAISessionConfig - OpenAI Realtime API configuration
+  - Event system for real-time call monitoring
+- Created tRPC router in `app/src/server/routers/ai-receptionist.ts`:
+  - Voice configuration CRUD (getVoiceConfig, upsertVoiceConfig)
+  - Call handling (handleIncomingCall, processSpeech, transferCall, endCall)
+  - Recording management (startRecording)
+  - Active call monitoring (getActiveCalls, getCallState)
+  - Conversation history (getConversations, getConversation)
+  - Escalation management (getPendingEscalations, resolveEscalation, assignEscalation)
+  - Knowledge base CRUD (getKnowledgeBase, createKnowledgeEntry, updateKnowledgeEntry, deleteKnowledgeEntry)
+  - Analytics (getVoiceMetrics, getCallAnalytics)
+- Added router to index.ts
+- All acceptance criteria met:
+  ✅ Twilio Voice + OpenAI Realtime API integration architecture
+  ✅ Natural voice synthesis with configurable voice (voiceProvider, voiceId, speed, pitch)
+  ✅ Real-time speech-to-text transcription (via OpenAI Whisper-1)
+  ✅ Low-latency conversational responses (OpenAI Realtime API with server VAD)
+  ✅ Call transfer to human when needed (transferCall with context handoff)
+  ✅ Call recording with consent (recordingConsent, recordingDisclosure)
+  ✅ After-hours automated handling (businessHours, afterHoursMsg)
+
 ### Pending Stories
-- US-301: Voice AI integration
 - US-302: Appointment scheduling agent
 - US-303: FAQ and information agent
 - US-304: Patient identification
@@ -50,3 +90,9 @@
 - Mobile app has pre-existing TypeScript errors due to missing expo/react-native dependencies
 - These errors are unrelated to the AI receptionist schema changes
 - Main web app compiles successfully
+--- Iteration 1 completed at 2026-01-22 09:03:28 ---
+Story: US-300 - AI receptionist schema
+
+--- Iteration 2 completed at 2026-01-22 ---
+Story: US-301 - Voice AI integration
+
