@@ -564,3 +564,128 @@ Date: 2026-01-22
 --- Iteration 6 completed at 2026-01-22 ---
 Story: US-253 - Consolidated reporting
 
+--- Iteration 6 completed at 2026-01-22 06:06:14 ---
+Story: US-253 - Consolidated reporting
+
+## US-254: Inter-location inventory - COMPLETED
+Date: 2026-01-22
+
+### Changes Made:
+
+1. **Extended LowStockAlert model** (`app/prisma/schema.prisma`)
+   - Added locationId - Optional location for per-location alerts
+   - Added location relation to Location
+   - Added index on locationId
+
+2. **Created TransferStatus enum** (`app/prisma/schema.prisma`)
+   - PENDING - Request created, awaiting approval
+   - APPROVED - Approved by destination location
+   - REJECTED - Rejected by destination location
+   - IN_TRANSIT - Items shipped, in transit
+   - RECEIVED - Items received at destination
+   - CANCELLED - Cancelled by requester
+   - PARTIAL - Partially received
+
+3. **Created InventoryTransfer model** (`app/prisma/schema.prisma`)
+   - Transfer number with auto-generation
+   - Full workflow status tracking
+   - Shipping info (tracking, method, cost)
+   - Priority levels (normal, urgent, critical)
+   - Expected dates for shipping and arrival
+   - Relations to requesting, approving, and receiving users
+   - From/to location relations
+
+4. **Created InventoryTransferItem model** (`app/prisma/schema.prisma`)
+   - Requested, approved, shipped, and received quantities
+   - Unit cost and total cost tracking
+   - Condition notes for receipt inspection
+
+5. **Updated related models with new relations**:
+   - Location: outgoingTransfers, incomingTransfers, lowStockAlerts
+   - User: transfersRequested, transfersApproved, transfersReceived
+   - Organization: inventoryTransfers
+   - Product: transferItems
+
+6. **Added audit log actions** (`app/src/lib/audit.ts`)
+   - INVENTORY_TRANSFER_CREATE
+   - INVENTORY_TRANSFER_APPROVE
+   - INVENTORY_TRANSFER_REJECT
+   - INVENTORY_TRANSFER_SHIP
+   - INVENTORY_TRANSFER_RECEIVE
+   - INVENTORY_TRANSFER_CANCEL
+   - INVENTORY_TRANSFER_UPDATE
+   - INVENTORY_LOW_STOCK_ALERT_CREATE
+   - INVENTORY_LOW_STOCK_ALERT_RESOLVE
+   - INVENTORY_VALUE_REPORT_VIEW
+
+7. **Created interLocationInventory router** (`app/src/server/routers/interLocationInventory.ts`)
+
+   **Transfer Procedures:**
+   - **transfer** - Create a new inventory transfer request
+     - Validates locations and products
+     - Checks stock availability at source
+     - Reserves stock during pending status
+     - Auto-generates transfer number
+   - **approveTransfer** - Approve pending transfer
+     - Can adjust approved quantities
+     - Releases excess reservations
+   - **rejectTransfer** - Reject pending transfer
+     - Releases all reserved stock
+   - **shipTransfer** - Ship approved transfer
+     - Creates TRANSFER_OUT inventory movements
+     - Deducts stock from source location
+   - **receiveTransfer** - Receive shipped transfer
+     - Creates TRANSFER_IN inventory movements
+     - Adds stock to destination with weighted avg cost
+     - Supports partial receipt
+   - **cancelTransfer** - Cancel pending/approved transfer
+
+   **Transfer Query Procedures:**
+   - **getTransfer** - Get single transfer by ID
+   - **listTransfers** - List with filters (status, locations, dates)
+   - **getProductTransferHistory** - Transfer history for a product
+
+   **Inventory by Location Procedures:**
+   - **getInventoryByLocation** - Stock levels at a location
+   - **getInventorySummaryByLocation** - Summary across all locations
+
+   **Low Stock Alert Procedures:**
+   - **getLowStockAlertsByLocation** - Alerts filtered by location
+   - **createLowStockAlert** - Create alert for specific location
+   - **checkLowStockByLocation** - Batch check and create alerts
+
+   **Consolidated Reporting Procedures:**
+   - **getConsolidatedInventoryValue** - Value report across locations
+     - Cost value, retail value, potential profit
+     - Top products by value at each location
+   - **compareLocationInventory** - Side-by-side comparison
+   - **getTransferStatsByLocation** - Transfer statistics
+
+8. **Registered router** (`app/src/server/routers/index.ts`)
+   - Added interLocationInventoryRouter import and registration
+
+9. **Database migration**
+   - Prisma schema validated successfully
+   - Schema pushed to database with `prisma db push`
+   - Prisma client regenerated
+   - TypeScript compilation successful
+
+### Files Created:
+- app/src/server/routers/interLocationInventory.ts
+
+### Files Modified:
+- app/prisma/schema.prisma
+- app/src/lib/audit.ts
+- app/src/server/routers/index.ts
+
+### Acceptance Criteria Status:
+- [x] inventory.transfer - Transfer stock between locations
+- [x] Transfer request and approval workflow
+- [x] Track inventory by location
+- [x] Low stock alerts per location
+- [x] Consolidated inventory value report
+- [x] Inter-location transfer history
+
+--- Iteration 7 completed at 2026-01-22 ---
+Story: US-254 - Inter-location inventory
+

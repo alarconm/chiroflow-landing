@@ -200,6 +200,9 @@ model Organization {
   crossLocationAccessLogs CrossLocationAccessLog[]
   patientLocationBalances PatientLocationBalance[]
 
+  // Inter-Location Inventory relations (Epic 25 - US-254)
+  inventoryTransfers      InventoryTransfer[]
+
   @@index([subdomain])
 }
 
@@ -242,6 +245,11 @@ model User {
   // Multi-location relations (Epic 25)
   locationAssignments      LocationStaff[]
   crossLocationAccessLogs  CrossLocationAccessLog[]
+
+  // Inter-Location Inventory relations (Epic 25 - US-254)
+  transfersRequested       InventoryTransfer[]        @relation("TransferRequestedBy")
+  transfersApproved        InventoryTransfer[]        @relation("TransferApprovedBy")
+  transfersReceived        InventoryTransfer[]        @relation("TransferReceivedBy")
 
   @@unique([email, organizationId])
   @@index([organizationId])
@@ -5331,6 +5339,9 @@ model Product {
   lowStockAlerts     LowStockAlert[]
   vendorProducts     VendorProduct[]
 
+  // Inter-Location Inventory relations (Epic 25 - US-254)
+  transferItems      InventoryTransferItem[]
+
   @@unique([sku, organizationId])
   @@unique([barcode, organizationId])
   @@index([organizationId])
@@ -5705,10 +5716,15 @@ model LowStockAlert {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  // Multi-location relation (Epic 25 - US-254)
+  locationId String?
+  location   Location? @relation(fields: [locationId], references: [id])
+
   @@index([organizationId])
   @@index([productId])
   @@index([status])
   @@index([createdAt])
+  @@index([locationId])
 }
 
 // ============================================
@@ -9073,6 +9089,11 @@ model Location {
   resources                  Resource[]
   appointmentTypeAvailability AppointmentTypeLocation[]
 
+  // Inter-Location Inventory relations (Epic 25 - US-254)
+  outgoingTransfers          InventoryTransfer[]        @relation("TransferFromLocation")
+  incomingTransfers          InventoryTransfer[]        @relation("TransferToLocation")
+  lowStockAlerts             LowStockAlert[]
+
   @@unique([code, organizationId])
   @@index([organizationId])
   @@index([isActive])
@@ -9266,4 +9287,122 @@ model PatientLocationBalance {
   @@index([patientId])
   @@index([locationId])
   @@index([organizationId])
+}
+
+// ============================================
+// Inter-Location Inventory (Epic 25 - US-254)
+// ============================================
+
+// Transfer request status
+enum TransferStatus {
+  PENDING     // Request created, awaiting approval
+  APPROVED    // Approved by destination location
+  REJECTED    // Rejected by destination location
+  IN_TRANSIT  // Items shipped, in transit
+  RECEIVED    // Items received at destination
+  CANCELLED   // Cancelled by requester
+  PARTIAL     // Partially received
+}
+
+// Inventory transfer between locations
+model InventoryTransfer {
+  id            String         @id @default(cuid())
+  transferNumber String        // Auto-generated transfer number (TRN-001)
+  status        TransferStatus @default(PENDING)
+
+  // Transfer details
+  requestedAt   DateTime       @default(now())
+  approvedAt    DateTime?
+  shippedAt     DateTime?
+  receivedAt    DateTime?
+  completedAt   DateTime?
+
+  // Shipping info
+  trackingNumber String?
+  shippingMethod String?       // "Internal courier", "UPS", etc.
+  shippingCost   Decimal?      @db.Decimal(10, 2)
+
+  // Notes
+  requestNotes  String?        // Notes from requester
+  approvalNotes String?        // Notes from approver
+  receivingNotes String?       // Notes from receiver
+
+  // Rejection reason
+  rejectionReason String?
+
+  // Priority for urgent transfers
+  priority      Int            @default(0) // 0 = normal, 1 = urgent, 2 = critical
+
+  // Expected dates
+  expectedShipDate DateTime?
+  expectedArrivalDate DateTime?
+
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  // Relations - People involved
+  requestedById String
+  requestedBy   User           @relation("TransferRequestedBy", fields: [requestedById], references: [id])
+
+  approvedById  String?
+  approvedBy    User?          @relation("TransferApprovedBy", fields: [approvedById], references: [id])
+
+  receivedById  String?
+  receivedBy    User?          @relation("TransferReceivedBy", fields: [receivedById], references: [id])
+
+  // Relations - Locations
+  fromLocationId String
+  fromLocation   Location      @relation("TransferFromLocation", fields: [fromLocationId], references: [id])
+
+  toLocationId   String
+  toLocation     Location      @relation("TransferToLocation", fields: [toLocationId], references: [id])
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Transfer items
+  items          InventoryTransferItem[]
+
+  @@unique([transferNumber, organizationId])
+  @@index([organizationId])
+  @@index([status])
+  @@index([fromLocationId])
+  @@index([toLocationId])
+  @@index([requestedById])
+  @@index([requestedAt])
+}
+
+// Items in an inventory transfer
+model InventoryTransferItem {
+  id             String   @id @default(cuid())
+
+  // Quantities
+  requestedQty   Int      // Quantity requested
+  approvedQty    Int?     // Quantity approved (may differ from requested)
+  shippedQty     Int?     // Quantity actually shipped
+  receivedQty    Int?     // Quantity received (may differ due to damage/loss)
+
+  // Cost tracking
+  unitCost       Decimal  @db.Decimal(10, 2)
+  totalCost      Decimal  @db.Decimal(10, 2) // Based on shipped or approved qty
+
+  // Notes
+  notes          String?
+
+  // Condition on receipt
+  conditionNotes String?  // Notes about condition when received
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  transferId     String
+  transfer       InventoryTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+
+  productId      String
+  product        Product  @relation(fields: [productId], references: [id])
+
+  @@index([transferId])
+  @@index([productId])
 }
