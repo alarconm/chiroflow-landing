@@ -55,7 +55,7 @@
         "Store copay, deductible, coinsurance amounts"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-060",
@@ -73,7 +73,7 @@
         "Support multiple fee schedules (Cash, Insurance A, Insurance B)"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-061",

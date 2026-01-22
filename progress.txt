@@ -633,3 +633,53 @@ Date: 2026-01-21T20:30:00Z
 --- Iteration 1 completed at 2026-01-21 19:49:00 ---
 Story: US-058 - Insurance payer management
 
+--- Iteration 2 completed at 2026-01-21 19:52:18 ---
+Story: US-059 - Patient insurance policy management
+
+--- Iteration 4 completed at 2026-01-21 21:00:00 ---
+Story: US-060 - Fee schedule management
+
+## Story: US-060 - Fee schedule management
+Date: 2026-01-21T21:00:00Z
+
+### What I Did
+- Verified feeSchedule tRPC router already exists with all required CRUD operations
+- Confirmed all 9 acceptance criteria are met by existing implementation
+- Build compiles successfully
+
+### Router Procedures (Already Implemented)
+- feeSchedule.create - Create new fee schedule (admin only)
+- feeSchedule.update - Modify fee schedule details (admin only)
+- feeSchedule.list - List organization fee schedules (with optional items)
+- feeSchedule.get - Get fee schedule with all items
+- feeSchedule.delete - Delete fee schedule (prevents default deletion)
+- feeSchedule.setDefault - Set as organization default (transactional update)
+- feeSchedule.upsertItem - Add/update fee for CPT code
+- feeSchedule.deleteItem - Delete fee schedule item
+- feeSchedule.bulkImport - Import fees from CSV data (with overwrite option)
+- feeSchedule.getFee - Get fee for a specific CPT code
+- feeSchedule.getFees - Get fees for multiple CPT codes
+- feeSchedule.copy - Copy fee schedule with all items
+
+### Key Features
+- Multi-tenant scoping via organizationId
+- Duplicate name validation within organization
+- Transaction-safe default schedule switching
+- Bulk import with created/updated/skipped counts
+- CPT code normalization (uppercase)
+- Admin-only mutations with audit logging
+- Support for multiple fee schedules (Cash, Insurance A, Insurance B, etc.)
+
+### Files Present (No Changes Needed)
+- app/src/server/routers/feeSchedule.ts (585 lines - complete implementation)
+- app/src/server/routers/index.ts (feeSchedule router registered)
+
+### Build Status
+- ✓ Build compiles successfully
+- ✓ TypeScript checks pass
+
+### Learnings
+- FeeSchedule and FeeScheduleItem models already exist in Prisma schema
+- Composite unique constraint on feeScheduleId_cptCode for upsert operations
+- isDefault flag with safe deletion check (must set another default first)
+
