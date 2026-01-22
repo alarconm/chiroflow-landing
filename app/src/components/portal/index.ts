@@ -3,6 +3,9 @@
  */
 
 export { PortalLogin } from './PortalLogin';
+export { PortalRegister } from './PortalRegister';
+export { PortalActivate } from './PortalActivate';
+export { PortalResetPassword } from './PortalResetPassword';
 export { PortalLayout } from './PortalLayout';
 export { PortalDashboard } from './PortalDashboard';
 export { AppointmentsList } from './AppointmentsList';

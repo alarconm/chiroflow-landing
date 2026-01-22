@@ -15,6 +15,7 @@ import {
   requestPasswordReset,
   resetPassword,
   changePassword,
+  verifyEmail,
   logPortalAccess,
   getPatientMessages,
   getMessageThread,
@@ -237,6 +238,24 @@ export const portalRouter = router({
 
     return { success: true };
   }),
+
+  // Verify email with token (account activation)
+  verifyEmail: publicProcedure
+    .input(z.object({ token: z.string() }))
+    .mutation(async ({ input }) => {
+      const { token } = input;
+
+      const result = await verifyEmail(token);
+
+      if (!result.success) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: result.error || 'Email verification failed',
+        });
+      }
+
+      return { success: true };
+    }),
 
   // Change password (when logged in)
   changePassword: publicProcedure.input(changePasswordSchema).mutation(async ({ input }) => {

@@ -12,7 +12,14 @@ import { useRouter, usePathname } from 'next/navigation';
 import { PortalLayout as PortalLayoutComponent } from '@/components/portal';
 
 // Pages that don't require authentication
-const PUBLIC_PATHS = ['/portal', '/portal/login', '/portal/register', '/portal/forgot-password'];
+const PUBLIC_PATHS = [
+  '/portal',
+  '/portal/login',
+  '/portal/register',
+  '/portal/forgot-password',
+  '/portal/activate',
+  '/portal/reset-password',
+];
 
 export default function PortalLayout({
   children,
