@@ -1,0 +1,101 @@
+{
+  "cli": {
+    "version": ">= 12.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "channel": "development",
+      "ios": {
+        "simulator": true
+      },
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleDebug"
+      },
+      "env": {
+        "API_URL": "https://dev-api.chiroflow.com",
+        "ENVIRONMENT": "development"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "channel": "preview",
+      "ios": {
+        "resourceClass": "m-medium"
+      },
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "API_URL": "https://staging-api.chiroflow.com",
+        "ENVIRONMENT": "staging"
+      }
+    },
+    "beta": {
+      "channel": "beta",
+      "autoIncrement": true,
+      "ios": {
+        "resourceClass": "m-medium"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "API_URL": "https://api.chiroflow.com",
+        "ENVIRONMENT": "beta"
+      }
+    },
+    "production": {
+      "channel": "production",
+      "autoIncrement": true,
+      "ios": {
+        "resourceClass": "m-medium"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "API_URL": "https://api.chiroflow.com",
+        "ENVIRONMENT": "production"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "developer@chiroflow.com",
+        "ascAppId": "YOUR_APP_STORE_CONNECT_APP_ID",
+        "appleTeamId": "YOUR_APPLE_TEAM_ID"
+      },
+      "android": {
+        "serviceAccountKeyPath": "./play-store-service-account.json",
+        "track": "production"
+      }
+    },
+    "beta": {
+      "ios": {
+        "appleId": "developer@chiroflow.com",
+        "ascAppId": "YOUR_APP_STORE_CONNECT_APP_ID",
+        "appleTeamId": "YOUR_APPLE_TEAM_ID"
+      },
+      "android": {
+        "serviceAccountKeyPath": "./play-store-service-account.json",
+        "track": "beta"
+      }
+    },
+    "internal": {
+      "ios": {
+        "appleId": "developer@chiroflow.com",
+        "ascAppId": "YOUR_APP_STORE_CONNECT_APP_ID",
+        "appleTeamId": "YOUR_APPLE_TEAM_ID"
+      },
+      "android": {
+        "serviceAccountKeyPath": "./play-store-service-account.json",
+        "track": "internal"
+      }
+    }
+  }
+}

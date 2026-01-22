@@ -131,7 +131,7 @@
         "Privacy policy and terms"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }

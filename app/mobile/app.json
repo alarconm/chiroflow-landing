@@ -1,0 +1,128 @@
+{
+  "expo": {
+    "name": "ChiroFlow",
+    "slug": "chiroflow",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "scheme": "chiroflow",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#053e67"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.chiroflow.app",
+      "buildNumber": "1",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "infoPlist": {
+        "NSCameraUsageDescription": "ChiroFlow needs camera access to capture progress photos and documentation images.",
+        "NSPhotoLibraryUsageDescription": "ChiroFlow needs photo library access to attach images to documentation.",
+        "NSMicrophoneUsageDescription": "ChiroFlow needs microphone access for voice-to-text note entry.",
+        "NSLocationWhenInUseUsageDescription": "ChiroFlow needs location access to enable check-in functionality.",
+        "NSFaceIDUsageDescription": "ChiroFlow uses Face ID for secure authentication.",
+        "UIBackgroundModes": ["remote-notification"]
+      },
+      "associatedDomains": ["applinks:app.chiroflow.com"],
+      "entitlements": {
+        "aps-environment": "production"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#053e67"
+      },
+      "package": "com.chiroflow.app",
+      "versionCode": 1,
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "RECORD_AUDIO",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "VIBRATE",
+        "RECEIVE_BOOT_COMPLETED",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
+      ],
+      "googleServicesFile": "./google-services.json",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "app.chiroflow.com",
+              "pathPrefix": "/link"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-font",
+      "expo-secure-store",
+      "expo-local-authentication",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow ChiroFlow to access your camera for documentation."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow ChiroFlow to access your photos for documentation."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow ChiroFlow to use your location for check-in."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#053e67",
+          "sounds": ["./assets/notification-sound.wav"]
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Allow ChiroFlow to access your microphone for voice notes."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "YOUR_EAS_PROJECT_ID"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/YOUR_EAS_PROJECT_ID"
+    },
+    "owner": "chiroflow"
+  }
+}

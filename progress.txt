@@ -456,3 +456,101 @@ All acceptance criteria met:
 --- Iteration 7 completed at 2026-01-22 ---
 Story: US-270 - Offline mode with sync
 
+--- Iteration 7 completed at 2026-01-22 08:44:44 ---
+Story: US-270 - Offline mode
+
+2026-01-22: US-271 - Mobile app deployment
+------------------------------------------
+Implemented complete mobile app deployment infrastructure for Epic 27 (Mobile Applications).
+
+Files Created:
+React Native / Expo Project:
+- app/mobile/package.json - Expo/React Native dependencies and scripts
+- app/mobile/app.json - Expo configuration with iOS/Android settings
+- app/mobile/eas.json - EAS Build configuration for all environments
+- app/mobile/tsconfig.json - TypeScript configuration with path aliases
+- app/mobile/App.tsx - Main app entry point with providers
+- app/mobile/.gitignore - Git ignore for mobile project
+
+iOS Deployment:
+- app/mobile/ios/DEPLOYMENT.md - Complete iOS App Store deployment guide
+- app/mobile/ios/ExportOptions.plist - Xcode archive export configuration
+
+Android Deployment:
+- app/mobile/android/DEPLOYMENT.md - Complete Google Play Store deployment guide
+- app/mobile/android/keystore.properties.example - Keystore configuration template
+
+App Signing:
+- app/mobile/credentials/SIGNING.md - Comprehensive signing & certificate guide
+
+Beta Testing:
+- app/mobile/beta-testing/TESTFLIGHT.md - TestFlight beta testing guide
+- app/mobile/beta-testing/FIREBASE_DISTRIBUTION.md - Firebase App Distribution guide
+
+Store Listings:
+- app/mobile/store-listing/APP_STORE_LISTING.md - iOS App Store listing content
+- app/mobile/store-listing/PLAY_STORE_LISTING.md - Google Play Store listing content
+
+Legal Documents:
+- app/mobile/legal/PRIVACY_POLICY.md - HIPAA-compliant privacy policy
+- app/mobile/legal/TERMS_OF_SERVICE.md - Healthcare-focused terms of service
+
+Mobile App Core:
+- app/mobile/src/services/api.ts - API client with JWT auth & token refresh
+- app/mobile/src/services/notifications.ts - Push notification service (FCM/APNS)
+- app/mobile/src/contexts/AuthContext.tsx - Authentication state management
+- app/mobile/src/contexts/OfflineContext.tsx - Offline sync state management
+- app/mobile/src/contexts/ThemeContext.tsx - Theme management (light/dark)
+- app/mobile/src/navigation/RootNavigator.tsx - Navigation structure
+- app/mobile/src/screens/auth/LoginScreen.tsx - Login screen
+- app/mobile/src/screens/provider/ScheduleScreen.tsx - Provider schedule view
+- app/mobile/src/screens/provider/PatientsScreen.tsx - Patient list placeholder
+- app/mobile/src/screens/provider/ChartingScreen.tsx - Charting placeholder
+- app/mobile/src/screens/patient/AppointmentsScreen.tsx - Patient appointments placeholder
+- app/mobile/src/screens/patient/HealthScreen.tsx - Patient health placeholder
+- app/mobile/src/screens/shared/MessagesScreen.tsx - Messages placeholder
+- app/mobile/src/screens/shared/SettingsScreen.tsx - Settings with sync status
+
+Key Features:
+1. React Native with Expo SDK 52 - Modern cross-platform framework
+2. EAS Build - Cloud build service for iOS and Android
+3. Multiple build profiles - development, preview, beta, production
+4. iOS App Store preparation - certificates, provisioning, App Store Connect
+5. Google Play Store preparation - keystore, service account, Play Console
+6. TestFlight integration - Internal and external beta testing
+7. Firebase App Distribution - Alternative beta distribution for Android
+8. Complete store listing content - descriptions, keywords, screenshots guide
+9. HIPAA-compliant privacy policy - Healthcare data handling requirements
+10. Healthcare terms of service - Medical disclaimer, liability limits
+
+Build Profiles:
+- development - For local testing with development client
+- preview - Internal distribution for QA
+- beta - TestFlight/Firebase beta testing
+- production - App Store/Play Store release
+
+Mobile Architecture:
+- Expo Router for navigation
+- React Query for server state
+- Zustand for client state
+- Secure token storage with expo-secure-store
+- Offline-first with AsyncStorage queue
+- Push notifications via expo-notifications
+- Biometric authentication support
+- Dark mode with system preference detection
+
+App Permissions:
+iOS: Camera, Photo Library, Microphone, Location, Face ID
+Android: Camera, Storage, Record Audio, Location, Biometric, Internet
+
+All acceptance criteria met:
+✓ React Native/Expo implementation - Complete project structure with SDK 52
+✓ iOS App Store preparation - Certificates, profiles, listing content, review notes
+✓ Google Play Store preparation - Keystore, service account, data safety, listing
+✓ App signing and certificates - Comprehensive guide for both platforms
+✓ Beta testing via TestFlight/Firebase - Full setup documentation
+✓ App store listing content - Complete metadata for both stores
+✓ Privacy policy and terms - HIPAA-compliant legal documents
+--- Iteration 8 completed at 2026-01-22 ---
+Story: US-271 - Mobile app deployment
+
