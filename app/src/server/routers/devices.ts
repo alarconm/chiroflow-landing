@@ -2563,7 +2563,1227 @@ export const devicesRouter = router({
         },
       ];
     }),
+
+  // ============================================
+  // Activity Correlation Analysis (US-244)
+  // ============================================
+
+  // Main correlation analysis - correlates activity data with patient symptoms and outcomes
+  analyzeCorrelation: protectedProcedure
+    .input(z.object({
+      patientId: z.string(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      analysisTypes: z.array(z.enum(['activityPain', 'sleepPain', 'activityRecovery', 'all'])).default(['all']),
+    }))
+    .query(async ({ ctx, input }) => {
+      const { patientId, startDate, endDate, analysisTypes } = input;
+
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          demographics: {
+            select: {
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      const queryEndDate = endDate || new Date();
+      const queryStartDate = startDate || new Date(queryEndDate.getTime() - 90 * 24 * 60 * 60 * 1000); // 90 days default
+
+      // Fetch all relevant data
+      const [activityData, sleepData, encounters] = await Promise.all([
+        ctx.prisma.activityData.findMany({
+          where: {
+            patientId,
+            organizationId: ctx.user.organizationId,
+            date: {
+              gte: queryStartDate,
+              lte: queryEndDate,
+            },
+          },
+          orderBy: { date: 'asc' },
+        }),
+        ctx.prisma.sleepData.findMany({
+          where: {
+            patientId,
+            organizationId: ctx.user.organizationId,
+            date: {
+              gte: queryStartDate,
+              lte: queryEndDate,
+            },
+          },
+          orderBy: { date: 'asc' },
+        }),
+        ctx.prisma.encounter.findMany({
+          where: {
+            patientId,
+            organizationId: ctx.user.organizationId,
+            encounterDate: {
+              gte: queryStartDate,
+              lte: queryEndDate,
+            },
+          },
+          include: {
+            soapNote: {
+              select: {
+                subjective: true,
+                objective: true,
+                assessment: true,
+              },
+            },
+            diagnoses: {
+              select: {
+                icd10Code: true,
+                description: true,
+              },
+            },
+          },
+          orderBy: { encounterDate: 'asc' },
+        }),
+      ]);
+
+      const runAll = analysisTypes.includes('all');
+      const results: {
+        activityPainCorrelation?: ReturnType<typeof analyzeActivityPainCorrelation>;
+        sleepPainCorrelation?: ReturnType<typeof analyzeSleepPainCorrelation>;
+        activityRecoveryCorrelation?: ReturnType<typeof analyzeActivityRecoveryCorrelation>;
+        providerInsights: Array<{
+          type: string;
+          severity: 'info' | 'warning' | 'critical';
+          message: string;
+          recommendation: string;
+          data?: Record<string, unknown>;
+        }>;
+        patientRecommendations: Array<{
+          category: string;
+          recommendation: string;
+          priority: 'low' | 'medium' | 'high';
+          reasoning: string;
+        }>;
+        trendData: {
+          activityTrend: Array<{ date: string; steps: number | null; activeMinutes: number | null; painLevel: number | null }>;
+          sleepTrend: Array<{ date: string; duration: number | null; quality: number | null; painNextDay: number | null }>;
+          recoveryTrend: Array<{ date: string; encounterDate: string | null; activityChange: number | null; outcome: string | null }>;
+        };
+      } = {
+        providerInsights: [],
+        patientRecommendations: [],
+        trendData: {
+          activityTrend: [],
+          sleepTrend: [],
+          recoveryTrend: [],
+        },
+      };
+
+      // Extract pain levels from SOAP notes
+      const painDataByDate = extractPainDataFromEncounters(encounters);
+
+      // Activity vs Pain correlation
+      if (runAll || analysisTypes.includes('activityPain')) {
+        results.activityPainCorrelation = analyzeActivityPainCorrelation(activityData, painDataByDate, encounters);
+
+        // Add provider insights
+        if (results.activityPainCorrelation.correlationStrength > 60) {
+          results.providerInsights.push({
+            type: 'activityPain',
+            severity: results.activityPainCorrelation.correlationStrength > 80 ? 'critical' : 'warning',
+            message: `Strong correlation found between activity patterns and pain flares (${results.activityPainCorrelation.correlationStrength}% confidence)`,
+            recommendation: results.activityPainCorrelation.primaryPattern === 'overexertion'
+              ? 'Patient may benefit from activity pacing guidance. Consider reducing high-intensity days.'
+              : results.activityPainCorrelation.primaryPattern === 'sedentary'
+              ? 'Patient shows pain increase with low activity. Encourage gentle movement on sedentary days.'
+              : 'Monitor activity patterns for additional data.',
+            data: { pattern: results.activityPainCorrelation.primaryPattern },
+          });
+        }
+
+        // Build trend data
+        results.trendData.activityTrend = buildActivityTrendData(activityData, painDataByDate);
+      }
+
+      // Sleep vs Pain correlation
+      if (runAll || analysisTypes.includes('sleepPain')) {
+        results.sleepPainCorrelation = analyzeSleepPainCorrelation(sleepData, painDataByDate, encounters);
+
+        if (results.sleepPainCorrelation.correlationStrength > 50) {
+          results.providerInsights.push({
+            type: 'sleepPain',
+            severity: results.sleepPainCorrelation.correlationStrength > 70 ? 'warning' : 'info',
+            message: `Sleep quality impacts next-day pain levels (${results.sleepPainCorrelation.correlationStrength}% correlation)`,
+            recommendation: 'Consider sleep hygiene counseling. Address any sleep disorders that may be affecting recovery.',
+            data: {
+              avgQualityOnPainDays: results.sleepPainCorrelation.avgSleepQualityBeforePain,
+              avgQualityOnGoodDays: results.sleepPainCorrelation.avgSleepQualityBeforeNoPain,
+            },
+          });
+        }
+
+        // Build sleep trend data
+        results.trendData.sleepTrend = buildSleepTrendData(sleepData, painDataByDate);
+      }
+
+      // Activity vs Recovery correlation
+      if (runAll || analysisTypes.includes('activityRecovery')) {
+        results.activityRecoveryCorrelation = analyzeActivityRecoveryCorrelation(activityData, encounters);
+
+        if (results.activityRecoveryCorrelation.optimalActivityRange) {
+          results.providerInsights.push({
+            type: 'activityRecovery',
+            severity: 'info',
+            message: `Optimal activity range identified: ${results.activityRecoveryCorrelation.optimalActivityRange.minSteps}-${results.activityRecoveryCorrelation.optimalActivityRange.maxSteps} steps/day`,
+            recommendation: 'Set activity goals within this range for optimal recovery outcomes.',
+            data: results.activityRecoveryCorrelation.optimalActivityRange,
+          });
+        }
+
+        // Build recovery trend data
+        results.trendData.recoveryTrend = buildRecoveryTrendData(activityData, encounters);
+      }
+
+      // Generate patient recommendations
+      results.patientRecommendations = generatePatientRecommendations(
+        results.activityPainCorrelation,
+        results.sleepPainCorrelation,
+        results.activityRecoveryCorrelation
+      );
+
+      await auditLog('VIEW', 'ActivityCorrelation', {
+        entityId: patientId,
+        changes: {
+          action: 'analyze_correlation',
+          analysisTypes,
+          dateRange: { start: queryStartDate, end: queryEndDate },
+          insightsGenerated: results.providerInsights.length,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        patientId,
+        patientName: `${patient.demographics?.firstName} ${patient.demographics?.lastName}`,
+        analysisDateRange: {
+          start: queryStartDate,
+          end: queryEndDate,
+        },
+        dataAvailable: {
+          activityDays: activityData.length,
+          sleepDays: sleepData.length,
+          encounters: encounters.length,
+        },
+        ...results,
+      };
+    }),
+
+  // Get activity patterns before pain flares
+  getActivityPatternsBeforePain: protectedProcedure
+    .input(z.object({
+      patientId: z.string(),
+      daysBeforeFlare: z.number().min(1).max(7).default(3),
+      lookbackDays: z.number().min(7).max(180).default(90),
+    }))
+    .query(async ({ ctx, input }) => {
+      const { patientId, daysBeforeFlare, lookbackDays } = input;
+
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      const endDate = new Date();
+      const startDate = new Date(endDate.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
+
+      // Get activity data and encounters
+      const [activityData, encounters] = await Promise.all([
+        ctx.prisma.activityData.findMany({
+          where: {
+            patientId,
+            organizationId: ctx.user.organizationId,
+            date: { gte: startDate, lte: endDate },
+          },
+          orderBy: { date: 'asc' },
+        }),
+        ctx.prisma.encounter.findMany({
+          where: {
+            patientId,
+            organizationId: ctx.user.organizationId,
+            encounterDate: { gte: startDate, lte: endDate },
+          },
+          include: {
+            soapNote: {
+              select: { subjective: true },
+            },
+          },
+          orderBy: { encounterDate: 'asc' },
+        }),
+      ]);
+
+      // Identify pain flare days (encounters with pain keywords)
+      const painKeywords = /pain|ache|sore|stiff|discomfort|flare|worse|severe|sharp|burning|throbbing/i;
+      const painFlares = encounters.filter(e =>
+        e.soapNote?.subjective && painKeywords.test(e.soapNote.subjective)
+      );
+
+      // Analyze activity patterns before each flare
+      const patterns: Array<{
+        flareDate: string;
+        painDescription: string;
+        activityBefore: Array<{
+          daysBeforeFlare: number;
+          date: string;
+          steps: number | null;
+          activeMinutes: number | null;
+          calories: number | null;
+        }>;
+        pattern: 'overexertion' | 'sedentary' | 'inconsistent' | 'normal';
+        avgSteps: number;
+        avgActiveMinutes: number;
+      }> = [];
+
+      const activityByDate = new Map(
+        activityData.map(a => [a.date.toISOString().split('T')[0], a])
+      );
+
+      // Calculate baseline activity
+      const allSteps = activityData.map(a => a.steps).filter((s): s is number => s !== null);
+      const baselineSteps = allSteps.length > 0
+        ? allSteps.reduce((a, b) => a + b, 0) / allSteps.length
+        : 0;
+      const baselineStdDev = calculateStdDev(allSteps);
+
+      painFlares.forEach(flare => {
+        const flareDate = flare.encounterDate;
+        const activityBefore: typeof patterns[0]['activityBefore'] = [];
+        let totalSteps = 0;
+        let totalActiveMinutes = 0;
+        let count = 0;
+
+        for (let i = 1; i <= daysBeforeFlare; i++) {
+          const checkDate = new Date(flareDate);
+          checkDate.setDate(checkDate.getDate() - i);
+          const dateStr = checkDate.toISOString().split('T')[0];
+          const activity = activityByDate.get(dateStr);
+
+          activityBefore.push({
+            daysBeforeFlare: i,
+            date: dateStr,
+            steps: activity?.steps ?? null,
+            activeMinutes: activity?.activeMinutes ?? null,
+            calories: activity?.calories ?? null,
+          });
+
+          if (activity?.steps) {
+            totalSteps += activity.steps;
+            count++;
+          }
+          if (activity?.activeMinutes) {
+            totalActiveMinutes += activity.activeMinutes;
+          }
+        }
+
+        const avgSteps = count > 0 ? Math.round(totalSteps / count) : 0;
+        const avgActiveMinutes = count > 0 ? Math.round(totalActiveMinutes / count) : 0;
+
+        // Determine pattern
+        let pattern: typeof patterns[0]['pattern'] = 'normal';
+        if (avgSteps > baselineSteps + baselineStdDev * 1.5) {
+          pattern = 'overexertion';
+        } else if (avgSteps < baselineSteps - baselineStdDev) {
+          pattern = 'sedentary';
+        } else if (baselineStdDev > baselineSteps * 0.3) {
+          pattern = 'inconsistent';
+        }
+
+        patterns.push({
+          flareDate: flareDate.toISOString().split('T')[0],
+          painDescription: flare.soapNote?.subjective?.substring(0, 200) || 'Pain reported',
+          activityBefore,
+          pattern,
+          avgSteps,
+          avgActiveMinutes,
+        });
+      });
+
+      // Summarize patterns
+      const patternCounts = patterns.reduce((acc, p) => {
+        acc[p.pattern] = (acc[p.pattern] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      const dominantPattern = Object.entries(patternCounts)
+        .sort((a, b) => b[1] - a[1])[0]?.[0] || 'insufficient_data';
+
+      return {
+        totalPainFlares: painFlares.length,
+        patterns,
+        summary: {
+          dominantPattern,
+          patternBreakdown: patternCounts,
+          baselineSteps: Math.round(baselineSteps),
+          recommendation: dominantPattern === 'overexertion'
+            ? 'Pain flares frequently follow high-activity days. Consider activity pacing and recovery days.'
+            : dominantPattern === 'sedentary'
+            ? 'Pain flares often occur after low-activity periods. Gentle, consistent movement may help.'
+            : dominantPattern === 'inconsistent'
+            ? 'Activity levels are highly variable. Aim for more consistent daily movement.'
+            : 'No clear activity-pain pattern identified. Continue monitoring.',
+        },
+      };
+    }),
+
+  // Get sleep quality vs pain correlation details
+  getSleepPainCorrelation: protectedProcedure
+    .input(z.object({
+      patientId: z.string(),
+      lookbackDays: z.number().min(7).max(180).default(60),
+    }))
+    .query(async ({ ctx, input }) => {
+      const { patientId, lookbackDays } = input;
+
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      const endDate = new Date();
+      const startDate = new Date(endDate.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
+
+      const [sleepData, encounters] = await Promise.all([
+        ctx.prisma.sleepData.findMany({
+          where: {
+            patientId,
+            organizationId: ctx.user.organizationId,
+            date: { gte: startDate, lte: endDate },
+          },
+          orderBy: { date: 'asc' },
+        }),
+        ctx.prisma.encounter.findMany({
+          where: {
+            patientId,
+            organizationId: ctx.user.organizationId,
+            encounterDate: { gte: startDate, lte: endDate },
+          },
+          include: {
+            soapNote: {
+              select: { subjective: true },
+            },
+          },
+          orderBy: { encounterDate: 'asc' },
+        }),
+      ]);
+
+      // Build pain data map
+      const painDataByDate = extractPainDataFromEncounters(encounters);
+
+      // Analyze sleep before pain days vs good days
+      const sleepByDate = new Map(
+        sleepData.map(s => [s.date.toISOString().split('T')[0], s])
+      );
+
+      const sleepBeforePainDays: Array<{
+        sleepDate: string;
+        painDate: string;
+        quality: number | null;
+        duration: number | null;
+        deepMinutes: number | null;
+        painLevel: number;
+      }> = [];
+
+      const sleepBeforeGoodDays: Array<{
+        sleepDate: string;
+        quality: number | null;
+        duration: number | null;
+        deepMinutes: number | null;
+      }> = [];
+
+      // For each day with data, check if next day had pain
+      sleepData.forEach(sleep => {
+        const sleepDateStr = sleep.date.toISOString().split('T')[0];
+        const nextDay = new Date(sleep.date);
+        nextDay.setDate(nextDay.getDate() + 1);
+        const nextDayStr = nextDay.toISOString().split('T')[0];
+
+        const painData = painDataByDate.get(nextDayStr);
+        if (painData && painData.level >= 5) {
+          sleepBeforePainDays.push({
+            sleepDate: sleepDateStr,
+            painDate: nextDayStr,
+            quality: sleep.quality,
+            duration: sleep.duration,
+            deepMinutes: sleep.deepMinutes,
+            painLevel: painData.level,
+          });
+        } else if (!painData || painData.level < 3) {
+          sleepBeforeGoodDays.push({
+            sleepDate: sleepDateStr,
+            quality: sleep.quality,
+            duration: sleep.duration,
+            deepMinutes: sleep.deepMinutes,
+          });
+        }
+      });
+
+      // Calculate averages
+      const avgQualityBeforePain = calculateAverage(sleepBeforePainDays.map(s => s.quality).filter((q): q is number => q !== null));
+      const avgQualityBeforeGood = calculateAverage(sleepBeforeGoodDays.map(s => s.quality).filter((q): q is number => q !== null));
+      const avgDurationBeforePain = calculateAverage(sleepBeforePainDays.map(s => s.duration).filter((d): d is number => d !== null));
+      const avgDurationBeforeGood = calculateAverage(sleepBeforeGoodDays.map(s => s.duration).filter((d): d is number => d !== null));
+      const avgDeepBeforePain = calculateAverage(sleepBeforePainDays.map(s => s.deepMinutes).filter((d): d is number => d !== null));
+      const avgDeepBeforeGood = calculateAverage(sleepBeforeGoodDays.map(s => s.deepMinutes).filter((d): d is number => d !== null));
+
+      // Calculate correlation strength
+      const qualityDiff = avgQualityBeforeGood - avgQualityBeforePain;
+      const correlationStrength = Math.min(100, Math.abs(qualityDiff) * 2);
+
+      return {
+        dataPoints: {
+          sleepDays: sleepData.length,
+          painDays: sleepBeforePainDays.length,
+          goodDays: sleepBeforeGoodDays.length,
+        },
+        sleepBeforePainDays,
+        sleepBeforeGoodDays: sleepBeforeGoodDays.slice(0, 10), // Limit for response size
+        comparison: {
+          avgQualityBeforePain: Math.round(avgQualityBeforePain),
+          avgQualityBeforeGood: Math.round(avgQualityBeforeGood),
+          avgDurationBeforePain: Math.round(avgDurationBeforePain),
+          avgDurationBeforeGood: Math.round(avgDurationBeforeGood),
+          avgDeepMinutesBeforePain: Math.round(avgDeepBeforePain),
+          avgDeepMinutesBeforeGood: Math.round(avgDeepBeforeGood),
+        },
+        correlationStrength: Math.round(correlationStrength),
+        insights: {
+          qualityImpact: qualityDiff > 10
+            ? 'Poor sleep quality strongly associated with next-day pain'
+            : qualityDiff > 5
+            ? 'Moderate sleep-pain relationship detected'
+            : 'Sleep quality impact on pain is minimal',
+          recommendation: avgQualityBeforePain < 60
+            ? 'Focus on improving sleep quality. Consider sleep hygiene assessment and possible sleep study referral.'
+            : avgDurationBeforePain < 360 // Less than 6 hours
+            ? 'Sleep duration may be insufficient. Recommend 7-8 hours minimum.'
+            : avgDeepBeforePain < 60
+            ? 'Deep sleep duration is low. May benefit from sleep optimization strategies.'
+            : 'Sleep patterns appear adequate. Continue monitoring.',
+        },
+      };
+    }),
+
+  // Get activity level vs recovery correlation
+  getActivityRecoveryCorrelation: protectedProcedure
+    .input(z.object({
+      patientId: z.string(),
+      lookbackDays: z.number().min(30).max(365).default(90),
+    }))
+    .query(async ({ ctx, input }) => {
+      const { patientId, lookbackDays } = input;
+
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      const endDate = new Date();
+      const startDate = new Date(endDate.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
+
+      const [activityData, encounters] = await Promise.all([
+        ctx.prisma.activityData.findMany({
+          where: {
+            patientId,
+            organizationId: ctx.user.organizationId,
+            date: { gte: startDate, lte: endDate },
+          },
+          orderBy: { date: 'asc' },
+        }),
+        ctx.prisma.encounter.findMany({
+          where: {
+            patientId,
+            organizationId: ctx.user.organizationId,
+            encounterDate: { gte: startDate, lte: endDate },
+          },
+          include: {
+            soapNote: {
+              select: { subjective: true, objective: true, assessment: true },
+            },
+          },
+          orderBy: { encounterDate: 'asc' },
+        }),
+      ]);
+
+      // Track recovery progress between encounters
+      const recoveryPeriods: Array<{
+        startDate: string;
+        endDate: string;
+        daysBetween: number;
+        avgSteps: number;
+        avgActiveMinutes: number;
+        startAssessment: string;
+        endAssessment: string;
+        outcome: 'improved' | 'stable' | 'worsened' | 'unknown';
+      }> = [];
+
+      for (let i = 1; i < encounters.length; i++) {
+        const prevEncounter = encounters[i - 1];
+        const currEncounter = encounters[i];
+
+        const periodStart = prevEncounter.encounterDate;
+        const periodEnd = currEncounter.encounterDate;
+        const daysBetween = Math.round((periodEnd.getTime() - periodStart.getTime()) / (24 * 60 * 60 * 1000));
+
+        // Get activity data for this period
+        const periodActivity = activityData.filter(a =>
+          a.date >= periodStart && a.date <= periodEnd
+        );
+
+        const steps = periodActivity.map(a => a.steps).filter((s): s is number => s !== null);
+        const activeMinutes = periodActivity.map(a => a.activeMinutes).filter((m): m is number => m !== null);
+
+        // Determine outcome based on SOAP notes
+        const startAssessment = prevEncounter.soapNote?.assessment || '';
+        const endAssessment = currEncounter.soapNote?.assessment || '';
+        const outcome = determineRecoveryOutcome(startAssessment, endAssessment, currEncounter.soapNote?.subjective || '');
+
+        recoveryPeriods.push({
+          startDate: periodStart.toISOString().split('T')[0],
+          endDate: periodEnd.toISOString().split('T')[0],
+          daysBetween,
+          avgSteps: steps.length > 0 ? Math.round(steps.reduce((a, b) => a + b, 0) / steps.length) : 0,
+          avgActiveMinutes: activeMinutes.length > 0 ? Math.round(activeMinutes.reduce((a, b) => a + b, 0) / activeMinutes.length) : 0,
+          startAssessment: startAssessment.substring(0, 100),
+          endAssessment: endAssessment.substring(0, 100),
+          outcome,
+        });
+      }
+
+      // Find optimal activity range for recovery
+      const improvedPeriods = recoveryPeriods.filter(p => p.outcome === 'improved');
+      const worsenedPeriods = recoveryPeriods.filter(p => p.outcome === 'worsened');
+
+      const optimalRange = improvedPeriods.length >= 3 ? {
+        minSteps: Math.round(Math.min(...improvedPeriods.map(p => p.avgSteps)) * 0.9),
+        maxSteps: Math.round(Math.max(...improvedPeriods.map(p => p.avgSteps)) * 1.1),
+        avgActiveMinutes: Math.round(calculateAverage(improvedPeriods.map(p => p.avgActiveMinutes))),
+      } : null;
+
+      // Activity levels to avoid
+      const riskRange = worsenedPeriods.length >= 2 ? {
+        avgSteps: Math.round(calculateAverage(worsenedPeriods.map(p => p.avgSteps))),
+        avgActiveMinutes: Math.round(calculateAverage(worsenedPeriods.map(p => p.avgActiveMinutes))),
+      } : null;
+
+      return {
+        totalPeriods: recoveryPeriods.length,
+        recoveryPeriods,
+        outcomes: {
+          improved: improvedPeriods.length,
+          stable: recoveryPeriods.filter(p => p.outcome === 'stable').length,
+          worsened: worsenedPeriods.length,
+          unknown: recoveryPeriods.filter(p => p.outcome === 'unknown').length,
+        },
+        optimalRange,
+        riskRange,
+        insights: {
+          recoveryRate: recoveryPeriods.length > 0
+            ? Math.round((improvedPeriods.length / recoveryPeriods.length) * 100)
+            : 0,
+          recommendation: optimalRange
+            ? `Optimal recovery occurs with ${optimalRange.minSteps}-${optimalRange.maxSteps} steps/day and ~${optimalRange.avgActiveMinutes} active minutes.`
+            : riskRange
+            ? `Activity levels around ${riskRange.avgSteps} steps/day may hinder recovery. Adjust activity levels.`
+            : 'Insufficient data to determine optimal activity range. Continue monitoring.',
+        },
+      };
+    }),
+
+  // Get trend visualization data for charts
+  getCorrelationTrends: protectedProcedure
+    .input(z.object({
+      patientId: z.string(),
+      days: z.number().min(7).max(180).default(30),
+      granularity: z.enum(['daily', 'weekly']).default('daily'),
+    }))
+    .query(async ({ ctx, input }) => {
+      const { patientId, days, granularity } = input;
+
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      const endDate = new Date();
+      const startDate = new Date(endDate.getTime() - days * 24 * 60 * 60 * 1000);
+
+      const [activityData, sleepData, encounters] = await Promise.all([
+        ctx.prisma.activityData.findMany({
+          where: {
+            patientId,
+            organizationId: ctx.user.organizationId,
+            date: { gte: startDate, lte: endDate },
+          },
+          orderBy: { date: 'asc' },
+        }),
+        ctx.prisma.sleepData.findMany({
+          where: {
+            patientId,
+            organizationId: ctx.user.organizationId,
+            date: { gte: startDate, lte: endDate },
+          },
+          orderBy: { date: 'asc' },
+        }),
+        ctx.prisma.encounter.findMany({
+          where: {
+            patientId,
+            organizationId: ctx.user.organizationId,
+            encounterDate: { gte: startDate, lte: endDate },
+          },
+          include: {
+            soapNote: {
+              select: { subjective: true },
+            },
+          },
+          orderBy: { encounterDate: 'asc' },
+        }),
+      ]);
+
+      const painDataByDate = extractPainDataFromEncounters(encounters);
+
+      if (granularity === 'daily') {
+        return {
+          granularity: 'daily',
+          activityTrend: activityData.map(a => ({
+            date: a.date.toISOString().split('T')[0],
+            steps: a.steps,
+            activeMinutes: a.activeMinutes,
+            calories: a.calories,
+          })),
+          sleepTrend: sleepData.map(s => ({
+            date: s.date.toISOString().split('T')[0],
+            duration: s.duration,
+            quality: s.quality,
+            deepMinutes: s.deepMinutes,
+          })),
+          painTrend: Array.from(painDataByDate.entries()).map(([date, data]) => ({
+            date,
+            level: data.level,
+            hasEncounter: true,
+          })),
+          correlationMarkers: encounters.map(e => ({
+            date: e.encounterDate.toISOString().split('T')[0],
+            type: 'encounter',
+            label: e.chiefComplaint || 'Visit',
+          })),
+        };
+      } else {
+        // Weekly aggregation
+        const weeklyActivity: Record<string, { steps: number[]; activeMinutes: number[]; calories: number[] }> = {};
+        const weeklySleep: Record<string, { duration: number[]; quality: number[]; deepMinutes: number[] }> = {};
+        const weeklyPain: Record<string, number[]> = {};
+
+        activityData.forEach(a => {
+          const weekStart = getWeekStart(a.date);
+          if (!weeklyActivity[weekStart]) {
+            weeklyActivity[weekStart] = { steps: [], activeMinutes: [], calories: [] };
+          }
+          if (a.steps) weeklyActivity[weekStart].steps.push(a.steps);
+          if (a.activeMinutes) weeklyActivity[weekStart].activeMinutes.push(a.activeMinutes);
+          if (a.calories) weeklyActivity[weekStart].calories.push(a.calories);
+        });
+
+        sleepData.forEach(s => {
+          const weekStart = getWeekStart(s.date);
+          if (!weeklySleep[weekStart]) {
+            weeklySleep[weekStart] = { duration: [], quality: [], deepMinutes: [] };
+          }
+          if (s.duration) weeklySleep[weekStart].duration.push(s.duration);
+          if (s.quality) weeklySleep[weekStart].quality.push(s.quality);
+          if (s.deepMinutes) weeklySleep[weekStart].deepMinutes.push(s.deepMinutes);
+        });
+
+        painDataByDate.forEach((data, date) => {
+          const weekStart = getWeekStart(new Date(date));
+          if (!weeklyPain[weekStart]) {
+            weeklyPain[weekStart] = [];
+          }
+          weeklyPain[weekStart].push(data.level);
+        });
+
+        return {
+          granularity: 'weekly',
+          activityTrend: Object.entries(weeklyActivity).map(([week, data]) => ({
+            weekStart: week,
+            avgSteps: Math.round(calculateAverage(data.steps)),
+            avgActiveMinutes: Math.round(calculateAverage(data.activeMinutes)),
+            avgCalories: Math.round(calculateAverage(data.calories)),
+            dataPoints: data.steps.length,
+          })),
+          sleepTrend: Object.entries(weeklySleep).map(([week, data]) => ({
+            weekStart: week,
+            avgDuration: Math.round(calculateAverage(data.duration)),
+            avgQuality: Math.round(calculateAverage(data.quality)),
+            avgDeepMinutes: Math.round(calculateAverage(data.deepMinutes)),
+            dataPoints: data.duration.length,
+          })),
+          painTrend: Object.entries(weeklyPain).map(([week, levels]) => ({
+            weekStart: week,
+            avgLevel: Math.round(calculateAverage(levels) * 10) / 10,
+            encounters: levels.length,
+          })),
+        };
+      }
+    }),
 });
+
+// ============================================
+// Helper Functions for Activity Correlation Analysis
+// ============================================
+
+interface PainData {
+  level: number;
+  description: string;
+}
+
+function extractPainDataFromEncounters(encounters: Array<{
+  encounterDate: Date;
+  soapNote?: { subjective?: string | null } | null;
+}>): Map<string, PainData> {
+  const painMap = new Map<string, PainData>();
+
+  const painLevelPatterns = [
+    { pattern: /pain.*?(\d+)\/10/i, extractor: (m: RegExpMatchArray) => parseInt(m[1]) },
+    { pattern: /(\d+)\/10.*pain/i, extractor: (m: RegExpMatchArray) => parseInt(m[1]) },
+    { pattern: /severe|intense|excruciating/i, extractor: () => 8 },
+    { pattern: /moderate|significant/i, extractor: () => 6 },
+    { pattern: /mild|slight|minor/i, extractor: () => 3 },
+    { pattern: /pain|ache|sore|discomfort/i, extractor: () => 5 },
+  ];
+
+  encounters.forEach(encounter => {
+    const dateStr = encounter.encounterDate.toISOString().split('T')[0];
+    const subjective = encounter.soapNote?.subjective || '';
+
+    let level = 0;
+    for (const { pattern, extractor } of painLevelPatterns) {
+      const match = subjective.match(pattern);
+      if (match) {
+        level = extractor(match);
+        break;
+      }
+    }
+
+    if (level > 0 || /pain|ache|sore|discomfort/i.test(subjective)) {
+      painMap.set(dateStr, {
+        level: level || 5,
+        description: subjective.substring(0, 200),
+      });
+    }
+  });
+
+  return painMap;
+}
+
+function analyzeActivityPainCorrelation(
+  activityData: Array<{ date: Date; steps: number | null; activeMinutes: number | null }>,
+  painDataByDate: Map<string, PainData>,
+  encounters: Array<{ encounterDate: Date }>
+) {
+  const activityByDate = new Map(
+    activityData.map(a => [a.date.toISOString().split('T')[0], a])
+  );
+
+  // Look at activity 1-3 days before pain
+  const activityBeforePain: number[] = [];
+  const activityBeforeNoPain: number[] = [];
+
+  painDataByDate.forEach((painData, dateStr) => {
+    if (painData.level >= 5) {
+      for (let i = 1; i <= 3; i++) {
+        const checkDate = new Date(dateStr);
+        checkDate.setDate(checkDate.getDate() - i);
+        const activity = activityByDate.get(checkDate.toISOString().split('T')[0]);
+        if (activity?.steps) {
+          activityBeforePain.push(activity.steps);
+        }
+      }
+    }
+  });
+
+  // Get activity before non-pain days
+  activityData.forEach(activity => {
+    const dateStr = activity.date.toISOString().split('T')[0];
+    const nextDay = new Date(activity.date);
+    nextDay.setDate(nextDay.getDate() + 1);
+    const nextDayStr = nextDay.toISOString().split('T')[0];
+
+    if (!painDataByDate.has(nextDayStr) && activity.steps) {
+      activityBeforeNoPain.push(activity.steps);
+    }
+  });
+
+  const avgBeforePain = calculateAverage(activityBeforePain);
+  const avgBeforeNoPain = calculateAverage(activityBeforeNoPain);
+  const baselineSteps = calculateAverage(
+    activityData.map(a => a.steps).filter((s): s is number => s !== null)
+  );
+
+  // Determine primary pattern
+  let primaryPattern: 'overexertion' | 'sedentary' | 'inconsistent' | 'none' = 'none';
+  if (avgBeforePain > baselineSteps * 1.3) {
+    primaryPattern = 'overexertion';
+  } else if (avgBeforePain < baselineSteps * 0.7) {
+    primaryPattern = 'sedentary';
+  } else if (calculateStdDev(activityBeforePain) > baselineSteps * 0.4) {
+    primaryPattern = 'inconsistent';
+  }
+
+  const correlationStrength = Math.min(100, Math.abs(avgBeforePain - avgBeforeNoPain) / baselineSteps * 100);
+
+  return {
+    avgActivityBeforePain: Math.round(avgBeforePain),
+    avgActivityBeforeNoPain: Math.round(avgBeforeNoPain),
+    baselineActivity: Math.round(baselineSteps),
+    correlationStrength: Math.round(correlationStrength),
+    primaryPattern,
+    dataPoints: {
+      painDays: activityBeforePain.length,
+      nonPainDays: activityBeforeNoPain.length,
+    },
+  };
+}
+
+function analyzeSleepPainCorrelation(
+  sleepData: Array<{ date: Date; quality: number | null; duration: number | null }>,
+  painDataByDate: Map<string, PainData>,
+  encounters: Array<{ encounterDate: Date }>
+) {
+  const sleepByDate = new Map(
+    sleepData.map(s => [s.date.toISOString().split('T')[0], s])
+  );
+
+  const sleepBeforePain: number[] = [];
+  const sleepBeforeNoPain: number[] = [];
+
+  // Check sleep the night before pain days
+  painDataByDate.forEach((painData, dateStr) => {
+    if (painData.level >= 5) {
+      const prevNight = new Date(dateStr);
+      prevNight.setDate(prevNight.getDate() - 1);
+      const sleep = sleepByDate.get(prevNight.toISOString().split('T')[0]);
+      if (sleep?.quality) {
+        sleepBeforePain.push(sleep.quality);
+      }
+    }
+  });
+
+  // Check sleep before non-pain days
+  sleepData.forEach(sleep => {
+    const nextDay = new Date(sleep.date);
+    nextDay.setDate(nextDay.getDate() + 1);
+    const nextDayStr = nextDay.toISOString().split('T')[0];
+
+    if (!painDataByDate.has(nextDayStr) && sleep.quality) {
+      sleepBeforeNoPain.push(sleep.quality);
+    }
+  });
+
+  const avgSleepQualityBeforePain = calculateAverage(sleepBeforePain);
+  const avgSleepQualityBeforeNoPain = calculateAverage(sleepBeforeNoPain);
+
+  const qualityDiff = avgSleepQualityBeforeNoPain - avgSleepQualityBeforePain;
+  const correlationStrength = Math.min(100, Math.abs(qualityDiff) * 2);
+
+  return {
+    avgSleepQualityBeforePain: Math.round(avgSleepQualityBeforePain),
+    avgSleepQualityBeforeNoPain: Math.round(avgSleepQualityBeforeNoPain),
+    correlationStrength: Math.round(correlationStrength),
+    dataPoints: {
+      painDays: sleepBeforePain.length,
+      nonPainDays: sleepBeforeNoPain.length,
+    },
+  };
+}
+
+function analyzeActivityRecoveryCorrelation(
+  activityData: Array<{ date: Date; steps: number | null; activeMinutes: number | null }>,
+  encounters: Array<{
+    encounterDate: Date;
+    soapNote?: { assessment?: string | null; subjective?: string | null } | null;
+  }>
+) {
+  // Analyze activity levels between encounters and recovery outcomes
+  const recoveryData: Array<{
+    avgSteps: number;
+    outcome: 'improved' | 'stable' | 'worsened' | 'unknown';
+  }> = [];
+
+  for (let i = 1; i < encounters.length; i++) {
+    const prevEncounter = encounters[i - 1];
+    const currEncounter = encounters[i];
+
+    const periodActivity = activityData.filter(a =>
+      a.date >= prevEncounter.encounterDate && a.date <= currEncounter.encounterDate
+    );
+
+    const steps = periodActivity.map(a => a.steps).filter((s): s is number => s !== null);
+    if (steps.length === 0) continue;
+
+    const outcome = determineRecoveryOutcome(
+      prevEncounter.soapNote?.assessment || '',
+      currEncounter.soapNote?.assessment || '',
+      currEncounter.soapNote?.subjective || ''
+    );
+
+    recoveryData.push({
+      avgSteps: Math.round(calculateAverage(steps)),
+      outcome,
+    });
+  }
+
+  // Find optimal range from improved periods
+  const improvedPeriods = recoveryData.filter(r => r.outcome === 'improved');
+  const optimalActivityRange = improvedPeriods.length >= 3 ? {
+    minSteps: Math.min(...improvedPeriods.map(p => p.avgSteps)),
+    maxSteps: Math.max(...improvedPeriods.map(p => p.avgSteps)),
+    avgSteps: Math.round(calculateAverage(improvedPeriods.map(p => p.avgSteps))),
+  } : null;
+
+  return {
+    totalPeriods: recoveryData.length,
+    improvedCount: improvedPeriods.length,
+    optimalActivityRange,
+    recoveryRate: recoveryData.length > 0
+      ? Math.round((improvedPeriods.length / recoveryData.length) * 100)
+      : 0,
+  };
+}
+
+function determineRecoveryOutcome(
+  startAssessment: string,
+  endAssessment: string,
+  endSubjective: string
+): 'improved' | 'stable' | 'worsened' | 'unknown' {
+  const improvedKeywords = /improv|better|progress|resolv|less pain|decreased|good response/i;
+  const worsenedKeywords = /worse|deteriorat|increased pain|not improv|poor response|regress/i;
+
+  const combinedEnd = `${endAssessment} ${endSubjective}`;
+
+  if (improvedKeywords.test(combinedEnd)) return 'improved';
+  if (worsenedKeywords.test(combinedEnd)) return 'worsened';
+  if (startAssessment && endAssessment) return 'stable';
+  return 'unknown';
+}
+
+function generatePatientRecommendations(
+  activityPain: ReturnType<typeof analyzeActivityPainCorrelation> | undefined,
+  sleepPain: ReturnType<typeof analyzeSleepPainCorrelation> | undefined,
+  activityRecovery: ReturnType<typeof analyzeActivityRecoveryCorrelation> | undefined
+): Array<{
+  category: string;
+  recommendation: string;
+  priority: 'low' | 'medium' | 'high';
+  reasoning: string;
+}> {
+  const recommendations: Array<{
+    category: string;
+    recommendation: string;
+    priority: 'low' | 'medium' | 'high';
+    reasoning: string;
+  }> = [];
+
+  if (activityPain) {
+    if (activityPain.primaryPattern === 'overexertion') {
+      recommendations.push({
+        category: 'Activity',
+        recommendation: 'Practice activity pacing - spread your activities throughout the day and include rest breaks.',
+        priority: 'high',
+        reasoning: 'Your data shows pain often follows high-activity days. Pacing can help prevent flare-ups.',
+      });
+    } else if (activityPain.primaryPattern === 'sedentary') {
+      recommendations.push({
+        category: 'Activity',
+        recommendation: 'Try gentle movement on low-activity days - even a short walk can help.',
+        priority: 'high',
+        reasoning: 'Pain tends to increase after very sedentary days. Light activity may help maintain comfort.',
+      });
+    }
+
+    if (activityPain.correlationStrength > 50 && activityRecovery?.optimalActivityRange) {
+      recommendations.push({
+        category: 'Activity Goals',
+        recommendation: `Aim for ${activityRecovery.optimalActivityRange.minSteps.toLocaleString()}-${activityRecovery.optimalActivityRange.maxSteps.toLocaleString()} steps per day.`,
+        priority: 'medium',
+        reasoning: 'This activity range has been associated with your best recovery outcomes.',
+      });
+    }
+  }
+
+  if (sleepPain && sleepPain.correlationStrength > 40) {
+    if (sleepPain.avgSleepQualityBeforePain < 60) {
+      recommendations.push({
+        category: 'Sleep',
+        recommendation: 'Focus on sleep quality - maintain a consistent sleep schedule and create a relaxing bedtime routine.',
+        priority: 'high',
+        reasoning: 'Poor sleep quality appears to be linked to increased pain the next day.',
+      });
+    } else {
+      recommendations.push({
+        category: 'Sleep',
+        recommendation: 'Continue prioritizing good sleep habits.',
+        priority: 'low',
+        reasoning: 'Better sleep is associated with fewer pain days for you.',
+      });
+    }
+  }
+
+  if (activityRecovery && activityRecovery.recoveryRate < 50) {
+    recommendations.push({
+      category: 'Recovery',
+      recommendation: 'Consider discussing your activity levels with your provider at your next visit.',
+      priority: 'medium',
+      reasoning: 'Your recovery rate could potentially be improved with activity adjustments.',
+    });
+  }
+
+  return recommendations;
+}
+
+function buildActivityTrendData(
+  activityData: Array<{ date: Date; steps: number | null; activeMinutes: number | null }>,
+  painDataByDate: Map<string, PainData>
+): Array<{ date: string; steps: number | null; activeMinutes: number | null; painLevel: number | null }> {
+  return activityData.map(a => {
+    const dateStr = a.date.toISOString().split('T')[0];
+    return {
+      date: dateStr,
+      steps: a.steps,
+      activeMinutes: a.activeMinutes,
+      painLevel: painDataByDate.get(dateStr)?.level ?? null,
+    };
+  });
+}
+
+function buildSleepTrendData(
+  sleepData: Array<{ date: Date; duration: number | null; quality: number | null }>,
+  painDataByDate: Map<string, PainData>
+): Array<{ date: string; duration: number | null; quality: number | null; painNextDay: number | null }> {
+  return sleepData.map(s => {
+    const nextDay = new Date(s.date);
+    nextDay.setDate(nextDay.getDate() + 1);
+    const nextDayStr = nextDay.toISOString().split('T')[0];
+    return {
+      date: s.date.toISOString().split('T')[0],
+      duration: s.duration,
+      quality: s.quality,
+      painNextDay: painDataByDate.get(nextDayStr)?.level ?? null,
+    };
+  });
+}
+
+function buildRecoveryTrendData(
+  activityData: Array<{ date: Date; steps: number | null }>,
+  encounters: Array<{
+    encounterDate: Date;
+    soapNote?: { assessment?: string | null; subjective?: string | null } | null;
+  }>
+): Array<{ date: string; encounterDate: string | null; activityChange: number | null; outcome: string | null }> {
+  const results: Array<{ date: string; encounterDate: string | null; activityChange: number | null; outcome: string | null }> = [];
+
+  for (let i = 1; i < encounters.length; i++) {
+    const prevEncounter = encounters[i - 1];
+    const currEncounter = encounters[i];
+
+    const periodActivity = activityData.filter(a =>
+      a.date >= prevEncounter.encounterDate && a.date <= currEncounter.encounterDate
+    );
+
+    const steps = periodActivity.map(a => a.steps).filter((s): s is number => s !== null);
+    const avgSteps = steps.length > 0 ? calculateAverage(steps) : null;
+
+    const outcome = determineRecoveryOutcome(
+      prevEncounter.soapNote?.assessment || '',
+      currEncounter.soapNote?.assessment || '',
+      currEncounter.soapNote?.subjective || ''
+    );
+
+    results.push({
+      date: currEncounter.encounterDate.toISOString().split('T')[0],
+      encounterDate: currEncounter.encounterDate.toISOString().split('T')[0],
+      activityChange: avgSteps ? Math.round(avgSteps) : null,
+      outcome,
+    });
+  }
+
+  return results;
+}
+
+function calculateAverage(numbers: number[]): number {
+  if (numbers.length === 0) return 0;
+  return numbers.reduce((a, b) => a + b, 0) / numbers.length;
+}
+
+function calculateStdDev(numbers: number[]): number {
+  if (numbers.length === 0) return 0;
+  const avg = calculateAverage(numbers);
+  const squaredDiffs = numbers.map(n => Math.pow(n - avg, 2));
+  return Math.sqrt(calculateAverage(squaredDiffs));
+}
+
+function getWeekStart(date: Date): string {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+  d.setDate(diff);
+  return d.toISOString().split('T')[0];
+}
 
 // ============================================
 // Posture Sensor Integration

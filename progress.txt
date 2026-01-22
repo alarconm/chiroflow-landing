@@ -251,3 +251,80 @@ Story: US-242 - Google Fit integration
 --- Iteration 4 completed at 2026-01-22 ---
 Story: US-243 - Posture sensor integration
 
+--- Iteration 4 completed at 2026-01-22 04:57:05 ---
+Story: US-243 - Posture sensor integration
+
+## US-244: Activity correlation analysis - COMPLETED
+
+### What was done:
+1. Implemented main `devices.analyzeCorrelation` tRPC procedure with comprehensive analysis:
+   - Fetches activity data, sleep data, and encounters for correlation analysis
+   - Supports configurable analysis types: activityPain, sleepPain, activityRecovery, or all
+   - Returns combined results with provider insights and patient recommendations
+
+2. Created `devices.getActivityPatternsBeforePain` procedure:
+   - Identifies activity patterns 1-7 days before pain flares
+   - Calculates baseline activity and standard deviation
+   - Detects patterns: overexertion, sedentary, inconsistent, or normal
+   - Returns pattern breakdown with dominant pattern and recommendations
+
+3. Created `devices.getSleepPainCorrelation` procedure:
+   - Analyzes sleep quality the night before pain days vs good days
+   - Compares quality, duration, and deep sleep minutes
+   - Calculates correlation strength based on quality differences
+   - Generates insights and recommendations for sleep hygiene
+
+4. Created `devices.getActivityRecoveryCorrelation` procedure:
+   - Tracks recovery periods between encounters
+   - Analyzes activity levels during recovery periods
+   - Determines outcomes (improved/stable/worsened/unknown) from SOAP notes
+   - Identifies optimal activity range for improved outcomes
+
+5. Created `devices.getCorrelationTrends` procedure for visualization:
+   - Supports daily and weekly granularity
+   - Returns activity, sleep, and pain trend data
+   - Includes correlation markers for encounters
+   - Weekly aggregation with averages and data point counts
+
+6. Implemented helper functions:
+   - `extractPainDataFromEncounters` - Extracts pain levels from SOAP notes
+   - `analyzeActivityPainCorrelation` - Core activity-pain correlation logic
+   - `analyzeSleepPainCorrelation` - Core sleep-pain correlation logic
+   - `analyzeActivityRecoveryCorrelation` - Core activity-recovery logic
+   - `determineRecoveryOutcome` - Parses SOAP notes for recovery indicators
+   - `generatePatientRecommendations` - Creates actionable patient advice
+   - `buildActivityTrendData`, `buildSleepTrendData`, `buildRecoveryTrendData` - Trend builders
+   - `calculateAverage`, `calculateStdDev`, `getWeekStart` - Statistical helpers
+
+7. Provider insights generation:
+   - Activity-pain correlation insights with severity levels
+   - Sleep-pain relationship insights
+   - Optimal activity range identification
+   - Automatic recommendation generation
+
+8. Patient-facing recommendations:
+   - Activity pacing for overexertion patterns
+   - Gentle movement recommendations for sedentary patterns
+   - Activity goals based on optimal recovery ranges
+   - Sleep hygiene recommendations
+
+9. TypeScript compilation verified - no errors
+
+### Acceptance Criteria Met:
+- [x] devices.analyzeCorrelation - Analyze activity vs symptoms
+- [x] Identify activity patterns before pain flares
+- [x] Sleep quality vs pain correlation
+- [x] Activity level vs recovery correlation
+- [x] Generate insights for provider
+- [x] Patient-facing activity recommendations
+- [x] Trend visualization
+
+---
+
+## Remaining Stories:
+- US-245: Activity goals and alerts
+- US-246: Device data dashboard
+- US-247: Device connection portal
+--- Iteration 5 completed at 2026-01-22 ---
+Story: US-244 - Activity correlation analysis
+
