@@ -209,3 +209,95 @@ All acceptance criteria met. TypeScript compiles without errors.
 --- Iteration 3 completed at 2026-01-22 ---
 Story: US-103 - Claims and insurance reports
 
+--- Iteration 3 completed at 2026-01-21 23:12:43 ---
+Story: US-103 - Claims and insurance reports
+
+### US-104: Scheduling and productivity reports - COMPLETED
+Date: 2026-01-22
+Status: PASSED
+
+Implementation:
+1. Created scheduling-reports.ts with 6 comprehensive scheduling and productivity reports:
+
+   a. Appointment Volume Report (getAppointmentVolumeReport):
+      - Appointments by day/week/month with configurable grouping
+      - Breakdown by scheduled, completed, cancelled, no-show statuses
+      - Completion rate per period
+      - Totals with average appointments per period
+      - Volume breakdown by provider
+      - Volume breakdown by appointment type with average duration
+
+   b. No-Show and Cancellation Report (getNoShowCancellationReport):
+      - Total no-shows and cancellations with rates
+      - Combined loss rate calculation
+      - Estimated revenue loss from missed appointments
+      - Breakdown by provider with individual rates
+      - Analysis by day of week (pattern detection)
+      - Analysis by time slot (2-hour buckets)
+      - Top cancellation reasons tracked
+      - Monthly trend data for rate changes
+
+   c. Provider Utilization Report (getProviderUtilizationReport):
+      - Scheduled vs available time comparison
+      - Utilization rate per provider
+      - Completion rate (scheduled vs completed)
+      - Blocked time tracking (meetings, time off)
+      - Breakdown by day of week per provider
+      - Overall practice utilization metrics
+
+   d. New Patient Report (getNewPatientReport):
+      - New patients identified by first completed appointment
+      - Average new patients per week
+      - Breakdown by referral source (extensible)
+      - Breakdown by provider
+      - Monthly trend data
+      - Recent new patient list with details
+
+   e. Patient Visit Frequency Report (getPatientVisitFrequencyReport):
+      - Total patients and visits with averages
+      - Median visits per patient
+      - Frequency distribution buckets (1 visit, 2-3, 4-6, 7-12, 13+)
+      - Top patients by visit count with total charges
+      - Breakdown by provider with average visits per patient
+
+   f. Peak Hours Analysis (getPeakHoursReport):
+      - Hourly volume breakdown (6 AM to 8 PM)
+      - Average appointments per day per hour
+      - No-show rate by hour
+      - Day-hour heatmap for visualization
+      - Peak time summaries (morning, midday, afternoon, evening)
+      - Automated recommendations for schedule optimization
+
+2. Added tRPC router procedures:
+   - getAppointmentVolume: Volume with date range and groupBy options
+   - getNoShowCancellation: No-show/cancellation analysis with date range
+   - getProviderUtilization: Provider utilization with date range
+   - getNewPatients: New patient report with date range
+   - getPatientVisitFrequency: Visit frequency with date range
+   - getPeakHours: Peak hours analysis with date range
+
+3. Helper functions implemented:
+   - getDayName: Convert day number to name
+   - formatHour: Format 24h to 12h with AM/PM
+   - getWeekNumber: Calculate week number in year
+   - getMonthLabel: Format month for display
+   - getWeekLabel: Format week for display
+   - calculateMedian: Statistical median calculation
+
+4. Proper TypeScript types for all report interfaces:
+   - AppointmentVolumeReport, AppointmentVolumeRow, AppointmentVolumeByProvider, AppointmentVolumeByType
+   - NoShowCancellationReport, NoShowByProvider, NoShowByDayOfWeek, NoShowByTimeSlot, CancellationReason, NoShowTrendPoint
+   - ProviderUtilizationReport, ProviderUtilizationRow, UtilizationByDay
+   - NewPatientReport, NewPatientByReferralSource, NewPatientByProvider, NewPatientTrendPoint, RecentNewPatient
+   - PatientVisitFrequencyReport, VisitFrequencyBucket, PatientVisitCount, VisitFrequencyByProvider
+   - PeakHoursReport, HourlyVolume, DayHourHeatmap, PeakTimeSummary
+
+Files Modified:
+- app/src/lib/reporting/scheduling-reports.ts (new - 1100+ lines)
+- app/src/lib/reporting/index.ts (added exports)
+- app/src/server/routers/reporting.ts (added 6 procedures)
+
+All acceptance criteria met. TypeScript compiles without errors.
+--- Iteration 4 completed at 2026-01-22 ---
+Story: US-104 - Scheduling and productivity reports
+

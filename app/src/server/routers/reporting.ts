@@ -56,6 +56,13 @@ import {
   getCleanClaimRateReport,
   getOutstandingClaimsReport,
   getERAPostingSummaryReport,
+  // Scheduling and Productivity Reports (US-104)
+  getAppointmentVolumeReport,
+  getNoShowCancellationReport,
+  getProviderUtilizationReport,
+  getNewPatientReport,
+  getPatientVisitFrequencyReport,
+  getPeakHoursReport,
 } from '@/lib/reporting';
 
 import type {
@@ -1010,5 +1017,75 @@ export const reportingRouter = router({
     )
     .query(async ({ ctx, input }) => {
       return listExports(ctx.user.organizationId, ctx.user.id, input?.limit);
+    }),
+
+  // ============================================
+  // SCHEDULING AND PRODUCTIVITY REPORTS (US-104)
+  // ============================================
+
+  // Appointment volume report - appointments by day/week/month
+  getAppointmentVolume: protectedProcedure
+    .input(
+      z.object({
+        start: z.date(),
+        end: z.date(),
+        groupBy: z.enum(['day', 'week', 'month']).default('day'),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      return getAppointmentVolumeReport(ctx.user.organizationId, {
+        start: input.start,
+        end: input.end,
+      }, input.groupBy);
+    }),
+
+  // No-show and cancellation report with rates
+  getNoShowCancellation: protectedProcedure
+    .input(dateRangeSchema)
+    .query(async ({ ctx, input }) => {
+      return getNoShowCancellationReport(ctx.user.organizationId, {
+        start: input.start,
+        end: input.end,
+      });
+    }),
+
+  // Provider utilization report - scheduled vs available time
+  getProviderUtilization: protectedProcedure
+    .input(dateRangeSchema)
+    .query(async ({ ctx, input }) => {
+      return getProviderUtilizationReport(ctx.user.organizationId, {
+        start: input.start,
+        end: input.end,
+      });
+    }),
+
+  // New patient report - new patients by referral source
+  getNewPatients: protectedProcedure
+    .input(dateRangeSchema)
+    .query(async ({ ctx, input }) => {
+      return getNewPatientReport(ctx.user.organizationId, {
+        start: input.start,
+        end: input.end,
+      });
+    }),
+
+  // Patient visit frequency report
+  getPatientVisitFrequency: protectedProcedure
+    .input(dateRangeSchema)
+    .query(async ({ ctx, input }) => {
+      return getPatientVisitFrequencyReport(ctx.user.organizationId, {
+        start: input.start,
+        end: input.end,
+      });
+    }),
+
+  // Peak hours analysis
+  getPeakHours: protectedProcedure
+    .input(dateRangeSchema)
+    .query(async ({ ctx, input }) => {
+      return getPeakHoursReport(ctx.user.organizationId, {
+        start: input.start,
+        end: input.end,
+      });
     }),
 });

@@ -138,3 +138,42 @@ export type {
   ERAByPayer,
   RecentERAEntry,
 } from './claims-reports';
+
+// Scheduling and productivity reports (US-104)
+export {
+  getAppointmentVolumeReport,
+  getNoShowCancellationReport,
+  getProviderUtilizationReport,
+  getNewPatientReport,
+  getPatientVisitFrequencyReport,
+  getPeakHoursReport,
+} from './scheduling-reports';
+
+export type {
+  AppointmentVolumeReport,
+  AppointmentVolumeRow,
+  AppointmentVolumeByProvider,
+  AppointmentVolumeByType,
+  NoShowCancellationReport,
+  NoShowByProvider,
+  NoShowByDayOfWeek,
+  NoShowByTimeSlot,
+  CancellationReason,
+  NoShowTrendPoint,
+  ProviderUtilizationReport,
+  ProviderUtilizationRow,
+  UtilizationByDay,
+  NewPatientReport,
+  NewPatientByReferralSource,
+  NewPatientByProvider,
+  NewPatientTrendPoint,
+  RecentNewPatient,
+  PatientVisitFrequencyReport,
+  VisitFrequencyBucket,
+  PatientVisitCount,
+  VisitFrequencyByProvider,
+  PeakHoursReport,
+  HourlyVolume,
+  DayHourHeatmap,
+  PeakTimeSummary,
+} from './scheduling-reports';
