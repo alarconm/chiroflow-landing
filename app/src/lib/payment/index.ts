@@ -19,6 +19,20 @@ export { MockPaymentProvider } from './mock-provider';
 export { StripePaymentProvider } from './stripe-provider';
 export { QuickBooksSyncService, getQuickBooksService } from './quickbooks';
 
+// Credential encryption utilities
+export {
+  encryptPaymentCredential,
+  decryptPaymentCredential,
+  isEncryptedCredential,
+  safeDecryptPaymentCredential,
+  maskCredential,
+  validateStripeKeyFormat,
+  encryptProcessorCredentials,
+  decryptProcessorCredentials,
+  type EncryptedCredential,
+  type PaymentProcessorCredentials,
+} from './crypto';
+
 /**
  * Available payment provider types
  */

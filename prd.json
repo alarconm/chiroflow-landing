@@ -32,7 +32,7 @@
         "Secure credential handling with encryption"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-087",
