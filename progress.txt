@@ -278,3 +278,115 @@ TypeScript compilation passes ✓
 --- Iteration 10 completed at 2026-01-22 00:25:00 ---
 Story: US-204 - Vertebral listing system
 
+--- Iteration 10 completed at 2026-01-22 00:24:26 ---
+Story: US-204 - Vertebral listing system
+
+--- Iteration 11 completed at 2026-01-22 ---
+Story: US-205 - Chiropractic examination
+
+Implemented:
+- chiropracticExam.create - Create comprehensive exam record
+  - Links to patient and encounter
+  - Validates encounter is not signed
+  - Prevents duplicate exams per encounter
+  - Auto-generates exam summary for SOAP note integration
+
+- chiropracticExam.update - Update exam with partial data
+  - Supports all exam sections
+  - Optional summary regeneration
+  - Validates encounter is not signed
+
+- chiropracticExam.get - Get exam by ID with full details
+- chiropracticExam.getByEncounter - Get exam by encounter ID
+- chiropracticExam.listByPatient - List all exams for a patient with pagination
+- chiropracticExam.delete - Delete exam (only for unsigned encounters)
+
+Leg Length Assessment:
+- chiropracticExam.updateLegLength - Update leg length findings
+  - Prone position assessment
+  - Supine position assessment
+  - Seated position assessment
+  - Notes field for additional observations
+
+Muscle Testing (0-5 MRC Scale):
+- chiropracticExam.updateMuscleTesting - Update muscle test data
+  - Supports bilateral testing with L/R/bilateral designation
+  - Grade 0 (No contraction) to Grade 5 (Normal)
+  - 14 common muscles with myotome mapping (deltoid, biceps, quadriceps, etc.)
+- chiropracticExam.getMuscleGrades - Returns grading scale reference
+- chiropracticExam.getMuscleOptions - Returns testable muscles with myotome levels
+
+Static and Motion Palpation:
+- chiropracticExam.updateStaticPalpation - Document static findings
+  - Per-segment findings array
+  - Severity (mild/moderate/marked)
+  - Finding types: tenderness, spasm, hypertonicity, trigger point, etc.
+- chiropracticExam.updateMotionPalpation - Document motion restrictions
+  - Per-segment restriction array
+  - Restriction types: flexion, extension, lateral flexion, rotation
+- chiropracticExam.getPalpationOptions - Returns available finding types
+
+Postural Analysis Integration:
+- chiropracticExam.updatePosturalAnalysis - Document postural deviations
+  - Three views: anterior, lateral, posterior
+  - Checkpoints per view (head position, shoulder level, pelvic tilt, etc.)
+  - Deviation descriptions with severity
+- chiropracticExam.getPosturalCheckpoints - Returns checkpoints by view
+
+Orthopedic Tests:
+- chiropracticExam.updateOrthopedicTests - Record test results
+  - Result: positive/negative/equivocal
+  - Side: left/right/bilateral/central
+  - Notes per test
+- chiropracticExam.getOrthopedicTestOptions - Returns 30+ tests organized by region
+  - Cervical: Compression, Distraction, Spurling's, Jackson's, Bakody's
+  - Shoulder: Neer's, Hawkins-Kennedy, Empty Can, Speed's
+  - Lumbar: SLR, Crossed SLR, Braggard's, Kemp's, Slump
+  - SI Joint: FABER, Gaenslen's, Yeoman's
+  - Hip: Thomas, Trendelenburg, Ober's, Piriformis
+
+Neurological Screening:
+- chiropracticExam.updateNeurologicalScreening - Full neuro update
+  - DTRs: left/right grading per reflex
+  - Dermatomes: sensation per level (normal/diminished/absent/hyperesthetic)
+  - Myotomes: strength grading per level
+  - Notes field
+- chiropracticExam.getDTROptions - Returns reflexes and grading scale
+  - Reflexes: Biceps, Brachioradialis, Triceps, Patellar, Achilles
+  - Grades: 0 (absent) to 4+ (clonus)
+- chiropracticExam.getDermatomeOptions - Returns dermatomes C2-S2 with areas
+- chiropracticExam.getMyotomeOptions - Returns myotomes with muscles
+
+Range of Motion:
+- chiropracticExam.updateROM - Update single region ROM
+- chiropracticExam.updateAllROM - Update all regions at once
+  - Cervical, thoracic, lumbar regions
+  - Movements: flexion, extension, lateral flexion, rotation
+  - Pain on movement tracking
+- chiropracticExam.getNormalROM - Returns normal values for comparison
+
+Summary Generation:
+- chiropracticExam.regenerateSummary - Regenerate exam summary
+- chiropracticExam.getSummary - Get or generate exam summary
+  - Auto-formats findings into SOAP note format
+  - Highlights abnormal findings
+  - Sections: LEG LENGTH, MUSCLE TESTING, STATIC PALPATION, MOTION PALPATION,
+    POSTURAL ANALYSIS, ORTHOPEDIC TESTS, NEUROLOGICAL, RANGE OF MOTION, OBSERVATIONS
+
+Comparison Tools:
+- chiropracticExam.compareExams - Compare two exams for a patient
+  - Leg length comparison
+  - ROM comparison with change calculations
+  - Orthopedic test result comparison
+
+Added audit action types:
+- CHIROPRACTIC_EXAM_CREATE
+- CHIROPRACTIC_EXAM_UPDATE
+- CHIROPRACTIC_EXAM_DELETE
+
+Router registered in index.ts
+TypeScript compilation passes ✓
+
+--- Iteration 11 completed at 2026-01-22 00:35:00 ---
+Story: US-205 - Chiropractic examination
+

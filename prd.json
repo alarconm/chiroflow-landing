@@ -102,7 +102,7 @@
         "Generate exam summary for notes"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-206",
