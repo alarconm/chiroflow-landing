@@ -463,3 +463,104 @@ Date: 2026-01-22
 --- Iteration 5 completed at 2026-01-22 ---
 Story: US-252 - Cross-location scheduling
 
+--- Iteration 5 completed at 2026-01-22 05:59:35 ---
+Story: US-252 - Cross-location scheduling
+
+## US-253: Consolidated reporting - COMPLETED
+Date: 2026-01-22
+
+### Changes Made:
+
+1. **Created enterpriseReporting router** (`app/src/server/routers/enterpriseReporting.ts`)
+   - Comprehensive enterprise-wide reporting for multi-location organizations
+   - Full TypeScript types for all report structures
+
+2. **Implemented reports.getEnterprise (All-location aggregated reports)**
+   - Enterprise overview with aggregated metrics across all locations
+   - Volume metrics: appointments, completed, cancelled, no-shows
+   - Patient metrics: total, new, active patients per location
+   - Financial metrics: charges, collections, adjustments, net revenue, outstanding AR
+   - Efficiency metrics: no-show rate, collection rate, avg revenue per visit
+   - Location-by-location breakdown with all metrics
+   - Optional location filtering to limit scope
+
+3. **Implemented Filter reports by location**
+   - getFinancialByLocation - Financial report filtered by specific locations
+   - Validates locations belong to organization
+   - Returns charges, collections, adjustments, net revenue per location
+   - Includes collection rate and charge count
+
+4. **Implemented Compare locations side-by-side**
+   - compareLocations - Compare 2-10 locations across key metrics
+   - Configurable metrics: appointments, completedVisits, noShowRate, newPatients,
+     totalCharges, totalCollections, collectionRate, avgRevenuePerVisit, outstandingAR
+   - Shows enterprise total and average for each metric
+   - Proper format specification (number, currency, percentage)
+
+5. **Implemented Roll-up financial reports**
+   - getFinancialRollup - Consolidated financial data across all locations
+   - Grouping by day, week, or month
+   - Per-period breakdown by location
+   - Grand totals across all periods
+   - Shows charges, collections, adjustments, net revenue
+
+6. **Implemented Multi-location AR aging**
+   - getARAgingByLocation - AR aging broken down by location
+   - Standard aging buckets: current, 31-60, 61-90, 91-120, 120+ days
+   - Per-location totals and charge counts
+   - Average age per location
+   - Enterprise totals with weighted average age
+
+7. **Implemented Provider productivity by location**
+   - getProviderProductivityByLocation - Provider metrics by location
+   - Shows visits, charges, collections, collection rate per provider per location
+   - Provider totals across all locations
+   - Location totals across all providers
+   - Optional provider filter
+
+8. **Implemented Patient volume by location**
+   - getPatientVolumeByLocation - Patient metrics by location
+   - Total patients, new patients, returning patients
+   - Average visits per patient
+   - Top 5 diagnoses by location
+   - Enterprise totals
+
+9. **Implemented Export enterprise reports**
+   - exportEnterpriseReport - Export any enterprise report
+   - Supports all report types: enterprise-overview, location-comparison,
+     ar-aging-by-location, provider-productivity, patient-volume, financial-rollup
+   - All export formats supported (CSV, PDF, Excel)
+   - Creates export record in database
+   - Full audit logging
+
+10. **Utility procedures**
+    - getLocationsForFilter - Get locations for report filter dropdowns
+
+11. **Added audit log actions** (`app/src/lib/audit.ts`)
+    - ENTERPRISE_REPORT_VIEW
+    - ENTERPRISE_REPORT_EXPORT
+    - ENTERPRISE_LOCATION_COMPARE
+
+12. **Registered router** (`app/src/server/routers/index.ts`)
+    - Added enterpriseReportingRouter import and registration
+
+### Files Created:
+- app/src/server/routers/enterpriseReporting.ts
+
+### Files Modified:
+- app/src/lib/audit.ts
+- app/src/server/routers/index.ts
+
+### Acceptance Criteria Status:
+- [x] reports.getEnterprise - All-location aggregated reports
+- [x] Filter reports by location
+- [x] Compare locations side-by-side
+- [x] Roll-up financial reports
+- [x] Multi-location AR aging
+- [x] Provider productivity by location
+- [x] Patient volume by location
+- [x] Export enterprise reports
+
+--- Iteration 6 completed at 2026-01-22 ---
+Story: US-253 - Consolidated reporting
+
