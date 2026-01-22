@@ -169,6 +169,12 @@ model Organization {
   imagingStudies  ImagingStudy[]
   imagingReports  ImagingReport[]
 
+  // Patient Education & Home Care relations (Epic 23)
+  exercisePrescriptions    ExercisePrescription[]
+  prescribedArticles       PrescribedArticle[]
+  homeCareInstructions     HomeCareInstruction[]
+  patientExerciseProgress  PatientExerciseProgress[]
+
   @@index([subdomain])
 }
 
@@ -409,6 +415,12 @@ model Patient {
 
   // Imaging & X-Ray Integration relations (Epic 22)
   imagingStudies ImagingStudy[]
+
+  // Patient Education & Home Care relations (Epic 23)
+  exercisePrescriptions   ExercisePrescription[]
+  prescribedArticles      PrescribedArticle[]
+  homeCareInstructions    HomeCareInstruction[]
+  patientExerciseProgress PatientExerciseProgress[]
 
   @@unique([mrn, organizationId])
   @@index([organizationId])
@@ -761,6 +773,11 @@ model Provider {
   // Imaging & X-Ray Integration relations (Epic 22)
   orderedImagingStudies ImagingStudy[] @relation("OrderingProvider")
   imagingReports        ImagingReport[]
+
+  // Patient Education & Home Care relations (Epic 23)
+  exercisePrescriptions ExercisePrescription[]
+  prescribedArticles    PrescribedArticle[]
+  homeCareInstructions  HomeCareInstruction[]
 
   @@index([organizationId])
   @@index([isActive])
@@ -1199,6 +1216,11 @@ model Encounter {
   // Imaging & X-Ray Integration relations (Epic 22)
   imagingStudies ImagingStudy[]
 
+  // Patient Education & Home Care relations (Epic 23)
+  exercisePrescriptions ExercisePrescription[]
+  prescribedArticles    PrescribedArticle[]
+  homeCareInstructions  HomeCareInstruction[]
+
   @@index([organizationId])
   @@index([patientId])
   @@index([providerId])
@@ -1324,6 +1346,9 @@ model Diagnosis {
   encounterId String
   encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
 
+  // Patient Education & Home Care relations (Epic 23)
+  exercisePrescriptions ExercisePrescription[]
+
   @@index([encounterId])
   @@index([icd10Code])
   @@index([status])
@@ -1406,6 +1431,9 @@ model TreatmentPlan {
 
   // Imaging & X-Ray Integration relations (Epic 22)
   imagingReports ImagingReport[]
+
+  // Patient Education & Home Care relations (Epic 23)
+  exercisePrescriptions ExercisePrescription[]
 
   @@index([organizationId])
   @@index([patientId])
@@ -8227,4 +8255,357 @@ model ImagingReport {
   @@index([status])
   @@index([reportedById])
   @@index([signedAt])
+}
+
+// ============================================================================
+// Patient Education & Home Care (Epic 23)
+// ============================================================================
+
+// Exercise difficulty levels
+enum ExerciseDifficulty {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+// Body region for exercises
+enum BodyRegion {
+  CERVICAL
+  THORACIC
+  LUMBAR
+  SACRAL
+  UPPER_EXTREMITY
+  LOWER_EXTREMITY
+  CORE
+  FULL_BODY
+}
+
+// Exercise category type
+enum ExerciseCategoryType {
+  STRETCHING
+  STRENGTHENING
+  MOBILITY
+  POSTURE
+  BALANCE
+  STABILITY
+  REHABILITATION
+}
+
+// Prescription status
+enum PrescriptionStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  DISCONTINUED
+}
+
+// Home care instruction status
+enum HomeCareInstructionStatus {
+  ACTIVE
+  COMPLETED
+  EXPIRED
+}
+
+// Reading level for education content
+enum ReadingLevel {
+  SIMPLE       // 5th grade
+  STANDARD     // 8th grade
+  DETAILED     // 12th grade
+}
+
+// Exercise category model
+model ExerciseCategory {
+  id          String               @id @default(cuid())
+  name        String               // e.g., "Neck Stretches"
+  type        ExerciseCategoryType // Stretching, Strengthening, etc.
+  description String?              @db.Text
+  iconUrl     String?              // Icon for category
+  sortOrder   Int                  @default(0)
+  isActive    Boolean              @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  exercises Exercise[]
+
+  @@index([type])
+  @@index([isActive])
+}
+
+// Therapeutic exercise model
+model Exercise {
+  id           String             @id @default(cuid())
+  name         String             // e.g., "Chin Tucks"
+  description  String             @db.Text
+  instructions String             @db.Text // Step-by-step instructions
+  videoUrl     String?            // URL to demonstration video
+  imageUrl     String?            // Static image of exercise
+  thumbnailUrl String?            // Thumbnail for lists
+
+  // Classification
+  difficulty   ExerciseDifficulty @default(BEGINNER)
+  bodyRegion   BodyRegion         // Target area
+  targetMuscles String[]          // Specific muscles targeted
+  conditions    String[]          // Conditions this exercise helps
+
+  // Parameters
+  defaultSets     Int?            // Default number of sets
+  defaultReps     Int?            // Default number of reps
+  defaultHoldTime Int?            // Hold time in seconds
+  defaultFrequency String?        // e.g., "3x daily"
+
+  // Equipment
+  equipmentRequired String[]      // Equipment needed
+  modifications     String?       @db.Text // Modifications for different abilities
+
+  // Safety
+  contraindications String?       @db.Text // When NOT to do this exercise
+  precautions       String?       @db.Text // Safety precautions
+
+  // Metadata
+  isCustom   Boolean  @default(false) // Custom exercise vs library
+  isActive   Boolean  @default(true)
+  createdBy  String?  // User ID who created (for custom)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  categoryId String
+  category   ExerciseCategory @relation(fields: [categoryId], references: [id])
+
+  prescriptions ExercisePrescription[]
+  progressLogs  PatientExerciseProgress[]
+
+  @@index([difficulty])
+  @@index([bodyRegion])
+  @@index([isActive])
+  @@index([categoryId])
+}
+
+// Education article model
+model EducationArticle {
+  id           String       @id @default(cuid())
+  title        String
+  content      String       @db.Text // Full article content (HTML/Markdown)
+  summary      String?      @db.Text // Brief summary
+  category     String       // e.g., "Conditions", "Prevention", "Lifestyle"
+  readingLevel ReadingLevel @default(STANDARD)
+  language     String       @default("en")
+
+  // Related conditions and keywords
+  relatedConditions String[]   // ICD-10 codes or condition names
+  keywords          String[]   // Search keywords
+  tags              String[]   // UI tags
+
+  // Media
+  featuredImageUrl String?     // Featured image
+  attachments      Json?       // Array of attachment URLs/metadata
+
+  // Publishing
+  isPublished   Boolean   @default(false)
+  publishedAt   DateTime?
+  authorName    String?   // Display name of author
+  lastReviewedAt DateTime? // Medical review date
+
+  // Metrics
+  viewCount Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Prescribed articles
+  prescribedArticles PrescribedArticle[]
+
+  @@index([category])
+  @@index([isPublished])
+  @@index([language])
+}
+
+// Exercise prescription - links patient to exercises
+model ExercisePrescription {
+  id        String             @id @default(cuid())
+  status    PrescriptionStatus @default(ACTIVE)
+
+  // Exercise parameters
+  sets         Int?        // Number of sets
+  reps         Int?        // Number of reps per set
+  holdTime     Int?        // Hold time in seconds
+  frequency    String?     // e.g., "3x daily", "Every 2 hours"
+  duration     String?     // e.g., "2 weeks", "Until follow-up"
+
+  // Schedule
+  startDate DateTime  @default(now())
+  endDate   DateTime?
+
+  // Instructions
+  specialInstructions String?  @db.Text // Modifications or notes
+  precautions         String?  @db.Text // Patient-specific precautions
+
+  // Progression
+  progressionSchedule Json?    // Planned progression (sets/reps increases)
+  currentWeek         Int      @default(1) // Current week of progression
+
+  // Metadata
+  prescribedAt DateTime @default(now())
+  discontinuedAt DateTime?
+  discontinuedReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  exerciseId String
+  exercise   Exercise @relation(fields: [exerciseId], references: [id])
+
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  prescriberId String   // Provider who prescribed
+  prescriber   Provider @relation(fields: [prescriberId], references: [id])
+
+  // Optional links
+  encounterId     String?       // Encounter where prescribed
+  encounter       Encounter?    @relation(fields: [encounterId], references: [id])
+
+  treatmentPlanId String?       // Associated treatment plan
+  treatmentPlan   TreatmentPlan? @relation(fields: [treatmentPlanId], references: [id])
+
+  diagnosisId     String?       // Associated diagnosis
+  diagnosis       Diagnosis?    @relation(fields: [diagnosisId], references: [id])
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Progress tracking
+  progressLogs PatientExerciseProgress[]
+
+  @@index([patientId])
+  @@index([status])
+  @@index([prescriberId])
+  @@index([organizationId])
+  @@index([exerciseId])
+}
+
+// Prescribed education article - links patient to articles
+model PrescribedArticle {
+  id        String   @id @default(cuid())
+  isRead    Boolean  @default(false)
+  readAt    DateTime?
+  assignedAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  articleId String
+  article   EducationArticle @relation(fields: [articleId], references: [id])
+
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  prescriberId String
+  prescriber   Provider @relation(fields: [prescriberId], references: [id])
+
+  encounterId String?
+  encounter   Encounter? @relation(fields: [encounterId], references: [id])
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@index([articleId])
+  @@index([organizationId])
+}
+
+// Home care instructions
+model HomeCareInstruction {
+  id     String                    @id @default(cuid())
+  status HomeCareInstructionStatus @default(ACTIVE)
+
+  // Instructions content
+  instructions String @db.Text // Main instructions (HTML/Markdown)
+
+  // Specific protocols
+  iceProtocol    String? @db.Text // Ice therapy instructions
+  heatProtocol   String? @db.Text // Heat therapy instructions
+  activityMods   String? @db.Text // Activity modifications
+  ergonomicRecs  String? @db.Text // Ergonomic recommendations
+  warningSigns   String? @db.Text // Signs to watch for
+  followUpInstr  String? @db.Text // Follow-up instructions
+
+  // Duration
+  durationDays  Int?      // How long to follow instructions
+  startDate     DateTime  @default(now())
+  endDate       DateTime?
+
+  // Delivery
+  deliveredAt      DateTime?
+  deliveryMethod   String?    // email, portal, print
+  pdfUrl           String?    // Generated PDF URL
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  providerId String
+  provider   Provider @relation(fields: [providerId], references: [id])
+
+  encounterId String?
+  encounter   Encounter? @relation(fields: [encounterId], references: [id])
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@index([status])
+  @@index([organizationId])
+  @@index([encounterId])
+}
+
+// Patient exercise progress tracking
+model PatientExerciseProgress {
+  id          String   @id @default(cuid())
+  completedAt DateTime @default(now())
+
+  // What was done
+  setsCompleted Int?     // Actual sets completed
+  repsCompleted Int?     // Actual reps per set
+  holdTime      Int?     // Actual hold time in seconds
+  duration      Int?     // Total duration in minutes
+
+  // Feedback
+  painBefore    Int?     // Pain level 0-10 before
+  painAfter     Int?     // Pain level 0-10 after
+  difficulty    Int?     // Perceived difficulty 1-5
+  notes         String?  @db.Text // Patient notes
+
+  // Session info
+  skipped       Boolean  @default(false) // Was this session skipped?
+  skipReason    String?  // Why skipped
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  prescriptionId String
+  prescription   ExercisePrescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+
+  exerciseId String
+  exercise   Exercise @relation(fields: [exerciseId], references: [id])
+
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([prescriptionId])
+  @@index([patientId])
+  @@index([completedAt])
+  @@index([organizationId])
 }
