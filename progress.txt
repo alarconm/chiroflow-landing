@@ -57,3 +57,59 @@
 - US-245: Activity goals and alerts
 - US-246: Device data dashboard
 - US-247: Device connection portal
+--- Iteration 1 completed at 2026-01-22 04:43:05 ---
+Story: US-240 - Device integration schema
+
+## US-241: Apple Health integration - COMPLETED
+
+### What was done:
+1. Created `app/src/server/routers/devices.ts` with complete Apple Health integration:
+   - `devices.connectAppleHealth` - Initiate Apple Health connection with OAuth flow
+   - OAuth flow handling with state token for CSRF protection
+   - `devices.completeAppleHealthAuth` - Complete OAuth flow, exchange code for tokens
+   - `devices.syncAppleHealth` - Manual sync trigger for activity, sleep, workout data
+   - `devices.scheduleAppleHealthSync` - Background sync scheduling (15min to 24hr)
+   - `devices.getActivityData` - Retrieve synced activity data with summaries
+   - `devices.getSleepData` - Retrieve synced sleep data with summaries
+   - `devices.getConnections` - List all device connections for a patient
+   - `devices.getConnection` - Get single device connection details
+   - `devices.disconnect` - Disconnect a device, revoke tokens
+   - `devices.getSupportedDevices` - List supported device types
+
+2. Token encryption/decryption for secure storage using AES-256-CBC
+
+3. Data mapping to internal models:
+   - Activity data: steps, distance, activeMinutes, calories, hourlySteps, workouts
+   - Sleep data: duration, quality, efficiency, stages (awake, light, deep, rem), sleepStart/End
+   - Workout sessions with type, duration, calories, startTime
+
+4. Token expiry handling with automatic status update to EXPIRED
+
+5. Audit logging for all device operations
+
+6. Added router to index.ts
+
+7. TypeScript compilation verified - no errors
+
+### Acceptance Criteria Met:
+- [x] devices.connectAppleHealth - Initiate Apple Health connection
+- [x] OAuth flow for authorization
+- [x] Sync activity data (steps, distance, calories)
+- [x] Sync sleep data
+- [x] Sync workout sessions
+- [x] devices.syncAppleHealth - Manual sync trigger
+- [x] Background sync scheduling
+- [x] Data mapping to internal models
+
+---
+
+## Remaining Stories:
+- US-242: Google Fit integration
+- US-243: Posture sensor integration
+- US-244: Activity correlation analysis
+- US-245: Activity goals and alerts
+- US-246: Device data dashboard
+- US-247: Device connection portal
+--- Iteration 2 completed at 2026-01-22 ---
+Story: US-241 - Apple Health integration
+

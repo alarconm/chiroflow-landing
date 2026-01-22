@@ -74,6 +74,8 @@ import { homeCareRouter } from './homeCare';
 import { educationRouter } from './education';
 import { progressRouter } from './progress';
 import { portalEducationRouter } from './portalEducation';
+// Wearable & Device Integration (Epic 24)
+import { devicesRouter } from './devices';
 
 export const appRouter = router({
   auth: authRouter,
@@ -151,6 +153,8 @@ export const appRouter = router({
   education: educationRouter,
   progress: progressRouter,
   portalEducation: portalEducationRouter,
+  // Wearable & Device Integration (Epic 24)
+  devices: devicesRouter,
 });
 
 
