@@ -650,6 +650,13 @@ This is an automated receipt. Please do not reply to this email.`,
 
   /**
    * Process a refund
+   *
+   * US-088: Refund processing with proper accounting
+   * - Requires reason for refund
+   * - Creates reversing ledger entry
+   * - Updates patient balance (reverses payment allocations)
+   * - Emails refund confirmation to patient
+   * - Full audit trail
    */
   processRefund: billerProcedure
     .input(
@@ -663,14 +670,32 @@ This is an automated receipt. Please do not reply to this email.`,
     .mutation(async ({ ctx, input }) => {
       const { transactionId, amount, reason, reasonCategory } = input;
 
-      // Get original transaction
+      // Get original transaction with payment and allocations
       const originalTransaction = await ctx.prisma.paymentTransaction.findFirst({
         where: {
           id: transactionId,
           organizationId: ctx.user.organizationId,
         },
         include: {
-          payment: true,
+          payment: {
+            include: {
+              allocations: {
+                include: {
+                  charge: true,
+                },
+              },
+            },
+          },
+          paymentMethod: true,
+          patient: {
+            include: {
+              demographics: true,
+              contacts: {
+                where: { isPrimary: true },
+                take: 1,
+              },
+            },
+          },
         },
       });
 
@@ -703,6 +728,11 @@ This is an automated receipt. Please do not reply to this email.`,
         });
       }
 
+      // Get organization for email branding
+      const organization = await ctx.prisma.organization.findUnique({
+        where: { id: ctx.user.organizationId },
+      });
+
       // Process refund with provider
       const provider = await getPaymentProvider();
       const result = await provider.processRefund({
@@ -712,15 +742,33 @@ This is an automated receipt. Please do not reply to this email.`,
       });
 
       if (!result.success) {
+        // Log failed refund attempt
+        await auditLog(PAYMENT_AUDIT_ACTIONS.PAYMENT_REFUND, 'PaymentTransaction', {
+          entityId: transactionId,
+          changes: {
+            action: 'refund_failed',
+            amount: refundAmount,
+            reason,
+            errorMessage: result.errorMessage,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
         throw new TRPCError({
           code: 'BAD_REQUEST',
           message: result.errorMessage ?? 'Refund failed',
         });
       }
 
-      // Create refund records in transaction
-      const [refundTransaction, refundRecord] = await ctx.prisma.$transaction(async (tx) => {
-        // Create refund transaction
+      // Calculate how much of each allocation to reverse (proportional to refund amount)
+      const originalPaymentAmount = Number(originalTransaction.payment?.amount ?? originalTransaction.amount);
+      const refundRatio = refundAmount / originalPaymentAmount;
+      const isFullRefund = refundAmount === originalPaymentAmount;
+
+      // Create refund records and reverse allocations in transaction
+      const [refundTransaction, refundRecord, reversedAllocations] = await ctx.prisma.$transaction(async (tx) => {
+        // Create refund transaction record
         const refundTx = await tx.paymentTransaction.create({
           data: {
             patientId: originalTransaction.patientId,
@@ -759,47 +807,229 @@ This is an automated receipt. Please do not reply to this email.`,
         await tx.paymentTransaction.update({
           where: { id: transactionId },
           data: {
-            status:
-              refundAmount === Number(originalTransaction.amount)
-                ? PaymentTransactionStatus.REFUNDED
-                : PaymentTransactionStatus.PARTIALLY_REFUNDED,
+            status: isFullRefund
+              ? PaymentTransactionStatus.REFUNDED
+              : PaymentTransactionStatus.PARTIALLY_REFUNDED,
           },
         });
 
-        // If there's a linked payment, void it or adjust
-        if (originalTransaction.payment) {
-          // This is simplified - in production, you'd need to reverse allocations
-          await tx.payment.update({
-            where: { id: originalTransaction.payment.id },
-            data: {
-              isVoid: true,
-              voidReason: `Refunded: ${reason}`,
-              voidedAt: new Date(),
-              voidedBy: ctx.user.id,
-            },
-          });
+        // Track reversed allocations for audit trail
+        const reversedAllocs: { chargeId: string; amount: number; cptCode: string }[] = [];
+
+        // Reverse payment allocations and update charge balances
+        if (originalTransaction.payment?.allocations) {
+          for (const allocation of originalTransaction.payment.allocations) {
+            // Calculate amount to reverse for this allocation
+            const allocationRefundAmount = isFullRefund
+              ? Number(allocation.amount)
+              : Math.round(Number(allocation.amount) * refundRatio * 100) / 100;
+
+            if (allocationRefundAmount > 0) {
+              // Update charge: reduce payments, increase balance
+              const charge = allocation.charge;
+              const newPayments = Math.max(0, Number(charge.payments) - allocationRefundAmount);
+              const newBalance = Number(charge.fee) * charge.units - newPayments - Number(charge.adjustments);
+
+              await tx.charge.update({
+                where: { id: charge.id },
+                data: {
+                  payments: newPayments,
+                  balance: Math.max(0, newBalance),
+                  // If charge was paid, revert to previous status
+                  status: newBalance > 0 && charge.status === ChargeStatus.PAID
+                    ? ChargeStatus.BILLED
+                    : charge.status,
+                },
+              });
+
+              reversedAllocs.push({
+                chargeId: charge.id,
+                amount: allocationRefundAmount,
+                cptCode: charge.cptCode,
+              });
+            }
+          }
         }
 
-        return [refundTx, refund];
+        // Handle the payment record
+        if (originalTransaction.payment) {
+          if (isFullRefund) {
+            // Full refund: void the entire payment
+            await tx.payment.update({
+              where: { id: originalTransaction.payment.id },
+              data: {
+                isVoid: true,
+                voidReason: `Full refund: ${reason}`,
+                voidedAt: new Date(),
+                voidedBy: ctx.user.id,
+              },
+            });
+          } else {
+            // Partial refund: adjust the payment amount and unapplied amount
+            const currentUnapplied = Number(originalTransaction.payment.unappliedAmount ?? 0);
+            const reversedAllocTotal = reversedAllocs.reduce((sum, a) => sum + a.amount, 0);
+            const adjustedUnapplied = Math.max(0, currentUnapplied - (refundAmount - reversedAllocTotal));
+
+            await tx.payment.update({
+              where: { id: originalTransaction.payment.id },
+              data: {
+                amount: Number(originalTransaction.payment.amount) - refundAmount,
+                unappliedAmount: adjustedUnapplied,
+                notes: `${originalTransaction.payment.notes ?? ''}\nPartial refund of ${formatCurrency(toCents(refundAmount))} on ${new Date().toISOString().split('T')[0]}: ${reason}`.trim(),
+              },
+            });
+          }
+        }
+
+        return [refundTx, refund, reversedAllocs];
       });
 
+      // Audit log with full details
       await auditLog(PAYMENT_AUDIT_ACTIONS.PAYMENT_REFUND, 'Refund', {
         entityId: refundRecord.id,
         changes: {
           originalTransactionId: transactionId,
+          originalPaymentId: originalTransaction.paymentId,
           amount: refundAmount,
+          isFullRefund,
           reason,
+          reasonCategory,
           processorRefundId: result.refundId,
+          reversedAllocations: reversedAllocations.map(a => ({
+            chargeId: a.chargeId,
+            cptCode: a.cptCode,
+            amount: a.amount,
+          })),
         },
         userId: ctx.user.id,
         organizationId: ctx.user.organizationId,
       });
+
+      // Send refund confirmation email to patient (non-blocking)
+      const patientContact = originalTransaction.patient.contacts[0];
+      if (patientContact?.email && patientContact.allowEmail) {
+        const patientName = originalTransaction.patient.demographics
+          ? `${originalTransaction.patient.demographics.firstName} ${originalTransaction.patient.demographics.lastName}`
+          : 'Valued Patient';
+        const orgName = organization?.name ?? 'Our Practice';
+        const cardDisplay = originalTransaction.paymentMethod
+          ? `${getCardBrandDisplayName(originalTransaction.paymentMethod.cardBrand)} ****${originalTransaction.paymentMethod.last4}`
+          : 'original payment method';
+        const formattedAmount = formatCurrency(toCents(refundAmount));
+        const refundDate = new Date().toLocaleDateString('en-US', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        });
+
+        // Fire and forget - don't block the refund response
+        notificationService.sendEmail(
+          patientContact.email,
+          `Refund Confirmation - ${formattedAmount}`,
+          `Dear ${patientName},
+
+We have processed a refund to your account. Here are the details:
+
+Refund Details
+--------------
+Date: ${refundDate}
+Amount: ${formattedAmount}
+Refund Reference: ${result.refundId ?? refundRecord.id}
+Original Transaction: ${originalTransaction.externalTransactionId ?? transactionId}
+${isFullRefund ? 'Type: Full Refund' : 'Type: Partial Refund'}
+
+The refund will be credited to your ${cardDisplay} within 5-10 business days, depending on your financial institution.
+
+If you have any questions about this refund, please contact our office.
+
+Thank you for choosing ${orgName}.
+
+This is an automated notification. Please do not reply to this email.`,
+          {
+            html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background-color: #053e67; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+    .content { background-color: #f9f9f9; padding: 20px; border: 1px solid #ddd; }
+    .refund-box { background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #e0e0e0; }
+    .amount { font-size: 32px; font-weight: bold; color: #053e67; }
+    .detail-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
+    .detail-label { color: #666; }
+    .detail-value { font-weight: 500; }
+    .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+    .refund-icon { font-size: 48px; margin-bottom: 10px; }
+    .info-box { background-color: #e8f4fd; border: 1px solid #b8daff; border-radius: 8px; padding: 15px; margin-top: 20px; }
+    .info-box p { margin: 0; color: #004085; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="refund-icon">↩</div>
+      <h1 style="margin: 0;">Refund Processed</h1>
+    </div>
+    <div class="content">
+      <p>Dear ${patientName},</p>
+      <p>We have processed a refund to your account. The funds will be returned to your original payment method.</p>
+
+      <div class="refund-box">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <div class="amount">${formattedAmount}</div>
+          <div style="color: #28a745;">${isFullRefund ? 'Full Refund' : 'Partial Refund'}</div>
+        </div>
+
+        <div class="detail-row">
+          <span class="detail-label">Date</span>
+          <span class="detail-value">${refundDate}</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Refund Reference</span>
+          <span class="detail-value">${result.refundId ?? refundRecord.id}</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Original Transaction</span>
+          <span class="detail-value">${originalTransaction.externalTransactionId ?? transactionId}</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Payment Method</span>
+          <span class="detail-value">${cardDisplay}</span>
+        </div>
+      </div>
+
+      <div class="info-box">
+        <p><strong>Please note:</strong> Refunds typically take 5-10 business days to appear on your statement, depending on your financial institution.</p>
+      </div>
+
+      <p style="margin-top: 20px;">If you have any questions about this refund, please contact our office.</p>
+      <p>Thank you for choosing ${orgName}.</p>
+    </div>
+    <div class="footer">
+      <p>This is an automated notification. Please do not reply to this email.</p>
+      <p>${orgName}</p>
+    </div>
+  </div>
+</body>
+</html>
+            `,
+          }
+        ).catch((err) => {
+          console.error('Failed to send refund confirmation email:', err);
+          // Don't throw - email failure shouldn't fail the refund
+        });
+      }
 
       return {
         success: true,
         refundId: refundRecord.id,
         transactionId: refundTransaction.id,
         amount: refundAmount,
+        isFullRefund,
+        reversedAllocations: reversedAllocations.length,
       };
     }),
 

@@ -188,3 +188,84 @@ Added automatic email receipt functionality:
 --- Iteration 3 completed at 2026-01-21 ---
 Story: US-087 - Card payment processing
 
+--- Iteration 3 completed at 2026-01-21 21:16:23 ---
+Story: US-087 - Card payment processing
+
+## 2026-01-21: US-088 - Refund processing
+
+**Status:** COMPLETE
+
+### What was done:
+
+Enhanced the existing `processRefund` procedure in `payment-processing.ts` to fully implement all acceptance criteria for US-088.
+
+#### 1. payment.processRefund - Refund full or partial amount (Enhanced)
+Already existed, but enhanced with:
+- Better transaction fetching including payment allocations
+- Proportional refund calculation for partial refunds
+- Support for both full and partial refunds with correct accounting
+
+#### 2. Require reason for refund (Already existed)
+- `reason: z.string().min(1, 'Refund reason is required')` validation
+- Optional `reasonCategory` for categorizing refunds
+
+#### 3. Create reversing ledger entry (NEW)
+For each payment allocation:
+- Calculates proportional amount to reverse based on refund ratio
+- Updates charge's `payments` field (reduces by refund amount)
+- Recalculates and updates charge's `balance` field
+- Reverts charge status from PAID to BILLED if balance becomes positive
+
+For the Payment record:
+- Full refund: Voids the entire payment with reason
+- Partial refund: Adjusts payment amount and unapplied amount, adds note
+
+#### 4. Update patient balance (NEW)
+- Reverses payment allocations proportionally
+- Charge balances are recalculated: balance = fee * units - payments - adjustments
+- Charges that were PAID get reverted to BILLED status when balance > 0
+
+#### 5. Email refund confirmation to patient (NEW)
+Sends automatic email notification with:
+- Refund amount and reference number
+- Original transaction reference
+- Payment method information
+- 5-10 business day processing notice
+- Beautiful HTML template with refund icon
+- Plain text fallback
+- Respects patient email preferences (`allowEmail` flag)
+- Fire-and-forget (non-blocking)
+
+#### 6. Audit trail for all refunds (Enhanced)
+Now includes comprehensive audit logging:
+- Original transaction and payment IDs
+- Refund amount and type (full/partial)
+- Reason and reason category
+- Processor refund ID
+- Complete list of reversed allocations with charge IDs and CPT codes
+- Failed refund attempts are also logged
+
+### Files Modified:
+- `app/src/server/routers/payment-processing.ts`
+  - Lines 651-1003: Complete rewrite of `processRefund` procedure
+  - Added proper payment allocation reversal logic
+  - Added proportional refund calculation
+  - Added email notification with HTML template
+  - Enhanced audit logging
+
+### Acceptance Criteria Met:
+✅ payment.processRefund - Refund full or partial amount
+✅ Require reason for refund
+✅ Create reversing ledger entry
+✅ Update patient balance
+✅ Email refund confirmation to patient
+✅ Audit trail for all refunds
+
+### Validation:
+- TypeScript compiles without errors
+- Email sending is fire-and-forget (doesn't block refund response)
+- Respects patient email preferences
+
+--- Iteration 4 completed at 2026-01-21 ---
+Story: US-088 - Refund processing
+

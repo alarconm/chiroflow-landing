@@ -161,7 +161,7 @@ export function RefundProcessor({ transactionId, onSuccess, onCancel }: RefundPr
           <div className="p-4 bg-muted rounded-lg space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Transaction</span>
-              <Badge variant="outline">{transaction.processorId ?? transaction.id}</Badge>
+              <Badge variant="outline">{transaction.externalTransactionId ?? transaction.id}</Badge>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Date</span>

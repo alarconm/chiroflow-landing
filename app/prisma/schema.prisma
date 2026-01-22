@@ -61,6 +61,7 @@ model Organization {
   reminderRules       ReminderRule[]
 
   // Payment Processing relations (Epic 10)
+  paymentProcessors    PaymentProcessor[]
   storedPaymentMethods StoredPaymentMethod[]
   paymentTransactions  PaymentTransaction[]
   paymentPlans         PaymentPlan[]
@@ -2297,6 +2298,60 @@ enum AutoPayFrequency {
   ON_STATEMENT
 }
 
+// Payment processor type
+enum PaymentProcessorType {
+  STRIPE
+  SQUARE
+  AUTHORIZE_NET
+  MOCK // For development/testing
+}
+
+// Payment processor configuration
+model PaymentProcessor {
+  id              String               @id @default(cuid())
+  name            String               // "Main Stripe Account", "Square Terminal"
+  type            PaymentProcessorType
+  isDefault       Boolean              @default(false)
+  isActive        Boolean              @default(true)
+
+  // Encrypted credentials (NEVER store plain text)
+  apiKeyEncrypted       String?        // Encrypted API key
+  secretKeyEncrypted    String?        // Encrypted secret key
+  webhookSecretEncrypted String?       // Encrypted webhook secret
+
+  // Public identifiable info (safe to store)
+  publishableKey  String?              // Stripe publishable key (safe to expose)
+  merchantId      String?              // Square merchant ID
+  accountId       String?              // Processor account ID
+
+  // Configuration
+  testMode        Boolean              @default(false) // Use sandbox/test environment
+  supportedCardBrands Json             @default("[]")  // ["VISA", "MASTERCARD", ...]
+  settings        Json                 @default("{}")  // Additional processor-specific settings
+
+  // Webhook configuration
+  webhookEndpoint String?              // Our endpoint URL for this processor
+  webhookEvents   Json                 @default("[]")  // Subscribed events
+
+  // Audit
+  lastVerifiedAt  DateTime?            // Last successful API connection test
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  // Multi-tenant relation
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Transactions processed by this processor
+  transactions    PaymentTransaction[]
+  refunds         Refund[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@index([isActive])
+  @@index([type])
+}
+
 // Stored payment method (tokenized card info - NEVER store raw card numbers)
 model StoredPaymentMethod {
   id              String    @id @default(cuid())
@@ -2349,9 +2404,9 @@ model PaymentTransaction {
   currency        String                   @default("USD")
   status          PaymentTransactionStatus @default(PENDING)
 
-  // Processor info
-  processorId     String?                  // Stripe charge ID, etc.
-  processorResponse Json?                  // Full response from processor
+  // External processor info
+  externalTransactionId String?            // Stripe charge ID, Square payment ID, etc.
+  processorResponse     Json?              // Full response from processor
 
   // Error info (if failed)
   errorCode       String?
@@ -2377,6 +2432,10 @@ model PaymentTransaction {
   paymentMethodId String?
   paymentMethod   StoredPaymentMethod? @relation(fields: [paymentMethodId], references: [id])
 
+  // Payment processor used for this transaction
+  paymentProcessorId String?
+  paymentProcessor   PaymentProcessor? @relation(fields: [paymentProcessorId], references: [id])
+
   // Link to existing Payment model for allocation
   paymentId       String?                  @unique
   payment         Payment? @relation(fields: [paymentId], references: [id])
@@ -2393,7 +2452,8 @@ model PaymentTransaction {
   @@index([patientId])
   @@index([status])
   @@index([createdAt])
-  @@index([processorId])
+  @@index([externalTransactionId])
+  @@index([paymentProcessorId])
 }
 
 // Payment plan for installment payments
@@ -2630,6 +2690,10 @@ model Refund {
   patientId       String
   patient         Patient @relation(fields: [patientId], references: [id])
 
+  // Payment processor used for this refund
+  paymentProcessorId String?
+  paymentProcessor   PaymentProcessor? @relation(fields: [paymentProcessorId], references: [id])
+
   // Multi-tenant relation
   organizationId  String
   organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -2638,6 +2702,7 @@ model Refund {
   @@index([patientId])
   @@index([status])
   @@index([createdAt])
+  @@index([paymentProcessorId])
 }
 
 // ============================================
