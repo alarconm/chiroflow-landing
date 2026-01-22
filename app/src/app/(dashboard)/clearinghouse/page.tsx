@@ -15,11 +15,13 @@ import {
   CheckCircle,
   Clock,
   XCircle,
+  FileCheck,
 } from 'lucide-react';
 import {
   ClearinghouseConfigManager,
   EligibilityChecker,
   ClaimSubmissionList,
+  ClaimsReadyForSubmission,
   RemittanceList,
   DenialManager,
 } from '@/components/clearinghouse';
@@ -143,14 +145,18 @@ export default function ClearinghouseDashboardPage() {
 
       {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="overview" className="flex items-center gap-2">
             <Activity className="h-4 w-4" />
             Overview
           </TabsTrigger>
+          <TabsTrigger value="ready" className="flex items-center gap-2">
+            <FileCheck className="h-4 w-4" />
+            Ready
+          </TabsTrigger>
           <TabsTrigger value="submissions" className="flex items-center gap-2">
             <Send className="h-4 w-4" />
-            Submissions
+            Submitted
           </TabsTrigger>
           <TabsTrigger value="eligibility" className="flex items-center gap-2">
             <Shield className="h-4 w-4" />
@@ -158,7 +164,7 @@ export default function ClearinghouseDashboardPage() {
           </TabsTrigger>
           <TabsTrigger value="remittances" className="flex items-center gap-2">
             <DollarSign className="h-4 w-4" />
-            Remittances
+            ERAs
           </TabsTrigger>
           <TabsTrigger value="denials" className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4" />
@@ -234,6 +240,17 @@ export default function ClearinghouseDashboardPage() {
             </Card>
           </div>
 
+          {/* Claims Ready for Submission */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Claims Ready for Submission</CardTitle>
+              <CardDescription>Pending claims that need to be submitted electronically</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ClaimsReadyForSubmission onSubmitComplete={() => setActiveTab('submissions')} />
+            </CardContent>
+          </Card>
+
           {/* Recent Submissions */}
           <Card>
             <CardHeader>
@@ -244,6 +261,10 @@ export default function ClearinghouseDashboardPage() {
               <ClaimSubmissionList />
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="ready" className="mt-6">
+          <ClaimsReadyForSubmission onSubmitComplete={() => setActiveTab('submissions')} />
         </TabsContent>
 
         <TabsContent value="submissions" className="mt-6">
