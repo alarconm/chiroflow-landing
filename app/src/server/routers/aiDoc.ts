@@ -1438,6 +1438,653 @@ export const aiDocRouter = router({
       averageEditsPerNote: avgEdits._avg.editCount || 0,
     };
   }),
+
+  // ============================================
+  // US-318: Intelligent code suggestion
+  // ============================================
+
+  /**
+   * Suggest diagnosis and procedure codes based on documentation
+   * Main entry point for AI code suggestion
+   */
+  suggestCodes: providerProcedure
+    .input(
+      z.object({
+        encounterId: z.string(),
+        draftNoteId: z.string().optional(), // If not provided, uses encounter's SOAP note
+        includeModifiers: z.boolean().default(true),
+        optimizeSpecificity: z.boolean().default(true), // Suggest more specific codes
+        learnFromProvider: z.boolean().default(true), // Learn from acceptance patterns
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { encounterId, draftNoteId, includeModifiers, optimizeSpecificity, learnFromProvider } = input;
+      const startTime = Date.now();
+
+      // Get encounter with SOAP note
+      const encounter = await ctx.prisma.encounter.findFirst({
+        where: {
+          id: encounterId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          patient: {
+            include: {
+              demographics: true,
+            },
+          },
+          provider: true,
+          soapNote: true,
+        },
+      });
+
+      if (!encounter) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Encounter not found',
+        });
+      }
+
+      // Get SOAP content (from draft or encounter)
+      let soapContent = '';
+      if (draftNoteId) {
+        const draftNote = await ctx.prisma.aIDraftNote.findFirst({
+          where: {
+            id: draftNoteId,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+        if (draftNote) {
+          soapContent = buildSOAPString(draftNote);
+        }
+      } else if (encounter.soapNote) {
+        soapContent = buildSOAPString(encounter.soapNote);
+      }
+
+      if (!soapContent) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'No SOAP note found for this encounter. Generate or create a SOAP note first.',
+        });
+      }
+
+      // Get provider's past acceptance patterns for learning
+      let providerAcceptancePatterns: Record<string, { accepted: number; rejected: number }> = {};
+      if (learnFromProvider && encounter.providerId) {
+        const pastSuggestions = await ctx.prisma.aICodeSuggestion.findMany({
+          where: {
+            encounter: {
+              providerId: encounter.providerId,
+              organizationId: ctx.user.organizationId,
+            },
+            status: { in: ['ACCEPTED', 'REJECTED', 'MODIFIED'] },
+          },
+          select: {
+            suggestedCode: true,
+            status: true,
+            codeType: true,
+          },
+          take: 500, // Last 500 suggestions
+        });
+
+        // Build acceptance patterns
+        for (const suggestion of pastSuggestions) {
+          const key = `${suggestion.codeType}:${suggestion.suggestedCode}`;
+          if (!providerAcceptancePatterns[key]) {
+            providerAcceptancePatterns[key] = { accepted: 0, rejected: 0 };
+          }
+          if (suggestion.status === 'ACCEPTED' || suggestion.status === 'MODIFIED') {
+            providerAcceptancePatterns[key].accepted++;
+          } else {
+            providerAcceptancePatterns[key].rejected++;
+          }
+        }
+      }
+
+      // Call AI service for code suggestions
+      const codeResult = await aiService.suggestBillingCodes(soapContent, encounter.encounterType);
+      const processingTime = Date.now() - startTime;
+
+      // Process ICD-10 suggestions
+      const icd10Suggestions: AICodeSuggestionData[] = [];
+      for (let i = 0; i < codeResult.icd10.length; i++) {
+        const suggestion = codeResult.icd10[i];
+        const patternKey = `ICD10:${suggestion.code}`;
+        const pattern = providerAcceptancePatterns[patternKey];
+
+        // Adjust confidence based on provider patterns
+        let adjustedConfidence = suggestion.confidence;
+        if (pattern) {
+          const acceptanceRate = pattern.accepted / (pattern.accepted + pattern.rejected);
+          adjustedConfidence = suggestion.confidence * 0.7 + acceptanceRate * 0.3;
+        }
+
+        // Check specificity
+        const specificityIssue = optimizeSpecificity ? checkCodeSpecificity(suggestion.code, 'ICD10') : null;
+
+        // Check for upcoding/downcoding risk
+        const codingRisk = assessCodingRisk(suggestion.code, soapContent, 'ICD10');
+
+        icd10Suggestions.push({
+          codeType: 'ICD10',
+          suggestedCode: suggestion.code,
+          codeDescription: suggestion.description,
+          reasoning: suggestion.rationale,
+          confidence: adjustedConfidence,
+          rank: i + 1,
+          codeValid: true,
+          specificityOk: !specificityIssue,
+          alternatives: specificityIssue?.alternatives || [],
+          upcodingRisk: codingRisk.upcodingRisk,
+          downcodingRisk: codingRisk.downcodingRisk,
+          auditRisk: codingRisk.auditRisk,
+          isChiroCommon: suggestion.isChiroCommon || false,
+          relevantText: extractRelevantText(soapContent, suggestion.code),
+        });
+      }
+
+      // Process CPT suggestions
+      const cptSuggestions: AICodeSuggestionData[] = [];
+      for (let i = 0; i < codeResult.cpt.length; i++) {
+        const suggestion = codeResult.cpt[i];
+        const patternKey = `CPT:${suggestion.code}`;
+        const pattern = providerAcceptancePatterns[patternKey];
+
+        // Adjust confidence based on provider patterns
+        let adjustedConfidence = suggestion.confidence;
+        if (pattern) {
+          const acceptanceRate = pattern.accepted / (pattern.accepted + pattern.rejected);
+          adjustedConfidence = suggestion.confidence * 0.7 + acceptanceRate * 0.3;
+        }
+
+        // Get modifier suggestions if enabled
+        const modifiers = includeModifiers ? suggestModifiers(suggestion.code, soapContent) : [];
+
+        // Check for coding risk
+        const codingRisk = assessCodingRisk(suggestion.code, soapContent, 'CPT');
+
+        cptSuggestions.push({
+          codeType: 'CPT',
+          suggestedCode: suggestion.code,
+          codeDescription: suggestion.description,
+          reasoning: suggestion.rationale,
+          confidence: adjustedConfidence,
+          rank: i + 1,
+          codeValid: true,
+          specificityOk: true,
+          modifiersNeeded: modifiers,
+          alternatives: [],
+          upcodingRisk: codingRisk.upcodingRisk,
+          downcodingRisk: codingRisk.downcodingRisk,
+          auditRisk: codingRisk.auditRisk,
+          isChiroCommon: suggestion.isChiroCommon || false,
+          relevantText: extractRelevantText(soapContent, suggestion.code),
+        });
+      }
+
+      // Store suggestions in database
+      const createdSuggestions = [];
+      for (const icd of icd10Suggestions) {
+        const created = await ctx.prisma.aICodeSuggestion.create({
+          data: {
+            encounterId,
+            organizationId: ctx.user.organizationId,
+            status: 'PENDING',
+            codeType: icd.codeType,
+            suggestedCode: icd.suggestedCode,
+            codeDescription: icd.codeDescription,
+            reasoning: icd.reasoning,
+            confidence: icd.confidence,
+            rank: icd.rank,
+            codeValid: icd.codeValid,
+            specificityOk: icd.specificityOk,
+            alternatives: icd.alternatives.length > 0 ? icd.alternatives : undefined,
+            upcodingRisk: icd.upcodingRisk,
+            downcodingRisk: icd.downcodingRisk,
+            auditRisk: icd.auditRisk,
+            relevantText: icd.relevantText,
+            aiModelUsed: aiService.getProviderName(),
+            processingTimeMs: processingTime,
+          },
+        });
+        createdSuggestions.push(created);
+      }
+
+      for (const cpt of cptSuggestions) {
+        const created = await ctx.prisma.aICodeSuggestion.create({
+          data: {
+            encounterId,
+            organizationId: ctx.user.organizationId,
+            status: 'PENDING',
+            codeType: cpt.codeType,
+            suggestedCode: cpt.suggestedCode,
+            codeDescription: cpt.codeDescription,
+            reasoning: cpt.reasoning,
+            confidence: cpt.confidence,
+            rank: cpt.rank,
+            codeValid: cpt.codeValid,
+            specificityOk: cpt.specificityOk,
+            modifiersNeeded: cpt.modifiersNeeded && cpt.modifiersNeeded.length > 0 ? cpt.modifiersNeeded : undefined,
+            alternatives: cpt.alternatives.length > 0 ? cpt.alternatives : undefined,
+            upcodingRisk: cpt.upcodingRisk,
+            downcodingRisk: cpt.downcodingRisk,
+            auditRisk: cpt.auditRisk,
+            relevantText: cpt.relevantText,
+            aiModelUsed: aiService.getProviderName(),
+            processingTimeMs: processingTime,
+          },
+        });
+        createdSuggestions.push(created);
+      }
+
+      // Log the action
+      await auditLog('AI_CODE_SUGGEST', 'AICodeSuggestion', {
+        entityId: encounterId,
+        changes: {
+          icd10Count: icd10Suggestions.length,
+          cptCount: cptSuggestions.length,
+          processingTimeMs: processingTime,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        encounterId,
+        icd10: icd10Suggestions,
+        cpt: cptSuggestions,
+        processingTimeMs: processingTime,
+        suggestionIds: createdSuggestions.map(s => s.id),
+      };
+    }),
+
+  /**
+   * Get code suggestions for an encounter
+   */
+  getCodeSuggestions: providerProcedure
+    .input(
+      z.object({
+        encounterId: z.string(),
+        status: z.enum(['PENDING', 'ACCEPTED', 'REJECTED', 'MODIFIED']).optional(),
+        codeType: z.enum(['ICD10', 'CPT', 'MODIFIER']).optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const suggestions = await ctx.prisma.aICodeSuggestion.findMany({
+        where: {
+          encounterId: input.encounterId,
+          organizationId: ctx.user.organizationId,
+          ...(input.status ? { status: input.status } : {}),
+          ...(input.codeType ? { codeType: input.codeType } : {}),
+        },
+        orderBy: [{ codeType: 'asc' }, { rank: 'asc' }],
+      });
+
+      return suggestions;
+    }),
+
+  /**
+   * Accept a code suggestion
+   * Tracks acceptance for provider learning
+   */
+  acceptCodeSuggestion: providerProcedure
+    .input(
+      z.object({
+        suggestionId: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { suggestionId } = input;
+
+      const suggestion = await ctx.prisma.aICodeSuggestion.findFirst({
+        where: {
+          id: suggestionId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!suggestion) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Code suggestion not found',
+        });
+      }
+
+      const updated = await ctx.prisma.aICodeSuggestion.update({
+        where: { id: suggestionId },
+        data: {
+          status: 'ACCEPTED',
+          acceptedAt: new Date(),
+        },
+      });
+
+      await auditLog('AI_CODE_ACCEPT', 'AICodeSuggestion', {
+        entityId: suggestionId,
+        changes: {
+          code: suggestion.suggestedCode,
+          codeType: suggestion.codeType,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return updated;
+    }),
+
+  /**
+   * Reject a code suggestion
+   * Tracks rejection for provider learning
+   */
+  rejectCodeSuggestion: providerProcedure
+    .input(
+      z.object({
+        suggestionId: z.string(),
+        reason: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { suggestionId, reason } = input;
+
+      const suggestion = await ctx.prisma.aICodeSuggestion.findFirst({
+        where: {
+          id: suggestionId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!suggestion) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Code suggestion not found',
+        });
+      }
+
+      const updated = await ctx.prisma.aICodeSuggestion.update({
+        where: { id: suggestionId },
+        data: {
+          status: 'REJECTED',
+          rejectedAt: new Date(),
+          modifyReason: reason,
+        },
+      });
+
+      await auditLog('AI_CODE_REJECT', 'AICodeSuggestion', {
+        entityId: suggestionId,
+        changes: {
+          code: suggestion.suggestedCode,
+          codeType: suggestion.codeType,
+          reason,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return updated;
+    }),
+
+  /**
+   * Modify and accept a code suggestion
+   * Provider accepts but uses a different code
+   */
+  modifyCodeSuggestion: providerProcedure
+    .input(
+      z.object({
+        suggestionId: z.string(),
+        modifiedCode: z.string(),
+        reason: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { suggestionId, modifiedCode, reason } = input;
+
+      const suggestion = await ctx.prisma.aICodeSuggestion.findFirst({
+        where: {
+          id: suggestionId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!suggestion) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Code suggestion not found',
+        });
+      }
+
+      const updated = await ctx.prisma.aICodeSuggestion.update({
+        where: { id: suggestionId },
+        data: {
+          status: 'MODIFIED',
+          acceptedAt: new Date(),
+          modifiedCode,
+          modifyReason: reason,
+        },
+      });
+
+      await auditLog('AI_CODE_MODIFY', 'AICodeSuggestion', {
+        entityId: suggestionId,
+        changes: {
+          originalCode: suggestion.suggestedCode,
+          modifiedCode,
+          codeType: suggestion.codeType,
+          reason,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return updated;
+    }),
+
+  /**
+   * Bulk accept all pending code suggestions for an encounter
+   */
+  acceptAllCodeSuggestions: providerProcedure
+    .input(
+      z.object({
+        encounterId: z.string(),
+        codeType: z.enum(['ICD10', 'CPT', 'MODIFIER']).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { encounterId, codeType } = input;
+
+      const result = await ctx.prisma.aICodeSuggestion.updateMany({
+        where: {
+          encounterId,
+          organizationId: ctx.user.organizationId,
+          status: 'PENDING',
+          ...(codeType ? { codeType } : {}),
+        },
+        data: {
+          status: 'ACCEPTED',
+          acceptedAt: new Date(),
+        },
+      });
+
+      await auditLog('AI_CODE_ACCEPT_ALL', 'AICodeSuggestion', {
+        entityId: encounterId,
+        changes: {
+          count: result.count,
+          codeType: codeType || 'all',
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { acceptedCount: result.count };
+    }),
+
+  /**
+   * Get code suggestion statistics
+   */
+  getCodeStats: providerProcedure.query(async ({ ctx }) => {
+    const [total, accepted, rejected, modified, avgConfidence] = await Promise.all([
+      ctx.prisma.aICodeSuggestion.count({
+        where: { organizationId: ctx.user.organizationId },
+      }),
+      ctx.prisma.aICodeSuggestion.count({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: 'ACCEPTED',
+        },
+      }),
+      ctx.prisma.aICodeSuggestion.count({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: 'REJECTED',
+        },
+      }),
+      ctx.prisma.aICodeSuggestion.count({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: 'MODIFIED',
+        },
+      }),
+      ctx.prisma.aICodeSuggestion.aggregate({
+        where: {
+          organizationId: ctx.user.organizationId,
+        },
+        _avg: { confidence: true },
+      }),
+    ]);
+
+    // Get ICD-10 vs CPT breakdown
+    const [icd10Count, cptCount] = await Promise.all([
+      ctx.prisma.aICodeSuggestion.count({
+        where: { organizationId: ctx.user.organizationId, codeType: 'ICD10' },
+      }),
+      ctx.prisma.aICodeSuggestion.count({
+        where: { organizationId: ctx.user.organizationId, codeType: 'CPT' },
+      }),
+    ]);
+
+    // Count flagged suggestions
+    const flaggedCount = await ctx.prisma.aICodeSuggestion.count({
+      where: {
+        organizationId: ctx.user.organizationId,
+        OR: [
+          { upcodingRisk: true },
+          { downcodingRisk: true },
+          { auditRisk: 'high' },
+        ],
+      },
+    });
+
+    const acceptanceRate = total > 0 ? (((accepted + modified) / total) * 100).toFixed(1) : '0';
+
+    return {
+      totalSuggestions: total,
+      acceptedCount: accepted,
+      rejectedCount: rejected,
+      modifiedCount: modified,
+      acceptanceRate: `${acceptanceRate}%`,
+      averageConfidence: avgConfidence._avg.confidence || 0,
+      icd10Count,
+      cptCount,
+      flaggedCount,
+    };
+  }),
+
+  /**
+   * Get provider's most commonly accepted codes
+   * Useful for quick code selection
+   */
+  getProviderTopCodes: providerProcedure
+    .input(
+      z.object({
+        providerId: z.string().optional(),
+        codeType: z.enum(['ICD10', 'CPT']),
+        limit: z.number().min(1).max(50).default(10),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { providerId, codeType, limit } = input;
+
+      // Get accepted codes grouped by code
+      const acceptedCodes = await ctx.prisma.aICodeSuggestion.groupBy({
+        by: ['suggestedCode', 'codeDescription'],
+        where: {
+          organizationId: ctx.user.organizationId,
+          codeType,
+          status: { in: ['ACCEPTED', 'MODIFIED'] },
+          ...(providerId
+            ? {
+                encounter: {
+                  providerId,
+                },
+              }
+            : {}),
+        },
+        _count: { suggestedCode: true },
+        orderBy: { _count: { suggestedCode: 'desc' } },
+        take: limit,
+      });
+
+      return acceptedCodes.map(code => ({
+        code: code.suggestedCode,
+        description: code.codeDescription,
+        usageCount: code._count.suggestedCode,
+      }));
+    }),
+
+  /**
+   * Flag a code suggestion for upcoding/downcoding concern
+   */
+  flagCodeSuggestion: providerProcedure
+    .input(
+      z.object({
+        suggestionId: z.string(),
+        flagType: z.enum(['upcoding', 'downcoding', 'audit']),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { suggestionId, flagType, notes } = input;
+
+      const suggestion = await ctx.prisma.aICodeSuggestion.findFirst({
+        where: {
+          id: suggestionId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!suggestion) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Code suggestion not found',
+        });
+      }
+
+      const updateData: Record<string, unknown> = {};
+      if (flagType === 'upcoding') {
+        updateData.upcodingRisk = true;
+        updateData.auditRisk = 'high';
+      } else if (flagType === 'downcoding') {
+        updateData.downcodingRisk = true;
+        updateData.auditRisk = 'medium';
+      } else {
+        updateData.auditRisk = 'high';
+      }
+
+      const updated = await ctx.prisma.aICodeSuggestion.update({
+        where: { id: suggestionId },
+        data: updateData,
+      });
+
+      await auditLog('AI_CODE_FLAG', 'AICodeSuggestion', {
+        entityId: suggestionId,
+        changes: {
+          flagType,
+          notes,
+          code: suggestion.suggestedCode,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return updated;
+    }),
 });
 
 // ============================================
@@ -1561,6 +2208,252 @@ function calculateAge(dateOfBirth: Date): number {
     age--;
   }
   return age;
+}
+
+// Type for code suggestion data before DB insertion
+interface AICodeSuggestionData {
+  codeType: string;
+  suggestedCode: string;
+  codeDescription: string | null;
+  reasoning: string;
+  confidence: number;
+  rank: number;
+  codeValid: boolean;
+  specificityOk: boolean;
+  modifiersNeeded?: { modifier: string; description: string; reason: string }[];
+  alternatives: { code: string; description: string; reason: string }[];
+  upcodingRisk: boolean;
+  downcodingRisk: boolean;
+  auditRisk: string;
+  isChiroCommon: boolean;
+  relevantText: string | null;
+}
+
+/**
+ * Build a string representation of SOAP note content
+ */
+function buildSOAPString(note: { subjective?: string | null; objective?: string | null; assessment?: string | null; plan?: string | null }): string {
+  const parts: string[] = [];
+  if (note.subjective) parts.push(`SUBJECTIVE:\n${note.subjective}`);
+  if (note.objective) parts.push(`OBJECTIVE:\n${note.objective}`);
+  if (note.assessment) parts.push(`ASSESSMENT:\n${note.assessment}`);
+  if (note.plan) parts.push(`PLAN:\n${note.plan}`);
+  return parts.join('\n\n');
+}
+
+/**
+ * Check code specificity and suggest more specific alternatives
+ */
+function checkCodeSpecificity(code: string, codeType: string): { issue: string; alternatives: { code: string; description: string; reason: string }[] } | null {
+  // Common unspecified codes that need more specificity
+  const unspecifiedCodes: Record<string, { issue: string; alternatives: { code: string; description: string; reason: string }[] }> = {
+    // ICD-10 low back pain codes
+    'M54.50': {
+      issue: 'Unspecified low back pain - consider more specific laterality',
+      alternatives: [
+        { code: 'M54.51', description: 'Vertebrogenic low back pain', reason: 'If related to vertebral origin' },
+        { code: 'M54.59', description: 'Other low back pain', reason: 'If not vertebrogenic' },
+      ],
+    },
+    'M54.5': {
+      issue: 'Unspecified low back pain - needs 5th character',
+      alternatives: [
+        { code: 'M54.50', description: 'Low back pain, unspecified', reason: 'Default unspecified' },
+        { code: 'M54.51', description: 'Vertebrogenic low back pain', reason: 'If related to vertebral origin' },
+      ],
+    },
+    // Neck pain
+    'M54.2': {
+      issue: 'Cervicalgia - consider specific segment if known',
+      alternatives: [
+        { code: 'M54.2', description: 'Cervicalgia', reason: 'Appropriate if segment not specified' },
+      ],
+    },
+    // Somatic dysfunction codes
+    'M99.00': {
+      issue: 'Segmental dysfunction - specify region',
+      alternatives: [
+        { code: 'M99.01', description: 'Segmental dysfunction - cervical', reason: 'For cervical findings' },
+        { code: 'M99.02', description: 'Segmental dysfunction - thoracic', reason: 'For thoracic findings' },
+        { code: 'M99.03', description: 'Segmental dysfunction - lumbar', reason: 'For lumbar findings' },
+        { code: 'M99.04', description: 'Segmental dysfunction - sacral', reason: 'For sacral findings' },
+      ],
+    },
+  };
+
+  if (codeType === 'ICD10' && unspecifiedCodes[code]) {
+    return unspecifiedCodes[code];
+  }
+
+  return null;
+}
+
+/**
+ * Assess upcoding/downcoding risk for a code
+ */
+function assessCodingRisk(code: string, soapContent: string, codeType: string): { upcodingRisk: boolean; downcodingRisk: boolean; auditRisk: string } {
+  let upcodingRisk = false;
+  let downcodingRisk = false;
+  let auditRisk = 'low';
+  const soapLower = soapContent.toLowerCase();
+
+  if (codeType === 'CPT') {
+    // Check CMT codes against documentation
+    if (code === '98942') {
+      // 5+ regions - check if documentation supports
+      const regionCount = countSpinalRegions(soapLower);
+      if (regionCount < 5) {
+        upcodingRisk = true;
+        auditRisk = 'high';
+      }
+    } else if (code === '98941') {
+      // 3-4 regions
+      const regionCount = countSpinalRegions(soapLower);
+      if (regionCount < 3) {
+        upcodingRisk = true;
+        auditRisk = 'medium';
+      } else if (regionCount >= 5) {
+        downcodingRisk = true;
+        auditRisk = 'low';
+      }
+    } else if (code === '98940') {
+      // 1-2 regions
+      const regionCount = countSpinalRegions(soapLower);
+      if (regionCount >= 3) {
+        downcodingRisk = true;
+        auditRisk = 'low';
+      }
+    }
+
+    // E/M code checks
+    if (code === '99215') {
+      // High complexity - check for complex documentation
+      if (!soapLower.includes('complex') && !soapLower.includes('multiple') && soapLower.length < 500) {
+        upcodingRisk = true;
+        auditRisk = 'high';
+      }
+    }
+  } else if (codeType === 'ICD10') {
+    // Check for specificity issues that could be considered upcoding
+    if (code.includes('acute') && !soapLower.includes('acute')) {
+      upcodingRisk = true;
+      auditRisk = 'medium';
+    }
+    if (code.includes('chronic') && soapLower.includes('acute') && !soapLower.includes('chronic')) {
+      upcodingRisk = true;
+      auditRisk = 'medium';
+    }
+  }
+
+  return { upcodingRisk, downcodingRisk, auditRisk };
+}
+
+/**
+ * Count spinal regions mentioned in documentation
+ */
+function countSpinalRegions(text: string): number {
+  let count = 0;
+  const regions = ['cervical', 'thoracic', 'lumbar', 'sacral', 'pelvic'];
+  for (const region of regions) {
+    if (text.includes(region)) count++;
+  }
+  // Also check for C, T, L, S notations
+  if (/\bc\d/.test(text) || text.includes('c-spine')) count = Math.max(count, 1);
+  if (/\bt\d/.test(text) || text.includes('t-spine')) count = Math.max(count, 2);
+  if (/\bl\d/.test(text) || text.includes('l-spine')) count = Math.max(count, 3);
+  if (/\bs\d/.test(text) || text.includes('sacrum') || text.includes('si joint')) count = Math.max(count, 4);
+  return count;
+}
+
+/**
+ * Suggest modifiers for CPT codes
+ */
+function suggestModifiers(cptCode: string, soapContent: string): { modifier: string; description: string; reason: string }[] {
+  const modifiers: { modifier: string; description: string; reason: string }[] = [];
+  const soapLower = soapContent.toLowerCase();
+
+  // Check for laterality modifiers
+  if (['97110', '97140', '97530', '97112'].includes(cptCode)) {
+    if (soapLower.includes('bilateral') || (soapLower.includes('left') && soapLower.includes('right'))) {
+      modifiers.push({
+        modifier: '50',
+        description: 'Bilateral procedure',
+        reason: 'Documentation indicates bilateral treatment',
+      });
+    }
+  }
+
+  // Check for distinct procedural service
+  if (soapLower.includes('separate') || soapLower.includes('distinct')) {
+    modifiers.push({
+      modifier: '59',
+      description: 'Distinct procedural service',
+      reason: 'May need if performed during same session as another procedure',
+    });
+  }
+
+  // GP modifier for Medicare PT/chiro
+  if (cptCode.startsWith('971') || cptCode.startsWith('989')) {
+    modifiers.push({
+      modifier: 'GP',
+      description: 'Services delivered under physical therapy plan',
+      reason: 'Required for Medicare claims for therapy services',
+    });
+  }
+
+  // AT modifier for CMT (active treatment)
+  if (['98940', '98941', '98942'].includes(cptCode)) {
+    modifiers.push({
+      modifier: 'AT',
+      description: 'Acute treatment',
+      reason: 'Required for Medicare chiropractic manipulation claims',
+    });
+  }
+
+  return modifiers;
+}
+
+/**
+ * Extract relevant text from SOAP that supports a code
+ */
+function extractRelevantText(soapContent: string, code: string): string | null {
+  // Common keywords associated with codes
+  const codeKeywords: Record<string, string[]> = {
+    // ICD-10 codes
+    'M54.50': ['low back', 'lumbar', 'lumbago'],
+    'M54.51': ['vertebrogenic', 'vertebral', 'spinal'],
+    'M54.2': ['neck', 'cervical', 'cervicalgia'],
+    'M99.01': ['cervical', 'c-spine', 'subluxation'],
+    'M99.02': ['thoracic', 't-spine'],
+    'M99.03': ['lumbar', 'l-spine'],
+    'M99.04': ['sacral', 'sacrum', 'si joint'],
+    'M62.830': ['spasm', 'muscle spasm'],
+    // CPT codes
+    '98940': ['adjustment', 'manipulation', '1-2 region'],
+    '98941': ['adjustment', 'manipulation', '3-4 region'],
+    '98942': ['adjustment', 'manipulation', '5+ region'],
+    '97110': ['exercise', 'therapeutic exercise'],
+    '97140': ['manual therapy', 'mobilization'],
+    '99213': ['established', 'follow-up'],
+    '99203': ['new patient', 'initial'],
+  };
+
+  const keywords = codeKeywords[code];
+  if (!keywords) return null;
+
+  const soapLower = soapContent.toLowerCase();
+  const sentences = soapContent.split(/[.!?]+/);
+
+  for (const sentence of sentences) {
+    const sentenceLower = sentence.toLowerCase();
+    for (const keyword of keywords) {
+      if (sentenceLower.includes(keyword)) {
+        return sentence.trim().slice(0, 200); // Return first 200 chars of matching sentence
+      }
+    }
+  }
+
+  return null;
 }
 
 /**

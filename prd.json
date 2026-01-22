@@ -69,7 +69,7 @@
         "Flag potential upcoding/downcoding"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-319",

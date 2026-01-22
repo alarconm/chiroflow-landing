@@ -125,8 +125,52 @@
   ✓ Include all required SOAP elements
   ✓ Editable draft for provider review (updateDraftNote)
 
+### US-318: Intelligent code suggestion - COMPLETED
+- Extended `aiDoc` tRPC router with intelligent code suggestion endpoints:
+  1. **suggestCodes** - Main entry point for AI code suggestions
+     - Takes encounter ID and optional draft note ID
+     - Calls aiService.suggestBillingCodes() for AI-generated suggestions
+     - Processes ICD-10 and CPT codes with confidence scores
+     - Learns from provider acceptance patterns (adjusts confidence based on history)
+     - Checks code specificity and suggests more specific alternatives
+     - Flags upcoding/downcoding risks based on documentation
+     - Suggests appropriate modifiers for CPT codes
+     - Stores all suggestions in AICodeSuggestion model
+  2. **getCodeSuggestions** - Get code suggestions for an encounter (with filters)
+  3. **acceptCodeSuggestion** - Accept a code suggestion (tracks for learning)
+  4. **rejectCodeSuggestion** - Reject a code suggestion with reason
+  5. **modifyCodeSuggestion** - Accept but use a different code
+  6. **acceptAllCodeSuggestions** - Bulk accept all pending suggestions
+  7. **getCodeStats** - Organization-wide code suggestion statistics
+  8. **getProviderTopCodes** - Get provider's most commonly accepted codes
+  9. **flagCodeSuggestion** - Manually flag a code for upcoding/downcoding concern
+
+- Added helper functions:
+  - buildSOAPString() - Build string representation of SOAP note
+  - checkCodeSpecificity() - Check if code needs more specificity (unspecified codes)
+  - assessCodingRisk() - Evaluate upcoding/downcoding risk based on documentation
+  - countSpinalRegions() - Count spinal regions mentioned for CMT code validation
+  - suggestModifiers() - Suggest appropriate modifiers (50, 59, GP, AT)
+  - extractRelevantText() - Extract text from SOAP that supports a code
+
+- Added type definition:
+  - AICodeSuggestionData - Type for code suggestion data before DB insertion
+
+- Added audit actions:
+  - AI_CODE_SUGGEST, AI_CODE_ACCEPT, AI_CODE_REJECT
+  - AI_CODE_MODIFY, AI_CODE_ACCEPT_ALL, AI_CODE_FLAG
+
+- Features implemented per acceptance criteria:
+  ✓ aiDoc.suggestCodes - Get code recommendations
+  ✓ ICD-10 diagnosis code suggestions
+  ✓ CPT procedure code suggestions
+  ✓ Modifier recommendations (50, 59, GP, AT)
+  ✓ Code specificity optimization (suggests more specific alternatives)
+  ✓ Show reasoning for each suggestion
+  ✓ Learn from provider acceptance patterns (adjusts confidence scores)
+  ✓ Flag potential upcoding/downcoding (based on documentation analysis)
+
 ### Remaining Stories:
-- US-318: Intelligent code suggestion
 - US-319: Compliance checking
 - US-320: Provider preference learning
 - US-321: Documentation templates and macros
@@ -140,4 +184,10 @@ Story: US-316 - Real-time encounter transcription
 
 --- Iteration 3 completed at 2026-01-22 ---
 Story: US-317 - AI SOAP note generation
+
+--- Iteration 3 completed at 2026-01-22 11:45:33 ---
+Story: US-317 - AI SOAP note generation
+
+--- Iteration 4 completed at 2026-01-22 ---
+Story: US-318 - Intelligent code suggestion
 
