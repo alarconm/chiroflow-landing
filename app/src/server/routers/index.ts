@@ -101,6 +101,8 @@ import { offlineRouter } from './offline';
 import { aiReceptionistRouter } from './ai-receptionist';
 // AI Care Coordinator Agent (Epic 33)
 import { aiCareRouter } from './aiCare';
+// AI Revenue Optimizer Agent (Epic 35)
+import { aiRevenueRouter } from './aiRevenue';
 
 export const appRouter = router({
   auth: authRouter,
@@ -206,6 +208,8 @@ export const appRouter = router({
   aiDoc: aiDocRouter,
   // AI Care Coordinator Agent (Epic 33)
   aiCare: aiCareRouter,
+  // AI Revenue Optimizer Agent (Epic 35)
+  aiRevenue: aiRevenueRouter,
 });
 
 

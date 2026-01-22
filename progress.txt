@@ -21,3 +21,22 @@ COMPLETED: Added all 4 missing models to schema.prisma:
 - Added actions relation to RevenueOpportunity model
 - Prisma db push successful, client generated with 4935+ type references
 
+--- Iteration 6 completed at 2026-01-22 14:24:42 ---
+Story: US-339 - AI revenue optimizer schema
+
+--- Iteration 7 completed at 2026-01-22 ---
+Story: US-340 - Revenue leakage detection
+COMPLETED: Created aiRevenue.ts router with full leakage detection:
+- aiRevenue.detectLeakage procedure with comprehensive leakage analysis
+- Unbilled services detection (completed encounters without charges)
+- Undercoding identification (low-level E&M codes with complex documentation)
+- Missed modifier opportunities (-25 modifier on E&M with CMT)
+- Unbilled supplies detection (therapeutic procedures without supply codes)
+- Write-off pattern analysis (high adjustment rates by payer)
+- Collection rate issues (A/R aging 60-90, 90-120, 120+ days)
+- Quantifies leakage by category with priority and annual impact
+- Persists findings to RevenueLeakage table
+- Added getLeakages, resolveLeakage, getLeakageSummary procedures
+- Router added to index.ts as aiRevenue
+- TypeScript compilation passes
+

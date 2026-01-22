@@ -35,7 +35,7 @@
         "Quantify leakage by category"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-341",
