@@ -1130,6 +1130,540 @@ export const aiQARouter = router({
         educationContent,
       };
     }),
+
+  // ============================================
+  // US-350: Compliance monitoring
+  // ============================================
+
+  /**
+   * Monitor compliance across the organization
+   * Performs ongoing compliance watch including HIPAA, billing, consent, and audit trail checks
+   */
+  monitorCompliance: providerProcedure
+    .input(
+      z.object({
+        // Scope of monitoring
+        scope: z.enum(['full', 'hipaa', 'billing', 'consent', 'audit_trail', 'patterns']).default('full'),
+        // Date range for monitoring
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+        // Optional provider filter
+        providerId: z.string().optional(),
+        // Sample size for random checks
+        sampleSize: z.number().min(1).max(1000).default(100),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { scope, dateFrom, dateTo, providerId, sampleSize } = input;
+
+      // Default date range to last 30 days
+      const endDate = dateTo || new Date();
+      const startDate = dateFrom || new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      // Create compliance audit record
+      const audit = await ctx.prisma.qAAudit.create({
+        data: {
+          organizationId: ctx.user.organizationId,
+          auditType: 'COMPLIANCE',
+          targetType: 'Organization',
+          providerId: providerId || null,
+          dateFrom: startDate,
+          dateTo: endDate,
+          sampleSize,
+          methodology: `AI-assisted compliance monitoring (scope: ${scope})`,
+          status: 'IN_PROGRESS',
+        },
+      });
+
+      // Initialize results
+      const alerts: ComplianceAlertInput[] = [];
+      const findings: Prisma.QAFindingCreateManyInput[] = [];
+      let totalScore = 0;
+      let checksPerformed = 0;
+      let criticalCount = 0;
+      let highCount = 0;
+      let mediumCount = 0;
+      let lowCount = 0;
+
+      // Run compliance checks based on scope
+      if (scope === 'full' || scope === 'hipaa') {
+        const hipaaResult = await performHIPAAComplianceChecks(ctx, startDate, endDate, providerId, sampleSize);
+        alerts.push(...hipaaResult.alerts);
+        findings.push(...hipaaResult.findings.map(f => ({ ...f, auditId: audit.id })));
+        totalScore += hipaaResult.score;
+        checksPerformed++;
+        criticalCount += hipaaResult.criticalCount;
+        highCount += hipaaResult.highCount;
+        mediumCount += hipaaResult.mediumCount;
+        lowCount += hipaaResult.lowCount;
+      }
+
+      if (scope === 'full' || scope === 'billing') {
+        const billingResult = await performBillingComplianceChecks(ctx, startDate, endDate, providerId, sampleSize);
+        alerts.push(...billingResult.alerts);
+        findings.push(...billingResult.findings.map(f => ({ ...f, auditId: audit.id })));
+        totalScore += billingResult.score;
+        checksPerformed++;
+        criticalCount += billingResult.criticalCount;
+        highCount += billingResult.highCount;
+        mediumCount += billingResult.mediumCount;
+        lowCount += billingResult.lowCount;
+      }
+
+      if (scope === 'full' || scope === 'consent') {
+        const consentResult = await performConsentComplianceChecks(ctx, startDate, endDate, sampleSize);
+        alerts.push(...consentResult.alerts);
+        findings.push(...consentResult.findings.map(f => ({ ...f, auditId: audit.id })));
+        totalScore += consentResult.score;
+        checksPerformed++;
+        criticalCount += consentResult.criticalCount;
+        highCount += consentResult.highCount;
+        mediumCount += consentResult.mediumCount;
+        lowCount += consentResult.lowCount;
+      }
+
+      if (scope === 'full' || scope === 'audit_trail') {
+        const auditTrailResult = await performAuditTrailChecks(ctx, startDate, endDate, sampleSize);
+        alerts.push(...auditTrailResult.alerts);
+        findings.push(...auditTrailResult.findings.map(f => ({ ...f, auditId: audit.id })));
+        totalScore += auditTrailResult.score;
+        checksPerformed++;
+        criticalCount += auditTrailResult.criticalCount;
+        highCount += auditTrailResult.highCount;
+        mediumCount += auditTrailResult.mediumCount;
+        lowCount += auditTrailResult.lowCount;
+      }
+
+      if (scope === 'full' || scope === 'patterns') {
+        const patternResult = await performUnusualPatternDetection(ctx, startDate, endDate, providerId);
+        alerts.push(...patternResult.alerts);
+        findings.push(...patternResult.findings.map(f => ({ ...f, auditId: audit.id })));
+        totalScore += patternResult.score;
+        checksPerformed++;
+        criticalCount += patternResult.criticalCount;
+        highCount += patternResult.highCount;
+        mediumCount += patternResult.mediumCount;
+        lowCount += patternResult.lowCount;
+      }
+
+      // Calculate overall compliance score
+      const overallScore = checksPerformed > 0 ? Math.round(totalScore / checksPerformed) : 100;
+      const scoreCategory = getScoreCategory(overallScore);
+
+      // Create findings in database
+      if (findings.length > 0) {
+        await ctx.prisma.qAFinding.createMany({ data: findings });
+      }
+
+      // Create compliance alerts in database
+      if (alerts.length > 0) {
+        await ctx.prisma.complianceAlert.createMany({
+          data: alerts.map(a => ({
+            organizationId: ctx.user.organizationId,
+            ...a,
+          })),
+        });
+      }
+
+      // Update compliance metrics
+      await updateComplianceMetrics(ctx, overallScore, sampleSize, scope);
+
+      // Update audit with final results
+      const updatedAudit = await ctx.prisma.qAAudit.update({
+        where: { id: audit.id },
+        data: {
+          status: 'COMPLETED',
+          completedAt: new Date(),
+          score: overallScore,
+          scoreCategory,
+          findingsCount: findings.length,
+          criticalCount,
+          highCount,
+          mediumCount,
+          lowCount,
+          summary: `Compliance monitoring completed. Overall score: ${overallScore}/100 (${scoreCategory}). Found ${findings.length} findings and ${alerts.length} alerts requiring attention.`,
+          recommendations: generateComplianceRecommendations(alerts, findings.length, overallScore),
+        },
+      });
+
+      // Log the compliance monitoring action
+      await auditLog('AI_QA_COMPLIANCE_MONITORING', 'QAAudit', {
+        entityId: audit.id,
+        changes: {
+          scope,
+          score: overallScore,
+          findingsCount: findings.length,
+          alertsCount: alerts.length,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        auditId: updatedAudit.id,
+        score: overallScore,
+        scoreCategory,
+        summary: {
+          total: findings.length,
+          critical: criticalCount,
+          high: highCount,
+          medium: mediumCount,
+          low: lowCount,
+          alertsGenerated: alerts.length,
+        },
+        alerts: alerts.slice(0, 20), // Return top 20 alerts
+        checksPerformed,
+        period: { from: startDate, to: endDate },
+      };
+    }),
+
+  /**
+   * Get compliance alerts with filtering
+   */
+  getComplianceAlerts: providerProcedure
+    .input(
+      z.object({
+        status: z.enum(['NEW', 'ACKNOWLEDGED', 'IN_PROGRESS', 'RESOLVED', 'DISMISSED', 'ESCALATED']).optional(),
+        type: z.enum(['HIPAA_VIOLATION', 'BILLING_IRREGULARITY', 'DOCUMENTATION_GAP', 'CONSENT_MISSING', 'AUDIT_TRAIL_GAP', 'UNUSUAL_PATTERN', 'POLICY_VIOLATION', 'CREDENTIAL_EXPIRING', 'TRAINING_DUE']).optional(),
+        severity: z.enum(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO']).optional(),
+        limit: z.number().min(1).max(100).default(20),
+        offset: z.number().min(0).default(0),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { status, type, severity, limit, offset } = input;
+
+      const whereClause: Prisma.ComplianceAlertWhereInput = {
+        organizationId: ctx.user.organizationId,
+      };
+
+      if (status) whereClause.status = status;
+      if (type) whereClause.type = type;
+      if (severity) whereClause.severity = severity;
+
+      const [alerts, total] = await Promise.all([
+        ctx.prisma.complianceAlert.findMany({
+          where: whereClause,
+          orderBy: [
+            { severity: 'asc' }, // CRITICAL first
+            { detectedAt: 'desc' },
+          ],
+          take: limit,
+          skip: offset,
+        }),
+        ctx.prisma.complianceAlert.count({ where: whereClause }),
+      ]);
+
+      return {
+        alerts,
+        total,
+        hasMore: offset + limit < total,
+        summary: {
+          new: await ctx.prisma.complianceAlert.count({
+            where: { ...whereClause, status: 'NEW' },
+          }),
+          inProgress: await ctx.prisma.complianceAlert.count({
+            where: { ...whereClause, status: 'IN_PROGRESS' },
+          }),
+          critical: await ctx.prisma.complianceAlert.count({
+            where: { ...whereClause, severity: 'CRITICAL', status: { notIn: ['RESOLVED', 'DISMISSED'] } },
+          }),
+        },
+      };
+    }),
+
+  /**
+   * Acknowledge a compliance alert
+   */
+  acknowledgeAlert: providerProcedure
+    .input(z.object({ alertId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const alert = await ctx.prisma.complianceAlert.findFirst({
+        where: {
+          id: input.alertId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!alert) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Compliance alert not found',
+        });
+      }
+
+      const updated = await ctx.prisma.complianceAlert.update({
+        where: { id: input.alertId },
+        data: {
+          status: 'ACKNOWLEDGED',
+          acknowledgedAt: new Date(),
+          acknowledgedBy: ctx.user.id,
+        },
+      });
+
+      await auditLog('AI_QA_COMPLIANCE_ALERT_ACKNOWLEDGED', 'ComplianceAlert', {
+        entityId: input.alertId,
+        changes: { status: 'ACKNOWLEDGED' },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return updated;
+    }),
+
+  /**
+   * Resolve a compliance alert
+   */
+  resolveAlert: providerProcedure
+    .input(
+      z.object({
+        alertId: z.string(),
+        resolutionNote: z.string().min(1),
+        status: z.enum(['RESOLVED', 'DISMISSED']).default('RESOLVED'),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { alertId, resolutionNote, status } = input;
+
+      const alert = await ctx.prisma.complianceAlert.findFirst({
+        where: {
+          id: alertId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!alert) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Compliance alert not found',
+        });
+      }
+
+      const updated = await ctx.prisma.complianceAlert.update({
+        where: { id: alertId },
+        data: {
+          status,
+          resolvedAt: new Date(),
+          resolvedBy: ctx.user.id,
+          resolutionNote,
+        },
+      });
+
+      await auditLog('AI_QA_COMPLIANCE_ALERT_RESOLVED', 'ComplianceAlert', {
+        entityId: alertId,
+        changes: { status, resolutionNote },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return updated;
+    }),
+
+  /**
+   * Escalate a compliance alert
+   */
+  escalateAlert: providerProcedure
+    .input(
+      z.object({
+        alertId: z.string(),
+        escalateTo: z.string(),
+        reason: z.string().min(1),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { alertId, escalateTo, reason } = input;
+
+      const alert = await ctx.prisma.complianceAlert.findFirst({
+        where: {
+          id: alertId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!alert) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Compliance alert not found',
+        });
+      }
+
+      const updated = await ctx.prisma.complianceAlert.update({
+        where: { id: alertId },
+        data: {
+          status: 'ESCALATED',
+          escalatedAt: new Date(),
+          escalatedTo: escalateTo,
+          escalationReason: reason,
+        },
+      });
+
+      await auditLog('AI_QA_COMPLIANCE_ALERT_ESCALATED', 'ComplianceAlert', {
+        entityId: alertId,
+        changes: { status: 'ESCALATED', escalatedTo: escalateTo, reason },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return updated;
+    }),
+
+  /**
+   * Get compliance score trending over time
+   */
+  getComplianceScoreTrending: providerProcedure
+    .input(
+      z.object({
+        period: z.enum(['weekly', 'monthly', 'quarterly']).default('monthly'),
+        limit: z.number().min(1).max(24).default(12),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { period, limit } = input;
+
+      const metrics = await ctx.prisma.qAMetric.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          metricType: { in: ['COMPLIANCE_OVERALL', 'COMPLIANCE_HIPAA', 'COMPLIANCE_BILLING', 'COMPLIANCE_CONSENT', 'COMPLIANCE_AUDIT_TRAIL'] },
+          period,
+        },
+        orderBy: { periodStart: 'desc' },
+        take: limit * 5, // Get all types
+      });
+
+      // Group by period
+      const periodMap = new Map<string, {
+        periodStart: Date;
+        periodEnd: Date;
+        overall: number[];
+        hipaa: number[];
+        billing: number[];
+        consent: number[];
+        auditTrail: number[];
+      }>();
+
+      for (const metric of metrics) {
+        const key = metric.periodStart.toISOString();
+        if (!periodMap.has(key)) {
+          periodMap.set(key, {
+            periodStart: metric.periodStart,
+            periodEnd: metric.periodEnd,
+            overall: [],
+            hipaa: [],
+            billing: [],
+            consent: [],
+            auditTrail: [],
+          });
+        }
+        const entry = periodMap.get(key)!;
+        const score = Number(metric.percentage);
+
+        if (metric.metricType === 'COMPLIANCE_OVERALL') entry.overall.push(score);
+        else if (metric.metricType === 'COMPLIANCE_HIPAA') entry.hipaa.push(score);
+        else if (metric.metricType === 'COMPLIANCE_BILLING') entry.billing.push(score);
+        else if (metric.metricType === 'COMPLIANCE_CONSENT') entry.consent.push(score);
+        else if (metric.metricType === 'COMPLIANCE_AUDIT_TRAIL') entry.auditTrail.push(score);
+      }
+
+      const history = Array.from(periodMap.entries())
+        .map(([, data]) => ({
+          periodStart: data.periodStart,
+          periodEnd: data.periodEnd,
+          overall: data.overall.length > 0 ? Math.round(data.overall.reduce((a, b) => a + b, 0) / data.overall.length) : null,
+          breakdown: {
+            hipaa: data.hipaa.length > 0 ? Math.round(data.hipaa.reduce((a, b) => a + b, 0) / data.hipaa.length) : null,
+            billing: data.billing.length > 0 ? Math.round(data.billing.reduce((a, b) => a + b, 0) / data.billing.length) : null,
+            consent: data.consent.length > 0 ? Math.round(data.consent.reduce((a, b) => a + b, 0) / data.consent.length) : null,
+            auditTrail: data.auditTrail.length > 0 ? Math.round(data.auditTrail.reduce((a, b) => a + b, 0) / data.auditTrail.length) : null,
+          },
+        }))
+        .slice(0, limit);
+
+      const overallScores = history.map(h => h.overall).filter((s): s is number => s !== null);
+
+      return {
+        history,
+        trend: calculateTrend(overallScores),
+        currentScore: overallScores[0] || null,
+        averageScore: overallScores.length > 0 ? Math.round(overallScores.reduce((a, b) => a + b, 0) / overallScores.length) : null,
+      };
+    }),
+
+  /**
+   * Get compliance dashboard summary
+   */
+  getComplianceDashboard: providerProcedure
+    .query(async ({ ctx }) => {
+      // Get current compliance metrics
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      const currentMetrics = await ctx.prisma.qAMetric.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          metricType: { in: ['COMPLIANCE_OVERALL', 'COMPLIANCE_HIPAA', 'COMPLIANCE_BILLING', 'COMPLIANCE_CONSENT', 'COMPLIANCE_AUDIT_TRAIL'] },
+          periodStart: { gte: monthStart },
+        },
+      });
+
+      // Get open alerts by severity
+      const alertCounts = await ctx.prisma.complianceAlert.groupBy({
+        by: ['severity'],
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: { notIn: ['RESOLVED', 'DISMISSED'] },
+        },
+        _count: true,
+      });
+
+      // Get recent audits
+      const recentAudits = await ctx.prisma.qAAudit.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          auditType: 'COMPLIANCE',
+          status: 'COMPLETED',
+        },
+        orderBy: { completedAt: 'desc' },
+        take: 5,
+        select: {
+          id: true,
+          auditDate: true,
+          score: true,
+          scoreCategory: true,
+          findingsCount: true,
+        },
+      });
+
+      // Build metrics object
+      const metricsMap = new Map<string, number>();
+      for (const m of currentMetrics) {
+        metricsMap.set(m.metricType, Number(m.percentage));
+      }
+
+      // Build alert counts
+      const alertsBySeverity: { [key: string]: number } = {};
+      for (const ac of alertCounts) {
+        alertsBySeverity[ac.severity] = ac._count;
+      }
+
+      return {
+        scores: {
+          overall: metricsMap.get('COMPLIANCE_OVERALL') || null,
+          hipaa: metricsMap.get('COMPLIANCE_HIPAA') || null,
+          billing: metricsMap.get('COMPLIANCE_BILLING') || null,
+          consent: metricsMap.get('COMPLIANCE_CONSENT') || null,
+          auditTrail: metricsMap.get('COMPLIANCE_AUDIT_TRAIL') || null,
+        },
+        alerts: {
+          total: Object.values(alertsBySeverity).reduce((a, b) => a + b, 0),
+          critical: alertsBySeverity['CRITICAL'] || 0,
+          high: alertsBySeverity['HIGH'] || 0,
+          medium: alertsBySeverity['MEDIUM'] || 0,
+          low: alertsBySeverity['LOW'] || 0,
+        },
+        recentAudits,
+        lastAuditDate: recentAudits[0]?.auditDate || null,
+      };
+    }),
 });
 
 // ============================================
@@ -2449,6 +2983,1171 @@ function generateCodingEducationContent(finding: {
   };
 
   return education;
+}
+
+// ============================================
+// US-350: Compliance monitoring helper functions
+// ============================================
+
+// Compliance alert input type
+interface ComplianceAlertInput {
+  type: 'HIPAA_VIOLATION' | 'BILLING_IRREGULARITY' | 'DOCUMENTATION_GAP' | 'CONSENT_MISSING' | 'AUDIT_TRAIL_GAP' | 'UNUSUAL_PATTERN' | 'POLICY_VIOLATION' | 'CREDENTIAL_EXPIRING' | 'TRAINING_DUE';
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
+  title: string;
+  description: string;
+  evidence?: string;
+  entityType?: string;
+  entityId?: string;
+  providerId?: string;
+  patientId?: string;
+  riskLevel?: string;
+  riskScore?: number;
+  complianceRisk?: boolean;
+  financialRisk?: boolean;
+  requiredAction?: string;
+  actionDueDate?: Date;
+}
+
+// Compliance check result interface
+interface ComplianceCheckResult {
+  score: number;
+  findings: Omit<Prisma.QAFindingCreateManyInput, 'auditId'>[];
+  alerts: ComplianceAlertInput[];
+  criticalCount: number;
+  highCount: number;
+  mediumCount: number;
+  lowCount: number;
+}
+
+// Type for context parameter in compliance functions
+type ComplianceContext = {
+  prisma: import('@prisma/client').PrismaClient;
+  user: { organizationId: string; id: string };
+};
+
+/**
+ * Perform HIPAA compliance checks
+ * Checks for PHI access patterns, disclosure logs, minimum necessary, etc.
+ */
+async function performHIPAAComplianceChecks(
+  ctx: ComplianceContext,
+  startDate: Date,
+  endDate: Date,
+  providerId: string | undefined,
+  sampleSize: number
+): Promise<ComplianceCheckResult> {
+  const findings: Omit<Prisma.QAFindingCreateManyInput, 'auditId'>[] = [];
+  const alerts: ComplianceAlertInput[] = [];
+  let score = 100;
+  let criticalCount = 0;
+  let highCount = 0;
+  let mediumCount = 0;
+  let lowCount = 0;
+
+  // 1. Check for excessive patient record access (break-the-glass scenarios)
+  const patientAccessLogs = await ctx.prisma.auditLog.findMany({
+    where: {
+      organizationId: ctx.user.organizationId,
+      entityType: 'Patient',
+      action: 'VIEW',
+      createdAt: { gte: startDate, lte: endDate },
+    },
+    take: sampleSize,
+  });
+
+  // Group by user to detect excessive access
+  const userAccessCounts = new Map<string, { count: number; patients: Set<string> }>();
+  for (const log of patientAccessLogs) {
+    if (!log.userId) continue;
+    const existing = userAccessCounts.get(log.userId) || { count: 0, patients: new Set() };
+    existing.count++;
+    if (log.entityId) existing.patients.add(log.entityId);
+    userAccessCounts.set(log.userId, existing);
+  }
+
+  // Flag users with unusually high access
+  const averageAccess = patientAccessLogs.length / Math.max(userAccessCounts.size, 1);
+  for (const [userId, data] of userAccessCounts) {
+    if (data.count > averageAccess * 3 && data.patients.size > 50) {
+      score -= 5;
+      highCount++;
+      alerts.push({
+        type: 'HIPAA_VIOLATION',
+        severity: 'HIGH',
+        title: 'Excessive patient record access detected',
+        description: `User accessed ${data.count} patient records (${data.patients.size} unique patients) in the audit period, significantly above average.`,
+        entityType: 'User',
+        entityId: userId,
+        riskLevel: 'high',
+        riskScore: 75,
+        complianceRisk: true,
+        requiredAction: 'Review user access patterns and verify legitimate business need',
+      });
+      findings.push({
+        organizationId: ctx.user.organizationId,
+        findingType: 'HIPAA_EXCESSIVE_ACCESS',
+        severity: 'HIGH',
+        title: 'Excessive patient record access',
+        description: `User accessed ${data.count} patient records in audit period`,
+        recommendation: 'Review access patterns and implement minimum necessary principle',
+        entityType: 'User',
+        entityId: userId,
+        riskScore: 75,
+        complianceImpact: true,
+      });
+    }
+  }
+
+  // 2. Check for PHI exports/downloads
+  const exportLogs = await ctx.prisma.auditLog.findMany({
+    where: {
+      organizationId: ctx.user.organizationId,
+      action: { in: ['EXPORT', 'DOWNLOAD', 'PRINT'] },
+      createdAt: { gte: startDate, lte: endDate },
+    },
+  });
+
+  // Flag excessive exports
+  const userExportCounts = new Map<string, number>();
+  for (const log of exportLogs) {
+    if (!log.userId) continue;
+    userExportCounts.set(log.userId, (userExportCounts.get(log.userId) || 0) + 1);
+  }
+
+  for (const [userId, count] of userExportCounts) {
+    if (count > 50) {
+      score -= 3;
+      mediumCount++;
+      alerts.push({
+        type: 'HIPAA_VIOLATION',
+        severity: 'MEDIUM',
+        title: 'High volume of PHI exports',
+        description: `User exported/downloaded PHI ${count} times in the audit period.`,
+        entityType: 'User',
+        entityId: userId,
+        riskLevel: 'medium',
+        riskScore: 60,
+        complianceRisk: true,
+        requiredAction: 'Verify export activity is for legitimate purposes',
+      });
+    }
+  }
+
+  // 3. Check for after-hours access
+  const afterHoursLogs = await ctx.prisma.auditLog.findMany({
+    where: {
+      organizationId: ctx.user.organizationId,
+      entityType: 'Patient',
+      action: 'VIEW',
+      createdAt: { gte: startDate, lte: endDate },
+    },
+    select: {
+      id: true,
+      userId: true,
+      createdAt: true,
+      entityId: true,
+    },
+    take: sampleSize,
+  });
+
+  let afterHoursAccessCount = 0;
+  for (const log of afterHoursLogs) {
+    const hour = log.createdAt.getHours();
+    // Flag access between 10pm and 6am
+    if (hour >= 22 || hour < 6) {
+      afterHoursAccessCount++;
+    }
+  }
+
+  if (afterHoursAccessCount > sampleSize * 0.1) {
+    score -= 2;
+    lowCount++;
+    findings.push({
+      organizationId: ctx.user.organizationId,
+      findingType: 'HIPAA_AFTER_HOURS_ACCESS',
+      severity: 'LOW',
+      title: 'After-hours patient record access',
+      description: `${afterHoursAccessCount} patient record accesses occurred outside normal business hours`,
+      recommendation: 'Review after-hours access policy and ensure legitimate need',
+      riskScore: 30,
+      complianceImpact: false,
+    });
+  }
+
+  // 4. Check for audit log gaps (potential tampering)
+  const logsByDay = new Map<string, number>();
+  for (const log of patientAccessLogs) {
+    const day = log.createdAt.toISOString().split('T')[0];
+    logsByDay.set(day, (logsByDay.get(day) || 0) + 1);
+  }
+
+  // Check for days with zero logs in the middle of the period
+  const days = Array.from(logsByDay.keys()).sort();
+  if (days.length >= 2) {
+    const startDay = new Date(days[0]);
+    const endDay = new Date(days[days.length - 1]);
+    const totalDays = Math.ceil((endDay.getTime() - startDay.getTime()) / (24 * 60 * 60 * 1000));
+    const missingDays = totalDays - days.length;
+
+    if (missingDays > 5 && totalDays > 10) {
+      score -= 10;
+      criticalCount++;
+      alerts.push({
+        type: 'AUDIT_TRAIL_GAP',
+        severity: 'CRITICAL',
+        title: 'Audit trail gaps detected',
+        description: `${missingDays} days with no audit logs detected between ${days[0]} and ${days[days.length - 1]}. This may indicate log tampering or system issues.`,
+        riskLevel: 'critical',
+        riskScore: 95,
+        complianceRisk: true,
+        requiredAction: 'Investigate audit log integrity immediately',
+      });
+    }
+  }
+
+  return {
+    score: Math.max(0, score),
+    findings,
+    alerts,
+    criticalCount,
+    highCount,
+    mediumCount,
+    lowCount,
+  };
+}
+
+/**
+ * Perform billing compliance checks
+ * Checks for billing irregularities, duplicate claims, unusual patterns
+ */
+async function performBillingComplianceChecks(
+  ctx: ComplianceContext,
+  startDate: Date,
+  endDate: Date,
+  providerId: string | undefined,
+  sampleSize: number
+): Promise<ComplianceCheckResult> {
+  const findings: Omit<Prisma.QAFindingCreateManyInput, 'auditId'>[] = [];
+  const alerts: ComplianceAlertInput[] = [];
+  let score = 100;
+  let criticalCount = 0;
+  let highCount = 0;
+  let mediumCount = 0;
+  let lowCount = 0;
+
+  // Build where clause
+  const whereClause: Prisma.ClaimWhereInput = {
+    organizationId: ctx.user.organizationId,
+    createdDate: { gte: startDate, lte: endDate },
+  };
+
+  if (providerId) {
+    whereClause.encounter = { providerId };
+  }
+
+  // 1. Check for duplicate claims
+  const claims = await ctx.prisma.claim.findMany({
+    where: whereClause,
+    include: {
+      claimLines: true,
+      encounter: {
+        select: {
+          id: true,
+          patientId: true,
+          providerId: true,
+          encounterDate: true,
+        },
+      },
+    },
+    take: sampleSize,
+  });
+
+  // Group by patient + date + total to find potential duplicates
+  const claimSignatures = new Map<string, { claimId: string; patientId: string; date: Date; total: number }[]>();
+  for (const claim of claims) {
+    if (!claim.encounter) continue;
+    const signature = `${claim.encounter.patientId}-${claim.encounter.encounterDate.toISOString().split('T')[0]}-${claim.totalCharges}`;
+    const existing = claimSignatures.get(signature) || [];
+    existing.push({
+      claimId: claim.id,
+      patientId: claim.encounter.patientId,
+      date: claim.encounter.encounterDate,
+      total: Number(claim.totalCharges),
+    });
+    claimSignatures.set(signature, existing);
+  }
+
+  // Flag potential duplicates
+  for (const [signature, duplicates] of claimSignatures) {
+    if (duplicates.length > 1) {
+      score -= 5 * duplicates.length;
+      highCount++;
+      alerts.push({
+        type: 'BILLING_IRREGULARITY',
+        severity: 'HIGH',
+        title: 'Potential duplicate claims detected',
+        description: `${duplicates.length} claims with identical patient, date, and charges found: ${signature}`,
+        evidence: JSON.stringify(duplicates.map(d => d.claimId)),
+        patientId: duplicates[0].patientId,
+        riskLevel: 'high',
+        riskScore: 80,
+        complianceRisk: true,
+        financialRisk: true,
+        requiredAction: 'Review claims for duplicate billing',
+      });
+      findings.push({
+        organizationId: ctx.user.organizationId,
+        findingType: 'BILLING_DUPLICATE_CLAIM',
+        severity: 'HIGH',
+        title: 'Potential duplicate claims',
+        description: `${duplicates.length} claims appear to be duplicates`,
+        recommendation: 'Void duplicate claims and implement duplicate checking',
+        patientId: duplicates[0].patientId,
+        riskScore: 80,
+        complianceImpact: true,
+      });
+    }
+  }
+
+  // 2. Check for unusually high claim amounts
+  const claimAmounts = claims.map(c => Number(c.totalCharges)).filter(a => a > 0);
+  const avgAmount = claimAmounts.length > 0 ? claimAmounts.reduce((a, b) => a + b, 0) / claimAmounts.length : 0;
+  const stdDev = Math.sqrt(claimAmounts.reduce((sum, a) => sum + Math.pow(a - avgAmount, 2), 0) / claimAmounts.length);
+
+  for (const claim of claims) {
+    const amount = Number(claim.totalCharges);
+    if (amount > avgAmount + 3 * stdDev && amount > 1000) {
+      score -= 2;
+      mediumCount++;
+      findings.push({
+        organizationId: ctx.user.organizationId,
+        findingType: 'BILLING_UNUSUAL_AMOUNT',
+        severity: 'MEDIUM',
+        title: 'Unusually high claim amount',
+        description: `Claim ${claim.claimNumber || claim.id} has amount $${amount.toFixed(2)}, significantly above average ($${avgAmount.toFixed(2)})`,
+        recommendation: 'Review claim for accuracy and appropriate coding',
+        entityType: 'Claim',
+        entityId: claim.id,
+        patientId: claim.encounter?.patientId,
+        riskScore: 50,
+        complianceImpact: false,
+      });
+    }
+  }
+
+  // 3. Check for claims without proper diagnosis support
+  for (const claim of claims) {
+    for (const line of claim.claimLines) {
+      if (line.diagnosisPointers.length === 0) {
+        score -= 1;
+        lowCount++;
+        findings.push({
+          organizationId: ctx.user.organizationId,
+          findingType: 'BILLING_NO_DIAGNOSIS',
+          severity: 'LOW',
+          title: 'Claim line without diagnosis pointer',
+          description: `CPT ${line.cptCode} on claim ${claim.claimNumber || claim.id} has no diagnosis pointer`,
+          recommendation: 'Add appropriate diagnosis codes to support medical necessity',
+          entityType: 'Claim',
+          entityId: claim.id,
+          riskScore: 30,
+          complianceImpact: true,
+        });
+      }
+    }
+  }
+
+  // 4. Check denial rates
+  const deniedClaims = claims.filter(c => c.status === 'DENIED');
+  const denialRate = claims.length > 0 ? (deniedClaims.length / claims.length) * 100 : 0;
+
+  if (denialRate > 15) {
+    score -= 10;
+    highCount++;
+    alerts.push({
+      type: 'BILLING_IRREGULARITY',
+      severity: 'HIGH',
+      title: 'High claim denial rate',
+      description: `Denial rate of ${denialRate.toFixed(1)}% exceeds acceptable threshold (15%)`,
+      riskLevel: 'high',
+      riskScore: 70,
+      complianceRisk: true,
+      financialRisk: true,
+      requiredAction: 'Analyze denial reasons and implement corrective actions',
+    });
+  } else if (denialRate > 10) {
+    score -= 5;
+    mediumCount++;
+    findings.push({
+      organizationId: ctx.user.organizationId,
+      findingType: 'BILLING_ELEVATED_DENIALS',
+      severity: 'MEDIUM',
+      title: 'Elevated claim denial rate',
+      description: `Denial rate of ${denialRate.toFixed(1)}% is above target (10%)`,
+      recommendation: 'Review denial patterns and implement process improvements',
+      riskScore: 50,
+      complianceImpact: false,
+    });
+  }
+
+  return {
+    score: Math.max(0, score),
+    findings,
+    alerts,
+    criticalCount,
+    highCount,
+    mediumCount,
+    lowCount,
+  };
+}
+
+/**
+ * Perform consent documentation verification
+ * Checks for missing consent forms and expired consents
+ */
+async function performConsentComplianceChecks(
+  ctx: ComplianceContext,
+  startDate: Date,
+  endDate: Date,
+  sampleSize: number
+): Promise<ComplianceCheckResult> {
+  const findings: Omit<Prisma.QAFindingCreateManyInput, 'auditId'>[] = [];
+  const alerts: ComplianceAlertInput[] = [];
+  let score = 100;
+  let criticalCount = 0;
+  let highCount = 0;
+  let mediumCount = 0;
+  let lowCount = 0;
+
+  // 1. Get patients with encounters in the period
+  const encounters = await ctx.prisma.encounter.findMany({
+    where: {
+      organizationId: ctx.user.organizationId,
+      encounterDate: { gte: startDate, lte: endDate },
+      status: { in: ['COMPLETED', 'SIGNED'] },
+    },
+    select: {
+      id: true,
+      patientId: true,
+      encounterDate: true,
+      encounterType: true,
+    },
+    take: sampleSize,
+  });
+
+  const patientIds = [...new Set(encounters.map(e => e.patientId))];
+
+  // 2. Check for consent form submissions
+  // Search for consent-related forms by name pattern
+  const consentSubmissions = await ctx.prisma.formSubmission.findMany({
+    where: {
+      organizationId: ctx.user.organizationId,
+      patientId: { in: patientIds },
+      template: {
+        OR: [
+          { name: { contains: 'consent', mode: 'insensitive' } },
+          { name: { contains: 'hipaa', mode: 'insensitive' } },
+          { name: { contains: 'privacy', mode: 'insensitive' } },
+          { name: { contains: 'authorization', mode: 'insensitive' } },
+        ],
+      },
+    },
+    include: {
+      template: {
+        select: { name: true },
+      },
+    },
+  });
+
+  // Group consents by patient
+  const patientConsents = new Map<string, { submittedAt: Date; templateName: string }[]>();
+  for (const submission of consentSubmissions) {
+    if (!submission.patientId) continue;
+    const existing = patientConsents.get(submission.patientId) || [];
+    existing.push({
+      submittedAt: submission.submittedAt || submission.createdAt,
+      templateName: submission.template?.name || 'Unknown Form',
+    });
+    patientConsents.set(submission.patientId, existing);
+  }
+
+  // 3. Check each patient for consent compliance
+  let patientsWithoutConsent = 0;
+  let patientsWithExpiredConsent = 0;
+
+  for (const patientId of patientIds) {
+    const consents = patientConsents.get(patientId) || [];
+
+    if (consents.length === 0) {
+      patientsWithoutConsent++;
+    } else {
+      // Check if consent is older than 12 months (typical annual requirement)
+      const latestConsent = consents.sort((a, b) => b.submittedAt.getTime() - a.submittedAt.getTime())[0];
+      const consentAge = (new Date().getTime() - latestConsent.submittedAt.getTime()) / (1000 * 60 * 60 * 24 * 365);
+
+      if (consentAge > 1) {
+        patientsWithExpiredConsent++;
+      }
+    }
+  }
+
+  // 4. Generate findings and alerts based on consent issues
+  const consentRate = patientIds.length > 0 ? ((patientIds.length - patientsWithoutConsent) / patientIds.length) * 100 : 100;
+
+  if (patientsWithoutConsent > 0) {
+    const percentage = (patientsWithoutConsent / patientIds.length) * 100;
+
+    if (percentage > 20) {
+      score -= 20;
+      criticalCount++;
+      alerts.push({
+        type: 'CONSENT_MISSING',
+        severity: 'CRITICAL',
+        title: 'High rate of missing consent forms',
+        description: `${patientsWithoutConsent} patients (${percentage.toFixed(1)}%) with recent encounters have no consent documentation on file.`,
+        riskLevel: 'critical',
+        riskScore: 90,
+        complianceRisk: true,
+        requiredAction: 'Immediately implement consent collection process for all patients',
+      });
+    } else if (percentage > 10) {
+      score -= 10;
+      highCount++;
+      alerts.push({
+        type: 'CONSENT_MISSING',
+        severity: 'HIGH',
+        title: 'Elevated missing consent rate',
+        description: `${patientsWithoutConsent} patients (${percentage.toFixed(1)}%) missing consent forms`,
+        riskLevel: 'high',
+        riskScore: 70,
+        complianceRisk: true,
+        requiredAction: 'Collect consent forms from patients without documentation',
+      });
+    } else {
+      score -= 5;
+      mediumCount++;
+      findings.push({
+        organizationId: ctx.user.organizationId,
+        findingType: 'CONSENT_MISSING',
+        severity: 'MEDIUM',
+        title: 'Some patients missing consent forms',
+        description: `${patientsWithoutConsent} patients without consent documentation`,
+        recommendation: 'Review and collect missing consent forms',
+        riskScore: 50,
+        complianceImpact: true,
+      });
+    }
+  }
+
+  if (patientsWithExpiredConsent > 0) {
+    const percentage = (patientsWithExpiredConsent / patientIds.length) * 100;
+    score -= Math.min(15, percentage * 0.5);
+    mediumCount++;
+    findings.push({
+      organizationId: ctx.user.organizationId,
+      findingType: 'CONSENT_EXPIRED',
+      severity: 'MEDIUM',
+      title: 'Expired consent forms',
+      description: `${patientsWithExpiredConsent} patients (${percentage.toFixed(1)}%) have consent forms older than 12 months`,
+      recommendation: 'Implement annual consent renewal process',
+      riskScore: 45,
+      complianceImpact: true,
+    });
+  }
+
+  // 5. Check telehealth consent for telehealth sessions (if applicable)
+  // Query for telehealth sessions in the period via the appointment relationship
+  const telehealthSessions = await ctx.prisma.telehealthSession.findMany({
+    where: {
+      organizationId: ctx.user.organizationId,
+      scheduledStartTime: { gte: startDate, lte: endDate },
+      status: { in: ['COMPLETED', 'IN_PROGRESS'] },
+    },
+    include: {
+      appointment: {
+        select: {
+          patientId: true,
+        },
+      },
+    },
+  });
+
+  const telehealthPatientIds = [...new Set(telehealthSessions.map(s => s.appointment.patientId))];
+
+  if (telehealthPatientIds.length > 0) {
+    const telehealthConsents = await ctx.prisma.telehealthConsent.findMany({
+      where: {
+        organizationId: ctx.user.organizationId,
+        patientId: { in: telehealthPatientIds },
+        status: 'SIGNED',
+      },
+    });
+
+    const consentedPatients = new Set(telehealthConsents.map(c => c.patientId));
+    const missingTelehealthConsent = telehealthPatientIds.filter(p => !consentedPatients.has(p));
+
+    if (missingTelehealthConsent.length > 0) {
+      score -= 10;
+      highCount++;
+      alerts.push({
+        type: 'CONSENT_MISSING',
+        severity: 'HIGH',
+        title: 'Missing telehealth consent',
+        description: `${missingTelehealthConsent.length} patients had telehealth sessions without telehealth-specific consent`,
+        riskLevel: 'high',
+        riskScore: 75,
+        complianceRisk: true,
+        requiredAction: 'Collect telehealth consent before providing virtual care',
+      });
+    }
+  }
+
+  return {
+    score: Math.max(0, score),
+    findings,
+    alerts,
+    criticalCount,
+    highCount,
+    mediumCount,
+    lowCount,
+  };
+}
+
+/**
+ * Perform audit trail completeness checks
+ */
+async function performAuditTrailChecks(
+  ctx: ComplianceContext,
+  startDate: Date,
+  endDate: Date,
+  sampleSize: number
+): Promise<ComplianceCheckResult> {
+  const findings: Omit<Prisma.QAFindingCreateManyInput, 'auditId'>[] = [];
+  const alerts: ComplianceAlertInput[] = [];
+  let score = 100;
+  let criticalCount = 0;
+  let highCount = 0;
+  let mediumCount = 0;
+  let lowCount = 0;
+
+  // 1. Check audit log coverage for key actions
+  const expectedEntityTypes = ['Patient', 'Encounter', 'Claim', 'Payment', 'User'];
+  const logCounts = await ctx.prisma.auditLog.groupBy({
+    by: ['entityType'],
+    where: {
+      organizationId: ctx.user.organizationId,
+      createdAt: { gte: startDate, lte: endDate },
+    },
+    _count: true,
+  });
+
+  const logCountMap = new Map(logCounts.map(l => [l.entityType, l._count]));
+
+  // Check for entity types with no logs
+  const missingEntityTypes = expectedEntityTypes.filter(t => !logCountMap.has(t) || logCountMap.get(t)! < 10);
+
+  if (missingEntityTypes.length > 0) {
+    score -= missingEntityTypes.length * 5;
+    highCount++;
+    findings.push({
+      organizationId: ctx.user.organizationId,
+      findingType: 'AUDIT_TRAIL_INCOMPLETE',
+      severity: 'HIGH',
+      title: 'Incomplete audit trail coverage',
+      description: `Missing or minimal audit logs for: ${missingEntityTypes.join(', ')}`,
+      recommendation: 'Verify audit logging is enabled for all entity types',
+      riskScore: 70,
+      complianceImpact: true,
+    });
+  }
+
+  // 2. Check for audit log modifications (should never happen)
+  const auditLogModifications = await ctx.prisma.auditLog.findMany({
+    where: {
+      organizationId: ctx.user.organizationId,
+      entityType: 'AuditLog',
+      action: { in: ['UPDATE', 'DELETE'] },
+      createdAt: { gte: startDate, lte: endDate },
+    },
+  });
+
+  if (auditLogModifications.length > 0) {
+    score -= 30;
+    criticalCount++;
+    alerts.push({
+      type: 'AUDIT_TRAIL_GAP',
+      severity: 'CRITICAL',
+      title: 'Audit log tampering detected',
+      description: `${auditLogModifications.length} audit log modification attempts detected. Audit logs should be immutable.`,
+      evidence: JSON.stringify(auditLogModifications.slice(0, 5).map(l => ({ id: l.id, action: l.action, date: l.createdAt }))),
+      riskLevel: 'critical',
+      riskScore: 100,
+      complianceRisk: true,
+      requiredAction: 'Investigate immediately - potential compliance breach',
+    });
+  }
+
+  // 3. Check for login/logout tracking
+  const authLogs = await ctx.prisma.auditLog.count({
+    where: {
+      organizationId: ctx.user.organizationId,
+      action: { in: ['LOGIN', 'LOGOUT'] },
+      createdAt: { gte: startDate, lte: endDate },
+    },
+  });
+
+  const activeSessions = await ctx.prisma.userSession.count({
+    where: {
+      user: { organizationId: ctx.user.organizationId },
+      createdAt: { gte: startDate, lte: endDate },
+    },
+  });
+
+  if (authLogs < activeSessions * 0.5) {
+    score -= 10;
+    mediumCount++;
+    findings.push({
+      organizationId: ctx.user.organizationId,
+      findingType: 'AUDIT_TRAIL_AUTH_GAP',
+      severity: 'MEDIUM',
+      title: 'Incomplete authentication logging',
+      description: 'Login/logout events may not be fully captured in audit logs',
+      recommendation: 'Review authentication logging configuration',
+      riskScore: 55,
+      complianceImpact: true,
+    });
+  }
+
+  // 4. Check for PHI access logging
+  const phiAccessLogs = await ctx.prisma.auditLog.count({
+    where: {
+      organizationId: ctx.user.organizationId,
+      entityType: 'Patient',
+      createdAt: { gte: startDate, lte: endDate },
+    },
+  });
+
+  const totalPatientViews = await ctx.prisma.encounter.count({
+    where: {
+      organizationId: ctx.user.organizationId,
+      encounterDate: { gte: startDate, lte: endDate },
+    },
+  });
+
+  // We should have more access logs than encounters (multiple views per encounter)
+  if (phiAccessLogs < totalPatientViews) {
+    score -= 5;
+    lowCount++;
+    findings.push({
+      organizationId: ctx.user.organizationId,
+      findingType: 'AUDIT_TRAIL_PHI_GAP',
+      severity: 'LOW',
+      title: 'PHI access logging may be incomplete',
+      description: `Only ${phiAccessLogs} patient access logs for ${totalPatientViews} encounters`,
+      recommendation: 'Verify all patient data access is being logged',
+      riskScore: 35,
+      complianceImpact: true,
+    });
+  }
+
+  // 5. Check for timestamp consistency
+  const recentLogs = await ctx.prisma.auditLog.findMany({
+    where: {
+      organizationId: ctx.user.organizationId,
+      createdAt: { gte: startDate, lte: endDate },
+    },
+    orderBy: { createdAt: 'asc' },
+    take: sampleSize,
+    select: { createdAt: true },
+  });
+
+  // Check for suspicious timestamp patterns (logs out of order or identical timestamps)
+  let identicalTimestamps = 0;
+  for (let i = 1; i < recentLogs.length; i++) {
+    if (recentLogs[i].createdAt.getTime() === recentLogs[i - 1].createdAt.getTime()) {
+      identicalTimestamps++;
+    }
+  }
+
+  if (identicalTimestamps > sampleSize * 0.3) {
+    score -= 5;
+    lowCount++;
+    findings.push({
+      organizationId: ctx.user.organizationId,
+      findingType: 'AUDIT_TRAIL_TIMESTAMP_ISSUE',
+      severity: 'LOW',
+      title: 'Audit log timestamp anomaly',
+      description: `High number of identical timestamps (${identicalTimestamps}) may indicate logging issues`,
+      recommendation: 'Review audit logging timestamp precision',
+      riskScore: 25,
+      complianceImpact: false,
+    });
+  }
+
+  return {
+    score: Math.max(0, score),
+    findings,
+    alerts,
+    criticalCount,
+    highCount,
+    mediumCount,
+    lowCount,
+  };
+}
+
+/**
+ * Detect unusual patterns in the system
+ */
+async function performUnusualPatternDetection(
+  ctx: ComplianceContext,
+  startDate: Date,
+  endDate: Date,
+  providerId: string | undefined
+): Promise<ComplianceCheckResult> {
+  const findings: Omit<Prisma.QAFindingCreateManyInput, 'auditId'>[] = [];
+  const alerts: ComplianceAlertInput[] = [];
+  let score = 100;
+  let criticalCount = 0;
+  let highCount = 0;
+  let mediumCount = 0;
+  let lowCount = 0;
+
+  // 1. Check for unusual appointment patterns
+  const whereClause: Prisma.AppointmentWhereInput = {
+    organizationId: ctx.user.organizationId,
+    startTime: { gte: startDate, lte: endDate },
+    status: 'COMPLETED',
+  };
+
+  if (providerId) {
+    whereClause.providerId = providerId;
+  }
+
+  const appointments = await ctx.prisma.appointment.findMany({
+    where: whereClause,
+    select: {
+      id: true,
+      providerId: true,
+      patientId: true,
+      startTime: true,
+      endTime: true,
+    },
+  });
+
+  // Group appointments by provider and date
+  const providerDailyCounts = new Map<string, Map<string, number>>();
+  for (const appt of appointments) {
+    const day = appt.startTime.toISOString().split('T')[0];
+    const providerId = appt.providerId;
+
+    if (!providerDailyCounts.has(providerId)) {
+      providerDailyCounts.set(providerId, new Map());
+    }
+    const dailyMap = providerDailyCounts.get(providerId)!;
+    dailyMap.set(day, (dailyMap.get(day) || 0) + 1);
+  }
+
+  // Check for unusually high daily volumes
+  for (const [pid, dailyMap] of providerDailyCounts) {
+    const counts = Array.from(dailyMap.values());
+    const avg = counts.reduce((a, b) => a + b, 0) / counts.length;
+    const max = Math.max(...counts);
+
+    if (max > avg * 2 && max > 30) {
+      score -= 3;
+      mediumCount++;
+      findings.push({
+        organizationId: ctx.user.organizationId,
+        findingType: 'PATTERN_HIGH_VOLUME',
+        severity: 'MEDIUM',
+        title: 'Unusually high appointment volume',
+        description: `Provider had ${max} appointments on a single day (average: ${avg.toFixed(1)})`,
+        recommendation: 'Review scheduling patterns for this provider',
+        providerId: pid,
+        riskScore: 45,
+        complianceImpact: false,
+      });
+    }
+  }
+
+  // 2. Check for same-day visit patterns (potential upcoding indicator)
+  const patientDailyVisits = new Map<string, Map<string, number>>();
+  for (const appt of appointments) {
+    const day = appt.startTime.toISOString().split('T')[0];
+    const key = `${appt.patientId}-${day}`;
+
+    if (!patientDailyVisits.has(key)) {
+      patientDailyVisits.set(key, new Map());
+    }
+    patientDailyVisits.get(key)!.set(appt.id, 1);
+  }
+
+  let multipleVisits = 0;
+  for (const [, visits] of patientDailyVisits) {
+    if (visits.size > 2) {
+      multipleVisits++;
+    }
+  }
+
+  if (multipleVisits > appointments.length * 0.05) {
+    score -= 5;
+    mediumCount++;
+    findings.push({
+      organizationId: ctx.user.organizationId,
+      findingType: 'PATTERN_MULTIPLE_SAME_DAY',
+      severity: 'MEDIUM',
+      title: 'Frequent same-day multiple visits',
+      description: `${multipleVisits} instances of patients with 3+ visits on the same day`,
+      recommendation: 'Review same-day visit patterns for appropriateness',
+      riskScore: 50,
+      complianceImpact: true,
+    });
+  }
+
+  // 3. Check for unusual billing patterns
+  const claims = await ctx.prisma.claim.findMany({
+    where: {
+      organizationId: ctx.user.organizationId,
+      createdDate: { gte: startDate, lte: endDate },
+    },
+    include: {
+      claimLines: true,
+      encounter: {
+        select: { providerId: true },
+      },
+    },
+  });
+
+  // Check for high manipulation code usage
+  const manipulationByProvider = new Map<string, number>();
+  const totalClaimsByProvider = new Map<string, number>();
+
+  for (const claim of claims) {
+    const pid = claim.encounter?.providerId;
+    if (!pid) continue;
+
+    totalClaimsByProvider.set(pid, (totalClaimsByProvider.get(pid) || 0) + 1);
+
+    const hasManipulation = claim.claimLines.some(l =>
+      ['98940', '98941', '98942', '98943'].includes(l.cptCode)
+    );
+    if (hasManipulation) {
+      manipulationByProvider.set(pid, (manipulationByProvider.get(pid) || 0) + 1);
+    }
+  }
+
+  // Flag providers with 100% manipulation (no other services)
+  for (const [pid, manipCount] of manipulationByProvider) {
+    const totalCount = totalClaimsByProvider.get(pid) || 1;
+    const manipRate = manipCount / totalCount;
+
+    if (manipRate === 1 && totalCount > 20) {
+      score -= 3;
+      lowCount++;
+      findings.push({
+        organizationId: ctx.user.organizationId,
+        findingType: 'PATTERN_MANIPULATION_ONLY',
+        severity: 'LOW',
+        title: 'Provider billing only manipulation codes',
+        description: `Provider has ${totalCount} claims with 100% manipulation services`,
+        recommendation: 'Review service mix - may indicate limited scope or coding issue',
+        providerId: pid,
+        riskScore: 30,
+        complianceImpact: false,
+      });
+    }
+  }
+
+  // 4. Check for weekend/holiday appointments (unusual for chiropractic)
+  const weekendAppointments = appointments.filter(a => {
+    const day = a.startTime.getDay();
+    return day === 0 || day === 6;
+  });
+
+  if (weekendAppointments.length > appointments.length * 0.15) {
+    score -= 2;
+    lowCount++;
+    findings.push({
+      organizationId: ctx.user.organizationId,
+      findingType: 'PATTERN_WEEKEND_APPOINTMENTS',
+      severity: 'LOW',
+      title: 'High weekend appointment volume',
+      description: `${weekendAppointments.length} appointments (${((weekendAppointments.length / appointments.length) * 100).toFixed(1)}%) scheduled on weekends`,
+      recommendation: 'Review weekend scheduling patterns',
+      riskScore: 20,
+      complianceImpact: false,
+    });
+  }
+
+  // 5. Check for unusual payment patterns
+  const payments = await ctx.prisma.payment.findMany({
+    where: {
+      organizationId: ctx.user.organizationId,
+      paymentDate: { gte: startDate, lte: endDate },
+    },
+    select: {
+      id: true,
+      amount: true,
+      paymentMethod: true,
+    },
+  });
+
+  // Check for round number payments (may indicate estimating)
+  const roundPayments = payments.filter(p => Number(p.amount) % 100 === 0 && Number(p.amount) > 0);
+  if (roundPayments.length > payments.length * 0.3 && payments.length > 50) {
+    score -= 2;
+    lowCount++;
+    findings.push({
+      organizationId: ctx.user.organizationId,
+      findingType: 'PATTERN_ROUND_PAYMENTS',
+      severity: 'LOW',
+      title: 'High rate of round-number payments',
+      description: `${((roundPayments.length / payments.length) * 100).toFixed(1)}% of payments are round numbers`,
+      recommendation: 'Review payment posting accuracy',
+      riskScore: 20,
+      complianceImpact: false,
+    });
+  }
+
+  return {
+    score: Math.max(0, score),
+    findings,
+    alerts,
+    criticalCount,
+    highCount,
+    mediumCount,
+    lowCount,
+  };
+}
+
+/**
+ * Update compliance metrics
+ */
+async function updateComplianceMetrics(
+  ctx: ComplianceContext,
+  score: number,
+  sampleSize: number,
+  scope: string
+): Promise<void> {
+  const now = new Date();
+  const periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+  // Determine metric type based on scope
+  const metricType = scope === 'full' ? 'COMPLIANCE_OVERALL' :
+    scope === 'hipaa' ? 'COMPLIANCE_HIPAA' :
+    scope === 'billing' ? 'COMPLIANCE_BILLING' :
+    scope === 'consent' ? 'COMPLIANCE_CONSENT' :
+    scope === 'audit_trail' ? 'COMPLIANCE_AUDIT_TRAIL' :
+    'COMPLIANCE_OVERALL';
+
+  const existingMetric = await ctx.prisma.qAMetric.findFirst({
+    where: {
+      organizationId: ctx.user.organizationId,
+      metricType,
+      period: 'monthly',
+      periodStart,
+    },
+  });
+
+  if (existingMetric) {
+    // Update with rolling average
+    const newSampleSize = (existingMetric.sampleSize || 0) + sampleSize;
+    const existingTotal = Number(existingMetric.score) * (existingMetric.sampleSize || 1);
+    const newTotal = existingTotal + (score * sampleSize);
+    const newScore = newTotal / newSampleSize;
+
+    await ctx.prisma.qAMetric.update({
+      where: { id: existingMetric.id },
+      data: {
+        score: newScore,
+        percentage: newScore,
+        sampleSize: newSampleSize,
+        meetsTarget: newScore >= 85,
+        trend: newScore > Number(existingMetric.percentage) ? 'improving' :
+               newScore < Number(existingMetric.percentage) ? 'declining' : 'stable',
+      },
+    });
+  } else {
+    await ctx.prisma.qAMetric.create({
+      data: {
+        organizationId: ctx.user.organizationId,
+        metricType,
+        period: 'monthly',
+        periodStart,
+        periodEnd,
+        score,
+        maxScore: 100,
+        percentage: score,
+        sampleSize,
+        target: 85,
+        benchmark: 80,
+        meetsTarget: score >= 85,
+      },
+    });
+  }
+}
+
+/**
+ * Generate compliance recommendations
+ */
+function generateComplianceRecommendations(
+  alerts: ComplianceAlertInput[],
+  findingsCount: number,
+  score: number
+): string[] {
+  const recommendations: string[] = [];
+
+  // Count alerts by type
+  const alertsByType = new Map<string, number>();
+  for (const alert of alerts) {
+    alertsByType.set(alert.type, (alertsByType.get(alert.type) || 0) + 1);
+  }
+
+  // Critical alerts
+  const criticalAlerts = alerts.filter(a => a.severity === 'CRITICAL');
+  if (criticalAlerts.length > 0) {
+    recommendations.push(`URGENT: Address ${criticalAlerts.length} critical compliance issue(s) immediately`);
+  }
+
+  // HIPAA issues
+  if (alertsByType.has('HIPAA_VIOLATION')) {
+    recommendations.push('Review HIPAA policies and conduct refresher training on PHI handling');
+  }
+
+  // Billing issues
+  if (alertsByType.has('BILLING_IRREGULARITY')) {
+    recommendations.push('Implement pre-submission claim review process to catch billing issues');
+  }
+
+  // Consent issues
+  if (alertsByType.has('CONSENT_MISSING')) {
+    recommendations.push('Implement systematic consent collection at patient check-in');
+  }
+
+  // Audit trail issues
+  if (alertsByType.has('AUDIT_TRAIL_GAP')) {
+    recommendations.push('Review and enhance audit logging configuration');
+  }
+
+  // Pattern issues
+  if (alertsByType.has('UNUSUAL_PATTERN')) {
+    recommendations.push('Conduct targeted review of unusual activity patterns');
+  }
+
+  // Overall score-based recommendations
+  if (score < 70) {
+    recommendations.push('Schedule comprehensive compliance training for all staff');
+    recommendations.push('Consider engaging external compliance consultant for review');
+  } else if (score < 85) {
+    recommendations.push('Focus on addressing high-priority findings to improve compliance score');
+  }
+
+  if (findingsCount > 20) {
+    recommendations.push('Create an action plan with prioritized remediation steps');
+  }
+
+  return recommendations;
 }
 
 export type AIQARouter = typeof aiQARouter;

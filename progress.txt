@@ -120,3 +120,52 @@ Date: 2026-01-22
 --- Iteration 3 completed at 2026-01-22 ---
 Story: US-349 - Coding accuracy audit
 
+--- Iteration 3 completed at 2026-01-22 15:29:25 ---
+Story: US-349 - Coding accuracy audit
+
+## US-350: Compliance monitoring - COMPLETED
+
+### What was implemented:
+- Created `aiQA.monitorCompliance` mutation for comprehensive compliance monitoring
+- Implemented 5 compliance check scopes:
+  1. **HIPAA Compliance Checks** - PHI access patterns, excessive record access, after-hours access, export monitoring, audit log integrity
+  2. **Billing Compliance Checks** - Duplicate claim detection, unusual amounts, missing diagnosis pointers, denial rate monitoring
+  3. **Consent Documentation Verification** - Missing consent forms, expired consents, telehealth-specific consent tracking
+  4. **Audit Trail Completeness** - Coverage for key entity types, tampering detection, authentication logging, PHI access logging
+  5. **Unusual Pattern Detection** - High appointment volumes, same-day visits, provider billing patterns, weekend patterns, payment anomalies
+
+- Created supporting endpoints:
+  - `aiQA.getComplianceAlerts` - Query alerts with filtering by status, type, severity
+  - `aiQA.acknowledgeAlert` - Acknowledge compliance alerts
+  - `aiQA.resolveAlert` - Resolve/dismiss compliance alerts
+  - `aiQA.escalateAlert` - Escalate alerts to designated parties
+  - `aiQA.getComplianceScoreTrending` - Compliance score trends over time
+  - `aiQA.getComplianceDashboard` - Summary dashboard with scores, alerts, recent audits
+
+- Added new QAMetricType enum values for compliance tracking:
+  - COMPLIANCE_OVERALL, COMPLIANCE_HIPAA, COMPLIANCE_BILLING, COMPLIANCE_CONSENT, COMPLIANCE_AUDIT_TRAIL
+
+- Added new AuditAction types:
+  - AI_QA_COMPLIANCE_MONITORING, AI_QA_ALERT_ESCALATED
+  - AI_QA_COMPLIANCE_ALERT_ACKNOWLEDGED, AI_QA_COMPLIANCE_ALERT_RESOLVED, AI_QA_COMPLIANCE_ALERT_ESCALATED
+
+### Acceptance Criteria Met:
+- [x] aiQA.monitorCompliance - Ongoing compliance watch
+- [x] HIPAA compliance checks
+- [x] Billing compliance monitoring
+- [x] Consent documentation verification
+- [x] Audit trail completeness
+- [x] Unusual pattern detection
+- [x] Real-time compliance alerts
+- [x] Compliance score trending
+
+### Files modified:
+- app/src/server/routers/aiQA.ts (~1200 lines added)
+- app/src/lib/audit.ts (added compliance audit actions)
+- app/prisma/schema.prisma (added 5 new QAMetricType enum values)
+
+### Status: COMPLETE
+Date: 2026-01-22
+--- Iteration 4 completed at 2026-01-22 ---
+Story: US-350 - Compliance monitoring
+

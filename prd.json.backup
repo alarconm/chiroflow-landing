@@ -1,138 +1,140 @@
 {
-  "branch": "feature/ai-insurance-agent",
-  "title": "Epic 34: AI Insurance Agent",
-  "description": "Autonomous AI agent that handles insurance verification, benefits explanation, prior authorization, and insurance-related patient communication. Eliminates manual insurance verification work.",
-  "epic": "34-ai-insurance-agent",
-  "dependencies": ["07-billing-claims", "08-clearinghouse"],
+  "branch": "feature/ai-revenue-optimizer",
+  "title": "Epic 35: AI Revenue Optimizer Agent",
+  "description": "AI agent that continuously analyzes practice financials to identify revenue opportunities, reduce leakage, optimize fee schedules, and provide actionable recommendations to maximize profitability.",
+  "epic": "35-ai-revenue-optimizer",
+  "dependencies": ["07-billing-claims", "15-reporting"],
   "userStories": [
     {
-      "id": "US-331",
-      "title": "AI insurance agent schema",
-      "description": "Create database models for AI insurance activities.",
+      "id": "US-339",
+      "title": "AI revenue optimizer schema",
+      "description": "Create database models for revenue optimization.",
       "acceptanceCriteria": [
-        "AIEligibilityCheck model with patientId, insuranceId, result, date",
-        "AIBenefitsSummary model with patientId, benefits, copay, deductible, coverage",
-        "AIPriorAuth model with patientId, procedureCode, status, authNumber, expiration",
-        "AIInsuranceTask model with type, status, attempts, result",
-        "InsuranceConversation model for patient benefit discussions",
+        "RevenueOpportunity model with type, amount, description, status",
+        "RevenueLeakage model with type, amount, source, recommendation",
+        "FeeScheduleAnalysis model with cptCode, currentFee, recommendedFee, reasoning",
+        "RevenueGoal model with period, target, actual, variance",
+        "OptimizationAction model with opportunityId, action, result",
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": false
+      "passes": true
     },
     {
-      "id": "US-332",
-      "title": "Automated eligibility verification",
-      "description": "AI agent that automatically verifies insurance eligibility.",
+      "id": "US-340",
+      "title": "Revenue leakage detection",
+      "description": "AI identifies sources of revenue leakage.",
       "acceptanceCriteria": [
-        "aiInsurance.verifyEligibility - Auto-verify insurance",
-        "Real-time 270/271 transaction processing",
-        "Batch verification for upcoming appointments",
-        "Parse and interpret eligibility responses",
-        "Flag coverage issues",
-        "Store verification for reference",
-        "Re-verify on scheduled intervals",
-        "Alert on eligibility changes"
+        "aiRevenue.detectLeakage - Find revenue leaks",
+        "Unbilled services detection",
+        "Undercoding identification",
+        "Missed modifier opportunities",
+        "Unbilled supplies",
+        "Write-off pattern analysis",
+        "Collection rate issues",
+        "Quantify leakage by category"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
-      "id": "US-333",
-      "title": "Benefits interpretation",
-      "description": "AI interprets insurance benefits into plain language.",
+      "id": "US-341",
+      "title": "Fee schedule optimization",
+      "description": "AI recommends optimal fee schedule pricing.",
       "acceptanceCriteria": [
-        "aiInsurance.interpretBenefits - Parse benefits",
-        "Extract chiropractic-specific coverage",
-        "Identify visit limits and remaining visits",
-        "Calculate patient responsibility estimates",
-        "Identify deductible status",
-        "Explain coverage in plain language",
-        "Generate patient-friendly benefits summary"
+        "aiRevenue.analyzeFees - Analyze fee schedule",
+        "Compare to Medicare rates",
+        "Compare to regional benchmarks",
+        "Analyze payer reimbursement patterns",
+        "Identify underpriced services",
+        "Model revenue impact of changes",
+        "Generate fee update recommendations",
+        "Track fee change effectiveness"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
-      "id": "US-334",
-      "title": "Prior authorization automation",
-      "description": "AI manages prior authorization requests.",
+      "id": "US-342",
+      "title": "Service mix optimization",
+      "description": "AI recommends optimal service mix for profitability.",
       "acceptanceCriteria": [
-        "aiInsurance.requestAuth - Submit prior auth",
-        "Identify procedures requiring authorization",
-        "Generate clinical documentation for auth",
-        "Submit to payer portal or fax",
-        "Track authorization status",
-        "Alert on auth expiration",
-        "Re-authorization automation",
-        "Auth denial appeal support"
+        "aiRevenue.analyzeServiceMix - Evaluate services",
+        "Profitability by service type",
+        "Identify high-margin services",
+        "Recommend service expansion",
+        "Identify unprofitable services",
+        "Payer mix optimization",
+        "Time vs revenue analysis",
+        "Capacity utilization recommendations"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
-      "id": "US-335",
-      "title": "Insurance issue resolution",
-      "description": "AI resolves common insurance issues automatically.",
+      "id": "US-343",
+      "title": "Coding optimization",
+      "description": "AI identifies coding improvement opportunities.",
       "acceptanceCriteria": [
-        "aiInsurance.resolveIssue - Fix insurance problems",
-        "Identify coverage termination",
-        "Suggest alternative coverage options",
-        "Handle coordination of benefits",
-        "Address coverage gaps",
-        "Route complex issues to staff",
-        "Document resolution steps"
+        "aiRevenue.optimizeCoding - Review coding patterns",
+        "E&M level optimization",
+        "Modifier usage analysis",
+        "Bundling/unbundling review",
+        "Provider coding comparison",
+        "Documentation improvement suggestions",
+        "Compliant revenue increase opportunities"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
-      "id": "US-336",
-      "title": "Patient insurance communication",
-      "description": "AI explains insurance to patients via preferred channel.",
+      "id": "US-344",
+      "title": "Contract analysis",
+      "description": "AI analyzes payer contracts for optimization.",
       "acceptanceCriteria": [
-        "aiInsurance.explainToPatient - Communicate benefits",
-        "Answer patient insurance questions",
-        "Explain out-of-pocket costs",
-        "Discuss payment options",
-        "Send benefits summary via email/portal",
-        "Handle objections about coverage",
-        "Escalate complex questions"
+        "aiRevenue.analyzeContracts - Review payer contracts",
+        "Reimbursement rate analysis",
+        "Compare to market rates",
+        "Identify renegotiation opportunities",
+        "Model contract change impact",
+        "Track contract performance",
+        "Generate negotiation talking points"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
-      "id": "US-337",
-      "title": "Insurance analytics",
-      "description": "Analytics on insurance verification and authorization.",
+      "id": "US-345",
+      "title": "Revenue forecasting",
+      "description": "AI forecasts future revenue with recommendations.",
       "acceptanceCriteria": [
-        "Verification success rates by payer",
-        "Authorization approval rates",
-        "Time to authorization metrics",
-        "Coverage denial patterns",
-        "Payer responsiveness ranking",
-        "Cost avoidance from auto-verification",
-        "Staff time savings metrics"
+        "aiRevenue.forecast - Predict revenue",
+        "Historical trend analysis",
+        "Seasonality adjustment",
+        "Pipeline-based forecasting",
+        "Scenario modeling",
+        "Goal vs forecast variance",
+        "Action recommendations to close gaps"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
-      "id": "US-338",
-      "title": "AI insurance agent dashboard",
-      "description": "Dashboard for insurance agent activities.",
+      "id": "US-346",
+      "title": "Revenue optimizer dashboard",
+      "description": "Dashboard for revenue optimization insights.",
       "acceptanceCriteria": [
-        "Verification queue and results",
-        "Prior authorization tracking",
-        "Coverage issues requiring attention",
-        "Patient communication history",
-        "Payer performance metrics",
-        "Automation success rates",
-        "Manual intervention needed queue"
+        "Revenue opportunity summary",
+        "Leakage identification list",
+        "Fee schedule recommendations",
+        "Coding improvement suggestions",
+        "Contract performance overview",
+        "Revenue forecast vs actual",
+        "Action item tracking",
+        "ROI from optimizations"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }

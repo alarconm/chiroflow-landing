@@ -18,7 +18,7 @@
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-348",
@@ -35,7 +35,7 @@
         "Track quality scores over time"
       ],
       "priority": 2,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-349",
@@ -52,7 +52,7 @@
         "Targeted education recommendations"
       ],
       "priority": 3,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-350",
@@ -69,7 +69,7 @@
         "Compliance score trending"
       ],
       "priority": 4,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-351",
