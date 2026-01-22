@@ -4204,4 +4204,869 @@ export const aiRevenueRouter = router({
         opportunity: updated,
       };
     }),
+
+  // ============================================
+  // US-345: Revenue Forecasting
+  // ============================================
+
+  /**
+   * Forecast future revenue with recommendations
+   * Analyzes historical trends, seasonality, pipeline, and goals
+   */
+  forecast: billerProcedure
+    .input(
+      z.object({
+        forecastMonths: z.number().min(1).max(24).default(12),
+        historicalMonths: z.number().min(3).max(36).default(12),
+        includeSeasonality: z.boolean().default(true),
+        includePipeline: z.boolean().default(true),
+        scenarios: z.array(z.enum(['conservative', 'baseline', 'optimistic'])).default(['baseline']),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const {
+        forecastMonths,
+        historicalMonths,
+        includeSeasonality,
+        includePipeline,
+        scenarios,
+      } = input;
+      const organizationId = ctx.user.organizationId;
+
+      const now = new Date();
+      const startDate = new Date(now.getTime() - historicalMonths * 30 * 24 * 60 * 60 * 1000);
+
+      // ============================================
+      // 1. Gather Historical Revenue Data
+      // ============================================
+
+      // Get charges grouped by month
+      const charges = await ctx.prisma.charge.findMany({
+        where: {
+          organizationId,
+          serviceDate: { gte: startDate, lte: now },
+          status: { in: ['BILLED', 'PAID'] },
+        },
+        select: {
+          serviceDate: true,
+          fee: true,
+          payments: true,
+          adjustments: true,
+        },
+      });
+
+      // Group by month
+      interface MonthlyData {
+        month: string; // YYYY-MM
+        year: number;
+        monthNum: number;
+        revenue: number;
+        collections: number;
+        encounterCount: number;
+        avgRevenuePerEncounter: number;
+      }
+
+      const monthlyMap: Record<string, MonthlyData> = {};
+
+      for (const charge of charges) {
+        const month = charge.serviceDate.toISOString().slice(0, 7);
+        const year = charge.serviceDate.getFullYear();
+        const monthNum = charge.serviceDate.getMonth() + 1;
+
+        if (!monthlyMap[month]) {
+          monthlyMap[month] = {
+            month,
+            year,
+            monthNum,
+            revenue: 0,
+            collections: 0,
+            encounterCount: 0,
+            avgRevenuePerEncounter: 0,
+          };
+        }
+
+        monthlyMap[month].revenue += Number(charge.fee);
+        monthlyMap[month].collections += Number(charge.payments);
+        monthlyMap[month].encounterCount++;
+      }
+
+      // Calculate averages
+      const monthlyData = Object.values(monthlyMap)
+        .sort((a, b) => a.month.localeCompare(b.month));
+
+      for (const data of monthlyData) {
+        data.avgRevenuePerEncounter = data.encounterCount > 0
+          ? data.revenue / data.encounterCount
+          : 0;
+      }
+
+      // ============================================
+      // 2. Calculate Historical Trend
+      // ============================================
+
+      interface TrendAnalysis {
+        monthlyGrowthRate: number;
+        annualizedGrowthRate: number;
+        avgMonthlyRevenue: number;
+        avgMonthlyCollections: number;
+        collectionRate: number;
+        revenueVolatility: number;
+        trendDirection: 'increasing' | 'stable' | 'decreasing';
+      }
+
+      const revenues = monthlyData.map(d => d.revenue);
+      const totalRevenue = revenues.reduce((a, b) => a + b, 0);
+      const avgMonthlyRevenue = revenues.length > 0 ? totalRevenue / revenues.length : 0;
+
+      const collections = monthlyData.map(d => d.collections);
+      const totalCollections = collections.reduce((a, b) => a + b, 0);
+      const avgMonthlyCollections = collections.length > 0 ? totalCollections / collections.length : 0;
+
+      // Calculate month-over-month growth rates
+      const growthRates: number[] = [];
+      for (let i = 1; i < revenues.length; i++) {
+        if (revenues[i - 1] > 0) {
+          growthRates.push((revenues[i] - revenues[i - 1]) / revenues[i - 1]);
+        }
+      }
+
+      const monthlyGrowthRate = growthRates.length > 0
+        ? growthRates.reduce((a, b) => a + b, 0) / growthRates.length
+        : 0;
+      const annualizedGrowthRate = Math.pow(1 + monthlyGrowthRate, 12) - 1;
+
+      // Calculate volatility (standard deviation)
+      const mean = avgMonthlyRevenue;
+      const squaredDiffs = revenues.map(r => Math.pow(r - mean, 2));
+      const variance = squaredDiffs.length > 0
+        ? squaredDiffs.reduce((a, b) => a + b, 0) / squaredDiffs.length
+        : 0;
+      const revenueVolatility = Math.sqrt(variance) / (mean || 1);
+
+      const trendDirection: 'increasing' | 'stable' | 'decreasing' =
+        monthlyGrowthRate > 0.02 ? 'increasing' :
+        monthlyGrowthRate < -0.02 ? 'decreasing' : 'stable';
+
+      const trendAnalysis: TrendAnalysis = {
+        monthlyGrowthRate,
+        annualizedGrowthRate,
+        avgMonthlyRevenue,
+        avgMonthlyCollections,
+        collectionRate: totalRevenue > 0 ? (totalCollections / totalRevenue) * 100 : 0,
+        revenueVolatility,
+        trendDirection,
+      };
+
+      // ============================================
+      // 3. Calculate Seasonality Factors
+      // ============================================
+
+      interface SeasonalityFactor {
+        month: number;
+        monthName: string;
+        factor: number; // 1.0 = average, 1.1 = 10% above average
+        historicalAvg: number;
+      }
+
+      const monthNames = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+      ];
+
+      const seasonalityFactors: SeasonalityFactor[] = [];
+
+      if (includeSeasonality && monthlyData.length >= 6) {
+        // Group revenue by month number
+        const monthRevenues: Record<number, number[]> = {};
+        for (const data of monthlyData) {
+          if (!monthRevenues[data.monthNum]) {
+            monthRevenues[data.monthNum] = [];
+          }
+          monthRevenues[data.monthNum].push(data.revenue);
+        }
+
+        // Calculate seasonality factor for each month
+        for (let m = 1; m <= 12; m++) {
+          const monthData = monthRevenues[m] || [];
+          const monthAvg = monthData.length > 0
+            ? monthData.reduce((a, b) => a + b, 0) / monthData.length
+            : avgMonthlyRevenue;
+
+          const factor = avgMonthlyRevenue > 0 ? monthAvg / avgMonthlyRevenue : 1;
+
+          seasonalityFactors.push({
+            month: m,
+            monthName: monthNames[m - 1],
+            factor,
+            historicalAvg: monthAvg,
+          });
+        }
+      } else {
+        // No seasonality - all months equal
+        for (let m = 1; m <= 12; m++) {
+          seasonalityFactors.push({
+            month: m,
+            monthName: monthNames[m - 1],
+            factor: 1,
+            historicalAvg: avgMonthlyRevenue,
+          });
+        }
+      }
+
+      // ============================================
+      // 4. Pipeline-Based Adjustments
+      // ============================================
+
+      interface PipelineData {
+        scheduledAppointments: number;
+        avgValuePerAppointment: number;
+        pipelineValue: number;
+        pipelineMonths: number;
+        conversionRate: number;
+      }
+
+      let pipelineData: PipelineData = {
+        scheduledAppointments: 0,
+        avgValuePerAppointment: 0,
+        pipelineValue: 0,
+        pipelineMonths: 3,
+        conversionRate: 0.85, // Default 85% of scheduled appointments generate charges
+      };
+
+      if (includePipeline) {
+        // Get scheduled appointments for next 3 months
+        const futureDate = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+        const appointments = await ctx.prisma.appointment.count({
+          where: {
+            organizationId,
+            startTime: { gte: now, lte: futureDate },
+            status: { in: ['SCHEDULED', 'CONFIRMED'] },
+          },
+        });
+
+        // Calculate average revenue per encounter from recent data
+        const avgPerEncounter = monthlyData.length > 0
+          ? monthlyData.reduce((sum, d) => sum + d.avgRevenuePerEncounter, 0) / monthlyData.length
+          : 85; // Default $85
+
+        pipelineData = {
+          scheduledAppointments: appointments,
+          avgValuePerAppointment: avgPerEncounter,
+          pipelineValue: appointments * avgPerEncounter * 0.85, // 85% conversion
+          pipelineMonths: 3,
+          conversionRate: 0.85,
+        };
+      }
+
+      // ============================================
+      // 5. Generate Forecasts by Scenario
+      // ============================================
+
+      interface ForecastMonth {
+        month: string;
+        monthName: string;
+        year: number;
+        monthNum: number;
+        baseRevenue: number;
+        seasonalityAdjustment: number;
+        pipelineAdjustment: number;
+        scenarioAdjustment: number;
+        forecastedRevenue: number;
+        forecastedCollections: number;
+        cumulativeRevenue: number;
+      }
+
+      interface ScenarioForecast {
+        scenario: string;
+        description: string;
+        assumptions: string[];
+        growthMultiplier: number;
+        months: ForecastMonth[];
+        totalForecastedRevenue: number;
+        totalForecastedCollections: number;
+        monthlyAverage: number;
+        vsCurrentAverage: number;
+      }
+
+      const scenarioConfigs: Record<string, { multiplier: number; description: string; assumptions: string[] }> = {
+        conservative: {
+          multiplier: 0.9,
+          description: 'Conservative outlook assuming slower growth',
+          assumptions: [
+            'Growth rate reduced by 10%',
+            'Higher patient churn expected',
+            'Economic headwinds may reduce visits',
+            'New patient acquisition slower than trend',
+          ],
+        },
+        baseline: {
+          multiplier: 1.0,
+          description: 'Baseline forecast based on current trends',
+          assumptions: [
+            'Current growth patterns continue',
+            'Seasonality remains consistent',
+            'No major market changes',
+            'Staffing and capacity unchanged',
+          ],
+        },
+        optimistic: {
+          multiplier: 1.15,
+          description: 'Optimistic outlook with growth initiatives',
+          assumptions: [
+            'Growth rate increased by 15%',
+            'Marketing initiatives successful',
+            'New services gaining traction',
+            'Improved patient retention',
+          ],
+        },
+      };
+
+      const scenarioForecasts: ScenarioForecast[] = [];
+
+      for (const scenario of scenarios) {
+        const config = scenarioConfigs[scenario];
+        const adjustedGrowthRate = monthlyGrowthRate * config.multiplier;
+
+        const forecastMonthsData: ForecastMonth[] = [];
+        let cumulativeRevenue = 0;
+
+        for (let i = 0; i < forecastMonths; i++) {
+          const forecastDate = new Date(now.getFullYear(), now.getMonth() + i + 1, 1);
+          const monthNum = forecastDate.getMonth() + 1;
+          const year = forecastDate.getFullYear();
+          const monthStr = forecastDate.toISOString().slice(0, 7);
+
+          // Base revenue with trend growth
+          const baseRevenue = avgMonthlyRevenue * Math.pow(1 + adjustedGrowthRate, i + 1);
+
+          // Seasonality adjustment
+          const seasonFactor = seasonalityFactors.find(s => s.month === monthNum)?.factor || 1;
+          const seasonalityAdjustment = baseRevenue * (seasonFactor - 1);
+
+          // Pipeline adjustment (only for first 3 months)
+          let pipelineAdjustment = 0;
+          if (includePipeline && i < pipelineData.pipelineMonths) {
+            const monthlyPipelineShare = pipelineData.pipelineValue / pipelineData.pipelineMonths;
+            const baseExpected = avgMonthlyRevenue * seasonFactor;
+            pipelineAdjustment = monthlyPipelineShare - baseExpected;
+            if (pipelineAdjustment < 0) pipelineAdjustment = 0; // Only add if pipeline is above baseline
+          }
+
+          // Scenario adjustment
+          const scenarioAdjustment = baseRevenue * (config.multiplier - 1);
+
+          const forecastedRevenue = Math.max(0, baseRevenue + seasonalityAdjustment + pipelineAdjustment);
+          const forecastedCollections = forecastedRevenue * (trendAnalysis.collectionRate / 100);
+          cumulativeRevenue += forecastedRevenue;
+
+          forecastMonthsData.push({
+            month: monthStr,
+            monthName: monthNames[monthNum - 1],
+            year,
+            monthNum,
+            baseRevenue,
+            seasonalityAdjustment,
+            pipelineAdjustment,
+            scenarioAdjustment,
+            forecastedRevenue,
+            forecastedCollections,
+            cumulativeRevenue,
+          });
+        }
+
+        const totalForecastedRevenue = forecastMonthsData.reduce((sum, m) => sum + m.forecastedRevenue, 0);
+        const totalForecastedCollections = forecastMonthsData.reduce((sum, m) => sum + m.forecastedCollections, 0);
+        const monthlyAverage = totalForecastedRevenue / forecastMonths;
+
+        scenarioForecasts.push({
+          scenario,
+          description: config.description,
+          assumptions: config.assumptions,
+          growthMultiplier: config.multiplier,
+          months: forecastMonthsData,
+          totalForecastedRevenue,
+          totalForecastedCollections,
+          monthlyAverage,
+          vsCurrentAverage: avgMonthlyRevenue > 0
+            ? ((monthlyAverage - avgMonthlyRevenue) / avgMonthlyRevenue) * 100
+            : 0,
+        });
+      }
+
+      // ============================================
+      // 6. Goal vs Forecast Variance Analysis
+      // ============================================
+
+      interface GoalVariance {
+        goalId: string;
+        period: string;
+        goalType: string;
+        target: number;
+        forecasted: number;
+        variance: number;
+        variancePercent: number;
+        onTrack: boolean;
+        gapToClose: number;
+        recommendation: string;
+      }
+
+      const goalVariances: GoalVariance[] = [];
+
+      // Get active revenue goals
+      const futureEndDate = new Date(now.getTime() + forecastMonths * 30 * 24 * 60 * 60 * 1000);
+      const goals = await ctx.prisma.revenueGoal.findMany({
+        where: {
+          organizationId,
+          endDate: { gte: now },
+          startDate: { lte: futureEndDate },
+        },
+        orderBy: { startDate: 'asc' },
+      });
+
+      // Match goals to baseline forecast
+      const baselineForecast = scenarioForecasts.find(s => s.scenario === 'baseline') || scenarioForecasts[0];
+
+      for (const goal of goals) {
+        // Find forecasted revenue for the goal period
+        const goalStart = goal.startDate;
+        const goalEnd = goal.endDate;
+
+        const relevantMonths = baselineForecast?.months.filter(m => {
+          const monthDate = new Date(m.year, m.monthNum - 1, 15);
+          return monthDate >= goalStart && monthDate <= goalEnd;
+        }) || [];
+
+        const forecastedForPeriod = relevantMonths.reduce((sum, m) => sum + m.forecastedRevenue, 0);
+        const target = Number(goal.target);
+        const variance = forecastedForPeriod - target;
+        const variancePercent = target > 0 ? (variance / target) * 100 : 0;
+        const onTrack = variance >= 0;
+        const gapToClose = Math.max(0, -variance);
+
+        let recommendation = '';
+        if (variancePercent >= 10) {
+          recommendation = `On track to exceed ${goal.goalType} goal by ${variancePercent.toFixed(1)}%. Consider setting stretch targets.`;
+        } else if (variancePercent >= 0) {
+          recommendation = `Marginally on track for ${goal.goalType} goal. Maintain current trajectory.`;
+        } else if (variancePercent >= -10) {
+          recommendation = `Slightly behind on ${goal.goalType} goal (${variancePercent.toFixed(1)}%). Focus on scheduling efficiency and reducing no-shows.`;
+        } else if (variancePercent >= -25) {
+          recommendation = `Behind on ${goal.goalType} goal (${variancePercent.toFixed(1)}%). Consider marketing push, recall campaigns, or expanded hours.`;
+        } else {
+          recommendation = `Significantly behind on ${goal.goalType} goal (${variancePercent.toFixed(1)}%). Major intervention needed - review pricing, capacity, and marketing strategy.`;
+        }
+
+        goalVariances.push({
+          goalId: goal.id,
+          period: goal.period,
+          goalType: goal.goalType,
+          target,
+          forecasted: forecastedForPeriod,
+          variance,
+          variancePercent,
+          onTrack,
+          gapToClose,
+          recommendation,
+        });
+      }
+
+      // ============================================
+      // 7. Action Recommendations
+      // ============================================
+
+      interface ActionRecommendation {
+        priority: 'low' | 'medium' | 'high' | 'critical';
+        category: string;
+        title: string;
+        description: string;
+        projectedImpact: number;
+        effortLevel: 'easy' | 'moderate' | 'complex';
+        timeframe: string;
+      }
+
+      const actionRecommendations: ActionRecommendation[] = [];
+
+      // Analyze gaps and generate recommendations
+      const behindGoals = goalVariances.filter(g => !g.onTrack);
+      const totalGap = behindGoals.reduce((sum, g) => sum + g.gapToClose, 0);
+
+      if (totalGap > 0) {
+        // Scheduling optimization
+        const schedulingImpact = totalGap * 0.15; // 15% of gap
+        actionRecommendations.push({
+          priority: schedulingImpact > 5000 ? 'high' : 'medium',
+          category: 'scheduling',
+          title: 'Optimize Scheduling Efficiency',
+          description: `Reduce gaps between appointments and minimize no-shows. Target: fill 10-15% more appointment slots.`,
+          projectedImpact: schedulingImpact,
+          effortLevel: 'easy',
+          timeframe: '1-2 months',
+        });
+
+        // Patient recall campaign
+        const recallImpact = totalGap * 0.2; // 20% of gap
+        actionRecommendations.push({
+          priority: recallImpact > 10000 ? 'critical' : 'high',
+          category: 'marketing',
+          title: 'Launch Patient Recall Campaign',
+          description: `Contact patients overdue for visits. Estimated ${Math.floor(recallImpact / 100)} additional visits needed.`,
+          projectedImpact: recallImpact,
+          effortLevel: 'moderate',
+          timeframe: '2-3 months',
+        });
+      }
+
+      // Trend-based recommendations
+      if (trendAnalysis.trendDirection === 'decreasing') {
+        actionRecommendations.push({
+          priority: 'critical',
+          category: 'retention',
+          title: 'Address Declining Revenue Trend',
+          description: `Revenue has been declining at ${(trendAnalysis.monthlyGrowthRate * 100).toFixed(1)}% monthly. Investigate patient churn and competition.`,
+          projectedImpact: Math.abs(trendAnalysis.monthlyGrowthRate * avgMonthlyRevenue * 12),
+          effortLevel: 'complex',
+          timeframe: '3-6 months',
+        });
+      }
+
+      // Collection rate optimization
+      if (trendAnalysis.collectionRate < 70) {
+        const collectionImprovement = avgMonthlyRevenue * 0.1 * 12; // 10% improvement annualized
+        actionRecommendations.push({
+          priority: 'high',
+          category: 'collections',
+          title: 'Improve Collection Rate',
+          description: `Current collection rate is ${trendAnalysis.collectionRate.toFixed(1)}%. Target 75%+ through better follow-up and payer contract review.`,
+          projectedImpact: collectionImprovement,
+          effortLevel: 'moderate',
+          timeframe: '3-6 months',
+        });
+      }
+
+      // Seasonality preparation
+      const lowSeasonMonths = seasonalityFactors.filter(s => s.factor < 0.85);
+      if (lowSeasonMonths.length > 0) {
+        const lowMonthNames = lowSeasonMonths.map(s => s.monthName).join(', ');
+        actionRecommendations.push({
+          priority: 'medium',
+          category: 'planning',
+          title: 'Plan for Low Season Months',
+          description: `${lowMonthNames} historically show lower revenue. Consider promotions or wellness programs for these periods.`,
+          projectedImpact: lowSeasonMonths.reduce((sum, s) => sum + (1 - s.factor) * avgMonthlyRevenue * 0.25, 0),
+          effortLevel: 'moderate',
+          timeframe: 'Ongoing',
+        });
+      }
+
+      // New services recommendation
+      if (trendAnalysis.trendDirection !== 'increasing') {
+        actionRecommendations.push({
+          priority: 'medium',
+          category: 'growth',
+          title: 'Evaluate New Service Lines',
+          description: `Consider adding complementary services (massage therapy, nutritional counseling, etc.) to drive growth.`,
+          projectedImpact: avgMonthlyRevenue * 0.15 * 12, // 15% potential increase
+          effortLevel: 'complex',
+          timeframe: '6-12 months',
+        });
+      }
+
+      // Sort recommendations by projected impact
+      actionRecommendations.sort((a, b) => b.projectedImpact - a.projectedImpact);
+
+      // ============================================
+      // 8. Create Revenue Goal if None Exists
+      // ============================================
+
+      // If no goals exist for next period, suggest creating one
+      const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      const nextMonthStr = nextMonth.toISOString().slice(0, 7);
+
+      const existingNextMonthGoal = await ctx.prisma.revenueGoal.findFirst({
+        where: {
+          organizationId,
+          period: nextMonthStr,
+        },
+      });
+
+      let suggestedGoal = null;
+      if (!existingNextMonthGoal && baselineForecast && baselineForecast.months.length > 0) {
+        const nextMonthForecast = baselineForecast.months[0];
+        suggestedGoal = {
+          period: nextMonthStr,
+          periodType: 'monthly',
+          target: Math.round(nextMonthForecast.forecastedRevenue * 1.05), // 5% above forecast
+          forecast: nextMonthForecast.forecastedRevenue,
+          rationale: `Based on historical trends and seasonality. Target set 5% above baseline forecast.`,
+        };
+      }
+
+      // ============================================
+      // 9. Return Complete Forecast
+      // ============================================
+
+      return {
+        success: true,
+        historicalAnalysis: {
+          monthsAnalyzed: monthlyData.length,
+          dateRange: { from: startDate, to: now },
+          monthlyData: monthlyData.slice(-12), // Last 12 months only
+          trend: trendAnalysis,
+        },
+        seasonality: {
+          enabled: includeSeasonality,
+          factors: seasonalityFactors,
+          highSeasonMonths: seasonalityFactors.filter(s => s.factor > 1.1).map(s => s.monthName),
+          lowSeasonMonths: seasonalityFactors.filter(s => s.factor < 0.9).map(s => s.monthName),
+        },
+        pipeline: includePipeline ? pipelineData : null,
+        forecasts: scenarioForecasts,
+        goalAnalysis: {
+          goalsFound: goals.length,
+          variances: goalVariances,
+          onTrackCount: goalVariances.filter(g => g.onTrack).length,
+          totalGapToClose: totalGap,
+        },
+        recommendations: actionRecommendations,
+        suggestedGoal,
+        forecastedAt: new Date(),
+      };
+    }),
+
+  /**
+   * Get forecast summary for dashboard
+   */
+  getForecastSummary: billerProcedure.query(async ({ ctx }) => {
+    const organizationId = ctx.user.organizationId;
+    const now = new Date();
+
+    // Get last 3 months of actual data
+    const threeMonthsAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+
+    const recentCharges = await ctx.prisma.charge.aggregate({
+      where: {
+        organizationId,
+        serviceDate: { gte: threeMonthsAgo, lte: now },
+        status: { in: ['BILLED', 'PAID'] },
+      },
+      _sum: { fee: true, payments: true },
+      _count: true,
+    });
+
+    const monthlyAvgRevenue = Number(recentCharges._sum.fee || 0) / 3;
+    const monthlyAvgCollections = Number(recentCharges._sum.payments || 0) / 3;
+
+    // Get current month goal
+    const currentMonthStr = now.toISOString().slice(0, 7);
+    const currentGoal = await ctx.prisma.revenueGoal.findFirst({
+      where: {
+        organizationId,
+        period: currentMonthStr,
+      },
+    });
+
+    // Get current month actual
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const currentMonthCharges = await ctx.prisma.charge.aggregate({
+      where: {
+        organizationId,
+        serviceDate: { gte: monthStart, lte: now },
+        status: { in: ['BILLED', 'PAID'] },
+      },
+      _sum: { fee: true },
+    });
+
+    const currentMonthActual = Number(currentMonthCharges._sum.fee || 0);
+
+    // Calculate days remaining in month
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const daysPassed = now.getDate();
+    const daysRemaining = daysInMonth - daysPassed;
+
+    // Project end of month
+    const dailyRate = daysPassed > 0 ? currentMonthActual / daysPassed : 0;
+    const projectedMonthEnd = currentMonthActual + (dailyRate * daysRemaining);
+
+    return {
+      recentPerformance: {
+        monthlyAvgRevenue,
+        monthlyAvgCollections,
+        collectionRate: monthlyAvgRevenue > 0
+          ? (monthlyAvgCollections / monthlyAvgRevenue) * 100
+          : 0,
+      },
+      currentMonth: {
+        period: currentMonthStr,
+        actual: currentMonthActual,
+        projected: projectedMonthEnd,
+        target: currentGoal ? Number(currentGoal.target) : null,
+        variance: currentGoal
+          ? projectedMonthEnd - Number(currentGoal.target)
+          : null,
+        daysRemaining,
+        onTrack: currentGoal ? projectedMonthEnd >= Number(currentGoal.target) : null,
+      },
+      nextActions: currentGoal && projectedMonthEnd < Number(currentGoal.target)
+        ? ['Run patient recall', 'Check for unbilled encounters', 'Review scheduling capacity']
+        : ['Maintain current performance', 'Review next month goals'],
+    };
+  }),
+
+  /**
+   * Create or update revenue goal
+   */
+  upsertRevenueGoal: billerProcedure
+    .input(
+      z.object({
+        period: z.string(), // YYYY-MM, YYYY-QN, or YYYY
+        periodType: z.enum(['monthly', 'quarterly', 'annual']),
+        goalType: z.string().default('total_revenue'),
+        target: z.number().min(0),
+        name: z.string().optional(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { period, periodType, goalType, target, name, notes } = input;
+      const organizationId = ctx.user.organizationId;
+
+      // Calculate start and end dates based on period
+      let startDate: Date;
+      let endDate: Date;
+
+      if (periodType === 'monthly') {
+        const [year, month] = period.split('-').map(Number);
+        startDate = new Date(year, month - 1, 1);
+        endDate = new Date(year, month, 0);
+      } else if (periodType === 'quarterly') {
+        const [year, qStr] = period.split('-Q');
+        const quarter = parseInt(qStr);
+        startDate = new Date(parseInt(year), (quarter - 1) * 3, 1);
+        endDate = new Date(parseInt(year), quarter * 3, 0);
+      } else {
+        const year = parseInt(period);
+        startDate = new Date(year, 0, 1);
+        endDate = new Date(year, 11, 31);
+      }
+
+      // Upsert the goal
+      const goal = await ctx.prisma.revenueGoal.upsert({
+        where: {
+          organizationId_period_goalType: {
+            organizationId,
+            period,
+            goalType,
+          },
+        },
+        create: {
+          period,
+          periodType,
+          goalType,
+          name,
+          target: new Decimal(target),
+          actual: new Decimal(0),
+          variance: new Decimal(-target),
+          percentAchieved: new Decimal(0),
+          onTrack: true,
+          notes,
+          startDate,
+          endDate,
+          createdBy: ctx.user.id,
+          organizationId,
+        },
+        update: {
+          target: new Decimal(target),
+          variance: new Decimal(Number(await ctx.prisma.revenueGoal.findFirst({
+            where: { organizationId, period, goalType },
+            select: { actual: true },
+          }).then(g => g?.actual || 0)) - target),
+          name,
+          notes,
+          lastUpdated: new Date(),
+        },
+      });
+
+      return {
+        success: true,
+        goal,
+      };
+    }),
+
+  /**
+   * Get revenue goals with current progress
+   */
+  getRevenueGoals: billerProcedure
+    .input(
+      z.object({
+        periodType: z.enum(['monthly', 'quarterly', 'annual']).optional(),
+        includeCompleted: z.boolean().default(false),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { periodType, includeCompleted } = input;
+      const organizationId = ctx.user.organizationId;
+      const now = new Date();
+
+      const goals = await ctx.prisma.revenueGoal.findMany({
+        where: {
+          organizationId,
+          ...(periodType && { periodType }),
+          ...(!includeCompleted && { endDate: { gte: now } }),
+        },
+        orderBy: [{ startDate: 'desc' }, { goalType: 'asc' }],
+      });
+
+      // Update actual values for active goals
+      const updatedGoals = await Promise.all(
+        goals.map(async (goal) => {
+          const charges = await ctx.prisma.charge.aggregate({
+            where: {
+              organizationId,
+              serviceDate: { gte: goal.startDate, lte: goal.endDate },
+              status: { in: ['BILLED', 'PAID'] },
+            },
+            _sum: { fee: true },
+          });
+
+          const actual = Number(charges._sum.fee || 0);
+          const target = Number(goal.target);
+          const variance = actual - target;
+          const percentAchieved = target > 0 ? (actual / target) * 100 : 0;
+
+          // Check if on track (need at least time-proportional progress)
+          const totalDays = (goal.endDate.getTime() - goal.startDate.getTime()) / (24 * 60 * 60 * 1000);
+          const daysPassed = Math.max(0, (now.getTime() - goal.startDate.getTime()) / (24 * 60 * 60 * 1000));
+          const expectedProgress = totalDays > 0 ? (daysPassed / totalDays) * 100 : 0;
+          const onTrack = percentAchieved >= expectedProgress * 0.9; // 90% of expected is "on track"
+
+          // Project final value
+          const dailyRate = daysPassed > 0 ? actual / daysPassed : 0;
+          const daysRemaining = Math.max(0, totalDays - daysPassed);
+          const projectedFinal = actual + (dailyRate * daysRemaining);
+
+          return {
+            ...goal,
+            actual,
+            variance,
+            percentAchieved,
+            onTrack,
+            projectedFinal,
+            target: Number(goal.target),
+            daysRemaining: Math.ceil(daysRemaining),
+            expectedProgress,
+          };
+        })
+      );
+
+      return {
+        goals: updatedGoals,
+        summary: {
+          total: updatedGoals.length,
+          onTrack: updatedGoals.filter(g => g.onTrack).length,
+          behind: updatedGoals.filter(g => !g.onTrack).length,
+          totalTarget: updatedGoals.reduce((sum, g) => sum + g.target, 0),
+          totalActual: updatedGoals.reduce((sum, g) => sum + g.actual, 0),
+        },
+      };
+    }),
 });
