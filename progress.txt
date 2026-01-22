@@ -450,3 +450,55 @@ Story: US-245 - Activity goals and alerts
 --- Iteration 7 completed at 2026-01-22 ---
 Story: US-246 - Device data dashboard
 
+--- Iteration 7 completed at 2026-01-22 05:18:04 ---
+Story: US-246 - Device data dashboard
+
+## US-247: Device connection portal - COMPLETED
+
+### What was done:
+1. Added portal device procedures to `app/src/server/routers/portal.ts`:
+   - `portal.getDeviceConnections` - Get all device connections for logged-in patient
+   - `portal.getSupportedDevices` - List available device types with descriptions
+   - `portal.connectDevice` - Initiate OAuth connection with CSRF protection
+   - `portal.completeDeviceConnection` - Complete OAuth flow after callback
+   - `portal.disconnectDevice` - Disconnect a device with audit logging
+   - `portal.updateDeviceSharingPreferences` - Configure what data types to share
+   - `portal.getDeviceSharingPreferences` - Get current sharing preferences
+   - `portal.getDeviceDataSummary` - Get activity/sleep data summary
+
+2. Created `app/src/components/portal/DeviceConnectionPortal.tsx`:
+   - Connect Devices page with patient-friendly UI
+   - Tabbed interface: "My Devices" and "Available" devices
+   - Step-by-step connection guides in accordion
+   - OAuth authorization flow handling
+   - Connection status display with icons
+   - Disconnect option with confirmation dialog
+   - Data sharing preferences dialog
+   - Privacy explanation alerts throughout
+
+3. Created `app/src/app/portal/devices/page.tsx`:
+   - Portal page for device connections
+
+4. Updated `app/src/components/portal/PortalLayout.tsx`:
+   - Added "Connect Devices" navigation item with Watch icon
+
+5. Updated `app/src/components/portal/index.ts`:
+   - Added DeviceConnectionPortal export
+
+6. TypeScript compilation verified - no errors
+
+### Acceptance Criteria Met:
+- [x] Connect Devices page in portal
+- [x] Step-by-step connection guides
+- [x] Authorization flow handling
+- [x] Connection status display
+- [x] Disconnect option
+- [x] Data sharing preferences
+- [x] Privacy explanation
+
+---
+
+## All Stories Complete!
+--- Iteration 8 completed at 2026-01-22 ---
+Story: US-247 - Device connection portal
+

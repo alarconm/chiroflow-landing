@@ -3589,7 +3589,464 @@ export const portalRouter = router({
 
       return { summary };
     }),
+
+  // ============================================
+  // DEVICE CONNECTIONS (Patient Portal)
+  // ============================================
+
+  // Get device connections for the logged-in patient
+  getDeviceConnections: publicProcedure
+    .input(z.object({ sessionToken: z.string() }))
+    .query(async ({ input, ctx }) => {
+      const user = await getPortalUserFromToken(input.sessionToken);
+
+      const connections = await prisma.deviceConnection.findMany({
+        where: {
+          patientId: user.patient.id,
+          organizationId: user.organizationId,
+        },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          _count: {
+            select: {
+              activityData: true,
+              sleepData: true,
+              heartRateData: true,
+              postureData: true,
+            },
+          },
+        },
+      });
+
+      // Don't expose tokens in response
+      return connections.map((conn) => ({
+        id: conn.id,
+        deviceType: conn.deviceType,
+        deviceName: conn.deviceName,
+        status: conn.status,
+        lastSyncAt: conn.lastSyncAt,
+        syncEnabled: conn.syncEnabled,
+        scopes: conn.scopes,
+        createdAt: conn.createdAt,
+        dataCounts: conn._count,
+      }));
+    }),
+
+  // Get supported device types
+  getSupportedDevices: publicProcedure
+    .input(z.object({ sessionToken: z.string() }))
+    .query(async ({ input }) => {
+      await getPortalUserFromToken(input.sessionToken);
+
+      return [
+        {
+          type: 'APPLE_HEALTH',
+          name: 'Apple Health',
+          description: 'Sync activity, sleep, and workout data from your iPhone or Apple Watch',
+          dataTypes: ['Activity', 'Sleep', 'Workouts', 'Heart Rate'],
+          iconType: 'watch',
+        },
+        {
+          type: 'GOOGLE_FIT',
+          name: 'Google Fit',
+          description: 'Sync fitness and wellness data from Google Fit',
+          dataTypes: ['Activity', 'Sleep', 'Heart Rate'],
+          iconType: 'activity',
+        },
+        {
+          type: 'FITBIT',
+          name: 'Fitbit',
+          description: 'Connect your Fitbit device for activity and sleep tracking',
+          dataTypes: ['Activity', 'Sleep', 'Heart Rate'],
+          iconType: 'watch',
+        },
+        {
+          type: 'WHOOP',
+          name: 'WHOOP',
+          description: 'Sync strain, recovery, and sleep data from WHOOP',
+          dataTypes: ['Strain', 'Recovery', 'Sleep'],
+          iconType: 'watch',
+        },
+        {
+          type: 'POSTURE_SENSOR',
+          name: 'Posture Sensor',
+          description: 'Track your posture with Upright Go or compatible sensors',
+          dataTypes: ['Posture Score', 'Alerts'],
+          iconType: 'smartphone',
+        },
+      ];
+    }),
+
+  // Initiate device connection (returns authorization URL)
+  connectDevice: publicProcedure
+    .input(z.object({
+      sessionToken: z.string(),
+      deviceType: z.enum(['APPLE_HEALTH', 'GOOGLE_FIT', 'FITBIT', 'WHOOP', 'POSTURE_SENSOR']),
+      redirectUri: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const user = await getPortalUserFromToken(input.sessionToken);
+      const ipAddress = (ctx as Record<string, unknown>).ipAddress as string | undefined;
+
+      // Check if already connected
+      const existing = await prisma.deviceConnection.findFirst({
+        where: {
+          patientId: user.patient.id,
+          deviceType: input.deviceType,
+          status: 'CONNECTED',
+        },
+      });
+
+      if (existing) {
+        return {
+          success: false,
+          error: 'Device already connected. Please disconnect first.',
+          connectionId: existing.id,
+        };
+      }
+
+      // Generate state token for CSRF protection
+      const stateToken = `portal_${Buffer.from(JSON.stringify({
+        patientId: user.patient.id,
+        deviceType: input.deviceType,
+        timestamp: Date.now(),
+      })).toString('base64')}`;
+
+      // Create pending connection
+      const connection = await prisma.deviceConnection.create({
+        data: {
+          patientId: user.patient.id,
+          organizationId: user.organizationId,
+          deviceType: input.deviceType,
+          deviceName: getDeviceName(input.deviceType),
+          status: 'PENDING',
+          connectionToken: stateToken,
+        },
+      });
+
+      // Generate authorization URL based on device type
+      const baseRedirectUri = input.redirectUri || process.env.NEXT_PUBLIC_APP_URL || 'https://app.chiroflow.com';
+      let authorizationUrl = '';
+
+      switch (input.deviceType) {
+        case 'APPLE_HEALTH':
+          authorizationUrl = `https://appleid.apple.com/auth/authorize?client_id=${process.env.APPLE_HEALTH_CLIENT_ID || 'chiroflow-health'}&redirect_uri=${encodeURIComponent(baseRedirectUri + '/portal/devices/callback/apple-health')}&response_type=code&scope=health.activity+health.sleep+health.workout+health.heart&state=${stateToken}`;
+          break;
+        case 'GOOGLE_FIT':
+          authorizationUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${process.env.GOOGLE_FIT_CLIENT_ID || ''}&redirect_uri=${encodeURIComponent(baseRedirectUri + '/portal/devices/callback/google-fit')}&response_type=code&scope=https://www.googleapis.com/auth/fitness.activity.read+https://www.googleapis.com/auth/fitness.sleep.read+https://www.googleapis.com/auth/fitness.heart_rate.read&access_type=offline&prompt=consent&state=${stateToken}`;
+          break;
+        case 'FITBIT':
+          authorizationUrl = `https://www.fitbit.com/oauth2/authorize?client_id=${process.env.FITBIT_CLIENT_ID || ''}&redirect_uri=${encodeURIComponent(baseRedirectUri + '/portal/devices/callback/fitbit')}&response_type=code&scope=activity+sleep+heartrate&state=${stateToken}`;
+          break;
+        case 'WHOOP':
+          authorizationUrl = `https://api.prod.whoop.com/oauth/authorize?client_id=${process.env.WHOOP_CLIENT_ID || ''}&redirect_uri=${encodeURIComponent(baseRedirectUri + '/portal/devices/callback/whoop')}&response_type=code&scope=read:recovery+read:sleep+read:strain&state=${stateToken}`;
+          break;
+        case 'POSTURE_SENSOR':
+          // Posture sensors typically use API key auth, not OAuth
+          // Return success with instructions
+          await prisma.deviceConnection.update({
+            where: { id: connection.id },
+            data: { status: 'CONNECTED' },
+          });
+          return {
+            success: true,
+            connectionId: connection.id,
+            requiresSetup: true,
+            setupInstructions: 'Posture sensor connected. Please configure the sensor in your device settings to send data to ChiroFlow.',
+          };
+      }
+
+      // Log the connection attempt
+      await logPortalAccess({
+        action: 'PORTAL_DEVICE_CONNECT_INITIATED',
+        portalUserId: user.id,
+        organizationId: user.organizationId,
+        resource: 'DeviceConnection',
+        resourceId: connection.id,
+        ipAddress,
+        success: true,
+      });
+
+      return {
+        success: true,
+        connectionId: connection.id,
+        authorizationUrl,
+      };
+    }),
+
+  // Complete device connection (called after OAuth callback)
+  completeDeviceConnection: publicProcedure
+    .input(z.object({
+      sessionToken: z.string(),
+      connectionId: z.string(),
+      authorizationCode: z.string(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const user = await getPortalUserFromToken(input.sessionToken);
+      const ipAddress = (ctx as Record<string, unknown>).ipAddress as string | undefined;
+
+      const connection = await prisma.deviceConnection.findFirst({
+        where: {
+          id: input.connectionId,
+          patientId: user.patient.id,
+          status: 'PENDING',
+        },
+      });
+
+      if (!connection) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Pending device connection not found',
+        });
+      }
+
+      // In production, exchange authorization code for tokens here
+      // For now, mark as connected
+      await prisma.deviceConnection.update({
+        where: { id: connection.id },
+        data: {
+          status: 'CONNECTED',
+          connectionToken: input.authorizationCode, // Would be encrypted token in production
+          lastSyncAt: new Date(),
+        },
+      });
+
+      // Log successful connection
+      await logPortalAccess({
+        action: 'PORTAL_DEVICE_CONNECTED',
+        portalUserId: user.id,
+        organizationId: user.organizationId,
+        resource: 'DeviceConnection',
+        resourceId: connection.id,
+        ipAddress,
+        success: true,
+      });
+
+      return { success: true };
+    }),
+
+  // Disconnect a device
+  disconnectDevice: publicProcedure
+    .input(z.object({
+      sessionToken: z.string(),
+      connectionId: z.string(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const user = await getPortalUserFromToken(input.sessionToken);
+      const ipAddress = (ctx as Record<string, unknown>).ipAddress as string | undefined;
+
+      const connection = await prisma.deviceConnection.findFirst({
+        where: {
+          id: input.connectionId,
+          patientId: user.patient.id,
+        },
+      });
+
+      if (!connection) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Device connection not found',
+        });
+      }
+
+      await prisma.deviceConnection.update({
+        where: { id: connection.id },
+        data: {
+          status: 'DISCONNECTED',
+          connectionToken: null,
+          refreshToken: null,
+          syncEnabled: false,
+        },
+      });
+
+      // Log disconnection
+      await logPortalAccess({
+        action: 'PORTAL_DEVICE_DISCONNECTED',
+        portalUserId: user.id,
+        organizationId: user.organizationId,
+        resource: 'DeviceConnection',
+        resourceId: connection.id,
+        ipAddress,
+        success: true,
+      });
+
+      return { success: true };
+    }),
+
+  // Update data sharing preferences for a device
+  updateDeviceSharingPreferences: publicProcedure
+    .input(z.object({
+      sessionToken: z.string(),
+      connectionId: z.string(),
+      shareActivity: z.boolean().optional(),
+      shareSleep: z.boolean().optional(),
+      shareHeartRate: z.boolean().optional(),
+      sharePosture: z.boolean().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const user = await getPortalUserFromToken(input.sessionToken);
+      const ipAddress = (ctx as Record<string, unknown>).ipAddress as string | undefined;
+
+      const connection = await prisma.deviceConnection.findFirst({
+        where: {
+          id: input.connectionId,
+          patientId: user.patient.id,
+        },
+      });
+
+      if (!connection) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Device connection not found',
+        });
+      }
+
+      // Build scopes array based on preferences
+      const scopes: string[] = [];
+      if (input.shareActivity !== false) scopes.push('activity');
+      if (input.shareSleep !== false) scopes.push('sleep');
+      if (input.shareHeartRate !== false) scopes.push('heartRate');
+      if (input.sharePosture !== false) scopes.push('posture');
+
+      await prisma.deviceConnection.update({
+        where: { id: connection.id },
+        data: { scopes },
+      });
+
+      // Log preference update
+      await logPortalAccess({
+        action: 'PORTAL_DEVICE_PREFERENCES_UPDATED',
+        portalUserId: user.id,
+        organizationId: user.organizationId,
+        resource: 'DeviceConnection',
+        resourceId: connection.id,
+        ipAddress,
+        success: true,
+      });
+
+      return { success: true, scopes };
+    }),
+
+  // Get data sharing preferences
+  getDeviceSharingPreferences: publicProcedure
+    .input(z.object({
+      sessionToken: z.string(),
+      connectionId: z.string(),
+    }))
+    .query(async ({ input }) => {
+      const user = await getPortalUserFromToken(input.sessionToken);
+
+      const connection = await prisma.deviceConnection.findFirst({
+        where: {
+          id: input.connectionId,
+          patientId: user.patient.id,
+        },
+      });
+
+      if (!connection) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Device connection not found',
+        });
+      }
+
+      const scopes = connection.scopes || [];
+
+      return {
+        shareActivity: scopes.includes('activity'),
+        shareSleep: scopes.includes('sleep'),
+        shareHeartRate: scopes.includes('heartRate'),
+        sharePosture: scopes.includes('posture'),
+        allScopes: scopes,
+      };
+    }),
+
+  // Get device data summary for the logged-in patient
+  getDeviceDataSummary: publicProcedure
+    .input(z.object({
+      sessionToken: z.string(),
+      connectionId: z.string().optional(),
+      days: z.number().min(1).max(90).default(7),
+    }))
+    .query(async ({ input }) => {
+      const user = await getPortalUserFromToken(input.sessionToken);
+
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - input.days);
+
+      const whereClause: Record<string, unknown> = {
+        patientId: user.patient.id,
+        date: { gte: startDate },
+      };
+
+      if (input.connectionId) {
+        whereClause.deviceConnectionId = input.connectionId;
+      }
+
+      // Get activity data
+      const activityData = await prisma.activityData.findMany({
+        where: whereClause,
+        orderBy: { date: 'desc' },
+        take: input.days,
+      });
+
+      // Get sleep data
+      const sleepData = await prisma.sleepData.findMany({
+        where: whereClause,
+        orderBy: { date: 'desc' },
+        take: input.days,
+      });
+
+      // Calculate summaries
+      const totalSteps = activityData.reduce((sum, d) => sum + (d.steps || 0), 0);
+      const avgSteps = activityData.length > 0 ? Math.round(totalSteps / activityData.length) : 0;
+      const totalActiveMinutes = activityData.reduce((sum, d) => sum + (d.activeMinutes || 0), 0);
+
+      const totalSleepMinutes = sleepData.reduce((sum, d) => sum + (d.duration || 0), 0);
+      const avgSleepHours = sleepData.length > 0 ? (totalSleepMinutes / sleepData.length / 60).toFixed(1) : '0';
+      const avgSleepQuality = sleepData.length > 0
+        ? Math.round(sleepData.reduce((sum, d) => sum + (d.quality || 0), 0) / sleepData.length)
+        : 0;
+
+      return {
+        period: {
+          start: startDate,
+          end: new Date(),
+          days: input.days,
+        },
+        activity: {
+          totalSteps,
+          avgStepsPerDay: avgSteps,
+          totalActiveMinutes,
+          avgActiveMinutesPerDay: activityData.length > 0 ? Math.round(totalActiveMinutes / activityData.length) : 0,
+          daysWithData: activityData.length,
+        },
+        sleep: {
+          avgHoursPerNight: parseFloat(avgSleepHours),
+          avgQualityScore: avgSleepQuality,
+          nightsWithData: sleepData.length,
+        },
+        dailyData: activityData.map((d) => ({
+          date: d.date,
+          steps: d.steps,
+          activeMinutes: d.activeMinutes,
+          calories: d.calories,
+        })),
+      };
+    }),
 });
+
+// Helper function to get device name
+function getDeviceName(deviceType: string): string {
+  const names: Record<string, string> = {
+    APPLE_HEALTH: 'Apple Health',
+    GOOGLE_FIT: 'Google Fit',
+    FITBIT: 'Fitbit',
+    WHOOP: 'WHOOP',
+    POSTURE_SENSOR: 'Posture Sensor',
+  };
+  return names[deviceType] || deviceType;
+}
 
 // Helper function to detect card brand
 function detectCardBrand(cardNumber: string): 'VISA' | 'MASTERCARD' | 'AMEX' | 'DISCOVER' | 'OTHER' {

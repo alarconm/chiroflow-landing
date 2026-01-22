@@ -27,6 +27,7 @@ import {
   Bell,
   User,
   Dumbbell,
+  Watch,
 } from 'lucide-react';
 
 interface PortalLayoutProps {
@@ -122,6 +123,7 @@ export function PortalLayout({ children }: PortalLayoutProps) {
       badge: summary?.newDocuments,
     },
     { href: '/portal/records', label: 'Health Records', icon: ClipboardList },
+    { href: '/portal/devices', label: 'Connect Devices', icon: Watch },
     { href: '/portal/notifications', label: 'Notifications', icon: Bell },
     { href: '/portal/settings', label: 'Settings', icon: Settings },
   ];

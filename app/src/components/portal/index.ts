@@ -24,3 +24,4 @@ export { OnlineBillPay } from './OnlineBillPay';
 export { HealthRecordsAccess } from './HealthRecordsAccess';
 export { NotificationPreferences } from './NotificationPreferences';
 export { PatientEducationPortal } from './PatientEducationPortal';
+export { DeviceConnectionPortal } from './DeviceConnectionPortal';
