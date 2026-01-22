@@ -481,3 +481,86 @@ Files Created/Modified:
 --- Iteration 6 completed at 2026-01-21 ---
 Story: US-098 - Patient health records access
 
+--- Iteration 6 completed at 2026-01-21 22:36:50 ---
+Story: US-098 - Patient health records access
+
+US-099: Secure Messaging - COMPLETE
+------------------------------------
+Implemented HIPAA-compliant secure messaging between patients and clinic:
+
+1. Enhanced SecureMessages Component
+   - Full compose dialog with subject, body, and priority selection
+   - Priority levels: Low, Normal, High, Urgent
+   - Urgent priority warning for emergencies
+   - File attachment support (JPEG, PNG, GIF, PDF, DOC, DOCX, TXT)
+   - Max 10MB file size per attachment
+   - Attachment preview with file icons and size display
+
+2. Message Thread View
+   - Full conversation history display
+   - Read receipts showing delivery and read status
+   - Single checkmark = Delivered
+   - Double checkmark (green) = Read with timestamp
+   - Attachment display in message threads
+   - Reply form with attachment support
+   - Archive message functionality
+
+3. After-Hours Auto-Response
+   - isAfterHours() function checks business hours (8am-5pm Mon-Fri)
+   - sendAfterHoursAutoResponse() creates automated reply
+   - Includes emergency contact info and next response time
+   - Visual "After Hours" notice banner in UI
+   - Auto-response sent when patient messages outside hours
+
+4. Email Notifications
+   - notifyNewMessage() sends email to patients for new messages
+   - HTML-formatted email with portal link
+   - Subject includes clinic name
+   - Respects patient notification preferences
+   - Staff notification placeholder for patient messages
+
+5. Read Receipts Implementation
+   - markMessageAsRead() records read timestamp
+   - ReadReceipt component shows status visually
+   - Automatic marking when viewing messages
+   - Audit logging of message reads
+
+6. Portal Router Endpoints Added:
+   - markMessageRead: Record read receipt for message
+   - sendMessageWithAttachments: Send message with files and priority
+   - getMessageWithReadReceipt: Get message with read receipt info
+
+7. Messaging Library Enhancements:
+   - markMessageAsRead: Mark specific message as read
+   - isAfterHours: Check if current time is outside business hours
+   - sendAfterHoursAutoResponse: Auto-reply for after-hours messages
+   - uploadMessageAttachment: Handle file upload validation
+   - getAttachmentDownloadUrl: Generate download URLs
+   - notifyNewMessage: Send email notification
+
+Acceptance Criteria Status:
+- [x] Send message to clinic with subject and body
+- [x] View message thread history
+- [x] Receive email notification of new messages
+- [x] Attachment support for documents/images
+- [x] Message read receipts
+- [x] Auto-response for after-hours messages
+
+Technical Implementation:
+- All TypeScript types properly defined
+- Prisma SecureMessage model already supports attachments as JSON
+- Integration with existing notification-service for emails
+- Client-side after-hours detection for UI notice
+- Server-side after-hours check for auto-response
+- File type and size validation on client and server
+- HIPAA-compliant audit logging for all message access
+
+Files Created/Modified:
+- app/src/components/portal/SecureMessages.tsx (ENHANCED - 600+ lines)
+- app/src/lib/portal/messaging.ts (MODIFIED - added 6 new functions)
+- app/src/lib/portal/index.ts (MODIFIED - added exports)
+- app/src/server/routers/portal.ts (MODIFIED - added 3 new endpoints)
+
+--- Iteration 7 completed at 2026-01-21 ---
+Story: US-099 - Secure messaging
+

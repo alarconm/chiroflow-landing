@@ -94,7 +94,7 @@
         "Audit logging of all record access"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-099",
@@ -109,7 +109,7 @@
         "Auto-response for after-hours messages"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-100",

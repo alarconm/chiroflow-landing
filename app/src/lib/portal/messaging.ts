@@ -334,3 +334,286 @@ export async function markAllAsRead(
 
   return { count: result.count };
 }
+
+/**
+ * Mark a specific message as read and record the read receipt
+ */
+export async function markMessageAsRead(
+  messageId: string,
+  patientId: string,
+  organizationId: string,
+  portalUserId: string,
+  ipAddress?: string
+): Promise<{ success: boolean; readAt?: Date; error?: string }> {
+  const message = await prisma.secureMessage.findFirst({
+    where: {
+      id: messageId,
+      patientId,
+      organizationId,
+      deletedAt: null,
+    },
+  });
+
+  if (!message) {
+    return { success: false, error: 'Message not found' };
+  }
+
+  // Only mark as read if it's from staff (not patient's own message)
+  // and currently unread
+  if (!message.isFromPatient && message.status === 'UNREAD') {
+    const updated = await prisma.secureMessage.update({
+      where: { id: messageId },
+      data: { status: 'READ', readAt: new Date() },
+    });
+
+    // Log the read receipt action
+    await logPortalAccess({
+      action: 'PORTAL_VIEW_MESSAGE',
+      portalUserId,
+      organizationId,
+      resource: 'SecureMessage',
+      resourceId: messageId,
+      ipAddress,
+      success: true,
+      metadata: { action: 'read_receipt' },
+    });
+
+    return { success: true, readAt: updated.readAt || undefined };
+  }
+
+  return { success: true, readAt: message.readAt || undefined };
+}
+
+/**
+ * Check if current time is within business hours for auto-response
+ */
+export function isAfterHours(
+  businessHours?: { open: string; close: string; timezone?: string; closedDays?: number[] }
+): boolean {
+  const hours = businessHours || {
+    open: '08:00',
+    close: '17:00',
+    timezone: 'America/Los_Angeles',
+    closedDays: [0, 6], // Sunday, Saturday
+  };
+
+  const now = new Date();
+
+  // Get current time in the business timezone
+  const timeStr = now.toLocaleTimeString('en-US', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: hours.timezone || 'America/Los_Angeles',
+  });
+
+  const dayOfWeek = parseInt(
+    now.toLocaleDateString('en-US', {
+      weekday: 'narrow',
+      timeZone: hours.timezone || 'America/Los_Angeles',
+    }),
+    10
+  ) || now.getDay();
+
+  // Check if it's a closed day
+  if (hours.closedDays && hours.closedDays.includes(dayOfWeek)) {
+    return true;
+  }
+
+  // Parse times
+  const [currentHour, currentMin] = timeStr.split(':').map(Number);
+  const [openHour, openMin] = hours.open.split(':').map(Number);
+  const [closeHour, closeMin] = hours.close.split(':').map(Number);
+
+  const currentMins = currentHour * 60 + currentMin;
+  const openMins = openHour * 60 + openMin;
+  const closeMins = closeHour * 60 + closeMin;
+
+  return currentMins < openMins || currentMins >= closeMins;
+}
+
+/**
+ * Send auto-response for after-hours messages
+ */
+export async function sendAfterHoursAutoResponse(
+  originalMessageId: string,
+  patientId: string,
+  organizationId: string
+): Promise<{ success: boolean; responseId?: string }> {
+  // Get organization settings for custom auto-response message
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { name: true, settings: true },
+  });
+
+  // Extract phone from settings if available
+  const settings = org?.settings as { phone?: string } | null;
+
+  const autoResponseBody = `Thank you for your message. You've reached us outside of our regular business hours.
+
+Our team typically responds to messages within 1-2 business days during normal hours (Monday-Friday, 8:00 AM - 5:00 PM).
+
+If you have an urgent medical concern, please:
+- Call 911 for emergencies
+- Contact our office at ${settings?.phone || 'the number on file'} (leave a voicemail)
+- Visit your nearest urgent care facility
+
+We appreciate your patience and will respond to your message as soon as possible.
+
+Best regards,
+${org?.name || 'Your Care Team'}
+
+---
+This is an automated response.`;
+
+  const autoResponse = await prisma.secureMessage.create({
+    data: {
+      subject: 'Auto-Reply: Message Received',
+      body: autoResponseBody,
+      isFromPatient: false,
+      senderName: 'Automated Response',
+      priority: 'NORMAL',
+      status: 'UNREAD',
+      parentMessageId: originalMessageId,
+      patientId,
+      organizationId,
+    },
+  });
+
+  return { success: true, responseId: autoResponse.id };
+}
+
+/**
+ * Upload message attachment
+ */
+export async function uploadMessageAttachment(
+  file: {
+    name: string;
+    size: number;
+    type: string;
+    buffer: Buffer;
+  },
+  organizationId: string,
+  portalUserId: string
+): Promise<{ success: boolean; attachment?: { fileName: string; fileSize: number; storageKey: string; mimeType: string }; error?: string }> {
+  // Validate file size (max 10MB)
+  const maxSize = 10 * 1024 * 1024;
+  if (file.size > maxSize) {
+    return { success: false, error: 'File size exceeds 10MB limit' };
+  }
+
+  // Validate file type
+  const allowedTypes = [
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'text/plain',
+  ];
+
+  if (!allowedTypes.includes(file.type)) {
+    return { success: false, error: 'File type not allowed. Allowed types: JPEG, PNG, GIF, PDF, DOC, DOCX, TXT' };
+  }
+
+  // Generate storage key
+  const storageKey = `messages/${organizationId}/${portalUserId}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+
+  // In production, this would upload to cloud storage (S3, GCS, etc.)
+  // For now, we'll just return the metadata
+  // TODO: Implement actual file storage
+
+  return {
+    success: true,
+    attachment: {
+      fileName: file.name,
+      fileSize: file.size,
+      storageKey,
+      mimeType: file.type,
+    },
+  };
+}
+
+/**
+ * Get attachment download URL
+ */
+export async function getAttachmentDownloadUrl(
+  storageKey: string,
+  organizationId: string,
+  _portalUserId: string
+): Promise<{ success: boolean; url?: string; error?: string }> {
+  // Verify the storageKey belongs to this organization
+  if (!storageKey.startsWith(`messages/${organizationId}/`)) {
+    return { success: false, error: 'Unauthorized access to attachment' };
+  }
+
+  // In production, this would generate a signed URL from cloud storage
+  // For now, return a placeholder URL
+  // TODO: Implement actual file download URL generation
+
+  return {
+    success: true,
+    url: `/api/portal/attachments/${encodeURIComponent(storageKey)}`,
+  };
+}
+
+/**
+ * Send email notification about new message
+ */
+export async function notifyNewMessage(
+  messageId: string,
+  recipientType: 'PATIENT' | 'STAFF',
+  organizationId: string
+): Promise<{ success: boolean; notificationSent: boolean }> {
+  const message = await prisma.secureMessage.findUnique({
+    where: { id: messageId },
+    include: {
+      patient: {
+        include: {
+          portalUser: true,
+        },
+      },
+      organization: true,
+    },
+  });
+
+  if (!message) {
+    return { success: false, notificationSent: false };
+  }
+
+  // Import notification service dynamically to avoid circular deps
+  const { notificationService } = await import('@/lib/notification-service');
+
+  if (recipientType === 'PATIENT' && message.patient?.portalUser?.email) {
+    // Check if patient has message notifications enabled
+    // For now, assume enabled by default
+    const patientEmail = message.patient.portalUser.email;
+
+    await notificationService.sendEmail(
+      patientEmail,
+      `New Message from ${message.organization.name}`,
+      `You have received a new secure message.\n\nSubject: ${message.subject}\n\nPlease log in to your patient portal to view and respond to this message.\n\nThis is a secure message. Please do not reply to this email.`,
+      {
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #053e67;">New Secure Message</h2>
+            <p>You have received a new secure message from ${message.organization.name}.</p>
+            <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+              <p style="margin: 0;"><strong>Subject:</strong> ${message.subject}</p>
+            </div>
+            <p>Please <a href="${process.env.NEXT_PUBLIC_APP_URL || ''}/portal/messages" style="color: #053e67;">log in to your patient portal</a> to view and respond to this message.</p>
+            <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;" />
+            <p style="color: #666; font-size: 12px;">This is a secure message notification. Please do not reply to this email. For your privacy, message content is only available within the secure patient portal.</p>
+          </div>
+        `,
+      }
+    );
+
+    return { success: true, notificationSent: true };
+  }
+
+  // TODO: Implement staff notification when patient sends a message
+
+  return { success: true, notificationSent: false };
+}

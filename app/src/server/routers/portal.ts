@@ -22,6 +22,10 @@ import {
   sendPatientMessage,
   archiveMessage,
   getUnreadMessageCount,
+  markMessageAsRead,
+  isAfterHours,
+  sendAfterHoursAutoResponse,
+  notifyNewMessage,
   getPatientDocuments,
   getDocument,
   recordDocumentDownload,
@@ -1989,6 +1993,160 @@ export const portalRouter = router({
       const user = await getPortalUserFromToken(input.sessionToken);
       const count = await getUnreadMessageCount(user.patientId, user.organizationId);
       return { count };
+    }),
+
+  // Mark message as read (for read receipts)
+  markMessageRead: publicProcedure
+    .input(
+      z.object({
+        sessionToken: z.string(),
+        messageId: z.string(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { sessionToken, messageId } = input;
+      const user = await getPortalUserFromToken(sessionToken);
+      const ipAddress = (ctx as Record<string, unknown>).ipAddress as string | undefined;
+
+      const result = await markMessageAsRead(
+        messageId,
+        user.patientId,
+        user.organizationId,
+        user.id,
+        ipAddress
+      );
+
+      if (!result.success) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: result.error || 'Message not found',
+        });
+      }
+
+      return { success: true, readAt: result.readAt };
+    }),
+
+  // Send message with attachment support and after-hours auto-response
+  sendMessageWithAttachments: publicProcedure
+    .input(
+      z.object({
+        sessionToken: z.string(),
+        subject: z.string().min(1, 'Subject is required'),
+        body: z.string().min(1, 'Message body is required'),
+        priority: z.enum(['LOW', 'NORMAL', 'HIGH', 'URGENT']).default('NORMAL'),
+        parentMessageId: z.string().optional(),
+        attachments: z
+          .array(
+            z.object({
+              fileName: z.string(),
+              fileSize: z.number(),
+              storageKey: z.string(),
+            })
+          )
+          .optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { sessionToken, subject, body, priority, parentMessageId, attachments } = input;
+      const user = await getPortalUserFromToken(sessionToken);
+      const ipAddress = (ctx as Record<string, unknown>).ipAddress as string | undefined;
+
+      // Get patient info for sender name
+      const patient = await prisma.patient.findUnique({
+        where: { id: user.patientId },
+        include: {
+          demographics: {
+            select: { firstName: true, lastName: true },
+          },
+        },
+      });
+
+      const senderName = patient?.demographics
+        ? `${patient.demographics.firstName} ${patient.demographics.lastName}`
+        : 'Patient';
+
+      const result = await sendPatientMessage(
+        user.patientId,
+        user.organizationId,
+        subject,
+        body,
+        {
+          priority: priority as 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT',
+          parentMessageId,
+          attachments,
+          portalUserId: user.id,
+          senderName,
+          ipAddress,
+        }
+      );
+
+      if (!result.success) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: result.error || 'Failed to send message',
+        });
+      }
+
+      // Check if after hours and send auto-response
+      if (result.messageId && isAfterHours()) {
+        await sendAfterHoursAutoResponse(
+          result.messageId,
+          user.patientId,
+          user.organizationId
+        );
+      }
+
+      // Notify staff about new message
+      if (result.messageId) {
+        await notifyNewMessage(result.messageId, 'STAFF', user.organizationId);
+      }
+
+      return { success: true, messageId: result.messageId };
+    }),
+
+  // Get message with read receipt info
+  getMessageWithReadReceipt: publicProcedure
+    .input(
+      z.object({
+        sessionToken: z.string(),
+        messageId: z.string(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const { sessionToken, messageId } = input;
+      const user = await getPortalUserFromToken(sessionToken);
+      const ipAddress = (ctx as Record<string, unknown>).ipAddress as string | undefined;
+
+      const result = await getMessageThread(
+        messageId,
+        user.patientId,
+        user.organizationId,
+        user.id,
+        ipAddress
+      );
+
+      if (!result.message) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Message not found',
+        });
+      }
+
+      // Format read receipts for each message
+      const formatWithReadReceipt = (msg: typeof result.message) => ({
+        ...msg,
+        readReceipt: msg?.readAt
+          ? {
+              readAt: msg.readAt,
+              readByName: msg.isFromPatient ? 'Staff' : 'You',
+            }
+          : null,
+      });
+
+      return {
+        message: result.message ? formatWithReadReceipt(result.message) : null,
+        replies: result.replies.map(formatWithReadReceipt),
+      };
     }),
 
   // ============================================

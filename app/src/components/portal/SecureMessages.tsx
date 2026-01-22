@@ -2,10 +2,11 @@
 
 /**
  * Epic 14: Patient Portal - Secure Messaging Component
- * Secure messaging with care team using warm amber/stone theme
+ * US-099: HIPAA-compliant secure messaging between patients and clinic
+ * Features: Send/receive messages, attachments, read receipts, after-hours auto-response
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,6 +23,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { trpc } from '@/trpc/client';
 import { format, subDays } from 'date-fns';
 import {
@@ -36,6 +44,14 @@ import {
   User,
   AlertTriangle,
   Phone,
+  Paperclip,
+  X,
+  FileText,
+  Image,
+  File,
+  Check,
+  CheckCheck,
+  Clock,
 } from 'lucide-react';
 
 // Demo messages data
@@ -47,8 +63,10 @@ const DEMO_MESSAGES = [
     senderName: 'Dr. [DEMO] Sarah Mitchell',
     isFromPatient: false,
     status: 'UNREAD',
+    priority: 'NORMAL',
     createdAt: subDays(new Date(), 1).toISOString(),
     replyCount: 0,
+    attachments: [{ fileName: 'lab-results.pdf', fileSize: 125000 }],
   },
   {
     id: 'demo-msg-2',
@@ -57,18 +75,34 @@ const DEMO_MESSAGES = [
     senderName: '[DEMO] Patient',
     isFromPatient: true,
     status: 'READ',
+    priority: 'NORMAL',
     createdAt: subDays(new Date(), 3).toISOString(),
     replyCount: 1,
+    attachments: [],
   },
   {
     id: 'demo-msg-3',
+    subject: 'Urgent: Medication Question',
+    body: 'I have a question about the new medication prescribed...',
+    senderName: '[DEMO] Patient',
+    isFromPatient: true,
+    status: 'READ',
+    priority: 'HIGH',
+    createdAt: subDays(new Date(), 5).toISOString(),
+    replyCount: 2,
+    attachments: [],
+  },
+  {
+    id: 'demo-msg-4',
     subject: 'Appointment Reminder',
     body: 'This is a reminder about your upcoming appointment on...',
     senderName: 'ChiroFlow Demo Practice',
     isFromPatient: false,
     status: 'READ',
+    priority: 'LOW',
     createdAt: subDays(new Date(), 7).toISOString(),
     replyCount: 0,
+    attachments: [],
   },
 ];
 
@@ -80,9 +114,39 @@ const DEMO_THREAD = {
     senderName: 'Dr. [DEMO] Sarah Mitchell',
     isFromPatient: false,
     createdAt: subDays(new Date(), 1).toISOString(),
+    readAt: subDays(new Date(), 1).toISOString(),
+    readReceipt: { readAt: subDays(new Date(), 1).toISOString(), readByName: 'You' },
+    attachments: [{ fileName: 'lab-results.pdf', fileSize: 125000 }],
   },
   replies: [],
 };
+
+// Attachment type for uploaded files
+interface MessageAttachment {
+  fileName: string;
+  fileSize: number;
+  storageKey?: string;
+  file?: File;
+}
+
+// File icon helper
+function getFileIcon(fileName: string) {
+  const ext = fileName.split('.').pop()?.toLowerCase();
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext || '')) {
+    return <Image className="h-4 w-4" />;
+  }
+  if (['pdf', 'doc', 'docx', 'txt'].includes(ext || '')) {
+    return <FileText className="h-4 w-4" />;
+  }
+  return <File className="h-4 w-4" />;
+}
+
+// Format file size
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export function SecureMessages() {
   const [token, setToken] = useState<string | null>(null);
@@ -90,7 +154,12 @@ export function SecureMessages() {
   const [isComposeOpen, setIsComposeOpen] = useState(false);
   const [newSubject, setNewSubject] = useState('');
   const [newBody, setNewBody] = useState('');
+  const [newPriority, setNewPriority] = useState<'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'>('NORMAL');
   const [replyBody, setReplyBody] = useState('');
+  const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
+  const [replyAttachments, setReplyAttachments] = useState<MessageAttachment[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const replyFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setToken(localStorage.getItem('portalToken'));
@@ -103,7 +172,8 @@ export function SecureMessages() {
     { enabled: !!token }
   );
 
-  const { data: threadData, isLoading: isLoadingThread } = trpc.portal.getMessage.useQuery(
+  // Use enhanced endpoint for read receipts
+  const { data: threadData, isLoading: isLoadingThread } = trpc.portal.getMessageWithReadReceipt.useQuery(
     { sessionToken: token!, messageId: selectedMessageId! },
     { enabled: !!token && !!selectedMessageId }
   );
@@ -113,16 +183,30 @@ export function SecureMessages() {
     { enabled: !!token }
   );
 
-  const sendMessageMutation = trpc.portal.sendMessage.useMutation({
+  // Use enhanced sendMessageWithAttachments for new messages with attachments
+  const sendMessageMutation = trpc.portal.sendMessageWithAttachments.useMutation({
     onSuccess: () => {
       setIsComposeOpen(false);
       setNewSubject('');
       setNewBody('');
+      setNewPriority('NORMAL');
+      setAttachments([]);
       setReplyBody('');
+      setReplyAttachments([]);
       utils.portal.listMessages.invalidate();
       utils.portal.getUnreadCount.invalidate();
       if (selectedMessageId) {
-        utils.portal.getMessage.invalidate({ sessionToken: token!, messageId: selectedMessageId });
+        utils.portal.getMessageWithReadReceipt.invalidate({ sessionToken: token!, messageId: selectedMessageId });
+      }
+    },
+  });
+
+  // Mark message as read mutation
+  const markReadMutation = trpc.portal.markMessageRead.useMutation({
+    onSuccess: () => {
+      utils.portal.getUnreadCount.invalidate();
+      if (selectedMessageId) {
+        utils.portal.getMessageWithReadReceipt.invalidate({ sessionToken: token!, messageId: selectedMessageId });
       }
     },
   });
@@ -134,26 +218,100 @@ export function SecureMessages() {
     },
   });
 
+  // Handle file attachment selection
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, isReply = false) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    const newAttachments: MessageAttachment[] = [];
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (file.size > maxSize) {
+        alert(`File "${file.name}" exceeds 10MB limit`);
+        continue;
+      }
+      if (!allowedTypes.includes(file.type)) {
+        alert(`File type not allowed for "${file.name}". Allowed: JPEG, PNG, GIF, PDF, DOC, DOCX, TXT`);
+        continue;
+      }
+      newAttachments.push({
+        fileName: file.name,
+        fileSize: file.size,
+        file,
+      });
+    }
+
+    if (isReply) {
+      setReplyAttachments((prev) => [...prev, ...newAttachments]);
+    } else {
+      setAttachments((prev) => [...prev, ...newAttachments]);
+    }
+
+    // Reset input
+    e.target.value = '';
+  };
+
+  const removeAttachment = (index: number, isReply = false) => {
+    if (isReply) {
+      setReplyAttachments((prev) => prev.filter((_, i) => i !== index));
+    } else {
+      setAttachments((prev) => prev.filter((_, i) => i !== index));
+    }
+  };
+
   const handleSendMessage = () => {
     if (!token || !newSubject.trim() || !newBody.trim()) return;
+
+    // In production, files would be uploaded first, then message sent with storageKeys
+    // For now, we'll just send the message with attachment metadata
+    const attachmentData = attachments.map(({ fileName, fileSize }) => ({
+      fileName,
+      fileSize,
+      storageKey: `messages/${Date.now()}-${fileName}`, // Placeholder
+    }));
+
     sendMessageMutation.mutate({
       sessionToken: token,
       subject: newSubject,
       body: newBody,
+      priority: newPriority,
+      attachments: attachmentData.length > 0 ? attachmentData : undefined,
     });
   };
 
   const handleSendReply = () => {
     if (!token || !selectedMessageId || !replyBody.trim()) return;
     const thread = threadData || DEMO_THREAD;
+
+    const attachmentData = replyAttachments.map(({ fileName, fileSize }) => ({
+      fileName,
+      fileSize,
+      storageKey: `messages/${Date.now()}-${fileName}`, // Placeholder
+    }));
+
     sendMessageMutation.mutate({
       sessionToken: token,
       subject: `Re: ${thread.message?.subject}`,
       body: replyBody,
       parentMessageId: selectedMessageId,
+      attachments: attachmentData.length > 0 ? attachmentData : undefined,
     });
     setReplyBody('');
+    setReplyAttachments([]);
   };
+
+  // Mark message as read when viewing
+  useEffect(() => {
+    if (selectedMessageId && token && threadData?.message && !threadData.message.isFromPatient) {
+      // Mark as read if unread
+      if (!threadData.message.readReceipt) {
+        markReadMutation.mutate({ sessionToken: token, messageId: selectedMessageId });
+      }
+    }
+  }, [selectedMessageId, token, threadData]);
 
   const handleArchive = (messageId: string) => {
     if (!token) return;
@@ -165,7 +323,88 @@ export function SecureMessages() {
   const thread = threadData || (selectedMessageId ? DEMO_THREAD : null);
   const unread = unreadCount?.count ?? 2;
 
+  // Check if currently after hours (simple client-side check)
+  const isCurrentlyAfterHours = () => {
+    const now = new Date();
+    const hour = now.getHours();
+    const day = now.getDay();
+    // Closed on weekends (0 = Sunday, 6 = Saturday)
+    if (day === 0 || day === 6) return true;
+    // Closed before 8am or after 5pm
+    if (hour < 8 || hour >= 17) return true;
+    return false;
+  };
+
+  // After hours notice component
+  const AfterHoursNotice = () => {
+    if (!isCurrentlyAfterHours()) return null;
+
+    return (
+      <Card className="border-amber-200 bg-amber-50">
+        <CardContent className="p-4">
+          <div className="flex items-start gap-3">
+            <Clock className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <h3 className="font-medium text-amber-900 mb-1">After Hours</h3>
+              <p className="text-sm text-amber-800">
+                Our office is currently closed. Messages sent now will receive an automated response.
+                We&apos;ll respond during our next business day (Mon-Fri, 8:00 AM - 5:00 PM).
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
   if (!token) return null;
+
+  // Read receipt indicator component
+  const ReadReceipt = ({ message }: { message: { isFromPatient: boolean; readReceipt?: { readAt: string | Date; readByName: string } | null; createdAt: string | Date } }) => {
+    if (!message.isFromPatient) return null; // Only show for patient's own messages
+
+    if (message.readReceipt?.readAt) {
+      const readDate = typeof message.readReceipt.readAt === 'string'
+        ? new Date(message.readReceipt.readAt)
+        : message.readReceipt.readAt;
+      return (
+        <div className="flex items-center gap-1 text-xs text-green-600">
+          <CheckCheck className="h-3 w-3" />
+          <span>Read {format(readDate, 'MMM d, h:mm a')}</span>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex items-center gap-1 text-xs text-stone-400">
+        <Check className="h-3 w-3" />
+        <span>Delivered</span>
+      </div>
+    );
+  };
+
+  // Attachment display component
+  const AttachmentsList = ({ attachments }: { attachments?: Array<{ fileName: string; fileSize: number }> }) => {
+    if (!attachments || attachments.length === 0) return null;
+
+    return (
+      <div className="mt-3 space-y-2">
+        <p className="text-xs text-stone-500 font-medium">Attachments:</p>
+        <div className="flex flex-wrap gap-2">
+          {attachments.map((att, idx) => (
+            <div
+              key={idx}
+              className="flex items-center gap-2 bg-stone-100 rounded-md px-3 py-2 text-sm"
+            >
+              {getFileIcon(att.fileName)}
+              <span className="text-stone-700">{att.fileName}</span>
+              <span className="text-stone-400 text-xs">({formatFileSize(att.fileSize)})</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   // Message Thread View
   if (selectedMessageId && thread) {
@@ -223,15 +462,19 @@ export function SecureMessages() {
                       <p className="font-medium text-stone-900">
                         {thread.message.isFromPatient ? 'You' : thread.message.senderName}
                       </p>
-                      <p className="text-sm text-stone-500">
-                        {format(new Date(thread.message.createdAt), 'MMM d, yyyy h:mm a')}
-                      </p>
+                      <div className="flex items-center gap-3">
+                        <p className="text-sm text-stone-500">
+                          {format(new Date(thread.message.createdAt), 'MMM d, yyyy h:mm a')}
+                        </p>
+                        <ReadReceipt message={thread.message} />
+                      </div>
                     </div>
                   </div>
                 </div>
                 <div className="whitespace-pre-wrap text-stone-700 bg-stone-50 p-4 rounded-lg">
                   {thread.message.body}
                 </div>
+                <AttachmentsList attachments={thread.message.attachments as Array<{ fileName: string; fileSize: number }> | undefined} />
               </div>
             )}
 
@@ -252,14 +495,18 @@ export function SecureMessages() {
                     <p className="font-medium text-stone-900">
                       {reply.isFromPatient ? 'You' : reply.senderName}
                     </p>
-                    <p className="text-sm text-stone-500">
-                      {format(new Date(reply.createdAt), 'MMM d, yyyy h:mm a')}
-                    </p>
+                    <div className="flex items-center gap-3">
+                      <p className="text-sm text-stone-500">
+                        {format(new Date(reply.createdAt), 'MMM d, yyyy h:mm a')}
+                      </p>
+                      <ReadReceipt message={reply} />
+                    </div>
                   </div>
                 </div>
                 <div className="whitespace-pre-wrap text-stone-700 bg-stone-50 p-4 rounded-lg">
                   {reply.body}
                 </div>
+                <AttachmentsList attachments={reply.attachments as Array<{ fileName: string; fileSize: number }> | undefined} />
               </div>
             ))}
 
@@ -276,7 +523,50 @@ export function SecureMessages() {
                 rows={4}
                 className="border-stone-200 focus:border-blue-500 focus:ring-blue-500"
               />
-              <div className="flex justify-end mt-4">
+
+              {/* Reply Attachments */}
+              {replyAttachments.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {replyAttachments.map((att, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-center gap-2 bg-stone-100 rounded-md px-3 py-2 text-sm"
+                    >
+                      {getFileIcon(att.fileName)}
+                      <span className="text-stone-700">{att.fileName}</span>
+                      <span className="text-stone-400 text-xs">({formatFileSize(att.fileSize)})</span>
+                      <button
+                        onClick={() => removeAttachment(idx, true)}
+                        className="text-stone-400 hover:text-red-500"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex justify-between items-center mt-4">
+                <div>
+                  <input
+                    type="file"
+                    ref={replyFileInputRef}
+                    onChange={(e) => handleFileSelect(e, true)}
+                    className="hidden"
+                    multiple
+                    accept=".jpg,.jpeg,.png,.gif,.pdf,.doc,.docx,.txt"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => replyFileInputRef.current?.click()}
+                    className="border-stone-200"
+                  >
+                    <Paperclip className="h-4 w-4 mr-1" />
+                    Attach
+                  </Button>
+                </div>
                 <Button
                   onClick={handleSendReply}
                   disabled={sendMessageMutation.isPending || !replyBody.trim()}
@@ -309,14 +599,22 @@ export function SecureMessages() {
             )}
           </p>
         </div>
-        <Dialog open={isComposeOpen} onOpenChange={setIsComposeOpen}>
+        <Dialog open={isComposeOpen} onOpenChange={(open) => {
+          if (!open) {
+            setNewSubject('');
+            setNewBody('');
+            setNewPriority('NORMAL');
+            setAttachments([]);
+          }
+          setIsComposeOpen(open);
+        }}>
           <DialogTrigger asChild>
             <Button className="bg-[#053e67] hover:bg-[#053e67] text-white">
               <Plus className="h-4 w-4 mr-2" />
               New Message
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
+          <DialogContent className="sm:max-w-[550px]">
             <DialogHeader>
               <DialogTitle className="text-stone-900">New Message</DialogTitle>
               <DialogDescription className="text-stone-500">
@@ -335,6 +633,26 @@ export function SecureMessages() {
                 />
               </div>
               <div className="space-y-2">
+                <Label htmlFor="priority" className="text-stone-700">Priority</Label>
+                <Select value={newPriority} onValueChange={(v) => setNewPriority(v as 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT')}>
+                  <SelectTrigger className="border-stone-200">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="LOW">Low</SelectItem>
+                    <SelectItem value="NORMAL">Normal</SelectItem>
+                    <SelectItem value="HIGH">High</SelectItem>
+                    <SelectItem value="URGENT">Urgent</SelectItem>
+                  </SelectContent>
+                </Select>
+                {newPriority === 'URGENT' && (
+                  <p className="text-xs text-amber-600 flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3" />
+                    For emergencies, please call 911 or our office directly
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="body" className="text-stone-700">Message</Label>
                 <Textarea
                   id="body"
@@ -344,6 +662,57 @@ export function SecureMessages() {
                   rows={6}
                   className="border-stone-200 focus:border-blue-500 focus:ring-blue-500"
                 />
+              </div>
+
+              {/* Attachments Section */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-stone-700">Attachments</Label>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={(e) => handleFileSelect(e, false)}
+                    className="hidden"
+                    multiple
+                    accept=".jpg,.jpeg,.png,.gif,.pdf,.doc,.docx,.txt"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="border-stone-200"
+                  >
+                    <Paperclip className="h-4 w-4 mr-1" />
+                    Add File
+                  </Button>
+                </div>
+                {attachments.length > 0 ? (
+                  <div className="space-y-2 p-3 bg-stone-50 rounded-lg">
+                    {attachments.map((att, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between bg-white rounded-md px-3 py-2 text-sm border border-stone-200"
+                      >
+                        <div className="flex items-center gap-2">
+                          {getFileIcon(att.fileName)}
+                          <span className="text-stone-700 truncate max-w-[200px]">{att.fileName}</span>
+                          <span className="text-stone-400 text-xs">({formatFileSize(att.fileSize)})</span>
+                        </div>
+                        <button
+                          onClick={() => removeAttachment(idx, false)}
+                          className="text-stone-400 hover:text-red-500"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-stone-400">
+                    Max 10MB per file. Allowed: Images (JPEG, PNG, GIF), PDF, Word, Text
+                  </p>
+                )}
               </div>
             </div>
             <DialogFooter>
@@ -366,6 +735,9 @@ export function SecureMessages() {
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* After Hours Notice */}
+      <AfterHoursNotice />
 
       {/* Messages List */}
       <Card className="border-stone-200">
@@ -407,7 +779,7 @@ export function SecureMessages() {
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <p
                         className={`font-medium truncate ${
                           message.status === 'UNREAD' && !message.isFromPatient
@@ -417,9 +789,25 @@ export function SecureMessages() {
                       >
                         {message.subject}
                       </p>
+                      {message.priority === 'URGENT' && (
+                        <Badge className="bg-red-100 text-red-700 border-red-200 text-xs">
+                          Urgent
+                        </Badge>
+                      )}
+                      {message.priority === 'HIGH' && (
+                        <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs">
+                          High
+                        </Badge>
+                      )}
                       {message.replyCount && message.replyCount > 0 && (
                         <Badge variant="outline" className="text-xs border-stone-200 text-stone-500">
                           {message.replyCount} repl{message.replyCount > 1 ? 'ies' : 'y'}
+                        </Badge>
+                      )}
+                      {message.attachments && Array.isArray(message.attachments) && message.attachments.length > 0 && (
+                        <Badge variant="outline" className="text-xs border-stone-200 text-stone-500">
+                          <Paperclip className="h-3 w-3 mr-1" />
+                          {message.attachments.length}
                         </Badge>
                       )}
                     </div>

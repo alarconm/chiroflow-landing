@@ -40,6 +40,12 @@ export {
   deleteMessage,
   getUnreadMessageCount,
   markAllAsRead,
+  markMessageAsRead,
+  isAfterHours,
+  sendAfterHoursAutoResponse,
+  uploadMessageAttachment,
+  getAttachmentDownloadUrl,
+  notifyNewMessage,
 } from './messaging';
 
 // Documents
