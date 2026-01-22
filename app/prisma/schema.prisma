@@ -203,6 +203,13 @@ model Organization {
   // Inter-Location Inventory relations (Epic 25 - US-254)
   inventoryTransfers      InventoryTransfer[]
 
+  // Security & Compliance relations (Epic 26)
+  securityEvents     SecurityEvent[]
+  userSessions       UserSession[]
+  baaDocuments       BAADocument[]
+  encryptionKeys     EncryptionKey[]
+  securitySetting    SecuritySetting?
+
   @@index([subdomain])
 }
 
@@ -250,6 +257,11 @@ model User {
   transfersRequested       InventoryTransfer[]        @relation("TransferRequestedBy")
   transfersApproved        InventoryTransfer[]        @relation("TransferApprovedBy")
   transfersReceived        InventoryTransfer[]        @relation("TransferReceivedBy")
+
+  // Security & Compliance relations (Epic 26)
+  mfaConfigurations        MFAConfiguration[]
+  securityEvents           SecurityEvent[]
+  userSessions             UserSession[]
 
   @@unique([email, organizationId])
   @@index([organizationId])
@@ -5482,6 +5494,9 @@ model Vendor {
   vendorProducts VendorProduct[]
   preferredFor   Product[]       @relation("PreferredVendor")
 
+  // Security & Compliance relations (Epic 26)
+  baaDocuments   BAADocument[]
+
   @@unique([code, organizationId])
   @@index([organizationId])
   @@index([isActive])
@@ -9405,4 +9420,357 @@ model InventoryTransferItem {
 
   @@index([transferId])
   @@index([productId])
+}
+
+// ============================================
+// EPIC 26: ADVANCED SECURITY & COMPLIANCE
+// ============================================
+
+// MFA method types
+enum MFAMethod {
+  TOTP          // Time-based One-Time Password (Google Authenticator, etc.)
+  SMS           // SMS verification code
+  EMAIL         // Email verification code
+}
+
+// Security event types for comprehensive logging
+enum SecurityEventType {
+  LOGIN_SUCCESS
+  LOGIN_FAILURE
+  LOGIN_MFA_REQUIRED
+  LOGIN_MFA_SUCCESS
+  LOGIN_MFA_FAILURE
+  LOGOUT
+  PASSWORD_CHANGE
+  PASSWORD_RESET_REQUEST
+  PASSWORD_RESET_COMPLETE
+  MFA_ENABLED
+  MFA_DISABLED
+  MFA_RECOVERY_USED
+  SESSION_CREATED
+  SESSION_EXPIRED
+  SESSION_TERMINATED
+  SESSION_SUSPICIOUS
+  PERMISSION_GRANTED
+  PERMISSION_REVOKED
+  ROLE_CHANGED
+  PHI_ACCESSED
+  PHI_EXPORTED
+  PHI_MODIFIED
+  ACCOUNT_LOCKED
+  ACCOUNT_UNLOCKED
+  EMERGENCY_ACCESS_USED
+  IP_BLOCKED
+  IP_ALLOWED
+  ENCRYPTION_KEY_ROTATED
+  BAA_SIGNED
+  BAA_EXPIRED
+  CONFIG_CHANGED
+  SUSPICIOUS_ACTIVITY
+}
+
+// Session status for enhanced tracking
+enum SessionStatus {
+  ACTIVE
+  EXPIRED
+  TERMINATED
+  SUSPICIOUS
+}
+
+// BAA status
+enum BAAStatus {
+  DRAFT
+  PENDING_SIGNATURE
+  ACTIVE
+  EXPIRED
+  TERMINATED
+}
+
+// Encryption key status
+enum EncryptionKeyStatus {
+  ACTIVE
+  ROTATING
+  RETIRED
+  COMPROMISED
+}
+
+// MFA Configuration for users
+model MFAConfiguration {
+  id               String    @id @default(cuid())
+  method           MFAMethod @default(TOTP)
+  secret           String    // Encrypted TOTP secret or phone/email for SMS/Email
+  verified         Boolean   @default(false)
+  verifiedAt       DateTime?
+  backupCodes      String[]  // Encrypted backup codes
+  backupCodesUsed  Int       @default(0)
+  lastUsedAt       DateTime?
+  failedAttempts   Int       @default(0)
+  lockedUntil      DateTime?
+
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  // User relation
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([method])
+}
+
+// Security event logging for audit and compliance
+model SecurityEvent {
+  id               String            @id @default(cuid())
+  eventType        SecurityEventType
+  severity         String            @default("INFO") // INFO, WARNING, CRITICAL
+  description      String?           @db.Text
+
+  // Request context
+  ipAddress        String?
+  userAgent        String?           @db.Text
+  requestPath      String?
+  requestMethod    String?
+
+  // Additional metadata
+  metadata         Json?             // Flexible field for event-specific data
+
+  // Geolocation (if available)
+  country          String?
+  city             String?
+
+  // Related entity (optional)
+  entityType       String?           // Patient, Claim, etc.
+  entityId         String?
+
+  // Result of event
+  success          Boolean           @default(true)
+  failureReason    String?
+
+  createdAt        DateTime          @default(now())
+
+  // User relation (nullable for unauthenticated events)
+  userId           String?
+  user             User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  // Multi-tenant relation
+  organizationId   String
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([eventType])
+  @@index([createdAt])
+  @@index([severity])
+  @@index([ipAddress])
+}
+
+// Enhanced user session tracking
+model UserSession {
+  id               String        @id @default(cuid())
+  sessionToken     String        @unique // Hashed session token
+  status           SessionStatus @default(ACTIVE)
+
+  // Device information
+  deviceFingerprint String?      // Hashed device fingerprint
+  deviceType       String?       // desktop, mobile, tablet
+  browser          String?
+  browserVersion   String?
+  os               String?
+  osVersion        String?
+
+  // Location/network
+  ipAddress        String?
+  country          String?
+  city             String?
+
+  // Session timing
+  expiresAt        DateTime
+  lastActivityAt   DateTime      @default(now())
+  idleTimeoutAt    DateTime?     // When session will idle-timeout
+
+  // Trust level
+  rememberDevice   Boolean       @default(false)
+  mfaVerified      Boolean       @default(false)
+  trustScore       Int           @default(100) // 0-100, decreases with suspicious activity
+
+  // Termination details
+  terminatedAt     DateTime?
+  terminatedReason String?
+
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  // User relation
+  userId           String
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Multi-tenant relation
+  organizationId   String
+  organization     Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([status])
+  @@index([expiresAt])
+  @@index([lastActivityAt])
+  @@index([sessionToken])
+}
+
+// Business Associate Agreement tracking for HIPAA compliance
+model BAADocument {
+  id               String      @id @default(cuid())
+  status           BAAStatus   @default(DRAFT)
+
+  // Vendor information
+  vendorName       String
+  vendorContact    String?
+  vendorEmail      String?
+  vendorPhone      String?
+  vendorAddress    String?     @db.Text
+
+  // Agreement details
+  documentUrl      String?     // Link to stored document
+  documentHash     String?     // SHA-256 hash for integrity verification
+  version          String?     // Document version
+
+  // Key dates
+  signedDate       DateTime?
+  effectiveDate    DateTime?
+  expirationDate   DateTime?
+  renewalDate      DateTime?   // When to start renewal process
+  terminatedDate   DateTime?
+  terminationReason String?
+
+  // Risk assessment
+  riskLevel        String?     // LOW, MEDIUM, HIGH, CRITICAL
+  lastRiskAssessment DateTime?
+  riskNotes        String?     @db.Text
+
+  // Services covered
+  servicesCovered  String[]    // List of services covered by BAA
+  dataTypes        String[]    // Types of PHI shared (names, SSN, medical records, etc.)
+
+  // Compliance notes
+  notes            String?     @db.Text
+
+  // Renewal tracking
+  reminderSent     Boolean     @default(false)
+  reminderSentAt   DateTime?
+
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  // Multi-tenant relation
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Optionally linked to a Vendor from inventory
+  vendorId         String?
+  vendor           Vendor?     @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([expirationDate])
+  @@index([vendorName])
+}
+
+// Encryption key management for field-level encryption
+model EncryptionKey {
+  id               String               @id @default(cuid())
+  keyIdentifier    String               @unique // Unique identifier for key reference
+  status           EncryptionKeyStatus  @default(ACTIVE)
+
+  // Key metadata (never store actual key here - use HSM/KMS)
+  algorithm        String               @default("AES-256-GCM")
+  keyVersion       Int                  @default(1)
+  purpose          String               // PHI_ENCRYPTION, API_KEY_ENCRYPTION, etc.
+
+  // Key lifecycle
+  createdAt        DateTime             @default(now())
+  activatedAt      DateTime?
+  rotatedAt        DateTime?
+  retiredAt        DateTime?
+  expiresAt        DateTime?
+
+  // Rotation tracking
+  rotationSchedule String?              // MONTHLY, QUARTERLY, YEARLY
+  nextRotationAt   DateTime?
+  previousKeyId    String?              // Reference to previous key version
+
+  // Access control
+  allowedUsers     String[]             // List of user IDs with access
+  allowedRoles     Role[]               // List of roles with access
+
+  // Audit
+  lastAccessedAt   DateTime?
+  accessCount      Int                  @default(0)
+
+  // Multi-tenant relation
+  organizationId   String
+  organization     Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([keyIdentifier])
+  @@index([purpose])
+}
+
+// Organization-level security settings/policies
+model SecuritySetting {
+  id               String   @id @default(cuid())
+
+  // Session policies
+  sessionTimeoutMinutes     Int      @default(60)    // Max session duration
+  idleTimeoutMinutes        Int      @default(15)    // Idle timeout before warning
+  maxConcurrentSessions     Int      @default(3)     // Max sessions per user
+
+  // MFA policies
+  mfaRequired               Boolean  @default(false) // Require MFA for all users
+  mfaRequiredForRoles       Role[]                   // Roles that require MFA
+  mfaGracePeriodDays        Int      @default(7)     // Days to enable MFA before lockout
+
+  // Password policies
+  passwordMinLength         Int      @default(12)
+  passwordRequireUppercase  Boolean  @default(true)
+  passwordRequireLowercase  Boolean  @default(true)
+  passwordRequireNumbers    Boolean  @default(true)
+  passwordRequireSymbols    Boolean  @default(true)
+  passwordExpiryDays        Int      @default(90)    // 0 = never expires
+  passwordHistoryCount      Int      @default(5)     // Prevent reusing last N passwords
+
+  // Login policies
+  maxLoginAttempts          Int      @default(5)
+  lockoutDurationMinutes    Int      @default(30)
+
+  // IP restrictions
+  ipWhitelistEnabled        Boolean  @default(false)
+  ipWhitelist               String[]                 // Allowed IPs/CIDRs
+  ipBlacklist               String[]                 // Blocked IPs/CIDRs
+
+  // Time-based restrictions
+  accessHoursEnabled        Boolean  @default(false)
+  accessHoursStart          String?                  // e.g., "08:00"
+  accessHoursEnd            String?                  // e.g., "18:00"
+  accessHoursTimezone       String?                  // e.g., "America/Los_Angeles"
+  accessHoursDays           Int[]                    // Days of week (0=Sun, 1=Mon, etc.)
+
+  // Emergency access (break glass)
+  emergencyAccessEnabled    Boolean  @default(true)
+  emergencyAccessCode       String?                  // Encrypted emergency access code
+  emergencyAccessNotifyEmails String[]               // Emails to notify on emergency access
+
+  // Audit settings
+  auditRetentionDays        Int      @default(2555)  // ~7 years for HIPAA
+  detailedAuditLogging      Boolean  @default(true)
+
+  // PHI access settings
+  requireReasonForPHIAccess Boolean  @default(false)
+  logAllPHIAccess           Boolean  @default(true)
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // One-to-one with Organization
+  organizationId   String   @unique
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }
