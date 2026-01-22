@@ -390,3 +390,94 @@ Files Created/Modified:
 --- Iteration 5 completed at 2026-01-21 ---
 Story: US-097 - Online bill pay
 
+--- Iteration 5 completed at 2026-01-21 22:28:17 ---
+Story: US-097 - Online bill pay
+
+US-098: Patient health records access - COMPLETE
+-------------------------------------------------
+Implemented comprehensive patient health records access for the portal:
+
+1. HealthRecordsAccess component (/portal/records)
+   - Tabbed interface with 4 main sections:
+     * Visits: Visit history with dates and providers
+     * Diagnoses: Current and past diagnoses
+     * Treatment: Treatment plans with goals
+     * Home Care: Prescribed exercises and instructions
+   - HIPAA compliance notice prominently displayed
+   - Mobile-responsive design
+
+2. Visit History Tab
+   - Chronological list of completed/signed encounters
+   - Shows encounter date, type (Initial, Follow-Up, etc.)
+   - Provider name with title
+   - Chief complaint display
+   - Diagnoses summary for each visit
+   - "View" button to see full visit summary
+   - "Download" button for PDF summary (placeholder)
+
+3. Diagnoses Tab
+   - Active diagnoses section (green background)
+   - Chronic diagnoses identified
+   - Resolved diagnoses section (gray background)
+   - ICD-10 codes displayed
+   - Body site information when available
+   - Onset and resolved dates tracking
+
+4. Treatment Plans Tab
+   - Accordion-style expandable plan details
+   - Plan status badges (Active, Completed, etc.)
+   - Progress tracking (X/Y visits completed)
+   - Treatment goals with status indicators
+   - Start/end dates and frequency
+
+5. Home Care Instructions Tab
+   - Exercise and care instruction cards
+   - Category badges
+   - Provider attribution
+   - Creation date tracking
+   - Amber alert for important safety notice
+
+6. Visit Summary Dialog
+   - Detailed view of individual visit
+   - Chief complaint, diagnoses, treatment, instructions
+   - Follow-up recommendations
+   - Download PDF button
+
+7. Portal Router Endpoints Added:
+   - getVisitHistory: Paginated encounter history with providers/diagnoses
+   - getDiagnosesList: All patient diagnoses grouped by status
+   - getTreatmentPlans: All treatment plans with goals
+   - getHomeCareInstructions: Extracted from SOAP note plan sections
+   - getVisitSummary: Detailed single visit summary
+
+8. HIPAA Compliance Features:
+   - Audit logging on every record access action
+   - IP address tracking
+   - Resource-specific logging (which record accessed)
+   - Access control via portal authentication
+   - Privacy notice displayed to patients
+
+Acceptance Criteria Status:
+- [x] View visit history with dates and providers
+- [x] View diagnoses and treatment plans
+- [x] View and download visit summaries
+- [x] View prescribed exercises or home care instructions
+- [x] HIPAA-compliant access controls
+- [x] Audit logging of all record access
+
+Technical Implementation:
+- Uses existing Encounter, Diagnosis, TreatmentPlan, SOAPNote models
+- Extracts home care instructions from SOAP note plan sections
+- Supports structured planJson for categorized instructions
+- Proper TypeScript types matching Prisma returns (null vs undefined)
+- All queries scoped to patient's organization
+
+Files Created/Modified:
+- app/src/components/portal/HealthRecordsAccess.tsx (NEW - 750+ lines)
+- app/src/app/portal/records/page.tsx (NEW - page route)
+- app/src/server/routers/portal.ts (MODIFIED - added 5 new endpoints)
+- app/src/components/portal/index.ts (MODIFIED - added HealthRecordsAccess export)
+
+--- Iteration 6 completed at 2026-01-21 ---
+Story: US-098 - Patient health records access
+

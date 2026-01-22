@@ -21,3 +21,4 @@ export { DocumentsList } from './DocumentsList';
 export { TreatmentPlanView } from './TreatmentPlanView';
 export { ProfileSettings } from './ProfileSettings';
 export { OnlineBillPay } from './OnlineBillPay';
+export { HealthRecordsAccess } from './HealthRecordsAccess';

@@ -3024,6 +3024,395 @@ export const portalRouter = router({
         transactionId: transaction.id,
       };
     }),
+
+  // ============================================
+  // HEALTH RECORDS (US-098)
+  // ============================================
+
+  // Get visit history
+  getVisitHistory: publicProcedure
+    .input(
+      z.object({
+        sessionToken: z.string(),
+        limit: z.number().min(1).max(100).default(50),
+        offset: z.number().min(0).default(0),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const { sessionToken, limit, offset } = input;
+      const user = await getPortalUserFromToken(sessionToken);
+      const ipAddress = (ctx as Record<string, unknown>).ipAddress as string | undefined;
+
+      const [encounters, total] = await Promise.all([
+        prisma.encounter.findMany({
+          where: {
+            patientId: user.patientId,
+            organizationId: user.organizationId,
+            status: { in: ['COMPLETED', 'SIGNED'] },
+          },
+          include: {
+            provider: {
+              select: {
+                id: true,
+                title: true,
+                user: { select: { firstName: true, lastName: true } },
+              },
+            },
+            diagnoses: {
+              select: {
+                id: true,
+                icd10Code: true,
+                description: true,
+                isPrimary: true,
+                status: true,
+              },
+            },
+            procedures: {
+              select: {
+                id: true,
+                cptCode: true,
+                description: true,
+              },
+            },
+            soapNote: {
+              select: {
+                subjective: true,
+                assessment: true,
+                plan: true,
+              },
+            },
+          },
+          orderBy: { encounterDate: 'desc' },
+          take: limit,
+          skip: offset,
+        }),
+        prisma.encounter.count({
+          where: {
+            patientId: user.patientId,
+            organizationId: user.organizationId,
+            status: { in: ['COMPLETED', 'SIGNED'] },
+          },
+        }),
+      ]);
+
+      // Log access for HIPAA compliance
+      await logPortalAccess({
+        action: 'PORTAL_VIEW_HEALTH_RECORDS',
+        portalUserId: user.id,
+        organizationId: user.organizationId,
+        resource: 'Encounter',
+        ipAddress,
+        success: true,
+        metadata: { recordCount: encounters.length },
+      });
+
+      return {
+        visits: encounters.map((e) => ({
+          id: e.id,
+          encounterDate: e.encounterDate,
+          encounterType: e.encounterType,
+          status: e.status,
+          chiefComplaint: e.chiefComplaint,
+          provider: {
+            id: e.provider.id,
+            name: `${e.provider.user.firstName} ${e.provider.user.lastName}`,
+            title: e.provider.title,
+          },
+          diagnoses: e.diagnoses,
+          procedures: e.procedures,
+          soapNote: e.soapNote,
+          hasSummary: !!e.soapNote,
+        })),
+        total,
+      };
+    }),
+
+  // Get diagnoses list
+  getDiagnosesList: publicProcedure
+    .input(z.object({ sessionToken: z.string() }))
+    .query(async ({ input, ctx }) => {
+      const user = await getPortalUserFromToken(input.sessionToken);
+      const ipAddress = (ctx as Record<string, unknown>).ipAddress as string | undefined;
+
+      // Get all diagnoses for the patient
+      const diagnoses = await prisma.diagnosis.findMany({
+        where: {
+          encounter: {
+            patientId: user.patientId,
+            organizationId: user.organizationId,
+          },
+        },
+        include: {
+          encounter: {
+            select: {
+              encounterDate: true,
+              provider: {
+                select: {
+                  title: true,
+                  user: { select: { firstName: true, lastName: true } },
+                },
+              },
+            },
+          },
+        },
+        orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+      });
+
+      // Log access for HIPAA compliance
+      await logPortalAccess({
+        action: 'PORTAL_VIEW_DIAGNOSES',
+        portalUserId: user.id,
+        organizationId: user.organizationId,
+        resource: 'Diagnosis',
+        ipAddress,
+        success: true,
+        metadata: { recordCount: diagnoses.length },
+      });
+
+      return {
+        diagnoses: diagnoses.map((d) => ({
+          id: d.id,
+          icd10Code: d.icd10Code,
+          description: d.description,
+          status: d.status,
+          onsetDate: d.onsetDate,
+          resolvedDate: d.resolvedDate,
+          bodySite: d.bodySite,
+          encounterDate: d.encounter.encounterDate,
+          providerName: `${d.encounter.provider.title || ''} ${d.encounter.provider.user.firstName} ${d.encounter.provider.user.lastName}`.trim(),
+        })),
+      };
+    }),
+
+  // Get all treatment plans
+  getTreatmentPlans: publicProcedure
+    .input(z.object({ sessionToken: z.string() }))
+    .query(async ({ input, ctx }) => {
+      const user = await getPortalUserFromToken(input.sessionToken);
+      const ipAddress = (ctx as Record<string, unknown>).ipAddress as string | undefined;
+
+      const plans = await prisma.treatmentPlan.findMany({
+        where: {
+          patientId: user.patientId,
+          organizationId: user.organizationId,
+        },
+        include: {
+          provider: {
+            select: {
+              title: true,
+              user: { select: { firstName: true, lastName: true } },
+            },
+          },
+          goals: {
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+        orderBy: [{ status: 'asc' }, { startDate: 'desc' }],
+      });
+
+      // Log access for HIPAA compliance
+      await logPortalAccess({
+        action: 'PORTAL_VIEW_TREATMENT_PLANS',
+        portalUserId: user.id,
+        organizationId: user.organizationId,
+        resource: 'TreatmentPlan',
+        ipAddress,
+        success: true,
+        metadata: { recordCount: plans.length },
+      });
+
+      return {
+        plans: plans.map((p) => ({
+          id: p.id,
+          name: p.name,
+          description: p.description,
+          status: p.status,
+          startDate: p.startDate,
+          endDate: p.endDate,
+          frequency: p.frequency,
+          plannedVisits: p.plannedVisits,
+          completedVisits: p.completedVisits,
+          provider: {
+            name: `${p.provider.user.firstName} ${p.provider.user.lastName}`,
+            title: p.provider.title,
+          },
+          goals: p.goals.map((g) => ({
+            id: g.id,
+            description: g.description,
+            status: g.status,
+            targetDate: g.targetDate,
+          })),
+        })),
+      };
+    }),
+
+  // Get home care instructions
+  getHomeCareInstructions: publicProcedure
+    .input(z.object({ sessionToken: z.string() }))
+    .query(async ({ input, ctx }) => {
+      const user = await getPortalUserFromToken(input.sessionToken);
+      const ipAddress = (ctx as Record<string, unknown>).ipAddress as string | undefined;
+
+      // Check if HomeCareInstruction model exists, if not use SOAP note plan sections
+      // For this implementation, we'll extract from SOAP notes where plan includes instructions
+      const encounters = await prisma.encounter.findMany({
+        where: {
+          patientId: user.patientId,
+          organizationId: user.organizationId,
+          status: { in: ['COMPLETED', 'SIGNED'] },
+          soapNote: {
+            plan: { not: null },
+          },
+        },
+        include: {
+          provider: {
+            select: {
+              user: { select: { firstName: true, lastName: true } },
+            },
+          },
+          soapNote: {
+            select: {
+              id: true,
+              plan: true,
+              planJson: true,
+            },
+          },
+        },
+        orderBy: { encounterDate: 'desc' },
+        take: 20,
+      });
+
+      // Log access for HIPAA compliance
+      await logPortalAccess({
+        action: 'PORTAL_VIEW_HOME_CARE',
+        portalUserId: user.id,
+        organizationId: user.organizationId,
+        resource: 'HomeCareInstruction',
+        ipAddress,
+        success: true,
+      });
+
+      // Extract instructions from SOAP note plan sections
+      const instructions = encounters
+        .filter((e) => e.soapNote?.plan)
+        .map((e) => {
+          // Parse planJson if available for structured data
+          let category = 'General';
+          let title = 'Care Instructions';
+          const planJson = e.soapNote?.planJson as Record<string, unknown> | null;
+
+          if (planJson) {
+            if (planJson.exercises) {
+              category = 'Exercise';
+              title = 'Prescribed Exercises';
+            } else if (planJson.homecare) {
+              category = 'Home Care';
+              title = 'Home Care Instructions';
+            }
+          }
+
+          return {
+            id: e.soapNote!.id,
+            title,
+            content: e.soapNote!.plan || '',
+            category,
+            createdAt: e.encounterDate,
+            provider: {
+              name: `${e.provider.user.firstName} ${e.provider.user.lastName}`,
+            },
+            encounterId: e.id,
+          };
+        });
+
+      return { instructions };
+    }),
+
+  // Get visit summary
+  getVisitSummary: publicProcedure
+    .input(
+      z.object({
+        sessionToken: z.string(),
+        encounterId: z.string(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { sessionToken, encounterId } = input;
+      const user = await getPortalUserFromToken(sessionToken);
+      const ipAddress = (ctx as Record<string, unknown>).ipAddress as string | undefined;
+
+      const encounter = await prisma.encounter.findFirst({
+        where: {
+          id: encounterId,
+          patientId: user.patientId,
+          organizationId: user.organizationId,
+        },
+        include: {
+          provider: {
+            select: {
+              title: true,
+              user: { select: { firstName: true, lastName: true } },
+            },
+          },
+          diagnoses: {
+            select: {
+              description: true,
+              icd10Code: true,
+            },
+          },
+          soapNote: {
+            select: {
+              subjective: true,
+              objective: true,
+              assessment: true,
+              plan: true,
+            },
+          },
+          treatmentPlan: {
+            select: {
+              name: true,
+              frequency: true,
+            },
+          },
+        },
+      });
+
+      if (!encounter) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Visit record not found',
+        });
+      }
+
+      // Log access for HIPAA compliance - specific record access
+      await logPortalAccess({
+        action: 'PORTAL_VIEW_VISIT_SUMMARY',
+        portalUserId: user.id,
+        organizationId: user.organizationId,
+        resource: 'Encounter',
+        resourceId: encounterId,
+        ipAddress,
+        success: true,
+      });
+
+      // Build visit summary from encounter data
+      const summary = {
+        id: encounter.id,
+        encounterDate: encounter.encounterDate,
+        provider: {
+          name: `${encounter.provider.user.firstName} ${encounter.provider.user.lastName}`,
+          title: encounter.provider.title,
+        },
+        chiefComplaint: encounter.chiefComplaint,
+        diagnoses: encounter.diagnoses.map((d) => `${d.description} (${d.icd10Code})`),
+        treatmentPlan: encounter.soapNote?.assessment || '',
+        instructions: encounter.soapNote?.plan || '',
+        followUp: encounter.treatmentPlan
+          ? `Continue with ${encounter.treatmentPlan.name} - ${encounter.treatmentPlan.frequency || 'as scheduled'}`
+          : null,
+      };
+
+      return { summary };
+    }),
 });
 
 // Helper function to detect card brand
