@@ -47,11 +47,50 @@
 
 - Prisma schema validated and pushed to database successfully
 
+### US-316: Real-time encounter transcription - COMPLETED
+- Created new `aiDoc` tRPC router at `app/src/server/routers/aiDoc.ts`
+- Implemented transcription session management:
+  1. **startTranscription** - Begin live transcription with AMBIENT or DICTATION mode
+  2. **stopTranscription** - End transcription and finalize with optional final audio chunk
+  3. **pauseTranscription** - Pause active recording
+  4. **resumeTranscription** - Resume paused recording
+
+- Implemented real-time transcription features:
+  5. **processAudioChunk** - Process audio chunks with speaker identification
+     - Integrates with aiService.transcribeAudio (Whisper/Deepgram)
+     - Detects medical terminology in transcripts
+     - Updates transcript segments with speaker diarization
+  6. **getTranscription** - Get full transcription with draft notes
+  7. **getActiveTranscription** - Get active transcription for an encounter
+  8. **listTranscriptions** - List all transcriptions for an encounter
+
+- Implemented transcript editing:
+  9. **updateTranscript** - Edit transcript text and track corrections
+  10. **updateSpeakerLabels** - Update speaker identification labels
+
+- Implemented ambient mode:
+  11. **toggleAmbientMode** - Toggle continuous ambient listening
+
+- Implemented statistics:
+  12. **getStats** - Organization-wide transcription statistics
+
+- Helper functions:
+  - detectSpeaker() - Simple speaker detection from content patterns
+  - detectMedicalTerms() - Medical terminology detection for chiropractic
+
+- Added router to index.ts as `aiDoc`
+- Added audit actions: AI_TRANSCRIPTION_START, AI_TRANSCRIPTION_STOP, AI_TRANSCRIPTION_EDIT, AI_AMBIENT_MODE_START, AI_AMBIENT_MODE_STOP
+
 ### Remaining Stories:
-- US-316: Real-time encounter transcription
 - US-317: AI SOAP note generation
 - US-318: Intelligent code suggestion
 - US-319: Compliance checking
 - US-320: Provider preference learning
 - US-321: Documentation templates and macros
 - US-322: AI documentation assistant UI
+--- Iteration 1 completed at 2026-01-22 11:33:29 ---
+Story: US-315 - AI documentation agent schema
+
+--- Iteration 2 completed at 2026-01-22 ---
+Story: US-316 - Real-time encounter transcription
+

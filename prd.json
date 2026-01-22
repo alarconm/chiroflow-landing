@@ -35,7 +35,7 @@
         "Transcript editing capability"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-317",

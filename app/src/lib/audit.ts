@@ -109,6 +109,12 @@ export type AuditAction =
   | 'AI_COMPLIANCE_CHECK'
   | 'AI_AUTOFILL'
   | 'AI_MEDICAL_NECESSITY'
+  // AI Documentation Agent actions (Epic 32)
+  | 'AI_TRANSCRIPTION_START'
+  | 'AI_TRANSCRIPTION_STOP'
+  | 'AI_TRANSCRIPTION_EDIT'
+  | 'AI_AMBIENT_MODE_START'
+  | 'AI_AMBIENT_MODE_STOP'
   // AI Billing actions (Epic 09)
   | 'AI_BILLING_SCRUB'
   | 'AI_BILLING_BATCH_SCRUB'

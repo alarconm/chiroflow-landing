@@ -49,6 +49,8 @@ import { inventoryRouter } from './inventory';
 import { aiInsightsRouter } from './aiInsights';
 // AI Billing Agent (Epic 09)
 import { aiBillingRouter } from './aiBilling';
+// AI Documentation Agent (Epic 32)
+import { aiDocRouter } from './aiDoc';
 // Marketing & Referrals (Epic 18)
 import { marketingRouter } from './marketing';
 // Chiropractic Clinical Intelligence (Epic 19)
@@ -198,6 +200,8 @@ export const appRouter = router({
   offline: offlineRouter,
   // AI Receptionist Agent (Epic 30)
   aiReceptionist: aiReceptionistRouter,
+  // AI Documentation Agent (Epic 32)
+  aiDoc: aiDocRouter,
 });
 
 
