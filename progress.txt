@@ -308,8 +308,88 @@
   ✓ Apply preferences to future drafts (applyPreferencesToContent, applyProviderStyle integration)
   ✓ Provider-specific model fine-tuning (via confidence scores and feedback loop)
 
+### US-321: Documentation templates and macros - COMPLETED
+- Added 2 new Prisma models for templates and macros:
+  1. **TextMacro** - Smart text expansion macros:
+     - trigger, expansion, description, category
+     - Scope (provider, organization, system)
+     - Context-awareness (encounterTypes, soapSections)
+     - Variables/placeholders support
+     - Usage tracking (usageCount, lastUsedAt)
+     - AI learning support (learnedFromProvider, confidence)
+
+  2. **AITemplateSuggestion** - AI template suggestion tracking:
+     - encounterId, appointmentType, encounterType
+     - Suggested template with reasoning and confidence
+     - Pull-forward data from previous notes
+     - Status tracking (SUGGESTED, ACCEPTED, REJECTED, MODIFIED)
+
+- Extended `aiDoc` tRPC router with template and macro endpoints:
+
+  **Template Suggestion Endpoints:**
+  1. **suggestTemplate** - Suggest template based on appointment type
+     - Analyzes encounter context
+     - Uses provider's template preferences
+     - Supports pull-forward from previous notes
+     - Returns alternative template options
+  2. **acceptTemplateSuggestion** - Accept and learn from suggestion
+  3. **rejectTemplateSuggestion** - Reject with optional replacement
+  4. **pullForwardContent** - Pull content from previous patient notes
+     - Gets relevant sections (subjective, objective, assessment, plan)
+     - Includes tips for updating
+  5. **getTemplateStats** - Template suggestion statistics
+
+  **Smart Macro Endpoints:**
+  6. **createMacro** - Create new text macro
+     - Supports triggers like ".hpi", ".pain"
+     - Variables with placeholders
+     - Section and encounter type filtering
+  7. **updateMacro** - Update existing macro
+  8. **deleteMacro** - Remove macro (system macros protected)
+  9. **listMacros** - List available macros by category/section
+  10. **expandMacro** - Expand trigger to full text
+      - Variable replacement support
+      - Usage tracking
+  11. **autocomplete** - Auto-complete with common phrases
+      - Combines macros, preferences, and common clinical phrases
+  12. **generateQuickNormal** - Generate "within normal limits" text
+      - Supports general, cervical, thoracic, lumbar, extremity, neurological
+      - Provider-customizable templates
+  13. **learnMacroFromPattern** - Learn macros from repeated text
+      - Detects similar existing macros
+      - Auto-generates trigger suggestions
+  14. **getMacroLibrary** - Get organized macro collection
+
+- Added helper functions:
+  - getCommonPhrases() - Common clinical phrases by SOAP section
+  - getDefaultNormalExam() - Default normal exam text by region
+  - calculateTextSimilarity() - Text similarity calculation
+  - generateTriggerSuggestion() - Auto-generate macro triggers
+
+- Added audit actions to audit.ts:
+  - AI_TEMPLATE_SUGGEST, AI_TEMPLATE_ACCEPT, AI_TEMPLATE_REJECT
+  - AI_TEMPLATE_PULL_FORWARD
+  - AI_MACRO_CREATE, AI_MACRO_UPDATE, AI_MACRO_DELETE
+  - AI_MACRO_EXPAND, AI_MACRO_LEARN
+  - AI_AUTOCOMPLETE, AI_QUICK_NORMAL
+
+- Added relations to existing models:
+  - Organization: textMacros, aiTemplateSuggestions
+  - Provider: textMacros
+  - Encounter: aiTemplateSuggestions
+
+- Prisma schema validated and pushed to database successfully
+
+- Features implemented per acceptance criteria:
+  ✓ Suggest templates based on appointment type (suggestTemplate)
+  ✓ Smart text expansion macros (createMacro, expandMacro)
+  ✓ Auto-complete common phrases (autocomplete)
+  ✓ Previous note pull-forward (pullForwardContent)
+  ✓ Condition-specific templates (via encounterType filtering)
+  ✓ Quick normal exam generation (generateQuickNormal)
+  ✓ Customizable macro library (getMacroLibrary, createMacro)
+
 ### Remaining Stories:
-- US-321: Documentation templates and macros
 - US-322: AI documentation assistant UI
 
 --- Iteration 1 completed at 2026-01-22 11:33:29 ---
@@ -338,4 +418,10 @@ Story: US-319 - Compliance checking
 
 --- Iteration 6 completed at 2026-01-22 ---
 Story: US-320 - Provider preference learning
+
+--- Iteration 6 completed at 2026-01-22 12:06:00 ---
+Story: US-320 - Provider preference learning
+
+--- Iteration 7 completed at 2026-01-22 ---
+Story: US-321 - Documentation templates and macros
 

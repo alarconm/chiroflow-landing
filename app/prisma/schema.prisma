@@ -250,11 +250,13 @@ model Organization {
   aiBillingMetrics   AIBillingMetric[]
 
   // AI Documentation Agent relations (Epic 32)
-  aiTranscriptions     AITranscription[]
-  aiDraftNotes         AIDraftNote[]
-  aiCodeSuggestions    AICodeSuggestion[]
-  aiComplianceChecks   AIComplianceCheck[]
-  providerPreferences  ProviderPreference[]
+  aiTranscriptions        AITranscription[]
+  aiDraftNotes            AIDraftNote[]
+  aiCodeSuggestions       AICodeSuggestion[]
+  aiComplianceChecks      AIComplianceCheck[]
+  providerPreferences     ProviderPreference[]
+  textMacros              TextMacro[]
+  aiTemplateSuggestions   AITemplateSuggestion[]
 
   @@index([subdomain])
 }
@@ -927,6 +929,7 @@ model Provider {
 
   // AI Documentation Agent relations (Epic 32)
   providerPreferences ProviderPreference[]
+  textMacros          TextMacro[]
 
   @@index([organizationId])
   @@index([isActive])
@@ -1419,10 +1422,11 @@ model Encounter {
   homeCareInstructions  HomeCareInstruction[]
 
   // AI Documentation Agent relations (Epic 32)
-  aiTranscriptions   AITranscription[]
-  aiDraftNotes       AIDraftNote[]
-  aiCodeSuggestions  AICodeSuggestion[]
-  aiComplianceChecks AIComplianceCheck[]
+  aiTranscriptions       AITranscription[]
+  aiDraftNotes           AIDraftNote[]
+  aiCodeSuggestions      AICodeSuggestion[]
+  aiComplianceChecks     AIComplianceCheck[]
+  aiTemplateSuggestions  AITemplateSuggestion[]
 
   @@index([organizationId])
   @@index([patientId])
@@ -11842,4 +11846,102 @@ model ProviderPreference {
   @@index([providerId])
   @@index([category])
   @@index([isActive])
+}
+
+// Text macro for smart text expansion (US-321)
+model TextMacro {
+  id String @id @default(cuid())
+
+  // Macro trigger and expansion
+  trigger     String // Short trigger text like ".hpi" or ".pain"
+  expansion   String @db.Text // Full expansion text
+  description String? // Human-readable description
+
+  // Macro category
+  category String // general, subjective, objective, assessment, plan, common_phrases
+
+  // Scope
+  scope String @default("provider") // provider, organization, system
+
+  // Context-awareness
+  encounterTypes String[] // Which encounter types this applies to (empty = all)
+  soapSections   String[] // Which SOAP sections (S, O, A, P, or empty = all)
+
+  // Variables/placeholders
+  variables Json? // Variables that need to be filled in
+
+  // Usage tracking
+  usageCount    Int      @default(0)
+  lastUsedAt    DateTime?
+
+  // AI learning
+  learnedFromProvider Boolean @default(false) // Was this learned from provider patterns?
+  confidence          Float   @default(1.0) // Confidence score for AI-generated macros
+
+  // Active state
+  isActive Boolean @default(true)
+  isSystem Boolean @default(false) // System macros can't be deleted by users
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations - null providerId = organization-wide or system macro
+  providerId String?
+  provider   Provider? @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  // Multi-tenant relation
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([trigger, providerId, organizationId])
+  @@index([organizationId])
+  @@index([providerId])
+  @@index([category])
+  @@index([isActive])
+  @@index([scope])
+}
+
+// AI template suggestion tracking (US-321)
+model AITemplateSuggestion {
+  id String @id @default(cuid())
+
+  // Context
+  encounterId String?
+  encounter   Encounter? @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+
+  appointmentType String // The appointment type that triggered suggestion
+  encounterType   String // The encounter type
+
+  // Suggestion details
+  suggestedTemplateId String // ID of the suggested NoteTemplate
+  suggestedContent    Json? // Specific content suggestions
+
+  // Reasoning
+  reasoning String? // Why this template was suggested
+
+  // Confidence
+  confidence Float @default(0.8)
+
+  // Outcome
+  status      String    @default("SUGGESTED") // SUGGESTED, ACCEPTED, REJECTED, MODIFIED
+  acceptedAt  DateTime?
+  rejectedAt  DateTime?
+  modifyNotes String?
+
+  // Pull-forward data (from previous notes)
+  pullForwardData Json? // Content pulled from previous visits
+  pullForwardFrom String? // ID of the note pulled from
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([encounterId])
+  @@index([appointmentType])
+  @@index([encounterType])
+  @@index([status])
 }

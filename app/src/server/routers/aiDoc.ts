@@ -3459,7 +3459,1293 @@ export const aiDocRouter = router({
         },
       };
     }),
+
+  // ============================================
+  // US-321: Documentation Templates and Macros
+  // ============================================
+
+  /**
+   * Suggest template based on appointment type
+   * Analyzes the encounter context and suggests the best template
+   */
+  suggestTemplate: providerProcedure
+    .input(
+      z.object({
+        encounterId: z.string().optional(),
+        appointmentType: z.string().optional(),
+        encounterType: z.enum([
+          'INITIAL_EVAL',
+          'FOLLOW_UP',
+          'RE_EVALUATION',
+          'DISCHARGE',
+          'MAINTENANCE',
+          'ACUTE',
+          'WORKERS_COMP',
+          'PERSONAL_INJURY',
+        ]),
+        patientId: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { encounterId, appointmentType, encounterType, patientId } = input;
+
+      // Get provider
+      const provider = await ctx.prisma.provider.findFirst({
+        where: {
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!provider) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Provider not found',
+        });
+      }
+
+      // Find templates for this encounter type
+      const templates = await ctx.prisma.noteTemplate.findMany({
+        where: {
+          category: encounterType,
+          isActive: true,
+          OR: [
+            { organizationId: ctx.user.organizationId },
+            { organizationId: null }, // System templates
+          ],
+        },
+        orderBy: { sortOrder: 'asc' },
+      });
+
+      if (templates.length === 0) {
+        return {
+          suggestion: null,
+          message: 'No templates found for this encounter type',
+        };
+      }
+
+      // Check provider's template preferences
+      const templatePref = await ctx.prisma.providerPreference.findFirst({
+        where: {
+          providerId: provider.id,
+          organizationId: ctx.user.organizationId,
+          category: 'template',
+          preferenceKey: `preferred_${encounterType}`,
+          isActive: true,
+        },
+      });
+
+      let suggestedTemplate = templates[0];
+      let reasoning = 'Default template for this encounter type';
+      let confidence = 0.7;
+
+      // If provider has a preference, use it
+      if (templatePref) {
+        const prefTemplateId = (templatePref.preferenceValue as Record<string, unknown>).templateId as string;
+        const preferredTemplate = templates.find(t => t.id === prefTemplateId);
+        if (preferredTemplate) {
+          suggestedTemplate = preferredTemplate;
+          reasoning = 'Based on your previous template selections';
+          confidence = templatePref.confidenceScore;
+        }
+      }
+
+      // If appointment type specified, look for more specific match
+      if (appointmentType) {
+        const appointmentMatch = templates.find(t =>
+          t.name.toLowerCase().includes(appointmentType.toLowerCase())
+        );
+        if (appointmentMatch) {
+          suggestedTemplate = appointmentMatch;
+          reasoning = `Matched to appointment type: ${appointmentType}`;
+          confidence = 0.85;
+        }
+      }
+
+      // Check for pull-forward data from previous notes
+      let pullForwardData = null;
+      let pullForwardFromId = null;
+
+      if (patientId) {
+        const previousNote = await ctx.prisma.sOAPNote.findFirst({
+          where: {
+            encounter: {
+              patientId,
+              organizationId: ctx.user.organizationId,
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          include: {
+            encounter: true,
+          },
+        });
+
+        if (previousNote) {
+          // Pull forward relevant data (maintaining patient continuity)
+          pullForwardData = {
+            previousDiagnoses: previousNote.assessment,
+            previousPlan: previousNote.plan,
+            lastVisitDate: previousNote.encounter.createdAt,
+          };
+          pullForwardFromId = previousNote.id;
+        }
+      }
+
+      // Create suggestion record
+      const suggestion = await ctx.prisma.aITemplateSuggestion.create({
+        data: {
+          encounterId,
+          appointmentType: appointmentType || 'general',
+          encounterType,
+          suggestedTemplateId: suggestedTemplate.id,
+          reasoning,
+          confidence,
+          pullForwardData: pullForwardData as Prisma.InputJsonValue,
+          pullForwardFrom: pullForwardFromId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      await auditLog('AI_TEMPLATE_SUGGEST', 'AITemplateSuggestion', {
+        entityId: suggestion.id,
+        changes: {
+          templateId: suggestedTemplate.id,
+          templateName: suggestedTemplate.name,
+          encounterType,
+          confidence,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        suggestionId: suggestion.id,
+        template: {
+          id: suggestedTemplate.id,
+          name: suggestedTemplate.name,
+          description: suggestedTemplate.description,
+          subjectiveTemplate: suggestedTemplate.subjectiveTemplate,
+          objectiveTemplate: suggestedTemplate.objectiveTemplate,
+          assessmentTemplate: suggestedTemplate.assessmentTemplate,
+          planTemplate: suggestedTemplate.planTemplate,
+        },
+        reasoning,
+        confidence,
+        pullForwardData,
+        alternatives: templates.filter(t => t.id !== suggestedTemplate.id).slice(0, 3).map(t => ({
+          id: t.id,
+          name: t.name,
+          description: t.description,
+        })),
+      };
+    }),
+
+  /**
+   * Accept a template suggestion
+   * Tracks for provider preference learning
+   */
+  acceptTemplateSuggestion: providerProcedure
+    .input(
+      z.object({
+        suggestionId: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const suggestion = await ctx.prisma.aITemplateSuggestion.findFirst({
+        where: {
+          id: input.suggestionId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!suggestion) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Suggestion not found',
+        });
+      }
+
+      const updated = await ctx.prisma.aITemplateSuggestion.update({
+        where: { id: input.suggestionId },
+        data: {
+          status: 'ACCEPTED',
+          acceptedAt: new Date(),
+        },
+      });
+
+      // Update provider preference for this encounter type
+      const provider = await ctx.prisma.provider.findFirst({
+        where: {
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (provider) {
+        await ctx.prisma.providerPreference.upsert({
+          where: {
+            providerId_category_preferenceKey: {
+              providerId: provider.id,
+              category: 'template',
+              preferenceKey: `preferred_${suggestion.encounterType}`,
+            },
+          },
+          update: {
+            preferenceValue: { templateId: suggestion.suggestedTemplateId },
+            confidenceScore: Math.min(1, (suggestion.confidence || 0.8) + 0.05),
+            timesApplied: { increment: 1 },
+            timesAccepted: { increment: 1 },
+          },
+          create: {
+            providerId: provider.id,
+            organizationId: ctx.user.organizationId,
+            category: 'template',
+            preferenceKey: `preferred_${suggestion.encounterType}`,
+            preferenceValue: { templateId: suggestion.suggestedTemplateId },
+            confidenceScore: 0.8,
+            timesApplied: 1,
+            timesAccepted: 1,
+          },
+        });
+      }
+
+      await auditLog('AI_TEMPLATE_ACCEPT', 'AITemplateSuggestion', {
+        entityId: input.suggestionId,
+        changes: { templateId: suggestion.suggestedTemplateId },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return updated;
+    }),
+
+  /**
+   * Reject a template suggestion (use a different template)
+   */
+  rejectTemplateSuggestion: providerProcedure
+    .input(
+      z.object({
+        suggestionId: z.string(),
+        selectedTemplateId: z.string().optional(), // What they chose instead
+        reason: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { suggestionId, selectedTemplateId, reason } = input;
+
+      const suggestion = await ctx.prisma.aITemplateSuggestion.findFirst({
+        where: {
+          id: suggestionId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!suggestion) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Suggestion not found',
+        });
+      }
+
+      const updated = await ctx.prisma.aITemplateSuggestion.update({
+        where: { id: suggestionId },
+        data: {
+          status: 'REJECTED',
+          rejectedAt: new Date(),
+          modifyNotes: reason,
+        },
+      });
+
+      // If they selected a different template, learn from it
+      if (selectedTemplateId) {
+        const provider = await ctx.prisma.provider.findFirst({
+          where: {
+            userId: ctx.user.id,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+
+        if (provider) {
+          // Update preference to their actual choice
+          await ctx.prisma.providerPreference.upsert({
+            where: {
+              providerId_category_preferenceKey: {
+                providerId: provider.id,
+                category: 'template',
+                preferenceKey: `preferred_${suggestion.encounterType}`,
+              },
+            },
+            update: {
+              preferenceValue: { templateId: selectedTemplateId },
+              confidenceScore: 0.75,
+              timesApplied: { increment: 1 },
+              timesRejected: { increment: 1 },
+            },
+            create: {
+              providerId: provider.id,
+              organizationId: ctx.user.organizationId,
+              category: 'template',
+              preferenceKey: `preferred_${suggestion.encounterType}`,
+              preferenceValue: { templateId: selectedTemplateId },
+              confidenceScore: 0.75,
+              timesApplied: 1,
+              timesRejected: 1,
+            },
+          });
+        }
+      }
+
+      await auditLog('AI_TEMPLATE_REJECT', 'AITemplateSuggestion', {
+        entityId: suggestionId,
+        changes: { selectedTemplateId, reason },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return updated;
+    }),
+
+  /**
+   * Pull forward content from previous note
+   * Gets relevant content from patient's previous visits
+   */
+  pullForwardContent: providerProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        encounterType: z.string(),
+        sections: z.array(z.enum(['subjective', 'objective', 'assessment', 'plan'])).default(['assessment', 'plan']),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { patientId, encounterType, sections } = input;
+
+      // Get patient's recent notes
+      const recentNotes = await ctx.prisma.sOAPNote.findMany({
+        where: {
+          encounter: {
+            patientId,
+            organizationId: ctx.user.organizationId,
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        include: {
+          encounter: {
+            include: {
+              diagnoses: true,
+            },
+          },
+        },
+      });
+
+      if (recentNotes.length === 0) {
+        return {
+          available: false,
+          message: 'No previous notes found for this patient',
+          pullForwardContent: null,
+        };
+      }
+
+      const mostRecent = recentNotes[0];
+
+      // Build pull-forward content based on requested sections
+      const pullForward: Record<string, unknown> = {
+        noteId: mostRecent.id,
+        noteDate: mostRecent.encounter.createdAt,
+        encounterType: mostRecent.encounter.encounterType,
+      };
+
+      if (sections.includes('subjective')) {
+        pullForward.subjective = {
+          chiefComplaint: mostRecent.subjective,
+          tip: 'Update with current symptoms and changes since last visit',
+        };
+      }
+
+      if (sections.includes('objective')) {
+        pullForward.objective = {
+          previousFindings: mostRecent.objective,
+          tip: 'Document current examination findings - compare to these previous findings',
+        };
+      }
+
+      if (sections.includes('assessment')) {
+        pullForward.assessment = {
+          diagnoses: mostRecent.encounter.diagnoses.map(d => ({
+            code: d.icd10Code,
+            description: d.description,
+          })),
+          previousAssessment: mostRecent.assessment,
+          tip: 'Update diagnosis status and add any new diagnoses',
+        };
+      }
+
+      if (sections.includes('plan')) {
+        pullForward.plan = {
+          previousPlan: mostRecent.plan,
+          tip: 'Document current treatment plan and any modifications',
+        };
+      }
+
+      await auditLog('AI_TEMPLATE_PULL_FORWARD', 'SOAPNote', {
+        entityId: mostRecent.id,
+        changes: { patientId, sections },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        available: true,
+        pullForwardContent: pullForward,
+        recentNoteCount: recentNotes.length,
+      };
+    }),
+
+  // ============================================
+  // Smart Text Macros
+  // ============================================
+
+  /**
+   * Create a new text macro
+   */
+  createMacro: providerProcedure
+    .input(
+      z.object({
+        trigger: z.string().min(2).max(20),
+        expansion: z.string().min(1),
+        description: z.string().optional(),
+        category: z.enum(['general', 'subjective', 'objective', 'assessment', 'plan', 'common_phrases']),
+        scope: z.enum(['provider', 'organization']).default('provider'),
+        encounterTypes: z.array(z.string()).default([]),
+        soapSections: z.array(z.string()).default([]),
+        variables: z.array(z.object({
+          name: z.string(),
+          placeholder: z.string(),
+          defaultValue: z.string().optional(),
+        })).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { trigger, expansion, description, category, scope, encounterTypes, soapSections, variables } = input;
+
+      // Get provider
+      const provider = await ctx.prisma.provider.findFirst({
+        where: {
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!provider) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Provider not found',
+        });
+      }
+
+      // Check for duplicate trigger
+      const existing = await ctx.prisma.textMacro.findFirst({
+        where: {
+          trigger,
+          OR: [
+            { providerId: provider.id },
+            { organizationId: ctx.user.organizationId, scope: 'organization' },
+          ],
+          isActive: true,
+        },
+      });
+
+      if (existing) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: `A macro with trigger "${trigger}" already exists`,
+        });
+      }
+
+      const macro = await ctx.prisma.textMacro.create({
+        data: {
+          trigger: trigger.startsWith('.') ? trigger : `.${trigger}`,
+          expansion,
+          description,
+          category,
+          scope,
+          encounterTypes,
+          soapSections,
+          variables: variables as Prisma.InputJsonValue,
+          providerId: scope === 'provider' ? provider.id : null,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      await auditLog('AI_MACRO_CREATE', 'TextMacro', {
+        entityId: macro.id,
+        changes: { trigger, category, scope },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return macro;
+    }),
+
+  /**
+   * Update an existing macro
+   */
+  updateMacro: providerProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        trigger: z.string().min(2).max(20).optional(),
+        expansion: z.string().min(1).optional(),
+        description: z.string().optional(),
+        category: z.enum(['general', 'subjective', 'objective', 'assessment', 'plan', 'common_phrases']).optional(),
+        encounterTypes: z.array(z.string()).optional(),
+        soapSections: z.array(z.string()).optional(),
+        variables: z.array(z.object({
+          name: z.string(),
+          placeholder: z.string(),
+          defaultValue: z.string().optional(),
+        })).optional(),
+        isActive: z.boolean().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...updateData } = input;
+
+      const macro = await ctx.prisma.textMacro.findFirst({
+        where: {
+          id,
+          OR: [
+            { providerId: { not: null }, provider: { userId: ctx.user.id } },
+            { organizationId: ctx.user.organizationId, scope: 'organization' },
+          ],
+        },
+      });
+
+      if (!macro) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Macro not found or you do not have permission to edit it',
+        });
+      }
+
+      if (macro.isSystem) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'System macros cannot be edited',
+        });
+      }
+
+      // Format trigger if provided
+      if (updateData.trigger && !updateData.trigger.startsWith('.')) {
+        updateData.trigger = `.${updateData.trigger}`;
+      }
+
+      const updated = await ctx.prisma.textMacro.update({
+        where: { id },
+        data: {
+          ...updateData,
+          variables: updateData.variables as Prisma.InputJsonValue,
+        },
+      });
+
+      await auditLog('AI_MACRO_UPDATE', 'TextMacro', {
+        entityId: id,
+        changes: updateData,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return updated;
+    }),
+
+  /**
+   * Delete a macro
+   */
+  deleteMacro: providerProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const macro = await ctx.prisma.textMacro.findFirst({
+        where: {
+          id: input.id,
+          OR: [
+            { providerId: { not: null }, provider: { userId: ctx.user.id } },
+            { organizationId: ctx.user.organizationId, scope: 'organization' },
+          ],
+        },
+      });
+
+      if (!macro) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Macro not found',
+        });
+      }
+
+      if (macro.isSystem) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'System macros cannot be deleted',
+        });
+      }
+
+      await ctx.prisma.textMacro.delete({
+        where: { id: input.id },
+      });
+
+      await auditLog('AI_MACRO_DELETE', 'TextMacro', {
+        entityId: input.id,
+        changes: { trigger: macro.trigger },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { success: true };
+    }),
+
+  /**
+   * List macros available to the provider
+   */
+  listMacros: providerProcedure
+    .input(
+      z.object({
+        category: z.string().optional(),
+        soapSection: z.string().optional(),
+        encounterType: z.string().optional(),
+        search: z.string().optional(),
+        includeSystem: z.boolean().default(true),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const { category, soapSection, encounterType, search, includeSystem = true } = input ?? {};
+
+      // Get provider
+      const provider = await ctx.prisma.provider.findFirst({
+        where: {
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      const whereConditions: Prisma.TextMacroWhereInput[] = [];
+
+      // Provider's own macros
+      if (provider) {
+        whereConditions.push({ providerId: provider.id });
+      }
+
+      // Organization macros
+      whereConditions.push({
+        organizationId: ctx.user.organizationId,
+        scope: 'organization',
+      });
+
+      // System macros
+      if (includeSystem) {
+        whereConditions.push({ isSystem: true });
+      }
+
+      const where: Prisma.TextMacroWhereInput = {
+        OR: whereConditions,
+        isActive: true,
+      };
+
+      if (category) {
+        where.category = category;
+      }
+
+      if (soapSection) {
+        where.OR = [
+          { soapSections: { has: soapSection } },
+          { soapSections: { isEmpty: true } },
+        ];
+      }
+
+      if (encounterType) {
+        // Include macros that apply to all encounter types or this specific one
+        where.AND = [
+          {
+            OR: [
+              { encounterTypes: { has: encounterType } },
+              { encounterTypes: { isEmpty: true } },
+            ],
+          },
+        ];
+      }
+
+      if (search) {
+        where.AND = [
+          ...(Array.isArray(where.AND) ? where.AND : []),
+          {
+            OR: [
+              { trigger: { contains: search, mode: 'insensitive' } },
+              { expansion: { contains: search, mode: 'insensitive' } },
+              { description: { contains: search, mode: 'insensitive' } },
+            ],
+          },
+        ];
+      }
+
+      const macros = await ctx.prisma.textMacro.findMany({
+        where,
+        orderBy: [
+          { usageCount: 'desc' },
+          { trigger: 'asc' },
+        ],
+      });
+
+      // Group by category
+      const grouped = macros.reduce((acc, macro) => {
+        const cat = macro.category;
+        if (!acc[cat]) acc[cat] = [];
+        acc[cat].push(macro);
+        return acc;
+      }, {} as Record<string, typeof macros>);
+
+      return {
+        macros,
+        grouped,
+        total: macros.length,
+      };
+    }),
+
+  /**
+   * Expand a macro trigger
+   * Replaces trigger with expansion and tracks usage
+   */
+  expandMacro: providerProcedure
+    .input(
+      z.object({
+        trigger: z.string(),
+        variables: z.record(z.string(), z.string()).optional(), // Variable replacements
+        context: z.object({
+          soapSection: z.string().optional(),
+          encounterType: z.string().optional(),
+          encounterId: z.string().optional(),
+        }).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { trigger, variables } = input;
+
+      // Get provider
+      const provider = await ctx.prisma.provider.findFirst({
+        where: {
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      // Find matching macro
+      const macro = await ctx.prisma.textMacro.findFirst({
+        where: {
+          trigger: trigger.startsWith('.') ? trigger : `.${trigger}`,
+          isActive: true,
+          OR: [
+            { providerId: provider?.id },
+            { organizationId: ctx.user.organizationId, scope: 'organization' },
+            { isSystem: true },
+          ],
+        },
+        orderBy: [
+          // Prefer provider-specific, then org, then system
+          { providerId: 'desc' },
+          { scope: 'desc' },
+        ],
+      });
+
+      if (!macro) {
+        return {
+          found: false,
+          expansion: null,
+          message: `No macro found for trigger "${trigger}"`,
+        };
+      }
+
+      // Build expansion with variable replacement
+      let expansion = macro.expansion;
+
+      if (variables) {
+        for (const [key, value] of Object.entries(variables)) {
+          expansion = expansion.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
+        }
+      }
+
+      // Update usage stats
+      await ctx.prisma.textMacro.update({
+        where: { id: macro.id },
+        data: {
+          usageCount: { increment: 1 },
+          lastUsedAt: new Date(),
+        },
+      });
+
+      await auditLog('AI_MACRO_EXPAND', 'TextMacro', {
+        entityId: macro.id,
+        changes: { trigger, context: input.context },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        found: true,
+        expansion,
+        macroId: macro.id,
+        hasVariables: macro.variables !== null,
+        variables: macro.variables,
+      };
+    }),
+
+  /**
+   * Auto-complete text with common phrases
+   * Returns phrase suggestions based on partial input
+   */
+  autocomplete: providerProcedure
+    .input(
+      z.object({
+        text: z.string().min(2),
+        soapSection: z.enum(['subjective', 'objective', 'assessment', 'plan']).optional(),
+        encounterType: z.string().optional(),
+        limit: z.number().min(1).max(20).default(5),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { text, soapSection, encounterType, limit } = input;
+
+      // Get provider
+      const provider = await ctx.prisma.provider.findFirst({
+        where: {
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      // Search macros that match
+      const macros = await ctx.prisma.textMacro.findMany({
+        where: {
+          isActive: true,
+          OR: [
+            { trigger: { startsWith: text, mode: 'insensitive' } },
+            { expansion: { contains: text, mode: 'insensitive' } },
+          ],
+          AND: [
+            {
+              OR: [
+                { providerId: provider?.id },
+                { organizationId: ctx.user.organizationId },
+                { isSystem: true },
+              ],
+            },
+          ],
+        },
+        take: limit,
+        orderBy: { usageCount: 'desc' },
+      });
+
+      // Also get provider's phrase preferences
+      const phrasePrefs = provider ? await ctx.prisma.providerPreference.findMany({
+        where: {
+          providerId: provider.id,
+          category: 'phrases',
+          isActive: true,
+          preferenceKey: { contains: soapSection || '' },
+        },
+        take: 5,
+      }) : [];
+
+      // Common clinical phrases (system defaults)
+      const commonPhrases = getCommonPhrases(text, soapSection);
+
+      await auditLog('AI_AUTOCOMPLETE', 'TextMacro', {
+        entityId: 'autocomplete',
+        changes: { text, soapSection, resultCount: macros.length },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        suggestions: [
+          ...macros.map(m => ({
+            type: 'macro' as const,
+            trigger: m.trigger,
+            text: m.expansion,
+            description: m.description,
+          })),
+          ...phrasePrefs.map(p => ({
+            type: 'preference' as const,
+            trigger: null,
+            text: (p.preferenceValue as Record<string, unknown>).phrase as string,
+            description: 'Your commonly used phrase',
+          })),
+          ...commonPhrases.map(phrase => ({
+            type: 'common' as const,
+            trigger: null,
+            text: phrase,
+            description: 'Common clinical phrase',
+          })),
+        ].slice(0, limit),
+      };
+    }),
+
+  /**
+   * Generate quick normal exam text
+   * Creates standard "within normal limits" text for objective section
+   */
+  generateQuickNormal: providerProcedure
+    .input(
+      z.object({
+        examType: z.enum(['general', 'cervical', 'thoracic', 'lumbar', 'extremity', 'neurological']),
+        encounterType: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { examType, encounterType } = input;
+
+      // Get provider preferences for normal exam text
+      const provider = await ctx.prisma.provider.findFirst({
+        where: {
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      let normalText = '';
+
+      // Check for provider's custom normal template
+      if (provider) {
+        const customNormal = await ctx.prisma.providerPreference.findFirst({
+          where: {
+            providerId: provider.id,
+            category: 'template',
+            preferenceKey: `normal_exam_${examType}`,
+            isActive: true,
+          },
+        });
+
+        if (customNormal) {
+          normalText = (customNormal.preferenceValue as Record<string, unknown>).text as string;
+        }
+      }
+
+      // Use defaults if no custom template
+      if (!normalText) {
+        normalText = getDefaultNormalExam(examType);
+      }
+
+      await auditLog('AI_QUICK_NORMAL', 'ProviderPreference', {
+        entityId: provider?.id || 'system',
+        changes: { examType, encounterType },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        text: normalText,
+        examType,
+        isCustom: normalText !== getDefaultNormalExam(examType),
+      };
+    }),
+
+  /**
+   * Learn macro from provider's text patterns
+   * Analyzes frequently typed text and suggests macros
+   */
+  learnMacroFromPattern: providerProcedure
+    .input(
+      z.object({
+        text: z.string(),
+        soapSection: z.string().optional(),
+        encounterType: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { text, soapSection, encounterType } = input;
+
+      // Get provider
+      const provider = await ctx.prisma.provider.findFirst({
+        where: {
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!provider) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Provider not found',
+        });
+      }
+
+      // Check if we already have a similar macro
+      const existingMacros = await ctx.prisma.textMacro.findMany({
+        where: {
+          providerId: provider.id,
+          isActive: true,
+        },
+      });
+
+      for (const macro of existingMacros) {
+        if (calculateTextSimilarity(macro.expansion, text) > 0.85) {
+          return {
+            created: false,
+            existingMacro: macro,
+            message: `Similar macro already exists: ${macro.trigger}`,
+          };
+        }
+      }
+
+      // Generate trigger suggestion
+      const triggerSuggestion = generateTriggerSuggestion(text, soapSection);
+
+      // Create the learned macro
+      const newMacro = await ctx.prisma.textMacro.create({
+        data: {
+          trigger: triggerSuggestion,
+          expansion: text,
+          description: 'Learned from your documentation patterns',
+          category: soapSection || 'general',
+          scope: 'provider',
+          encounterTypes: encounterType ? [encounterType] : [],
+          soapSections: soapSection ? [soapSection] : [],
+          learnedFromProvider: true,
+          confidence: 0.7,
+          providerId: provider.id,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      await auditLog('AI_MACRO_LEARN', 'TextMacro', {
+        entityId: newMacro.id,
+        changes: { trigger: triggerSuggestion, soapSection, textLength: text.length },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        created: true,
+        macro: newMacro,
+        message: `Created new macro with trigger "${triggerSuggestion}"`,
+      };
+    }),
+
+  /**
+   * Get macro library (organized collection)
+   */
+  getMacroLibrary: providerProcedure.query(async ({ ctx }) => {
+    // Get provider
+    const provider = await ctx.prisma.provider.findFirst({
+      where: {
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      },
+    });
+
+    // Get all available macros
+    const macros = await ctx.prisma.textMacro.findMany({
+      where: {
+        isActive: true,
+        OR: [
+          { providerId: provider?.id },
+          { organizationId: ctx.user.organizationId, scope: 'organization' },
+          { isSystem: true },
+        ],
+      },
+      orderBy: [{ category: 'asc' }, { trigger: 'asc' }],
+    });
+
+    // Organize into library structure
+    const library: Record<string, {
+      category: string;
+      macros: typeof macros;
+      count: number;
+    }> = {};
+
+    for (const macro of macros) {
+      if (!library[macro.category]) {
+        library[macro.category] = {
+          category: macro.category,
+          macros: [],
+          count: 0,
+        };
+      }
+      library[macro.category].macros.push(macro);
+      library[macro.category].count++;
+    }
+
+    // Get usage stats
+    const stats = await ctx.prisma.textMacro.aggregate({
+      where: {
+        providerId: provider?.id,
+      },
+      _sum: { usageCount: true },
+      _count: true,
+    });
+
+    return {
+      library,
+      categories: Object.keys(library),
+      totalMacros: macros.length,
+      providerMacroCount: provider ? macros.filter(m => m.providerId === provider.id).length : 0,
+      totalUsage: stats._sum.usageCount || 0,
+    };
+  }),
+
+  /**
+   * Get template suggestion statistics
+   */
+  getTemplateStats: providerProcedure.query(async ({ ctx }) => {
+    const [total, accepted, rejected] = await Promise.all([
+      ctx.prisma.aITemplateSuggestion.count({
+        where: { organizationId: ctx.user.organizationId },
+      }),
+      ctx.prisma.aITemplateSuggestion.count({
+        where: { organizationId: ctx.user.organizationId, status: 'ACCEPTED' },
+      }),
+      ctx.prisma.aITemplateSuggestion.count({
+        where: { organizationId: ctx.user.organizationId, status: 'REJECTED' },
+      }),
+    ]);
+
+    // Most used templates
+    const topTemplates = await ctx.prisma.aITemplateSuggestion.groupBy({
+      by: ['suggestedTemplateId'],
+      where: {
+        organizationId: ctx.user.organizationId,
+        status: 'ACCEPTED',
+      },
+      _count: true,
+      orderBy: { _count: { suggestedTemplateId: 'desc' } },
+      take: 5,
+    });
+
+    return {
+      totalSuggestions: total,
+      acceptedCount: accepted,
+      rejectedCount: rejected,
+      acceptanceRate: total > 0 ? `${((accepted / total) * 100).toFixed(1)}%` : '0%',
+      topTemplateIds: topTemplates.map(t => t.suggestedTemplateId),
+    };
+  }),
 });
+
+// ============================================
+// US-321: Template and Macro Helpers
+// ============================================
+
+/**
+ * Get common clinical phrases based on partial text and section
+ */
+function getCommonPhrases(text: string, section?: string): string[] {
+  const phrases: Record<string, string[]> = {
+    subjective: [
+      'Patient reports improvement since last visit.',
+      'Pain is described as sharp/dull and localized to',
+      'Symptoms are aggravated by prolonged sitting/standing.',
+      'Patient denies numbness, tingling, or radiating pain.',
+      'Activity level has been modified due to pain.',
+    ],
+    objective: [
+      'Range of motion within normal limits.',
+      'Palpatory tenderness noted at',
+      'Muscle spasm present in paraspinal musculature.',
+      'Orthopedic tests negative for radiculopathy.',
+      'Gait and posture observed to be',
+    ],
+    assessment: [
+      'Patient is responding well to treatment.',
+      'Condition is improving as evidenced by',
+      'Medical necessity continues due to functional limitations.',
+      'Progress is consistent with expected outcomes.',
+      'Treatment plan modifications indicated.',
+    ],
+    plan: [
+      'Continue current treatment frequency.',
+      'Re-evaluate in 4 visits.',
+      'Patient to continue home exercises.',
+      'Next visit: CMT to affected regions.',
+      'Follow up PRN if symptoms worsen.',
+    ],
+  };
+
+  const sectionPhrases = section ? phrases[section] || [] : Object.values(phrases).flat();
+
+  // Filter by partial text match
+  return sectionPhrases.filter(phrase =>
+    phrase.toLowerCase().includes(text.toLowerCase())
+  ).slice(0, 5);
+}
+
+/**
+ * Get default normal exam text
+ */
+function getDefaultNormalExam(examType: string): string {
+  const defaults: Record<string, string> = {
+    general: `GENERAL: Alert and oriented, no acute distress.
+POSTURE: Within normal limits.
+GAIT: Normal, symmetric.`,
+    cervical: `CERVICAL SPINE:
+ROM: Flexion, extension, lateral flexion, and rotation within normal limits.
+Palpation: No tenderness or spasm.
+Orthopedic: Cervical compression negative, Spurling's negative.
+Neurological: Upper extremity sensation, motor, and reflexes intact.`,
+    thoracic: `THORACIC SPINE:
+ROM: Within normal limits.
+Palpation: No tenderness or spasm.
+Respiration: Symmetric chest expansion.`,
+    lumbar: `LUMBAR SPINE:
+ROM: Flexion, extension, lateral flexion, and rotation within normal limits.
+Palpation: No tenderness or spasm.
+Orthopedic: SLR negative bilaterally, Kemp's negative.
+Neurological: Lower extremity sensation, motor, and reflexes intact.`,
+    extremity: `EXTREMITIES:
+Upper: ROM WNL bilaterally, strength 5/5, no edema.
+Lower: ROM WNL bilaterally, strength 5/5, no edema.`,
+    neurological: `NEUROLOGICAL:
+Cranial Nerves: II-XII intact.
+Motor: 5/5 all major muscle groups.
+Sensory: Intact to light touch.
+Reflexes: 2+ and symmetric.
+Coordination: Finger-to-nose and heel-to-shin normal.`,
+  };
+
+  return defaults[examType] || defaults.general;
+}
+
+/**
+ * Calculate text similarity (simple word overlap)
+ */
+function calculateTextSimilarity(text1: string, text2: string): number {
+  const words1 = new Set(text1.toLowerCase().split(/\s+/).filter(w => w.length > 3));
+  const words2 = new Set(text2.toLowerCase().split(/\s+/).filter(w => w.length > 3));
+
+  const intersection = new Set(Array.from(words1).filter(x => words2.has(x)));
+  const union = new Set([...Array.from(words1), ...Array.from(words2)]);
+
+  return union.size > 0 ? intersection.size / union.size : 0;
+}
+
+/**
+ * Generate trigger suggestion from text
+ */
+function generateTriggerSuggestion(text: string, section?: string): string {
+  // Get first few meaningful words
+  const words = text.toLowerCase().split(/\s+/)
+    .filter(w => w.length > 2 && !['the', 'and', 'for', 'with', 'was'].includes(w));
+
+  let trigger = '.';
+
+  if (section) {
+    trigger += section.charAt(0); // s, o, a, p
+  }
+
+  // Add first letters of first 2-3 words
+  trigger += words.slice(0, 3).map(w => w.charAt(0)).join('');
+
+  // Add a number if needed to make unique
+  trigger += Math.floor(Math.random() * 10);
+
+  return trigger;
+}
 
 // ============================================
 // US-320: Provider Preference Learning Helpers
