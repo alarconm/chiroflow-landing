@@ -312,3 +312,74 @@ Story: US-235 - Home care instructions
 --- Iteration 6 completed at 2026-01-22 ---
 Story: US-236 - Condition-specific education
 
+--- Iteration 6 completed at 2026-01-22 04:10:46 ---
+Story: US-236 - Condition-specific education
+
+## US-237: Patient progress tracking - COMPLETED
+
+### Date: 2026-01-22
+
+### What was implemented:
+1. Created comprehensive progress tRPC router (`app/src/server/routers/progress.ts`) with:
+   - `progress.logExercise` - Patient logs completed exercise with sets, reps, pain tracking
+   - `progress.getCompliance` - Calculate compliance rate for patient/prescription over time periods
+   - `progress.getPainHistory` - Track pain levels before/after exercises with averages
+   - `progress.getDifficultyFeedback` - Get difficulty feedback by exercise with distribution
+   - `progress.getProviderComplianceView` - Provider dashboard for all patient compliance
+   - `progress.scheduleReminder` - Schedule exercise reminders (daily, weekdays, custom)
+   - `progress.sendReminder` - Send immediate reminder via SMS or email (provider only)
+   - `progress.getAchievements` - Get patient achievement badges
+   - `progress.getHistory` - Get full progress log history with pagination
+   - `progress.updateLog` - Update a progress log entry
+   - `progress.deleteLog` - Delete a progress log entry
+
+2. Pain tracking before/after exercises:
+   - Pain levels 0-10 scale recorded before and after
+   - Average pain reduction calculation
+   - Pain history view with trend data
+   - Filtering by prescription and date range
+
+3. Difficulty feedback from patient:
+   - 5-level difficulty scale (Very Easy to Very Difficult)
+   - Distribution analysis across all exercises
+   - Average difficulty per exercise
+   - Trend tracking (last 5 entries per exercise)
+
+4. Provider view of patient compliance:
+   - Overview mode: All patients with prescriptions sorted by compliance
+   - Single patient mode: Detailed prescription-level compliance
+   - Summary stats: Total patients, compliant (80%+), at-risk (<50%)
+   - Filtering by date range (week, month, quarter)
+   - Sorting by compliance rate, last activity, total exercises, patient name
+
+5. Reminder notifications for exercises:
+   - Schedule reminders with time and frequency (daily, weekdays, custom days)
+   - Channel selection (SMS, EMAIL, PUSH)
+   - Send immediate reminders with custom messages
+   - HTML-formatted email with exercise list
+   - Integrates with existing notification service
+
+6. Achievement badges for consistency:
+   - First Steps: Complete first exercise
+   - Week Warrior: 7-day streak
+   - Fortnight Fighter: 14-day streak
+   - Monthly Master: 30-day streak
+   - Getting Started: 10 exercise sessions
+   - Dedicated: 50 exercise sessions
+   - Century Club: 100 exercise sessions
+   - Pain Fighter: Consistent pain reduction
+   - Progress tracking toward each badge
+   - Earned date tracking
+
+### Files created:
+- app/src/server/routers/progress.ts
+
+### Files modified:
+- app/src/server/routers/index.ts (added progressRouter)
+
+### Verification:
+- TypeScript compilation passed with no errors
+
+--- Iteration 7 completed at 2026-01-22 ---
+Story: US-237 - Patient progress tracking
+
