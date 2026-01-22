@@ -1,125 +1,127 @@
 {
-  "branch": "feature/payment-processing",
-  "title": "Epic 10: Payment Processing",
-  "description": "Integrated payment processing with Stripe/Square for card payments, payment plans, and automated billing. Supports multiple payment methods and reconciliation.",
-  "epic": "10-payment-processing",
-  "dependencies": ["07-billing-claims"],
+  "branch": "feature/patient-portal",
+  "title": "Epic 14: Patient Portal",
+  "description": "Self-service patient portal for appointment scheduling, form completion, bill payment, and health record access. Enhances patient engagement and reduces front desk workload.",
+  "epic": "14-patient-portal",
+  "dependencies": ["01-platform-foundation", "03-patient-scheduling"],
   "userStories": [
     {
-      "id": "US-085",
-      "title": "Payment processor configuration schema",
-      "description": "Create database models for payment processor connections and transaction tracking.",
+      "id": "US-093",
+      "title": "Patient portal authentication",
+      "description": "Secure patient login and account management for portal access.",
       "acceptanceCriteria": [
-        "PaymentProcessor model with name, type (stripe/square), apiKey (encrypted), webhookSecret",
-        "PaymentTransaction model with patientId, amount, processorId, status, transactionId",
-        "PaymentMethod model with patientId, type (card/bank), last4, expiryDate, isDefault",
-        "PaymentPlan model with patientId, totalAmount, installments, frequency, startDate",
-        "PaymentPlanPayment model linking payments to plans",
-        "Prisma migrations run successfully"
+        "Patient login page at /portal/login separate from staff login",
+        "Email/password authentication for patients",
+        "Password reset via email link",
+        "Account activation flow for new patients",
+        "Session management with secure cookies",
+        "Rate limiting on login attempts"
       ],
       "priority": 1,
       "passes": true
     },
     {
-      "id": "US-086",
-      "title": "Payment processor abstraction layer",
-      "description": "Create provider interface for different payment processor integrations.",
+      "id": "US-094",
+      "title": "Patient portal dashboard",
+      "description": "Landing page for authenticated patients showing key information.",
       "acceptanceCriteria": [
-        "PaymentProvider interface with charge, refund, createCustomer, savePaymentMethod",
-        "StripeProvider implementing the interface",
-        "MockPaymentProvider for development and testing",
-        "Environment-based provider selection",
-        "Secure credential handling with encryption"
+        "Dashboard at /portal showing patient name and welcome message",
+        "Upcoming appointments widget with date, time, provider",
+        "Outstanding balance summary",
+        "Pending forms requiring completion",
+        "Quick links to common actions",
+        "Mobile-responsive layout"
       ],
       "priority": 2,
       "passes": true
     },
     {
-      "id": "US-087",
-      "title": "Card payment processing",
-      "description": "Process credit/debit card payments through integrated payment processor.",
+      "id": "US-095",
+      "title": "Online appointment scheduling",
+      "description": "Allow patients to book and manage appointments online.",
       "acceptanceCriteria": [
-        "payment.processCard - Charge a card for patient balance",
-        "Secure card entry using Stripe Elements or equivalent",
-        "Store payment method for future use (with patient consent)",
-        "Handle declined cards gracefully with clear error messages",
-        "Create ledger entry and receipt on successful payment",
-        "Email receipt to patient automatically"
+        "Available appointment slots calendar view",
+        "Filter by provider and appointment type",
+        "Book appointment with confirmation",
+        "View upcoming appointments",
+        "Cancel appointment with configurable notice period",
+        "Reschedule to new available slot",
+        "Confirmation email on booking/changes"
       ],
       "priority": 3,
       "passes": true
     },
     {
-      "id": "US-088",
-      "title": "Refund processing",
-      "description": "Process refunds through payment processor with proper accounting.",
+      "id": "US-096",
+      "title": "Patient form completion portal",
+      "description": "Allow patients to complete intake and other forms online.",
       "acceptanceCriteria": [
-        "payment.processRefund - Refund full or partial amount",
-        "Require reason for refund",
-        "Create reversing ledger entry",
-        "Update patient balance",
-        "Email refund confirmation to patient",
-        "Audit trail for all refunds"
+        "List of pending forms to complete",
+        "Form rendering matching in-office experience",
+        "Save progress and resume later",
+        "Submit completed forms",
+        "View previously submitted forms",
+        "Signature capture component"
       ],
       "priority": 4,
       "passes": true
     },
     {
-      "id": "US-089",
-      "title": "Payment plans creation and management",
-      "description": "Create and manage payment plans for patients with outstanding balances.",
+      "id": "US-097",
+      "title": "Online bill pay",
+      "description": "Allow patients to view and pay bills through portal.",
       "acceptanceCriteria": [
-        "payment.createPlan - Create payment plan with installments",
-        "Support weekly, bi-weekly, monthly frequencies",
-        "Calculate installment amounts automatically",
-        "payment.getPlanStatus - View plan progress and remaining balance",
-        "payment.modifyPlan - Adjust plan terms",
-        "Track missed payments"
+        "View current balance and itemized charges",
+        "View payment history",
+        "Pay full balance or custom amount",
+        "Save payment method for future use",
+        "Set up payment plan (if enabled)",
+        "Download receipts and statements"
       ],
       "priority": 5,
       "passes": true
     },
     {
-      "id": "US-090",
-      "title": "Automated payment plan billing",
-      "description": "Automatically charge payment plan installments on schedule.",
+      "id": "US-098",
+      "title": "Patient health records access",
+      "description": "Provide patients access to their health records through portal.",
       "acceptanceCriteria": [
-        "Scheduled job to process due installments",
-        "Retry failed payments with configurable attempts",
-        "Send payment reminder before due date",
-        "Send confirmation on successful payment",
-        "Alert staff on failed payments",
-        "Handle plan completion"
+        "View visit history with dates and providers",
+        "View diagnoses and treatment plans",
+        "View and download visit summaries",
+        "View prescribed exercises or home care instructions",
+        "HIPAA-compliant access controls",
+        "Audit logging of all record access"
       ],
       "priority": 6,
       "passes": true
     },
     {
-      "id": "US-091",
-      "title": "Payment webhook handling",
-      "description": "Handle webhooks from payment processor for real-time updates.",
+      "id": "US-099",
+      "title": "Secure messaging",
+      "description": "HIPAA-compliant messaging between patients and clinic.",
       "acceptanceCriteria": [
-        "Webhook endpoint for payment processor events",
-        "Handle payment.succeeded, payment.failed events",
-        "Handle refund events",
-        "Handle dispute/chargeback events",
-        "Webhook signature verification for security",
-        "Idempotent webhook processing"
+        "Send message to clinic with subject and body",
+        "View message thread history",
+        "Receive email notification of new messages",
+        "Attachment support for documents/images",
+        "Message read receipts",
+        "Auto-response for after-hours messages"
       ],
       "priority": 7,
       "passes": true
     },
     {
-      "id": "US-092",
-      "title": "Payment dashboard UI",
-      "description": "Create UI for processing payments and managing payment settings.",
+      "id": "US-100",
+      "title": "Portal notification preferences",
+      "description": "Allow patients to manage their communication preferences.",
       "acceptanceCriteria": [
-        "Payment terminal component for taking payments",
-        "Saved payment methods display and management",
-        "Payment plan creation wizard",
-        "Payment history with filtering and export",
-        "Refund interface with reason selection",
-        "Payment processor configuration in settings"
+        "Email notification preferences (reminders, messages, billing)",
+        "SMS notification preferences",
+        "Appointment reminder timing preferences",
+        "Marketing communication opt-in/out",
+        "Save preferences with confirmation",
+        "Respect preferences in all communications"
       ],
       "priority": 8,
       "passes": true

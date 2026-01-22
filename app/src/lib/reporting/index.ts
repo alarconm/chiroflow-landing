@@ -108,3 +108,33 @@ export type {
   PaymentTypeSummaryReport,
   PaymentTypeSummaryRow,
 } from './financial-reports';
+
+// Claims and insurance reports (US-103)
+export {
+  getClaimsStatusSummaryReport,
+  getDenialAnalysisReport,
+  getPayerPerformanceReport,
+  getCleanClaimRateReport,
+  getOutstandingClaimsReport,
+  getERAPostingSummaryReport,
+} from './claims-reports';
+
+export type {
+  ClaimsStatusSummaryReport,
+  ClaimStatusCount,
+  DenialAnalysisReport,
+  DenialByReasonCode,
+  PayerPerformanceReport,
+  PayerPerformanceRow,
+  CleanClaimRateReport,
+  CleanClaimByPayer,
+  CleanClaimByProvider,
+  CleanClaimTrendPoint,
+  OutstandingClaimsReport,
+  OutstandingClaimRow,
+  OutstandingByAge,
+  OutstandingByPayer,
+  ERAPostingSummaryReport,
+  ERAByPayer,
+  RecentERAEntry,
+} from './claims-reports';

@@ -129,3 +129,83 @@ All acceptance criteria met. TypeScript compiles without errors.
 --- Iteration 2 completed at 2026-01-22 ---
 Story: US-102 - Financial reports
 
+--- Iteration 2 completed at 2026-01-21 23:05:37 ---
+Story: US-102 - Financial reports
+
+### US-103: Claims and insurance reports - COMPLETED
+Date: 2026-01-22
+Status: PASSED
+
+Implementation:
+1. Created claims-reports.ts with 6 comprehensive claims and insurance reports:
+
+   a. Claims Status Summary Report (getClaimsStatusSummaryReport):
+      - Submitted, pending, paid, denied counts
+      - Status breakdown with count, total charges, total paid
+      - Percentage distribution across statuses
+      - Trends: avg days to payment, avg days to response, clean claim rate
+
+   b. Denial Analysis Report (getDenialAnalysisReport):
+      - Denials by reason code (CARC codes)
+      - Human-readable descriptions for common denial codes
+      - Count, total amount, percentage per reason
+      - Top denial reasons summary
+      - Appeal success rate tracking
+      - Overall denial rate calculation
+
+   c. Payer Performance Report (getPayerPerformanceReport):
+      - Payment rate and timing by payer
+      - Total charges, allowed, paid, adjusted per payer
+      - Payment rate and allowed rate percentages
+      - Average days to payment per payer
+      - Denial rate and clean claim rate by payer
+
+   d. Clean Claim Rate Report (getCleanClaimRateReport):
+      - Percentage of claims paid on first submission
+      - Breakdown by payer
+      - Breakdown by provider
+      - Rejected and denied on first submission counts
+      - Period trends
+
+   e. Outstanding Claims Report (getOutstandingClaimsReport):
+      - Claims awaiting response (submitted, accepted, appealed)
+      - Age bucket breakdown (0-30, 31-60, 61-90, 91-120, 120+ days)
+      - Outstanding amounts by payer
+      - Average days outstanding
+      - Detailed claim list with status
+
+   f. ERA Posting Summary Report (getERAPostingSummaryReport):
+      - Auto-posted vs manual posting breakdown
+      - Total ERA received, payments posted
+      - Pending review counts
+      - Auto-post rate percentage
+      - Breakdown by payer
+      - Recent ERA entries list
+
+2. Added tRPC router procedures:
+   - getClaimsStatusSummary: Claims status with date range
+   - getDenialAnalysis: Denial analysis with date range
+   - getPayerPerformance: Payer performance with date range
+   - getCleanClaimRate: Clean claim rate with date range
+   - getOutstandingClaims: Outstanding claims with optional as-of date
+   - getERAPostingSummary: ERA posting summary with date range
+
+3. All reports support date range selection via dateRangeSchema
+
+4. Proper TypeScript types for all report interfaces:
+   - ClaimsStatusSummaryReport, ClaimStatusCount
+   - DenialAnalysisReport, DenialByReasonCode
+   - PayerPerformanceReport, PayerPerformanceRow
+   - CleanClaimRateReport, CleanClaimByPayer, CleanClaimByProvider
+   - OutstandingClaimsReport, OutstandingClaimRow, OutstandingByAge, OutstandingByPayer
+   - ERAPostingSummaryReport, ERAByPayer, RecentERAEntry
+
+Files Modified:
+- app/src/lib/reporting/claims-reports.ts (new - 900+ lines)
+- app/src/lib/reporting/index.ts (added exports)
+- app/src/server/routers/reporting.ts (added 6 procedures)
+
+All acceptance criteria met. TypeScript compiles without errors.
+--- Iteration 3 completed at 2026-01-22 ---
+Story: US-103 - Claims and insurance reports
+

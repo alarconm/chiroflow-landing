@@ -18,7 +18,7 @@
         "Report caching for performance"
       ],
       "priority": 1,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-102",
@@ -33,7 +33,7 @@
         "Date range selection for all reports"
       ],
       "priority": 2,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-103",
@@ -48,7 +48,7 @@
         "ERA posting summary - auto-posted vs manual posting"
       ],
       "priority": 3,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-104",

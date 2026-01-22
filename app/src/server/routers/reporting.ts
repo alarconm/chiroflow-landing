@@ -49,6 +49,13 @@ import {
   getRevenueByProviderReport,
   getRevenueByServiceCodeReport,
   getPaymentTypeSummaryReport,
+  // Claims and Insurance Reports (US-103)
+  getClaimsStatusSummaryReport,
+  getDenialAnalysisReport,
+  getPayerPerformanceReport,
+  getCleanClaimRateReport,
+  getOutstandingClaimsReport,
+  getERAPostingSummaryReport,
 } from '@/lib/reporting';
 
 import type {
@@ -355,6 +362,71 @@ export const reportingRouter = router({
     .input(dateRangeSchema)
     .query(async ({ ctx, input }) => {
       return getPaymentTypeSummaryReport(ctx.user.organizationId, {
+        start: input.start,
+        end: input.end,
+      });
+    }),
+
+  // ============================================
+  // CLAIMS AND INSURANCE REPORTS (US-103)
+  // ============================================
+
+  // Claims status summary - submitted, pending, paid, denied counts
+  getClaimsStatusSummary: billerProcedure
+    .input(dateRangeSchema)
+    .query(async ({ ctx, input }) => {
+      return getClaimsStatusSummaryReport(ctx.user.organizationId, {
+        start: input.start,
+        end: input.end,
+      });
+    }),
+
+  // Denial analysis report - denials by reason code
+  getDenialAnalysis: billerProcedure
+    .input(dateRangeSchema)
+    .query(async ({ ctx, input }) => {
+      return getDenialAnalysisReport(ctx.user.organizationId, {
+        start: input.start,
+        end: input.end,
+      });
+    }),
+
+  // Payer performance report - payment rate and timing by payer
+  getPayerPerformance: billerProcedure
+    .input(dateRangeSchema)
+    .query(async ({ ctx, input }) => {
+      return getPayerPerformanceReport(ctx.user.organizationId, {
+        start: input.start,
+        end: input.end,
+      });
+    }),
+
+  // Clean claim rate report - percentage of claims paid on first submission
+  getCleanClaimRate: billerProcedure
+    .input(dateRangeSchema)
+    .query(async ({ ctx, input }) => {
+      return getCleanClaimRateReport(ctx.user.organizationId, {
+        start: input.start,
+        end: input.end,
+      });
+    }),
+
+  // Outstanding claims report - claims awaiting response
+  getOutstandingClaims: billerProcedure
+    .input(
+      z.object({
+        asOfDate: z.date().optional(),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      return getOutstandingClaimsReport(ctx.user.organizationId, input?.asOfDate);
+    }),
+
+  // ERA posting summary - auto-posted vs manual posting
+  getERAPostingSummary: billerProcedure
+    .input(dateRangeSchema)
+    .query(async ({ ctx, input }) => {
+      return getERAPostingSummaryReport(ctx.user.organizationId, {
         start: input.start,
         end: input.end,
       });
