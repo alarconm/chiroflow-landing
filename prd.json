@@ -51,7 +51,7 @@
         "Notification when provider is ready"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-219",

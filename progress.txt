@@ -175,3 +175,101 @@ Story: US-216 - Telehealth schema
 --- Iteration 2 completed at 2026-01-22 ---
 Story: US-217 - Video provider integration
 
+--- Iteration 2 completed at 2026-01-22 02:03:49 ---
+Story: US-217 - Video provider integration
+
+## US-218: Virtual waiting room
+**Status:** COMPLETED
+**Date:** 2026-01-22
+
+### What was implemented:
+
+1. **telehealth.joinWaitingRoom tRPC procedure**:
+   - Patient joins the virtual waiting room before their telehealth visit
+   - Records device type, browser info, and connection type
+   - Creates VirtualWaitingRoom record linked to session
+   - Updates session status to WAITING
+   - Supports rejoining if patient previously left
+
+2. **telehealth.getWaitingRoom tRPC procedure**:
+   - Provider view: Lists all patients waiting for their appointments
+   - Patient view: Gets specific waiting room details when sessionId provided
+   - Includes patient demographics, appointment type
+   - Calculates and returns current wait time in seconds
+   - Polls every 10 seconds for provider dashboard
+
+3. **telehealth.admitPatient tRPC procedure**:
+   - Provider admits patient from waiting room to session
+   - Verifies only assigned provider can admit
+   - Calculates total wait time
+   - Updates waiting room status to ADMITTED
+   - Updates session status to IN_PROGRESS
+   - Records actual session start time
+   - Audit logging for compliance
+
+4. **telehealth.leaveWaitingRoom tRPC procedure**:
+   - Patient can voluntarily leave waiting room
+   - Records leave time and total wait seconds
+   - Updates status to LEFT
+
+5. **telehealth.updateTechnicalCheck tRPC procedure**:
+   - Updates pre-visit checklist: camera, microphone, connection
+   - Allows incremental updates as each check completes
+
+6. **telehealth.submitPreVisitQuestionnaire tRPC procedure**:
+   - Submits patient responses to pre-visit questions
+   - Stores as JSON for provider review
+   - Marks questionnaire as completed
+
+7. **telehealth.getWaitingRoomStatus tRPC procedure**:
+   - Patient-facing status query
+   - Returns formatted wait time (MM:SS)
+   - Indicates if provider is ready (ADMITTED or IN_PROGRESS)
+   - Includes pre-check status and questionnaire completion
+   - Polls every 5 seconds for real-time updates
+
+8. **VirtualWaitingRoom component** (`app/src/components/telehealth/VirtualWaitingRoom.tsx`):
+   - Patient-facing waiting room UI
+   - Auto-joins waiting room on mount
+   - Real-time wait time display
+   - Technical pre-checks (camera, mic, connection) with visual feedback
+   - Pre-visit questionnaire form
+   - Provider ready notification with alert
+   - Leave waiting room option
+   - Responsive design with loading states
+
+9. **ProviderWaitingRoomDashboard component** (`app/src/components/telehealth/ProviderWaitingRoomDashboard.tsx`):
+   - Provider-facing dashboard showing all waiting patients
+   - Patient avatars and names
+   - Current wait times per patient
+   - Technical check status icons (green/red)
+   - Pre-visit questionnaire view dialog
+   - Admit button to start session
+   - Waiting room statistics (total waiting, avg wait time, ready count)
+   - Auto-refresh every 10 seconds
+
+### Files created:
+- `app/src/components/telehealth/VirtualWaitingRoom.tsx` - Patient waiting room UI
+- `app/src/components/telehealth/ProviderWaitingRoomDashboard.tsx` - Provider dashboard
+- `app/src/components/telehealth/index.ts` - Component exports
+
+### Files modified:
+- `app/src/server/routers/telehealth.ts` - Added 7 new procedures for waiting room
+
+### Acceptance criteria met:
+- [x] telehealth.joinWaitingRoom - Patient joins waiting room
+- [x] telehealth.getWaitingRoom - Provider sees waiting patients
+- [x] telehealth.admitPatient - Provider admits patient to session
+- [x] Display wait time to patient (MM:SS format, updates every 5s)
+- [x] Pre-visit questionnaire while waiting (3 question form)
+- [x] Technical check (camera, mic, connection with device permission checks)
+- [x] Notification when provider is ready (alert banner + callback)
+
+### Validation:
+- TypeScript compilation passes
+- All tRPC procedures follow existing patterns
+- UI components use shadcn/ui
+
+--- Iteration 3 completed at 2026-01-22 ---
+Story: US-218 - Virtual waiting room
+
