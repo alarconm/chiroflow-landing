@@ -28,3 +28,43 @@
 
 ### Status: COMPLETE
 Date: 2026-01-22
+--- Iteration 1 completed at 2026-01-22 15:09:13 ---
+Story: US-347 - AI QA agent schema
+
+## US-348: Documentation quality audit - COMPLETED
+
+### What was implemented:
+- Created `aiQA` tRPC router with comprehensive documentation quality auditing
+- **aiQA.auditDocumentation** - Reviews documentation quality for encounters with:
+  - Completeness assessment (all SOAP sections present)
+  - Medical necessity documentation verification
+  - Diagnosis-procedure linkage validation
+  - Progress note adequacy checking
+  - Treatment plan documentation review
+- Generates improvement recommendations based on audit findings
+- Creates QAFinding records for issues found with severity levels
+- Tracks quality scores over time via QAMetric updates
+- **aiQA.getDocumentationScoreHistory** - Retrieves score trends over time
+- **aiQA.getDocumentationAuditHistory** - Lists past documentation audits
+- **aiQA.getDocumentationFinding** - Gets details of a specific finding
+- **aiQA.resolveFinding** - Resolves/dismisses/defers findings
+
+### Acceptance Criteria Met:
+- [x] aiQA.auditDocumentation - Review note quality
+- [x] Completeness assessment
+- [x] Medical necessity documentation
+- [x] Diagnosis-procedure linkage
+- [x] Progress note adequacy
+- [x] Treatment plan documentation
+- [x] Generate improvement recommendations
+- [x] Track quality scores over time
+
+### Files modified:
+- app/src/server/routers/aiQA.ts (new - ~650 lines)
+- app/src/server/routers/index.ts (added aiQA router)
+
+### Status: COMPLETE
+Date: 2026-01-22
+--- Iteration 2 completed at 2026-01-22 ---
+Story: US-348 - Documentation quality audit
+
