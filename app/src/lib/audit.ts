@@ -136,6 +136,7 @@ export type AuditAction =
   | 'DENIAL_UPDATE'
   | 'DENIAL_APPEAL'
   | 'DENIAL_RESOLVE'
+  | 'EDI_837_GENERATE'
   // Reporting actions (Epic 11)
   | 'SAVED_REPORT_CREATE'
   | 'SAVED_REPORT_UPDATE'

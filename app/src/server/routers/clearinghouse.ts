@@ -23,12 +23,15 @@ import {
   getClearinghouseProviderName,
   COMMON_CARC_CODES,
   COMMON_RARC_CODES,
+  generate837P,
+  validateClaim as validateClaimFor837,
 } from '@/lib/clearinghouse';
 import type {
   ClearinghouseConfigData,
   ClaimSubmissionRequest,
   EligibilityRequest,
   ClaimStatusRequest,
+  EDI837Config,
 } from '@/lib/clearinghouse';
 
 // Zod schemas for validation
@@ -606,6 +609,286 @@ export const clearinghouseRouter = router({
       });
 
       return response;
+    }),
+
+  // Generate 837P EDI file for a claim (without submitting)
+  generate837: billerProcedure
+    .input(
+      z.object({
+        claimId: z.string(),
+        clearinghouseConfigId: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Get claim with all related data
+      const claim = await ctx.prisma.claim.findFirst({
+        where: { id: input.claimId, organizationId: ctx.user.organizationId },
+        include: {
+          patient: { include: { demographics: true, contacts: { where: { isPrimary: true }, take: 1 } } },
+          payer: true,
+          insurancePolicy: true,
+          encounter: { include: { diagnoses: true, provider: { include: { user: true } } } },
+          claimLines: { include: { charge: true }, orderBy: { lineNumber: 'asc' } },
+        },
+      });
+
+      if (!claim) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Claim not found' });
+      }
+
+      // Get organization for billing info
+      const organization = await ctx.prisma.organization.findUnique({
+        where: { id: ctx.user.organizationId },
+      });
+
+      const settings = (organization?.settings || {}) as Record<string, unknown>;
+
+      // Get clearinghouse config for sender/receiver IDs
+      let configId = input.clearinghouseConfigId;
+      if (!configId) {
+        const primary = await ctx.prisma.clearinghouseConfig.findFirst({
+          where: { organizationId: ctx.user.organizationId, isPrimary: true, isActive: true },
+        });
+        if (primary) {
+          configId = primary.id;
+        }
+      }
+
+      let edi837Config: Partial<EDI837Config> = {
+        senderId: (settings.submitterId as string) || organization?.subdomain || 'CHIROFLOW',
+        receiverId: claim.payer?.payerId || 'PAYER',
+        submitterName: organization?.name || 'Provider',
+        submitterId: (settings.taxId as string) || '',
+        submitterContactName: (settings.contactName as string) || undefined,
+        submitterContactPhone: (settings.phone as string) || undefined,
+        submitterContactEmail: (settings.email as string) || undefined,
+        usageIndicator: 'P',
+      };
+
+      if (configId) {
+        const config = await ctx.prisma.clearinghouseConfig.findFirst({
+          where: { id: configId, organizationId: ctx.user.organizationId },
+        });
+
+        if (config) {
+          edi837Config = {
+            ...edi837Config,
+            senderId: config.submitterId || edi837Config.senderId,
+            receiverId: claim.payer?.payerId || edi837Config.receiverId,
+          };
+        }
+      }
+
+      // Build submission request
+      const submissionRequest: ClaimSubmissionRequest = {
+        claimId: claim.id,
+        clearinghouseConfigId: configId || '',
+        patient: {
+          id: claim.patient.id,
+          firstName: claim.patient.demographics?.firstName || '',
+          lastName: claim.patient.demographics?.lastName || '',
+          dateOfBirth: claim.patient.demographics?.dateOfBirth || new Date(),
+          gender: claim.patient.demographics?.gender || 'U',
+          address: claim.patient.contacts[0]
+            ? {
+                line1: claim.patient.contacts[0].addressLine1 || '',
+                line2: claim.patient.contacts[0].addressLine2 || undefined,
+                city: claim.patient.contacts[0].city || '',
+                state: claim.patient.contacts[0].state || '',
+                zip: claim.patient.contacts[0].zipCode || '',
+              }
+            : undefined,
+        },
+        insurance: {
+          payerId: claim.payer?.payerId || '',
+          payerName: claim.payer?.name || '',
+          subscriberId: claim.insurancePolicy?.subscriberId || claim.insurancePolicy?.policyNumber || '',
+          groupNumber: claim.insurancePolicy?.groupNumber || undefined,
+          relationshipCode: claim.insurancePolicy?.subscriberRelationship || '18',
+          subscriber: claim.insurancePolicy?.subscriberRelationship !== 'SELF'
+            ? {
+                firstName: claim.insurancePolicy?.subscriberFirstName || '',
+                lastName: claim.insurancePolicy?.subscriberLastName || '',
+                dateOfBirth: claim.insurancePolicy?.subscriberDob || undefined,
+              }
+            : undefined,
+        },
+        provider: {
+          npi: claim.renderingNpi || claim.encounter?.provider?.npiNumber || (settings.billingNpi as string) || '',
+          taxId: (settings.taxId as string) || undefined,
+          name: organization?.name || 'Provider',
+          address: {
+            line1: (settings.address as string) || '',
+            city: (settings.city as string) || '',
+            state: (settings.state as string) || '',
+            zip: (settings.zip as string) || '',
+          },
+        },
+        claim: {
+          id: claim.id,
+          claimNumber: claim.claimNumber || claim.id,
+          totalCharges: Number(claim.totalCharges),
+          claimType: claim.claimType,
+          placeOfService: claim.claimLines[0]?.placeOfService || '11',
+          diagnoses:
+            claim.encounter?.diagnoses.map((d, i) => ({
+              code: d.icd10Code,
+              sequence: i + 1,
+              isPrimary: d.isPrimary || i === 0,
+            })) || [],
+          services: claim.claimLines.map((line) => ({
+            lineNumber: line.lineNumber,
+            cptCode: line.cptCode,
+            modifiers: line.modifiers as string[],
+            description: line.description || '',
+            units: line.units,
+            chargeAmount: Number(line.chargedAmount),
+            serviceDateFrom: line.serviceDateFrom,
+            serviceDateTo: line.serviceDateTo,
+            diagnosisPointers: line.diagnosisPointers as number[],
+            placeOfService: line.placeOfService || '11',
+          })),
+        },
+      };
+
+      // Validate claim data
+      const validation = validateClaimFor837(submissionRequest);
+
+      // Generate 837P EDI content
+      const result = generate837P(
+        submissionRequest,
+        edi837Config as EDI837Config
+      );
+
+      await auditLog('EDI_837_GENERATE', 'Claim', {
+        entityId: claim.id,
+        changes: {
+          claimNumber: claim.claimNumber,
+          controlNumber: result.controlNumber,
+          success: result.success,
+          segmentCount: result.segmentCount,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        success: result.success,
+        ediContent: result.ediContent,
+        controlNumber: result.controlNumber,
+        segmentCount: result.segmentCount,
+        errors: [...validation.errors, ...result.errors],
+        warnings: [...validation.warnings, ...result.warnings],
+        claim: {
+          id: claim.id,
+          claimNumber: claim.claimNumber,
+          totalCharges: claim.totalCharges,
+        },
+      };
+    }),
+
+  // Validate claim for 837P generation
+  validate837: billerProcedure
+    .input(z.object({ claimId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      // Get claim with all related data
+      const claim = await ctx.prisma.claim.findFirst({
+        where: { id: input.claimId, organizationId: ctx.user.organizationId },
+        include: {
+          patient: { include: { demographics: true, contacts: { where: { isPrimary: true }, take: 1 } } },
+          payer: true,
+          insurancePolicy: true,
+          encounter: { include: { diagnoses: true, provider: { include: { user: true } } } },
+          claimLines: { include: { charge: true }, orderBy: { lineNumber: 'asc' } },
+        },
+      });
+
+      if (!claim) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Claim not found' });
+      }
+
+      // Get organization for billing info
+      const organization = await ctx.prisma.organization.findUnique({
+        where: { id: ctx.user.organizationId },
+      });
+
+      const settings = (organization?.settings || {}) as Record<string, unknown>;
+
+      // Build submission request for validation
+      const submissionRequest: ClaimSubmissionRequest = {
+        claimId: claim.id,
+        clearinghouseConfigId: '',
+        patient: {
+          id: claim.patient.id,
+          firstName: claim.patient.demographics?.firstName || '',
+          lastName: claim.patient.demographics?.lastName || '',
+          dateOfBirth: claim.patient.demographics?.dateOfBirth || new Date(),
+          gender: claim.patient.demographics?.gender || 'U',
+          address: claim.patient.contacts[0]
+            ? {
+                line1: claim.patient.contacts[0].addressLine1 || '',
+                line2: claim.patient.contacts[0].addressLine2 || undefined,
+                city: claim.patient.contacts[0].city || '',
+                state: claim.patient.contacts[0].state || '',
+                zip: claim.patient.contacts[0].zipCode || '',
+              }
+            : undefined,
+        },
+        insurance: {
+          payerId: claim.payer?.payerId || '',
+          payerName: claim.payer?.name || '',
+          subscriberId: claim.insurancePolicy?.subscriberId || claim.insurancePolicy?.policyNumber || '',
+          groupNumber: claim.insurancePolicy?.groupNumber || undefined,
+          relationshipCode: claim.insurancePolicy?.subscriberRelationship || '18',
+        },
+        provider: {
+          npi: claim.renderingNpi || claim.encounter?.provider?.npiNumber || (settings.billingNpi as string) || '',
+          taxId: (settings.taxId as string) || undefined,
+          name: organization?.name || 'Provider',
+        },
+        claim: {
+          id: claim.id,
+          claimNumber: claim.claimNumber || claim.id,
+          totalCharges: Number(claim.totalCharges),
+          claimType: claim.claimType,
+          placeOfService: claim.claimLines[0]?.placeOfService || '11',
+          diagnoses:
+            claim.encounter?.diagnoses.map((d, i) => ({
+              code: d.icd10Code,
+              sequence: i + 1,
+              isPrimary: d.isPrimary || i === 0,
+            })) || [],
+          services: claim.claimLines.map((line) => ({
+            lineNumber: line.lineNumber,
+            cptCode: line.cptCode,
+            modifiers: line.modifiers as string[],
+            description: line.description || '',
+            units: line.units,
+            chargeAmount: Number(line.chargedAmount),
+            serviceDateFrom: line.serviceDateFrom,
+            serviceDateTo: line.serviceDateTo,
+            diagnosisPointers: line.diagnosisPointers as number[],
+            placeOfService: line.placeOfService || '11',
+          })),
+        },
+      };
+
+      // Validate claim data
+      const validation = validateClaimFor837(submissionRequest);
+
+      return {
+        isValid: validation.isValid,
+        errors: validation.errors,
+        warnings: validation.warnings,
+        claim: {
+          id: claim.id,
+          claimNumber: claim.claimNumber,
+          status: claim.status,
+          totalCharges: claim.totalCharges,
+          serviceLineCount: claim.claimLines.length,
+          diagnosisCount: claim.encounter?.diagnoses.length || 0,
+        },
+      };
     }),
 
   // List claim submissions

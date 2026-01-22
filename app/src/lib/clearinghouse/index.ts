@@ -49,6 +49,23 @@ export {
   type CircuitBreakerConfig,
 } from './retry';
 
+// Re-export EDI 837P utilities
+export {
+  EDI837Generator,
+  createEDI837Generator,
+  generate837P,
+  validateClaim,
+  DEFAULT_DELIMITERS,
+  CLAIM_FREQUENCY,
+  PLACE_OF_SERVICE,
+  ENTITY_IDENTIFIER,
+  ENTITY_TYPE,
+  REFERENCE_QUALIFIER,
+  type EDI837Config,
+  type EDI837Result,
+  type ValidationResult,
+} from './edi-837';
+
 // Provider-specific circuit breakers (shared across instances)
 const circuitBreakers = new Map<string, CircuitBreaker>();
 

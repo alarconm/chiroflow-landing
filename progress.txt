@@ -1017,3 +1017,111 @@ Date: 2026-01-21
 --- Iteration 2 completed at 2026-01-21 ---
 Story: US-070 - Clearinghouse provider abstraction
 
+--- Iteration 2 completed at 2026-01-21 20:16:02 ---
+Story: US-070 - Clearinghouse provider abstraction
+
+--- Iteration 3 started at 2026-01-21 ---
+Story: US-071 - EDI 837 claim file generation
+
+## Story: US-071 - EDI 837 claim file generation
+Date: 2026-01-21
+
+### What I Did
+- Created comprehensive EDI 837P (Professional) file generator
+- Implemented ANSI X12 005010X222A1 compliant file structure
+- Added ISA/GS interchange and functional group envelope segments
+- Added ST/SE transaction set header and trailer segments
+- Implemented all required hierarchical loops (2000A, 2000B, 2000C, 2300, 2400)
+- Created validation function for claim data before generation
+- Added tRPC endpoints for 837P generation and validation
+- Added new audit action for EDI 837 generation tracking
+
+### Files Created
+- app/src/lib/clearinghouse/edi-837.ts (~750 lines)
+  - EDI837Generator class with full 837P generation
+  - generate837P() convenience function
+  - validateClaim() function for pre-generation validation
+  - Constants for entity identifiers, place of service codes, etc.
+  - Utility functions for date/time formatting, string cleaning
+
+### Files Modified
+- app/src/lib/clearinghouse/index.ts
+  - Added re-exports for edi-837 module (EDI837Generator, generate837P, validateClaim, etc.)
+
+- app/src/server/routers/clearinghouse.ts
+  - Added generate837 endpoint - Generate 837P EDI file for a claim (without submitting)
+  - Added validate837 endpoint - Validate claim for 837P generation
+  - Both endpoints work with existing claim data structure
+
+- app/src/lib/audit.ts
+  - Added EDI_837_GENERATE audit action
+
+### Key Features
+
+1. **ISA/GS Envelope Segments**
+   - ISA (Interchange Control Header) with sender/receiver IDs
+   - GS (Functional Group Header) with application IDs
+   - IEA/GE trailers with control number matching
+   - Proper date/time formatting (YYMMDD, HHMM, CCYYMMDD)
+
+2. **Transaction Set Segments**
+   - ST (Transaction Set Header) with 837 identifier
+   - BHT (Beginning of Hierarchical Transaction) with control number
+   - SE (Transaction Set Trailer) with segment count
+
+3. **Hierarchical Loops**
+   - Loop 1000A: Submitter Name (NM1, PER)
+   - Loop 1000B: Receiver Name (NM1)
+   - Loop 2000A: Billing Provider (HL, PRV, NM1, N3, N4, REF)
+   - Loop 2010AA: Billing Provider Name and Address
+   - Loop 2000B: Subscriber (HL, SBR, NM1, N3, N4, DMG)
+   - Loop 2010BA: Subscriber Name
+   - Loop 2010BB: Payer Name
+   - Loop 2000C: Patient (when different from subscriber)
+   - Loop 2300: Claim Information (CLM, DTP, HI)
+   - Loop 2400: Service Line (LX, SV1, DTP) per service
+
+4. **Claim Information**
+   - CLM segment with claim number, total charges, place of service
+   - HI segment with diagnosis codes (ICD-10) using ABK/ABF qualifiers
+   - DTP segments for service dates
+   - Proper diagnosis pointer mapping
+
+5. **Service Lines (Loop 2400)**
+   - LX line number
+   - SV1 professional service with CPT code, modifiers, units, charges
+   - DTP service date (single date or range)
+   - Diagnosis pointer composite
+
+6. **Validation**
+   - Patient required fields (name, DOB, address)
+   - Insurance required fields (payer ID, subscriber ID)
+   - Provider required fields (NPI, name)
+   - Claim required fields (claim number, diagnoses, services)
+   - Service line validation (CPT, date, diagnosis pointers)
+   - Diagnosis pointer bounds checking
+
+### tRPC Endpoints Added
+1. **clearinghouse.generate837**
+   - Input: claimId, optional clearinghouseConfigId
+   - Returns: success, ediContent, controlNumber, segmentCount, errors, warnings
+
+2. **clearinghouse.validate837**
+   - Input: claimId
+   - Returns: isValid, errors, warnings, claim summary
+
+### Build Status
+- ✓ Build compiles successfully
+- ✓ TypeScript checks pass
+
+### Acceptance Criteria Status
+1. claim.generate837 - Create 837P file structure - ✓ (generate837P function + tRPC endpoint)
+2. ISA/GS envelope segments with proper control numbers - ✓
+3. ST/SE transaction set segments - ✓
+4. 2000A/2000B/2300/2400 loops for billing provider, subscriber, claim, service - ✓
+5. Proper segment terminators and element separators - ✓ (configurable delimiters)
+6. Validation before generation - ✓ (validateClaim function + validate837 endpoint)
+
+--- Iteration 3 completed at 2026-01-21 ---
+Story: US-071 - EDI 837 claim file generation
+
