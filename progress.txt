@@ -60,3 +60,118 @@
 - Prisma schema validated successfully
 - Prisma client generated successfully
 - TypeScript compilation passes
+--- Iteration 1 completed at 2026-01-22 01:53:45 ---
+Story: US-216 - Telehealth schema
+
+## US-217: Video provider integration
+**Status:** COMPLETED
+**Date:** 2026-01-22
+
+### What was implemented:
+
+1. **VideoProvider interface abstraction** (`app/src/lib/telehealth/provider.ts`):
+   - Abstract interface for all video providers
+   - Methods for room management (create, get status, end, delete)
+   - Token generation for participant access
+   - Participant management (list, actions like mute/disconnect)
+   - Recording support (start, stop, get status, download URL)
+   - Webhook verification
+   - Quality metrics retrieval
+   - Base class with common functionality
+
+2. **Types and configurations** (`app/src/lib/telehealth/types.ts`):
+   - VideoProviderConfig base configuration
+   - TwilioConfig for Twilio-specific settings
+   - ZoomConfig for Zoom SDK settings
+   - GoogleMeetConfig for Google Meet
+   - CreateRoomRequest/CreateRoomResult for room operations
+   - GenerateTokenRequest/GenerateTokenResult for access tokens
+   - Participant, ParticipantAction types
+   - Recording types (StartRecordingRequest, RecordingResult)
+   - Webhook types (VideoWebhookEvent, WebhookVerificationResult)
+   - QualityMetrics for connection quality
+   - ProviderCapabilities for feature detection
+   - ProviderStatus for health checks
+
+3. **Twilio Video provider (primary)** (`app/src/lib/telehealth/twilio-provider.ts`):
+   - Full implementation of VideoProvider interface
+   - HIPAA-compliant video rooms
+   - JWT token generation using native crypto
+   - Room creation with unique URLs
+   - Participant management
+   - Recording support
+   - Webhook verification
+   - Quality metrics
+
+4. **Zoom SDK provider (alternative)** (`app/src/lib/telehealth/zoom-provider.ts`):
+   - Full implementation of VideoProvider interface
+   - Zoom Meeting SDK integration
+   - JWT token generation
+   - Meeting creation with password support
+   - Participant management
+   - Recording support
+   - Webhook verification with signature validation
+
+5. **Video service** (`app/src/lib/telehealth/video-service.ts`):
+   - Main service for video provider management
+   - Provider initialization from environment config
+   - Automatic room creation on appointment creation
+   - Unique room URL generation (format: cf-{appointmentId}-{timestamp}-{random})
+   - Fallback provider support (tries secondary providers on failure)
+   - Access token generation for participants
+   - TelehealthSession record creation in database
+   - Appointment telehealth flag update
+
+6. **Telehealth router** (`app/src/server/routers/telehealth.ts`):
+   - getProviderStatus - Check video provider availability
+   - getProviderCapabilities - Get provider feature set
+   - createRoom - Create video room for appointment
+   - getRoomStatus - Get session details with patient/provider info
+   - endSession - End session with quality metrics
+   - generateToken - Generate access token for joining
+   - listSessions - List telehealth sessions with pagination
+   - getUpcoming - Get upcoming sessions for provider
+   - startSession - Start session with location tracking
+   - markNoShow - Mark patient as no-show
+   - reportTechnicalIssue - Log technical issues
+
+7. **Router integration** (`app/src/server/routers/index.ts`):
+   - Added telehealthRouter to appRouter
+
+8. **Module exports** (`app/src/lib/telehealth/index.ts`):
+   - Clean exports of all types, interfaces, and functions
+
+### Environment variables for configuration:
+- TWILIO_ACCOUNT_SID
+- TWILIO_API_KEY_SID
+- TWILIO_API_KEY_SECRET
+- TWILIO_WEBHOOK_URL
+- TWILIO_WEBHOOK_SECRET
+- ZOOM_CLIENT_ID
+- ZOOM_CLIENT_SECRET
+- ZOOM_SDK_KEY
+- ZOOM_SDK_SECRET
+- ZOOM_VERIFICATION_TOKEN
+- DEFAULT_VIDEO_PROVIDER (TWILIO or ZOOM)
+- VIDEO_ENABLE_FALLBACK (true/false)
+- NEXT_PUBLIC_APP_URL (base URL for room links)
+
+### Files created:
+- `app/src/lib/telehealth/types.ts`
+- `app/src/lib/telehealth/provider.ts`
+- `app/src/lib/telehealth/twilio-provider.ts`
+- `app/src/lib/telehealth/zoom-provider.ts`
+- `app/src/lib/telehealth/video-service.ts`
+- `app/src/lib/telehealth/index.ts`
+- `app/src/server/routers/telehealth.ts`
+
+### Files modified:
+- `app/src/server/routers/index.ts` - Added telehealth router
+
+### Validation:
+- TypeScript compilation passes
+- No external dependencies added (uses native crypto for JWT)
+
+--- Iteration 2 completed at 2026-01-22 ---
+Story: US-217 - Video provider integration
+

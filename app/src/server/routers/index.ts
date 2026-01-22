@@ -63,6 +63,8 @@ import { chiropracticDashboardRouter } from './chiropracticDashboard';
 import { postureRouter } from './posture';
 import { romRouter } from './rom';
 import { fmsRouter } from './fms';
+// Telehealth & Virtual Care (Epic 21)
+import { telehealthRouter } from './telehealth';
 
 export const appRouter = router({
   auth: authRouter,
@@ -129,6 +131,8 @@ export const appRouter = router({
   posture: postureRouter,
   rom: romRouter,
   fms: fmsRouter,
+  // Telehealth & Virtual Care (Epic 21)
+  telehealth: telehealthRouter,
 });
 
 
