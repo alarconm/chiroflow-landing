@@ -2361,4 +2361,1540 @@ export const aiCareRouter = router({
         stats,
       };
     }),
+
+  // ==================== US-326: Proactive Follow-up Scheduling ====================
+
+  // Get follow-up recommendations based on condition and treatment plan
+  getFollowUpRecommendation: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        encounterId: z.string().optional(), // If available, use encounter context
+        conditionType: z.string().optional(), // e.g., 'acute', 'chronic', 'maintenance'
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { patientId, encounterId, conditionType } = input;
+
+      // Get patient with treatment plan and recent encounters
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          demographics: { select: { firstName: true, lastName: true } },
+          treatmentPlans: {
+            where: { status: 'ACTIVE' },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            include: {
+              goals: true,
+            },
+          },
+          encounters: {
+            orderBy: { encounterDate: 'desc' },
+            take: 5,
+            include: {
+              diagnoses: true,
+            },
+          },
+          appointments: {
+            where: {
+              status: { in: ['SCHEDULED', 'CONFIRMED'] },
+              startTime: { gte: new Date() },
+            },
+            orderBy: { startTime: 'asc' },
+            take: 1,
+          },
+          communicationPreference: true,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      const patientName = getPatientName(patient);
+      const activePlan = patient.treatmentPlans[0];
+      const recentEncounter = encounterId
+        ? patient.encounters.find(e => e.id === encounterId)
+        : patient.encounters[0];
+      const hasUpcomingAppointment = patient.appointments.length > 0;
+
+      // Determine follow-up timing based on condition type and treatment plan
+      let recommendedDays = 7; // Default to 1 week
+      let reasoning: string[] = [];
+      let urgency: 'LOW' | 'MEDIUM' | 'HIGH' = 'MEDIUM';
+      let appointmentType = 'Follow-up';
+
+      // Analyze treatment plan frequency
+      if (activePlan?.frequency) {
+        const freq = activePlan.frequency.toLowerCase();
+        if (freq.includes('3x') || freq.includes('3 times')) {
+          recommendedDays = 2;
+          reasoning.push(`Treatment plan frequency: ${activePlan.frequency} (every 2-3 days)`);
+        } else if (freq.includes('2x') || freq.includes('2 times') || freq.includes('twice')) {
+          recommendedDays = 3;
+          reasoning.push(`Treatment plan frequency: ${activePlan.frequency} (every 3-4 days)`);
+        } else if (freq.includes('1x') || freq.includes('weekly') || freq.includes('once')) {
+          recommendedDays = 7;
+          reasoning.push(`Treatment plan frequency: ${activePlan.frequency} (weekly)`);
+        } else if (freq.includes('biweekly') || freq.includes('bi-weekly')) {
+          recommendedDays = 14;
+          reasoning.push(`Treatment plan frequency: ${activePlan.frequency} (bi-weekly)`);
+        } else if (freq.includes('monthly')) {
+          recommendedDays = 30;
+          reasoning.push(`Treatment plan frequency: ${activePlan.frequency} (monthly)`);
+        }
+      }
+
+      // Adjust based on condition type
+      const effectiveConditionType = conditionType || (activePlan ? 'active_care' : 'maintenance');
+
+      if (effectiveConditionType === 'acute' || effectiveConditionType.includes('acute')) {
+        recommendedDays = Math.min(recommendedDays, 3);
+        urgency = 'HIGH';
+        reasoning.push('Acute condition requires more frequent follow-up');
+        appointmentType = 'Acute Follow-up';
+      } else if (effectiveConditionType === 'chronic' || effectiveConditionType.includes('chronic')) {
+        urgency = 'MEDIUM';
+        reasoning.push('Chronic condition - maintaining scheduled frequency');
+        appointmentType = 'Treatment Follow-up';
+      } else if (effectiveConditionType === 'maintenance' || effectiveConditionType.includes('maintenance')) {
+        recommendedDays = Math.max(recommendedDays, 14);
+        urgency = 'LOW';
+        reasoning.push('Maintenance care - extended follow-up interval');
+        appointmentType = 'Maintenance Visit';
+      } else if (effectiveConditionType === 'wellness') {
+        recommendedDays = 30;
+        urgency = 'LOW';
+        reasoning.push('Wellness care - monthly check-in recommended');
+        appointmentType = 'Wellness Check';
+      }
+
+      // Analyze recent encounter diagnoses for severity
+      if (recentEncounter?.diagnoses && recentEncounter.diagnoses.length > 0) {
+        const hasSevereDiagnosis = recentEncounter.diagnoses.some(d => {
+          const desc = (d.description || '').toLowerCase();
+          return desc.includes('severe') || desc.includes('acute') || desc.includes('significant');
+        });
+        if (hasSevereDiagnosis) {
+          recommendedDays = Math.min(recommendedDays, 3);
+          urgency = 'HIGH';
+          reasoning.push('Recent diagnosis indicates higher severity');
+        }
+      }
+
+      // Check treatment plan progress
+      if (activePlan) {
+        const completionRate = activePlan.plannedVisits
+          ? (activePlan.completedVisits / activePlan.plannedVisits) * 100
+          : 0;
+
+        if (completionRate > 80) {
+          reasoning.push(`Near completion of treatment plan (${Math.round(completionRate)}%)`);
+          appointmentType = 'Progress Evaluation';
+        } else if (completionRate < 30) {
+          reasoning.push(`Early in treatment plan (${Math.round(completionRate)}%)`);
+        }
+
+        // Check if near end date
+        if (activePlan.endDate) {
+          const daysToEnd = Math.floor((activePlan.endDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+          if (daysToEnd <= 14 && daysToEnd > 0) {
+            reasoning.push(`Treatment plan ends in ${daysToEnd} days - re-evaluation needed`);
+            appointmentType = 'Plan Re-evaluation';
+          }
+        }
+      }
+
+      // Calculate recommended date
+      const recommendedDate = new Date();
+      recommendedDate.setDate(recommendedDate.getDate() + recommendedDays);
+
+      // Skip weekends
+      while (recommendedDate.getDay() === 0 || recommendedDate.getDay() === 6) {
+        recommendedDate.setDate(recommendedDate.getDate() + 1);
+      }
+
+      return {
+        patientId,
+        patientName,
+        hasUpcomingAppointment,
+        upcomingAppointmentDate: patient.appointments[0]?.startTime || null,
+        recommendation: {
+          days: recommendedDays,
+          date: recommendedDate,
+          urgency,
+          appointmentType,
+          reasoning,
+          basedOn: {
+            treatmentPlan: activePlan ? {
+              id: activePlan.id,
+              name: activePlan.name,
+              frequency: activePlan.frequency,
+              completedVisits: activePlan.completedVisits,
+              plannedVisits: activePlan.plannedVisits,
+            } : null,
+            conditionType: effectiveConditionType,
+            recentEncounterId: recentEncounter?.id || null,
+          },
+        },
+        patientPreferences: {
+          preferredTimeStart: patient.communicationPreference?.preferredTimeStart || null,
+          preferredTimeEnd: patient.communicationPreference?.preferredTimeEnd || null,
+        },
+      };
+    }),
+
+  // Schedule a follow-up appointment
+  scheduleFollowUp: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        providerId: z.string(),
+        appointmentTypeId: z.string().optional(),
+        preferredDate: z.coerce.date(),
+        preferredTimeOfDay: z.enum(['morning', 'afternoon', 'evening', 'any']).default('any'),
+        notes: z.string().optional(),
+        autoSelectSlot: z.boolean().default(false), // Auto-pick the best available slot
+        withPatientConsent: z.boolean().default(false), // If true, patient has consented
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const {
+        patientId,
+        providerId,
+        appointmentTypeId,
+        preferredDate,
+        preferredTimeOfDay,
+        notes,
+        autoSelectSlot,
+        withPatientConsent,
+      } = input;
+
+      // Verify patient exists
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          demographics: { select: { firstName: true, lastName: true } },
+          communicationPreference: true,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      // Get appointment type
+      let appointmentType = null;
+      if (appointmentTypeId) {
+        appointmentType = await ctx.prisma.appointmentType.findFirst({
+          where: {
+            id: appointmentTypeId,
+            organizationId: ctx.user.organizationId,
+            isActive: true,
+          },
+        });
+      } else {
+        // Default to a follow-up type
+        appointmentType = await ctx.prisma.appointmentType.findFirst({
+          where: {
+            organizationId: ctx.user.organizationId,
+            isActive: true,
+            name: { contains: 'follow', mode: 'insensitive' },
+          },
+        });
+        if (!appointmentType) {
+          // Just get any active type
+          appointmentType = await ctx.prisma.appointmentType.findFirst({
+            where: {
+              organizationId: ctx.user.organizationId,
+              isActive: true,
+            },
+          });
+        }
+      }
+
+      const duration = appointmentType?.duration || 30;
+
+      // Define time ranges based on preference
+      let startHour = 9;
+      let endHour = 17;
+
+      if (preferredTimeOfDay === 'morning') {
+        startHour = 9;
+        endHour = 12;
+      } else if (preferredTimeOfDay === 'afternoon') {
+        startHour = 12;
+        endHour = 17;
+      } else if (preferredTimeOfDay === 'evening') {
+        startHour = 17;
+        endHour = 19;
+      }
+
+      // Search window: preferred date +/- 3 days
+      const searchStart = new Date(preferredDate);
+      searchStart.setDate(searchStart.getDate() - 3);
+      if (searchStart < new Date()) {
+        searchStart.setTime(Date.now());
+      }
+
+      const searchEnd = new Date(preferredDate);
+      searchEnd.setDate(searchEnd.getDate() + 7);
+
+      // Get provider's existing appointments
+      const existingAppointments = await ctx.prisma.appointment.findMany({
+        where: {
+          providerId,
+          organizationId: ctx.user.organizationId,
+          startTime: { gte: searchStart, lte: searchEnd },
+          status: { in: ['SCHEDULED', 'CONFIRMED', 'CHECKED_IN', 'IN_PROGRESS'] },
+        },
+        orderBy: { startTime: 'asc' },
+      });
+
+      // Get schedule blocks (lunch, meetings, etc.)
+      const scheduleBlocks = await ctx.prisma.scheduleBlock.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          OR: [
+            { providerId },
+            { providerId: null }, // Org-wide blocks
+          ],
+          startTime: { lte: searchEnd },
+          endTime: { gte: searchStart },
+        },
+      });
+
+      // Find available slots
+      const availableSlots: Array<{
+        date: Date;
+        isPreferredDate: boolean;
+        isPreferredTime: boolean;
+        score: number;
+      }> = [];
+
+      const currentDate = new Date(searchStart);
+      currentDate.setHours(startHour, 0, 0, 0);
+
+      while (currentDate < searchEnd && availableSlots.length < 20) {
+        // Skip weekends
+        if (currentDate.getDay() !== 0 && currentDate.getDay() !== 6) {
+          const hour = currentDate.getHours();
+
+          // Check if within preferred time range
+          if (hour >= startHour && hour < endHour) {
+            const slotEnd = new Date(currentDate.getTime() + duration * 60 * 1000);
+
+            // Check for appointment conflicts
+            const hasAppointmentConflict = existingAppointments.some(apt => {
+              const aptEnd = new Date(apt.startTime.getTime() + duration * 60 * 1000);
+              return currentDate < aptEnd && slotEnd > apt.startTime;
+            });
+
+            // Check for schedule block conflicts
+            const hasBlockConflict = scheduleBlocks.some(block => {
+              return currentDate < block.endTime && slotEnd > block.startTime;
+            });
+
+            if (!hasAppointmentConflict && !hasBlockConflict) {
+              const isPreferredDate =
+                currentDate.toDateString() === preferredDate.toDateString();
+              const isPreferredTime =
+                preferredTimeOfDay === 'any' ||
+                (preferredTimeOfDay === 'morning' && hour >= 9 && hour < 12) ||
+                (preferredTimeOfDay === 'afternoon' && hour >= 12 && hour < 17) ||
+                (preferredTimeOfDay === 'evening' && hour >= 17);
+
+              // Calculate score (higher is better)
+              let score = 50; // Base score
+              if (isPreferredDate) score += 30;
+              if (isPreferredTime) score += 20;
+              // Prefer earlier slots on preferred date
+              if (isPreferredDate) {
+                score -= Math.abs(hour - 10) * 2; // Prefer 10am
+              }
+
+              availableSlots.push({
+                date: new Date(currentDate),
+                isPreferredDate,
+                isPreferredTime,
+                score,
+              });
+            }
+          }
+        }
+
+        // Move to next slot
+        currentDate.setMinutes(currentDate.getMinutes() + 30);
+        if (currentDate.getHours() >= endHour) {
+          currentDate.setDate(currentDate.getDate() + 1);
+          currentDate.setHours(startHour, 0, 0, 0);
+        }
+      }
+
+      // Sort by score
+      availableSlots.sort((a, b) => b.score - a.score);
+
+      // If autoSelectSlot and patient consented, book the best slot
+      if (autoSelectSlot && withPatientConsent && availableSlots.length > 0) {
+        if (!appointmentType) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'No valid appointment type found. Cannot auto-schedule.',
+          });
+        }
+
+        const selectedSlot = availableSlots[0];
+        const endTime = new Date(selectedSlot.date.getTime() + duration * 60 * 1000);
+
+        const newAppointment = await ctx.prisma.appointment.create({
+          data: {
+            startTime: selectedSlot.date,
+            endTime,
+            status: 'SCHEDULED',
+            notes: notes || 'AI-scheduled follow-up appointment',
+            patientId,
+            providerId,
+            appointmentTypeId: appointmentType.id,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+
+        // Log the action
+        await ctx.prisma.careCoordinatorAction.create({
+          data: {
+            actionType: 'APPOINTMENT_SCHEDULED',
+            title: `Follow-up scheduled for ${getPatientName(patient)}`,
+            description: `AI auto-scheduled follow-up appointment on ${selectedSlot.date.toLocaleDateString()} at ${selectedSlot.date.toLocaleTimeString()}`,
+            result: 'success',
+            resultData: {
+              appointmentId: newAppointment.id,
+              autoSelected: true,
+              slotScore: selectedSlot.score,
+            } as Prisma.InputJsonValue,
+            patientId,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+
+        await auditLog('AI_CARE_OUTREACH_RECOMMEND', 'Appointment', {
+          changes: {
+            action: 'schedule_followup',
+            appointmentId: newAppointment.id,
+            autoSelected: true,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return {
+          success: true,
+          scheduled: true,
+          appointment: {
+            id: newAppointment.id,
+            startTime: newAppointment.startTime,
+            endTime: newAppointment.endTime,
+            appointmentType: appointmentType?.name,
+          },
+          availableSlots: availableSlots.slice(0, 5).map(s => ({
+            date: s.date,
+            isPreferredDate: s.isPreferredDate,
+            isPreferredTime: s.isPreferredTime,
+          })),
+          message: `Follow-up appointment scheduled for ${selectedSlot.date.toLocaleDateString()} at ${selectedSlot.date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`,
+        };
+      }
+
+      // Return available slots for manual selection
+      return {
+        success: true,
+        scheduled: false,
+        appointment: null,
+        availableSlots: availableSlots.slice(0, 10).map(s => ({
+          date: s.date,
+          isPreferredDate: s.isPreferredDate,
+          isPreferredTime: s.isPreferredTime,
+        })),
+        message: availableSlots.length > 0
+          ? `Found ${availableSlots.length} available slots. Patient consent required for auto-scheduling.`
+          : 'No available slots found in the requested time range.',
+      };
+    }),
+
+  // Auto-schedule at checkout with patient consent
+  autoScheduleAtCheckout: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        encounterId: z.string(),
+        providerId: z.string(),
+        patientConsent: z.boolean(),
+        appointmentTypeId: z.string().optional(),
+        preferredTimeOfDay: z.enum(['morning', 'afternoon', 'evening', 'any']).default('any'),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { patientId, encounterId, providerId, patientConsent, appointmentTypeId, preferredTimeOfDay } = input;
+
+      if (!patientConsent) {
+        return {
+          success: false,
+          scheduled: false,
+          message: 'Patient consent required for auto-scheduling',
+          recommendation: null,
+        };
+      }
+
+      // Get the encounter with diagnosis information
+      const encounter = await ctx.prisma.encounter.findFirst({
+        where: {
+          id: encounterId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          diagnoses: true,
+          patient: {
+            include: {
+              demographics: { select: { firstName: true, lastName: true } },
+              treatmentPlans: {
+                where: { status: 'ACTIVE' },
+                take: 1,
+              },
+            },
+          },
+        },
+      });
+
+      if (!encounter) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Encounter not found',
+        });
+      }
+
+      // Determine condition type from diagnoses
+      let conditionType = 'active_care';
+      if (encounter.diagnoses.length > 0) {
+        const diagDescriptions = encounter.diagnoses.map(d => (d.description || '').toLowerCase());
+        if (diagDescriptions.some(d => d.includes('acute'))) {
+          conditionType = 'acute';
+        } else if (diagDescriptions.some(d => d.includes('chronic'))) {
+          conditionType = 'chronic';
+        } else if (diagDescriptions.some(d => d.includes('maintenance') || d.includes('wellness'))) {
+          conditionType = 'maintenance';
+        }
+      }
+
+      // Get follow-up recommendation
+      let recommendedDays = 7;
+      const activePlan = encounter.patient.treatmentPlans[0];
+
+      if (activePlan?.frequency) {
+        const freq = activePlan.frequency.toLowerCase();
+        if (freq.includes('3x')) recommendedDays = 2;
+        else if (freq.includes('2x') || freq.includes('twice')) recommendedDays = 3;
+        else if (freq.includes('weekly') || freq.includes('1x')) recommendedDays = 7;
+        else if (freq.includes('biweekly')) recommendedDays = 14;
+      }
+
+      if (conditionType === 'acute') {
+        recommendedDays = Math.min(recommendedDays, 3);
+      } else if (conditionType === 'maintenance') {
+        recommendedDays = Math.max(recommendedDays, 14);
+      }
+
+      const preferredDate = new Date();
+      preferredDate.setDate(preferredDate.getDate() + recommendedDays);
+
+      // Get appointment type
+      let appointmentType = null;
+      if (appointmentTypeId) {
+        appointmentType = await ctx.prisma.appointmentType.findFirst({
+          where: {
+            id: appointmentTypeId,
+            organizationId: ctx.user.organizationId,
+            isActive: true,
+          },
+        });
+      } else {
+        appointmentType = await ctx.prisma.appointmentType.findFirst({
+          where: {
+            organizationId: ctx.user.organizationId,
+            isActive: true,
+            name: { contains: 'follow', mode: 'insensitive' },
+          },
+        });
+      }
+
+      const duration = appointmentType?.duration || 30;
+
+      // Define time range
+      let startHour = 9, endHour = 17;
+      if (preferredTimeOfDay === 'morning') { startHour = 9; endHour = 12; }
+      else if (preferredTimeOfDay === 'afternoon') { startHour = 12; endHour = 17; }
+      else if (preferredTimeOfDay === 'evening') { startHour = 17; endHour = 19; }
+
+      // Search for available slot
+      const searchStart = new Date(preferredDate);
+      const searchEnd = new Date(preferredDate);
+      searchEnd.setDate(searchEnd.getDate() + 7);
+
+      const existingAppointments = await ctx.prisma.appointment.findMany({
+        where: {
+          providerId,
+          organizationId: ctx.user.organizationId,
+          startTime: { gte: searchStart, lte: searchEnd },
+          status: { in: ['SCHEDULED', 'CONFIRMED'] },
+        },
+      });
+
+      // Find first available slot
+      const currentDate = new Date(searchStart);
+      currentDate.setHours(startHour, 0, 0, 0);
+
+      let selectedSlot: Date | null = null;
+
+      while (currentDate < searchEnd && !selectedSlot) {
+        if (currentDate.getDay() !== 0 && currentDate.getDay() !== 6) {
+          const hour = currentDate.getHours();
+          if (hour >= startHour && hour < endHour) {
+            const slotEnd = new Date(currentDate.getTime() + duration * 60 * 1000);
+            const hasConflict = existingAppointments.some(apt => {
+              const aptEnd = new Date(apt.startTime.getTime() + duration * 60 * 1000);
+              return currentDate < aptEnd && slotEnd > apt.startTime;
+            });
+
+            if (!hasConflict) {
+              selectedSlot = new Date(currentDate);
+            }
+          }
+        }
+
+        currentDate.setMinutes(currentDate.getMinutes() + 30);
+        if (currentDate.getHours() >= endHour) {
+          currentDate.setDate(currentDate.getDate() + 1);
+          currentDate.setHours(startHour, 0, 0, 0);
+        }
+      }
+
+      if (!selectedSlot) {
+        // Add to waitlist instead
+        const waitlistEntry = await ctx.prisma.waitlistEntry.create({
+          data: {
+            patientId,
+            appointmentTypeId: appointmentType?.id || '',
+            preferredProviderId: providerId,
+            preferredDays: [],
+            preferredTimeStart: `${startHour.toString().padStart(2, '0')}:00`,
+            preferredTimeEnd: `${endHour.toString().padStart(2, '0')}:00`,
+            notes: `Auto-added from checkout. Preferred date: ${preferredDate.toLocaleDateString()}`,
+            priority: conditionType === 'acute' ? 'HIGH' : 'NORMAL',
+            organizationId: ctx.user.organizationId,
+          },
+        });
+
+        return {
+          success: true,
+          scheduled: false,
+          addedToWaitlist: true,
+          waitlistEntryId: waitlistEntry.id,
+          message: 'No slots available. Patient added to waitlist.',
+          recommendation: {
+            days: recommendedDays,
+            conditionType,
+            preferredDate,
+          },
+        };
+      }
+
+      // Create the appointment
+      if (!appointmentType) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'No valid appointment type found. Cannot auto-schedule.',
+        });
+      }
+
+      const endTime = new Date(selectedSlot.getTime() + duration * 60 * 1000);
+      const newAppointment = await ctx.prisma.appointment.create({
+        data: {
+          startTime: selectedSlot,
+          endTime,
+          status: 'SCHEDULED',
+          notes: `Follow-up scheduled at checkout (${conditionType})`,
+          patientId,
+          providerId,
+          appointmentTypeId: appointmentType.id,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      // Log the action
+      await ctx.prisma.careCoordinatorAction.create({
+        data: {
+          actionType: 'APPOINTMENT_SCHEDULED',
+          title: `Checkout auto-schedule for ${getPatientName(encounter.patient)}`,
+          description: `Follow-up appointment auto-scheduled at checkout for ${selectedSlot.toLocaleDateString()} at ${selectedSlot.toLocaleTimeString()}`,
+          result: 'success',
+          resultData: {
+            appointmentId: newAppointment.id,
+            encounterId,
+            conditionType,
+            recommendedDays,
+          } as Prisma.InputJsonValue,
+          patientId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      return {
+        success: true,
+        scheduled: true,
+        appointment: {
+          id: newAppointment.id,
+          startTime: newAppointment.startTime,
+          endTime: newAppointment.endTime,
+          appointmentType: appointmentType?.name,
+        },
+        message: `Follow-up scheduled for ${selectedSlot.toLocaleDateString()} at ${selectedSlot.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`,
+        recommendation: {
+          days: recommendedDays,
+          conditionType,
+          preferredDate,
+        },
+      };
+    }),
+
+  // Manage waitlist for preferred times
+  manageWaitlist: protectedProcedure
+    .input(
+      z.object({
+        action: z.enum(['add', 'remove', 'getMatches', 'notify']),
+        patientId: z.string().optional(),
+        waitlistEntryId: z.string().optional(),
+        providerId: z.string().optional(),
+        appointmentTypeId: z.string().optional(),
+        preferredDays: z.array(z.enum(['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'])).optional(),
+        preferredTimeStart: z.string().optional(),
+        preferredTimeEnd: z.string().optional(),
+        priority: z.enum(['LOW', 'NORMAL', 'HIGH', 'URGENT']).optional(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const {
+        action,
+        patientId,
+        waitlistEntryId,
+        providerId,
+        appointmentTypeId,
+        preferredDays,
+        preferredTimeStart,
+        preferredTimeEnd,
+        priority,
+        notes,
+      } = input;
+
+      if (action === 'add') {
+        if (!patientId || !appointmentTypeId) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Patient ID and appointment type ID required to add to waitlist',
+          });
+        }
+
+        const entry = await ctx.prisma.waitlistEntry.create({
+          data: {
+            patientId,
+            appointmentTypeId,
+            preferredProviderId: providerId,
+            preferredDays: preferredDays || [],
+            preferredTimeStart: preferredTimeStart || '09:00',
+            preferredTimeEnd: preferredTimeEnd || '17:00',
+            priority: priority || 'NORMAL',
+            notes,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+
+        return {
+          success: true,
+          action: 'added',
+          entry: {
+            id: entry.id,
+            patientId: entry.patientId,
+            priority: entry.priority,
+          },
+        };
+      }
+
+      if (action === 'remove') {
+        if (!waitlistEntryId) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Waitlist entry ID required to remove',
+          });
+        }
+
+        await ctx.prisma.waitlistEntry.update({
+          where: { id: waitlistEntryId },
+          data: { isActive: false },
+        });
+
+        return {
+          success: true,
+          action: 'removed',
+          entryId: waitlistEntryId,
+        };
+      }
+
+      if (action === 'getMatches') {
+        // Find waitlist entries that match available slots
+        const activeEntries = await ctx.prisma.waitlistEntry.findMany({
+          where: {
+            organizationId: ctx.user.organizationId,
+            isActive: true,
+            ...(providerId && { preferredProviderId: providerId }),
+            ...(appointmentTypeId && { appointmentTypeId }),
+          },
+          include: {
+            patient: {
+              include: {
+                demographics: { select: { firstName: true, lastName: true } },
+                contacts: { where: { isPrimary: true }, take: 1 },
+              },
+            },
+            appointmentType: true,
+            preferredProvider: {
+              include: {
+                user: { select: { firstName: true, lastName: true } },
+              },
+            },
+          },
+          orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
+        });
+
+        // For each entry, find potential matching slots in the next 2 weeks
+        const now = new Date();
+        const twoWeeksOut = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+
+        const matches = await Promise.all(activeEntries.map(async (entry) => {
+          const provId = entry.preferredProviderId;
+          if (!provId) return { entry, matchingSlots: [] };
+
+          // Get existing appointments for the provider
+          const existing = await ctx.prisma.appointment.findMany({
+            where: {
+              providerId: provId,
+              organizationId: ctx.user.organizationId,
+              startTime: { gte: now, lte: twoWeeksOut },
+              status: { in: ['SCHEDULED', 'CONFIRMED'] },
+            },
+          });
+
+          const matchingSlots: Date[] = [];
+          const duration = entry.appointmentType?.duration || 30;
+          const startHour = parseInt(entry.preferredTimeStart?.split(':')[0] || '9');
+          const endHour = parseInt(entry.preferredTimeEnd?.split(':')[0] || '17');
+          const preferredDayNames = entry.preferredDays as string[];
+
+          const currentSlot = new Date(now);
+          currentSlot.setHours(startHour, 0, 0, 0);
+
+          while (currentSlot < twoWeeksOut && matchingSlots.length < 3) {
+            const dayName = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'][currentSlot.getDay()];
+
+            if (currentSlot.getDay() !== 0 && currentSlot.getDay() !== 6) {
+              // Check if day matches preference (or no preference set)
+              if (preferredDayNames.length === 0 || preferredDayNames.includes(dayName)) {
+                const hour = currentSlot.getHours();
+                if (hour >= startHour && hour < endHour) {
+                  const slotEnd = new Date(currentSlot.getTime() + duration * 60 * 1000);
+                  const hasConflict = existing.some(apt => {
+                    const aptEnd = new Date(apt.startTime.getTime() + duration * 60 * 1000);
+                    return currentSlot < aptEnd && slotEnd > apt.startTime;
+                  });
+
+                  if (!hasConflict) {
+                    matchingSlots.push(new Date(currentSlot));
+                  }
+                }
+              }
+            }
+
+            currentSlot.setMinutes(currentSlot.getMinutes() + 30);
+            if (currentSlot.getHours() >= endHour) {
+              currentSlot.setDate(currentSlot.getDate() + 1);
+              currentSlot.setHours(startHour, 0, 0, 0);
+            }
+          }
+
+          return {
+            entry: {
+              id: entry.id,
+              patientId: entry.patientId,
+              patientName: getPatientName(entry.patient),
+              appointmentType: entry.appointmentType?.name,
+              preferredProvider: entry.preferredProvider?.user
+                ? `${entry.preferredProvider.user.firstName} ${entry.preferredProvider.user.lastName}`
+                : null,
+              priority: entry.priority,
+              preferredDays: entry.preferredDays,
+              preferredTimeRange: `${entry.preferredTimeStart} - ${entry.preferredTimeEnd}`,
+              createdAt: entry.createdAt,
+            },
+            matchingSlots,
+          };
+        }));
+
+        return {
+          success: true,
+          action: 'getMatches',
+          matches: matches.filter(m => m.matchingSlots.length > 0),
+          noMatches: matches.filter(m => m.matchingSlots.length === 0).map(m => m.entry),
+          summary: {
+            totalEntries: activeEntries.length,
+            withMatches: matches.filter(m => m.matchingSlots.length > 0).length,
+            withoutMatches: matches.filter(m => m.matchingSlots.length === 0).length,
+          },
+        };
+      }
+
+      if (action === 'notify') {
+        // Notify waitlist patients about available slots
+        if (!waitlistEntryId) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Waitlist entry ID required for notification',
+          });
+        }
+
+        const entry = await ctx.prisma.waitlistEntry.findFirst({
+          where: {
+            id: waitlistEntryId,
+            organizationId: ctx.user.organizationId,
+            isActive: true,
+          },
+          include: {
+            patient: {
+              include: {
+                demographics: { select: { firstName: true, lastName: true } },
+                contacts: { where: { isPrimary: true }, take: 1 },
+              },
+            },
+          },
+        });
+
+        if (!entry) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Waitlist entry not found',
+          });
+        }
+
+        // Create outreach record
+        const outreach = await ctx.prisma.careOutreach.create({
+          data: {
+            type: 'FOLLOWUP_SCHEDULING',
+            status: 'SENT',
+            channel: 'sms',
+            content: `Hi ${entry.patient.demographics?.firstName || 'there'}! A slot matching your preferences is now available. Reply YES to book or call us to schedule.`,
+            sentAt: new Date(),
+            patientId: entry.patientId,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+
+        return {
+          success: true,
+          action: 'notify',
+          outreachId: outreach.id,
+          patientName: getPatientName(entry.patient),
+        };
+      }
+
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Invalid action',
+      });
+    }),
+
+  // Schedule recall appointments for maintenance care
+  scheduleRecall: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        recallType: z.enum(['maintenance', 'annual', 'recheck', 'preventive']),
+        intervalDays: z.number().min(1).max(365).default(30),
+        providerId: z.string(),
+        appointmentTypeId: z.string().optional(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { patientId, recallType, intervalDays, providerId, appointmentTypeId, notes } = input;
+
+      // Get patient
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          demographics: { select: { firstName: true, lastName: true } },
+          appointments: {
+            where: {
+              status: { in: ['COMPLETED', 'CHECKED_IN'] },
+            },
+            orderBy: { startTime: 'desc' },
+            take: 1,
+          },
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      // Calculate recall date from last completed appointment
+      const lastVisit = patient.appointments[0]?.startTime || new Date();
+      const recallDate = new Date(lastVisit);
+      recallDate.setDate(recallDate.getDate() + intervalDays);
+
+      // If recall date is in the past, schedule from today
+      if (recallDate < new Date()) {
+        recallDate.setTime(Date.now());
+        recallDate.setDate(recallDate.getDate() + 1);
+      }
+
+      // Skip weekends
+      while (recallDate.getDay() === 0 || recallDate.getDay() === 6) {
+        recallDate.setDate(recallDate.getDate() + 1);
+      }
+
+      // Get appointment type
+      let appointmentType = null;
+      if (appointmentTypeId) {
+        appointmentType = await ctx.prisma.appointmentType.findFirst({
+          where: {
+            id: appointmentTypeId,
+            organizationId: ctx.user.organizationId,
+            isActive: true,
+          },
+        });
+      } else {
+        // Find maintenance/recall type
+        appointmentType = await ctx.prisma.appointmentType.findFirst({
+          where: {
+            organizationId: ctx.user.organizationId,
+            isActive: true,
+            OR: [
+              { name: { contains: 'maintenance', mode: 'insensitive' } },
+              { name: { contains: 'recall', mode: 'insensitive' } },
+              { name: { contains: 'wellness', mode: 'insensitive' } },
+            ],
+          },
+        });
+      }
+
+      const duration = appointmentType?.duration || 30;
+
+      // Find available slot on or near the recall date
+      const searchEnd = new Date(recallDate);
+      searchEnd.setDate(searchEnd.getDate() + 14);
+
+      const existingAppointments = await ctx.prisma.appointment.findMany({
+        where: {
+          providerId,
+          organizationId: ctx.user.organizationId,
+          startTime: { gte: recallDate, lte: searchEnd },
+          status: { in: ['SCHEDULED', 'CONFIRMED'] },
+        },
+      });
+
+      // Find first available slot
+      const currentSlot = new Date(recallDate);
+      currentSlot.setHours(10, 0, 0, 0); // Default to 10am
+
+      let selectedSlot: Date | null = null;
+
+      while (currentSlot < searchEnd && !selectedSlot) {
+        if (currentSlot.getDay() !== 0 && currentSlot.getDay() !== 6) {
+          const hour = currentSlot.getHours();
+          if (hour >= 9 && hour < 17) {
+            const slotEnd = new Date(currentSlot.getTime() + duration * 60 * 1000);
+            const hasConflict = existingAppointments.some(apt => {
+              const aptEnd = new Date(apt.startTime.getTime() + duration * 60 * 1000);
+              return currentSlot < aptEnd && slotEnd > apt.startTime;
+            });
+
+            if (!hasConflict) {
+              selectedSlot = new Date(currentSlot);
+            }
+          }
+        }
+
+        currentSlot.setMinutes(currentSlot.getMinutes() + 30);
+        if (currentSlot.getHours() >= 17) {
+          currentSlot.setDate(currentSlot.getDate() + 1);
+          currentSlot.setHours(9, 0, 0, 0);
+        }
+      }
+
+      // Create care journey entry for recall tracking
+      const journey = await ctx.prisma.careJourney.create({
+        data: {
+          journeyType: 'MAINTENANCE',
+          name: `${recallType.charAt(0).toUpperCase() + recallType.slice(1)} Recall Journey`,
+          currentStage: 'RECALL_SCHEDULED',
+          completedStages: [] as Prisma.InputJsonValue,
+          nextMilestone: `${recallType} recall scheduled`,
+          milestones: [{
+            name: `${recallType} recall`,
+            scheduledDate: selectedSlot?.toISOString() || recallDate.toISOString(),
+            status: selectedSlot ? 'scheduled' : 'pending',
+          }] as Prisma.InputJsonValue,
+          patientId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!selectedSlot) {
+        // Add to waitlist
+        const waitlistEntry = await ctx.prisma.waitlistEntry.create({
+          data: {
+            patientId,
+            appointmentTypeId: appointmentType?.id || '',
+            preferredProviderId: providerId,
+            preferredDays: [],
+            preferredTimeStart: '10:00',
+            preferredTimeEnd: '15:00',
+            notes: `${recallType} recall - target date ${recallDate.toLocaleDateString()}. ${notes || ''}`,
+            priority: 'NORMAL',
+            organizationId: ctx.user.organizationId,
+          },
+        });
+
+        return {
+          success: true,
+          scheduled: false,
+          addedToWaitlist: true,
+          waitlistEntryId: waitlistEntry.id,
+          journeyId: journey.id,
+          recallInfo: {
+            type: recallType,
+            targetDate: recallDate,
+            intervalDays,
+            lastVisit,
+          },
+          message: `No immediate slots available. Patient added to waitlist for ${recallType} recall around ${recallDate.toLocaleDateString()}.`,
+        };
+      }
+
+      // Create the recall appointment
+      if (!appointmentType) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'No valid appointment type found. Cannot schedule recall.',
+        });
+      }
+
+      const endTime = new Date(selectedSlot.getTime() + duration * 60 * 1000);
+      const appointment = await ctx.prisma.appointment.create({
+        data: {
+          startTime: selectedSlot,
+          endTime,
+          status: 'SCHEDULED',
+          notes: `${recallType.charAt(0).toUpperCase() + recallType.slice(1)} recall appointment. ${notes || ''}`,
+          patientId,
+          providerId,
+          appointmentTypeId: appointmentType.id,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      // Log action
+      await ctx.prisma.careCoordinatorAction.create({
+        data: {
+          actionType: 'APPOINTMENT_SCHEDULED',
+          title: `${recallType} recall scheduled for ${getPatientName(patient)}`,
+          description: `Recall appointment scheduled for ${selectedSlot.toLocaleDateString()} (${intervalDays} days after last visit)`,
+          result: 'success',
+          resultData: {
+            appointmentId: appointment.id,
+            recallType,
+            intervalDays,
+            lastVisitDate: lastVisit.toISOString(),
+          } as Prisma.InputJsonValue,
+          patientId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      return {
+        success: true,
+        scheduled: true,
+        appointment: {
+          id: appointment.id,
+          startTime: appointment.startTime,
+          endTime: appointment.endTime,
+          appointmentType: appointmentType?.name || `${recallType} Recall`,
+        },
+        journeyId: journey.id,
+        recallInfo: {
+          type: recallType,
+          scheduledDate: selectedSlot,
+          intervalDays,
+          lastVisit,
+        },
+        message: `${recallType.charAt(0).toUpperCase() + recallType.slice(1)} recall scheduled for ${selectedSlot.toLocaleDateString()} at ${selectedSlot.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`,
+      };
+    }),
+
+  // Get patient scheduling preferences
+  getPatientSchedulingPreferences: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { patientId } = input;
+
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          demographics: { select: { firstName: true, lastName: true } },
+          communicationPreference: true,
+          appointments: {
+            where: { status: 'COMPLETED' },
+            orderBy: { startTime: 'desc' },
+            take: 20,
+          },
+          waitlistEntries: {
+            where: { isActive: true },
+          },
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      // Analyze appointment history to determine implicit preferences
+      const completedAppointments = patient.appointments;
+      const dayFrequency: Record<number, number> = {};
+      const hourFrequency: Record<number, number> = {};
+
+      for (const apt of completedAppointments) {
+        const day = apt.startTime.getDay();
+        const hour = apt.startTime.getHours();
+
+        dayFrequency[day] = (dayFrequency[day] || 0) + 1;
+        hourFrequency[hour] = (hourFrequency[hour] || 0) + 1;
+      }
+
+      // Find preferred days and times based on history
+      const sortedDays = Object.entries(dayFrequency)
+        .sort(([, a], [, b]) => b - a)
+        .map(([day]) => parseInt(day));
+
+      const sortedHours = Object.entries(hourFrequency)
+        .sort(([, a], [, b]) => b - a)
+        .map(([hour]) => parseInt(hour));
+
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+      // Determine time preference
+      const morningCount = Object.entries(hourFrequency)
+        .filter(([h]) => parseInt(h) >= 9 && parseInt(h) < 12)
+        .reduce((sum, [, count]) => sum + count, 0);
+      const afternoonCount = Object.entries(hourFrequency)
+        .filter(([h]) => parseInt(h) >= 12 && parseInt(h) < 17)
+        .reduce((sum, [, count]) => sum + count, 0);
+      const eveningCount = Object.entries(hourFrequency)
+        .filter(([h]) => parseInt(h) >= 17)
+        .reduce((sum, [, count]) => sum + count, 0);
+
+      let impliedTimePreference = 'any';
+      if (morningCount > afternoonCount && morningCount > eveningCount) {
+        impliedTimePreference = 'morning';
+      } else if (afternoonCount > morningCount && afternoonCount > eveningCount) {
+        impliedTimePreference = 'afternoon';
+      } else if (eveningCount > morningCount && eveningCount > afternoonCount) {
+        impliedTimePreference = 'evening';
+      }
+
+      return {
+        patientId,
+        patientName: getPatientName(patient),
+        explicit: {
+          preferredTimeStart: patient.communicationPreference?.preferredTimeStart || null,
+          preferredTimeEnd: patient.communicationPreference?.preferredTimeEnd || null,
+          allowSms: patient.communicationPreference?.allowSms !== false,
+          allowEmail: patient.communicationPreference?.allowEmail !== false,
+          allowPortal: patient.communicationPreference?.allowPortal !== false,
+        },
+        implied: {
+          preferredDays: sortedDays.slice(0, 3).map(d => dayNames[d]),
+          preferredHours: sortedHours.slice(0, 3),
+          timePreference: impliedTimePreference,
+          basedOnAppointments: completedAppointments.length,
+        },
+        waitlistEntries: patient.waitlistEntries.length,
+        summary: {
+          hasExplicitPreferences: !!patient.communicationPreference?.preferredTimeStart,
+          topDays: sortedDays.slice(0, 2).map(d => dayNames[d]),
+          topTimeOfDay: impliedTimePreference,
+          appointmentHistoryCount: completedAppointments.length,
+        },
+      };
+    }),
+
+  // Optimize provider schedule utilization
+  optimizeScheduleUtilization: protectedProcedure
+    .input(
+      z.object({
+        providerId: z.string(),
+        dateRange: z.object({
+          start: z.coerce.date(),
+          end: z.coerce.date(),
+        }),
+        targetUtilization: z.number().min(50).max(100).default(85), // Target % booked
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { providerId, dateRange, targetUtilization } = input;
+
+      // Get provider info
+      const provider = await ctx.prisma.provider.findFirst({
+        where: {
+          id: providerId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          user: { select: { firstName: true, lastName: true } },
+        },
+      });
+
+      if (!provider) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Provider not found',
+        });
+      }
+
+      // Get appointments in date range
+      const appointments = await ctx.prisma.appointment.findMany({
+        where: {
+          providerId,
+          organizationId: ctx.user.organizationId,
+          startTime: { gte: dateRange.start, lte: dateRange.end },
+          status: { notIn: ['CANCELLED'] },
+        },
+        include: {
+          appointmentType: true,
+        },
+        orderBy: { startTime: 'asc' },
+      });
+
+      // Get schedule blocks
+      const blocks = await ctx.prisma.scheduleBlock.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          OR: [{ providerId }, { providerId: null }],
+          startTime: { lte: dateRange.end },
+          endTime: { gte: dateRange.start },
+        },
+      });
+
+      // Calculate utilization by day
+      const dailyStats: Array<{
+        date: string;
+        totalSlots: number;
+        bookedSlots: number;
+        blockedSlots: number;
+        availableSlots: number;
+        utilization: number;
+        gaps: Array<{ start: Date; end: Date; duration: number }>;
+      }> = [];
+
+      // Assume 8 hours work day (9am-5pm) = 480 minutes
+      const workdayMinutes = 480;
+      const slotDuration = 30; // 30-minute slots
+      const totalSlotsPerDay = workdayMinutes / slotDuration;
+
+      const currentDate = new Date(dateRange.start);
+      while (currentDate <= dateRange.end) {
+        // Skip weekends
+        if (currentDate.getDay() !== 0 && currentDate.getDay() !== 6) {
+          const dateStr = currentDate.toISOString().split('T')[0];
+          const dayStart = new Date(currentDate);
+          dayStart.setHours(9, 0, 0, 0);
+          const dayEnd = new Date(currentDate);
+          dayEnd.setHours(17, 0, 0, 0);
+
+          // Get appointments for this day
+          const dayAppointments = appointments.filter(a => {
+            const aptDate = a.startTime.toISOString().split('T')[0];
+            return aptDate === dateStr;
+          });
+
+          // Get blocks for this day
+          const dayBlocks = blocks.filter(b => {
+            return b.startTime < dayEnd && b.endTime > dayStart;
+          });
+
+          // Calculate booked minutes
+          let bookedMinutes = 0;
+          for (const apt of dayAppointments) {
+            const duration = apt.appointmentType?.duration || 30;
+            bookedMinutes += duration;
+          }
+
+          // Calculate blocked minutes
+          let blockedMinutes = 0;
+          for (const block of dayBlocks) {
+            const blockStart = block.startTime > dayStart ? block.startTime : dayStart;
+            const blockEnd = block.endTime < dayEnd ? block.endTime : dayEnd;
+            blockedMinutes += (blockEnd.getTime() - blockStart.getTime()) / (1000 * 60);
+          }
+
+          const bookedSlots = Math.round(bookedMinutes / slotDuration);
+          const blockedSlots = Math.round(blockedMinutes / slotDuration);
+          const availableSlots = Math.max(0, totalSlotsPerDay - bookedSlots - blockedSlots);
+          const utilization = Math.round((bookedSlots / (totalSlotsPerDay - blockedSlots)) * 100);
+
+          // Find gaps (available time between appointments)
+          const gaps: Array<{ start: Date; end: Date; duration: number }> = [];
+          const sortedApts = [...dayAppointments].sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+
+          let lastEnd = dayStart;
+          for (const apt of sortedApts) {
+            if (apt.startTime.getTime() - lastEnd.getTime() >= 30 * 60 * 1000) {
+              // Gap of 30+ minutes
+              gaps.push({
+                start: new Date(lastEnd),
+                end: new Date(apt.startTime),
+                duration: Math.round((apt.startTime.getTime() - lastEnd.getTime()) / (1000 * 60)),
+              });
+            }
+            const duration = apt.appointmentType?.duration || 30;
+            lastEnd = new Date(apt.startTime.getTime() + duration * 60 * 1000);
+          }
+
+          // Check for gap at end of day
+          if (dayEnd.getTime() - lastEnd.getTime() >= 30 * 60 * 1000) {
+            gaps.push({
+              start: new Date(lastEnd),
+              end: dayEnd,
+              duration: Math.round((dayEnd.getTime() - lastEnd.getTime()) / (1000 * 60)),
+            });
+          }
+
+          dailyStats.push({
+            date: dateStr,
+            totalSlots: totalSlotsPerDay,
+            bookedSlots,
+            blockedSlots,
+            availableSlots,
+            utilization,
+            gaps,
+          });
+        }
+
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+
+      // Get waitlist entries that could fill gaps
+      const waitlistMatches = await ctx.prisma.waitlistEntry.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          isActive: true,
+          preferredProviderId: providerId,
+        },
+        include: {
+          patient: {
+            include: {
+              demographics: { select: { firstName: true, lastName: true } },
+            },
+          },
+          appointmentType: true,
+        },
+        take: 10,
+      });
+
+      // Calculate overall metrics
+      const totalDays = dailyStats.length;
+      const averageUtilization = totalDays > 0
+        ? Math.round(dailyStats.reduce((sum, d) => sum + d.utilization, 0) / totalDays)
+        : 0;
+      const underutilizedDays = dailyStats.filter(d => d.utilization < targetUtilization);
+      const totalGaps = dailyStats.reduce((sum, d) => sum + d.gaps.length, 0);
+      const totalGapMinutes = dailyStats.reduce((sum, d) =>
+        sum + d.gaps.reduce((gapSum, g) => gapSum + g.duration, 0), 0);
+
+      // Generate recommendations
+      const recommendations: string[] = [];
+
+      if (averageUtilization < targetUtilization) {
+        const gap = targetUtilization - averageUtilization;
+        recommendations.push(`Schedule utilization is ${gap}% below target. Consider filling ${Math.round(gap * totalDays * totalSlotsPerDay / 100)} additional slots.`);
+      }
+
+      if (waitlistMatches.length > 0) {
+        recommendations.push(`${waitlistMatches.length} patients on waitlist could fill available gaps.`);
+      }
+
+      if (totalGapMinutes > 120) {
+        recommendations.push(`${Math.round(totalGapMinutes / 60)} hours of fragmented time could be consolidated or filled with shorter appointments.`);
+      }
+
+      return {
+        providerId,
+        providerName: provider.user ? `${provider.user.firstName} ${provider.user.lastName}` : 'Provider',
+        dateRange,
+        dailyStats,
+        summary: {
+          totalDays,
+          averageUtilization,
+          targetUtilization,
+          meetsTarget: averageUtilization >= targetUtilization,
+          underutilizedDays: underutilizedDays.length,
+          totalGaps,
+          totalGapMinutes,
+          waitlistPatientsAvailable: waitlistMatches.length,
+        },
+        waitlistMatches: waitlistMatches.map(w => ({
+          entryId: w.id,
+          patientName: getPatientName(w.patient),
+          appointmentType: w.appointmentType?.name,
+          duration: w.appointmentType?.duration || 30,
+          preferredDays: w.preferredDays,
+          preferredTime: `${w.preferredTimeStart} - ${w.preferredTimeEnd}`,
+        })),
+        recommendations,
+      };
+    }),
 });

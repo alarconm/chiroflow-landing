@@ -163,3 +163,93 @@ Story: US-324 - Treatment plan monitoring
 --- Iteration 3 completed at 2026-01-22 ---
 Story: US-325 - Intelligent appointment reminders
 
+--- Iteration 3 completed at 2026-01-22 13:54:13 ---
+Story: US-325 - Intelligent appointment reminders
+
+## US-326: Proactive follow-up scheduling - COMPLETED
+
+### What was implemented:
+
+1. **New tRPC procedures added to aiCare router:**
+   - `aiCare.getFollowUpRecommendation` - Recommends follow-up timing based on:
+     - Treatment plan frequency (3x/week, 2x/week, weekly, biweekly, monthly)
+     - Condition type (acute, chronic, maintenance, wellness)
+     - Recent encounter diagnoses and severity
+     - Treatment plan progress and completion rate
+     - Returns recommended days, date, urgency, appointment type, and reasoning
+
+   - `aiCare.scheduleFollowUp` - Books follow-up appointments with:
+     - Preferred date and time of day support
+     - Auto-slot selection with patient consent
+     - Provider availability checking
+     - Schedule block conflict detection
+     - Slot scoring based on patient preferences
+     - Creates CareCoordinatorAction for tracking
+     - Audit logging for compliance
+
+   - `aiCare.autoScheduleAtCheckout` - Checkout-integrated scheduling:
+     - Analyzes encounter diagnoses for condition type
+     - Uses treatment plan frequency for timing
+     - Auto-finds available slots
+     - Falls back to waitlist if no slots available
+     - Creates CareCoordinatorAction log
+
+   - `aiCare.manageWaitlist` - Comprehensive waitlist management:
+     - Add/remove patients from waitlist
+     - Find matching available slots for waitlist entries
+     - Notify patients when preferred slots become available
+     - Priority-based ordering (LOW, NORMAL, HIGH, URGENT)
+     - Preferred days and time range filtering
+
+   - `aiCare.scheduleRecall` - Maintenance/recall scheduling:
+     - Supports recall types: maintenance, annual, recheck, preventive
+     - Configurable interval (1-365 days)
+     - Calculates recall from last completed appointment
+     - Creates CareJourney entry for tracking
+     - Falls back to waitlist if slots unavailable
+
+   - `aiCare.getPatientSchedulingPreferences` - Preference analysis:
+     - Explicit preferences from CommunicationPreference model
+     - Implied preferences from appointment history analysis
+     - Day-of-week frequency analysis
+     - Time-of-day preference detection
+     - Waitlist entry count
+
+   - `aiCare.optimizeScheduleUtilization` - Provider schedule optimization:
+     - Daily utilization calculation
+     - Gap detection between appointments
+     - Waitlist match recommendations
+     - Target utilization comparison
+     - Schedule optimization recommendations
+
+2. **Follow-up recommendation logic:**
+   - Acute conditions: Max 3 days between visits
+   - Chronic conditions: Follow treatment plan frequency
+   - Maintenance care: Minimum 2-week intervals
+   - Wellness care: Monthly check-ins
+   - Severity-based adjustments from diagnoses
+   - Treatment plan completion-based recommendations
+
+3. **Schedule optimization features:**
+   - Slot scoring algorithm (preference matching)
+   - Schedule block detection
+   - Workday hours management (9am-5pm)
+   - Weekend skipping
+   - Provider availability checking
+   - Gap analysis for schedule fragmentation
+
+### Files modified:
+- app/src/server/routers/aiCare.ts
+
+### Features implemented per acceptance criteria:
+- ✅ aiCare.scheduleFollowUp - Book next appointment
+- ✅ Recommend follow-up timing based on condition
+- ✅ Auto-schedule at checkout with patient consent
+- ✅ Waitlist management for preferred times
+- ✅ Recall scheduling for maintenance care
+- ✅ Handle patient scheduling preferences
+- ✅ Optimize provider schedule utilization
+
+--- Iteration 4 completed at 2026-01-22 ---
+Story: US-326 - Proactive follow-up scheduling
+
