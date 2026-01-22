@@ -1332,6 +1332,372 @@ export const portalRouter = router({
       return { success: true };
     }),
 
+  // Get form by token (handles both submission tokens and delivery IDs)
+  getFormByToken: publicProcedure
+    .input(
+      z.object({
+        sessionToken: z.string(),
+        formToken: z.string(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const { sessionToken, formToken } = input;
+      const user = await getPortalUserFromToken(sessionToken);
+      const ipAddress = (ctx as Record<string, unknown>).ipAddress as string | undefined;
+
+      // First try to find as submission accessToken
+      let submission = await prisma.formSubmission.findFirst({
+        where: {
+          accessToken: formToken,
+          patientId: user.patientId,
+          organizationId: user.organizationId,
+        },
+        include: {
+          template: {
+            include: {
+              fields: { orderBy: { order: 'asc' } },
+              sections: { orderBy: { order: 'asc' } },
+            },
+          },
+          responses: {
+            include: {
+              field: true,
+            },
+          },
+          signatures: true,
+        },
+      });
+
+      // If not found, try as delivery ID and create a submission
+      if (!submission) {
+        const delivery = await prisma.formDelivery.findFirst({
+          where: {
+            id: formToken,
+            patientId: user.patientId,
+            organizationId: user.organizationId,
+            completedAt: null,
+          },
+          include: {
+            template: {
+              include: {
+                fields: { orderBy: { order: 'asc' } },
+                sections: { orderBy: { order: 'asc' } },
+              },
+            },
+          },
+        });
+
+        if (delivery) {
+          // Create a new submission from this delivery
+          submission = await prisma.formSubmission.create({
+            data: {
+              templateId: delivery.templateId,
+              patientId: user.patientId,
+              organizationId: user.organizationId,
+              deliveryId: delivery.id,
+              source: 'PORTAL',
+              status: 'DRAFT',
+            },
+            include: {
+              template: {
+                include: {
+                  fields: { orderBy: { order: 'asc' } },
+                  sections: { orderBy: { order: 'asc' } },
+                },
+              },
+              responses: {
+                include: {
+                  field: true,
+                },
+              },
+              signatures: true,
+            },
+          });
+
+          // Mark delivery as opened
+          await prisma.formDelivery.update({
+            where: { id: delivery.id },
+            data: { openedAt: new Date() },
+          });
+        }
+      }
+
+      if (!submission) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Form not found or has expired',
+        });
+      }
+
+      // Log access
+      await logPortalAccess({
+        action: 'PORTAL_VIEW_FORM',
+        portalUserId: user.id,
+        organizationId: user.organizationId,
+        resource: 'FormSubmission',
+        resourceId: submission.id,
+        ipAddress,
+        success: true,
+      });
+
+      return {
+        id: submission.id,
+        accessToken: submission.accessToken,
+        status: submission.status,
+        startedAt: submission.startedAt,
+        submittedAt: submission.submittedAt,
+        template: {
+          id: submission.template.id,
+          name: submission.template.name,
+          description: submission.template.description,
+          fields: submission.template.fields,
+          sections: submission.template.sections,
+        },
+        responses: submission.responses.map((r) => ({
+          fieldId: r.fieldId,
+          value: r.value,
+          valueJson: r.valueJson,
+          field: r.field,
+        })),
+        signatures: submission.signatures.map((s) => ({
+          id: s.id,
+          signedAt: s.signedAt,
+          signerName: s.signerName,
+        })),
+      };
+    }),
+
+  // Save form progress (auto-save)
+  saveFormProgress: publicProcedure
+    .input(
+      z.object({
+        sessionToken: z.string(),
+        accessToken: z.string(),
+        responses: z.array(
+          z.object({
+            fieldId: z.string(),
+            value: z.string().nullable().optional(),
+            valueJson: z.any().optional(),
+          })
+        ),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { sessionToken, accessToken, responses } = input;
+      const user = await getPortalUserFromToken(sessionToken);
+      const ipAddress = (ctx as Record<string, unknown>).ipAddress as string | undefined;
+      const userAgent = (ctx as Record<string, unknown>).userAgent as string | undefined;
+
+      // Find submission
+      const submission = await prisma.formSubmission.findFirst({
+        where: {
+          accessToken,
+          patientId: user.patientId,
+          organizationId: user.organizationId,
+          status: { in: ['DRAFT', 'PENDING'] },
+        },
+      });
+
+      if (!submission) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Form not found or already completed',
+        });
+      }
+
+      // Upsert responses
+      const operations = responses.map((response) =>
+        prisma.formResponse.upsert({
+          where: {
+            submissionId_fieldId: {
+              submissionId: submission.id,
+              fieldId: response.fieldId,
+            },
+          },
+          create: {
+            submissionId: submission.id,
+            fieldId: response.fieldId,
+            value: response.value,
+            valueJson: response.valueJson ? JSON.parse(JSON.stringify(response.valueJson)) : undefined,
+          },
+          update: {
+            value: response.value,
+            valueJson: response.valueJson ? JSON.parse(JSON.stringify(response.valueJson)) : undefined,
+          },
+        })
+      );
+
+      await prisma.$transaction([
+        ...operations,
+        prisma.formSubmission.update({
+          where: { id: submission.id },
+          data: {
+            ipAddress,
+            userAgent,
+            status: submission.status === 'PENDING' ? 'DRAFT' : submission.status,
+          },
+        }),
+      ]);
+
+      return { success: true };
+    }),
+
+  // Add signature to form
+  addFormSignature: publicProcedure
+    .input(
+      z.object({
+        sessionToken: z.string(),
+        accessToken: z.string(),
+        signatureData: z.string(),
+        signerName: z.string().optional(),
+        consentText: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { sessionToken, accessToken, signatureData, signerName, consentText } = input;
+      const user = await getPortalUserFromToken(sessionToken);
+      const ipAddress = (ctx as Record<string, unknown>).ipAddress as string | undefined;
+      const userAgent = (ctx as Record<string, unknown>).userAgent as string | undefined;
+
+      // Find submission
+      const submission = await prisma.formSubmission.findFirst({
+        where: {
+          accessToken,
+          patientId: user.patientId,
+          organizationId: user.organizationId,
+          status: { in: ['DRAFT', 'PENDING'] },
+        },
+      });
+
+      if (!submission) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Form not found or already completed',
+        });
+      }
+
+      // Create signature
+      const signature = await prisma.eSignature.create({
+        data: {
+          submissionId: submission.id,
+          signatureData,
+          signerName,
+          signerEmail: user.email,
+          consentText,
+          ipAddress,
+          userAgent,
+        },
+      });
+
+      return { success: true, signatureId: signature.id };
+    }),
+
+  // Submit completed form
+  submitCompletedForm: publicProcedure
+    .input(
+      z.object({
+        sessionToken: z.string(),
+        accessToken: z.string(),
+        responses: z.array(
+          z.object({
+            fieldId: z.string(),
+            value: z.string().nullable().optional(),
+            valueJson: z.any().optional(),
+          })
+        ),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { sessionToken, accessToken, responses } = input;
+      const user = await getPortalUserFromToken(sessionToken);
+      const ipAddress = (ctx as Record<string, unknown>).ipAddress as string | undefined;
+      const userAgent = (ctx as Record<string, unknown>).userAgent as string | undefined;
+
+      // Find submission
+      const submission = await prisma.formSubmission.findFirst({
+        where: {
+          accessToken,
+          patientId: user.patientId,
+          organizationId: user.organizationId,
+          status: { in: ['DRAFT', 'PENDING'] },
+        },
+        include: {
+          template: {
+            include: {
+              fields: true,
+            },
+          },
+          delivery: true,
+        },
+      });
+
+      if (!submission) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Form not found or already completed',
+        });
+      }
+
+      // Save final responses
+      const operations = responses.map((response) =>
+        prisma.formResponse.upsert({
+          where: {
+            submissionId_fieldId: {
+              submissionId: submission.id,
+              fieldId: response.fieldId,
+            },
+          },
+          create: {
+            submissionId: submission.id,
+            fieldId: response.fieldId,
+            value: response.value,
+            valueJson: response.valueJson ? JSON.parse(JSON.stringify(response.valueJson)) : undefined,
+          },
+          update: {
+            value: response.value,
+            valueJson: response.valueJson ? JSON.parse(JSON.stringify(response.valueJson)) : undefined,
+          },
+        })
+      );
+
+      // Update submission status
+      await prisma.$transaction([
+        ...operations,
+        prisma.formSubmission.update({
+          where: { id: submission.id },
+          data: {
+            status: 'PENDING', // Ready for staff review
+            submittedAt: new Date(),
+            source: 'PORTAL',
+            ipAddress,
+            userAgent,
+          },
+        }),
+        // Mark delivery as completed if linked
+        ...(submission.deliveryId
+          ? [
+              prisma.formDelivery.update({
+                where: { id: submission.deliveryId },
+                data: { completedAt: new Date() },
+              }),
+            ]
+          : []),
+      ]);
+
+      // Log submission
+      await logPortalAccess({
+        action: 'PORTAL_SUBMIT_FORM',
+        portalUserId: user.id,
+        organizationId: user.organizationId,
+        resource: 'FormSubmission',
+        resourceId: submission.id,
+        ipAddress,
+        success: true,
+      });
+
+      return { success: true, submissionId: submission.id };
+    }),
+
   // ============================================
   // BILLING & STATEMENTS
   // ============================================

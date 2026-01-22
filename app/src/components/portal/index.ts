@@ -12,6 +12,8 @@ export { AppointmentsList } from './AppointmentsList';
 export { RequestAppointment } from './RequestAppointment';
 export { OnlineScheduling } from './OnlineScheduling';
 export { FormsList } from './FormsList';
+export { FormCompletion } from './FormCompletion';
+export { SignatureCapture } from './SignatureCapture';
 export { StatementsList } from './StatementsList';
 export { PaymentForm } from './PaymentForm';
 export { SecureMessages } from './SecureMessages';

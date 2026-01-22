@@ -64,7 +64,7 @@
         "Signature capture component"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-097",

@@ -194,3 +194,92 @@ Files Created/Modified:
 --- Iteration 3 completed at 2026-01-21 ---
 Story: US-095 - Online appointment scheduling
 
+--- Iteration 3 completed at 2026-01-21 22:12:43 ---
+Story: US-095 - Online appointment scheduling
+
+US-096: Patient form completion portal - COMPLETE
+-------------------------------------------------
+Implemented complete patient form completion system in the portal:
+
+1. FormCompletion component (/portal/forms/[token])
+   - Dynamic route for completing individual forms
+   - Renders all form field types matching in-office experience:
+     * TEXT, TEXTAREA, EMAIL, PHONE, SSN
+     * NUMBER, CURRENCY
+     * DATE, TIME, DATETIME
+     * SELECT, RADIO, CHECKBOX, CHECKBOX_GROUP
+     * SIGNATURE (canvas-based capture)
+     * FILE upload
+     * HEADING, PARAGRAPH, DIVIDER (display elements)
+   - Conditional field visibility based on other field values
+   - Field validation (required, min/max length, patterns)
+   - Error highlighting and messages
+
+2. Auto-save functionality
+   - 2-second debounce on field changes
+   - Saves progress automatically to server
+   - Visual indicator showing save status
+   - Last saved timestamp display
+
+3. Progress tracking
+   - Progress bar showing completion percentage
+   - Calculates based on required fields filled
+   - Updates in real-time as user fills form
+
+4. SignatureCapture component
+   - Canvas-based signature drawing
+   - Touch and mouse support
+   - Clear signature button
+   - Visual signed indicator
+   - Legal consent text display
+   - Export as base64 PNG
+
+5. Form submission flow
+   - Submit button with confirmation dialog
+   - Final validation before submit
+   - Signature attachment if required
+   - Success dialog with navigation back to forms list
+   - Status changes to PENDING for staff review
+
+6. View previously submitted forms
+   - Read-only mode for COMPLETED forms
+   - Shows submission date
+   - All fields displayed but not editable
+
+7. Portal Router Endpoints Added:
+   - getFormByToken: Get form by submission token or delivery ID
+   - saveFormProgress: Auto-save responses during form completion
+   - addFormSignature: Attach e-signature to submission
+   - submitCompletedForm: Submit form for staff review
+
+8. Form sections support
+   - Groups fields into collapsible sections
+   - Section headers with descriptions
+   - Unsectioned fields displayed first
+
+Acceptance Criteria Status:
+- [x] List of pending forms to complete (existing FormsList)
+- [x] Form rendering matching in-office experience
+- [x] Save progress and resume later (auto-save with 2s debounce)
+- [x] Submit completed forms
+- [x] View previously submitted forms (read-only mode)
+- [x] Signature capture component
+
+Technical Implementation:
+- Uses portal session token authentication
+- Creates submission from delivery ID if needed
+- Marks delivery as opened/completed
+- Supports all FormFieldType enum values
+- Handles Prisma Decimal types for min/max values
+- JSON options parsing for select/radio/checkbox fields
+
+Files Created/Modified:
+- app/src/components/portal/FormCompletion.tsx (NEW - 990+ lines)
+- app/src/components/portal/SignatureCapture.tsx (NEW - 240 lines)
+- app/src/app/portal/forms/[token]/page.tsx (NEW - dynamic route)
+- app/src/server/routers/portal.ts (MODIFIED - added 4 new endpoints)
+- app/src/components/portal/index.ts (MODIFIED - added exports)
+
+--- Iteration 4 completed at 2026-01-22 ---
+Story: US-096 - Patient form completion portal
+
