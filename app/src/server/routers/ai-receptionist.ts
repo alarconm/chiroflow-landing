@@ -16,6 +16,7 @@ import {
   createFAQAgent,
   createPatientIdentificationAgent,
   createEscalationAgent,
+  createMultiChannelAgent,
   type VoiceServiceConfig,
   type BusinessHours,
   type EscalationRule,
@@ -24,6 +25,8 @@ import {
   type PatientIdentificationRequest,
   type NewPatientInfo,
   type EscalationRequest,
+  type ChannelHandoffRequest,
+  type MultiChannelConfig,
 } from '@/lib/ai-receptionist';
 import type { Prisma, AIConversationStatus, ConversationChannel } from '@prisma/client';
 
@@ -2680,4 +2683,381 @@ export const aiReceptionistRouter = router({
         resolutionNotes: escalation.resolutionNotes,
       };
     }),
+
+  // ==================== Multi-Channel Support (US-306) ====================
+
+  /**
+   * Start a new conversation on any channel
+   * US-306: Multi-channel support
+   */
+  startMultiChannelConversation: protectedProcedure
+    .input(
+      z.object({
+        channel: conversationChannelSchema,
+        initialMessage: z.string().min(1),
+        patientId: z.string().optional(),
+        sessionId: z.string().optional(),
+        phoneNumber: z.string().optional(),
+        email: z.string().email().optional(),
+        browserInfo: z.record(z.string(), z.unknown()).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const multiChannelAgent = createMultiChannelAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const result = await multiChannelAgent.startConversation(
+        input.channel as ConversationChannel,
+        input.initialMessage,
+        {
+          patientId: input.patientId,
+          sessionId: input.sessionId,
+          phoneNumber: input.phoneNumber,
+          email: input.email,
+          browserInfo: input.browserInfo,
+        }
+      );
+
+      await auditLog('CREATE', 'MultiChannelConversation', {
+        entityId: result.conversationId,
+        changes: {
+          channel: input.channel,
+          hasPatient: !!input.patientId,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return result;
+    }),
+
+  /**
+   * Process a message on any channel
+   * US-306: Multi-channel support
+   */
+  processMultiChannelMessage: protectedProcedure
+    .input(
+      z.object({
+        conversationId: z.string(),
+        content: z.string().min(1),
+        sender: z.enum(['patient', 'ai', 'staff']).default('patient'),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const multiChannelAgent = createMultiChannelAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const result = await multiChannelAgent.processMessage(
+        input.conversationId,
+        input.content,
+        input.sender,
+        input.metadata
+      );
+
+      return result;
+    }),
+
+  /**
+   * Handoff conversation to a different channel
+   * US-306: Multi-channel support
+   */
+  handoffToChannel: protectedProcedure
+    .input(
+      z.object({
+        sourceConversationId: z.string(),
+        targetChannel: conversationChannelSchema,
+        reason: z.string().optional(),
+        notifyPatient: z.boolean().default(true),
+        preserveContext: z.boolean().default(true),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const multiChannelAgent = createMultiChannelAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const request: ChannelHandoffRequest = {
+        sourceConversationId: input.sourceConversationId,
+        targetChannel: input.targetChannel as ConversationChannel,
+        reason: input.reason,
+        notifyPatient: input.notifyPatient,
+        preserveContext: input.preserveContext,
+      };
+
+      const result = await multiChannelAgent.handoffToChannel(request);
+
+      if (result.success) {
+        await auditLog('UPDATE', 'ConversationHandoff', {
+          entityId: input.sourceConversationId,
+          changes: {
+            targetChannel: input.targetChannel,
+            newConversationId: result.newConversationId,
+            reason: input.reason,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+      }
+
+      return result;
+    }),
+
+  /**
+   * Get channel preferences for a patient
+   * US-306: Multi-channel support
+   */
+  getChannelPreference: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const multiChannelAgent = createMultiChannelAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      return multiChannelAgent.getChannelPreference(input.patientId);
+    }),
+
+  /**
+   * Initialize chat widget session
+   * US-306: Multi-channel support
+   */
+  initializeChatWidget: protectedProcedure
+    .input(
+      z.object({
+        sessionId: z.string(),
+        pageUrl: z.string().optional(),
+        referrer: z.string().optional(),
+        browserInfo: z.record(z.string(), z.unknown()).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const multiChannelAgent = createMultiChannelAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const result = await multiChannelAgent.initializeChatWidget(input.sessionId, {
+        pageUrl: input.pageUrl,
+        referrer: input.referrer,
+        browserInfo: input.browserInfo,
+      });
+
+      return result;
+    }),
+
+  /**
+   * Handle chat widget message
+   * US-306: Multi-channel support
+   */
+  handleChatMessage: protectedProcedure
+    .input(
+      z.object({
+        sessionId: z.string(),
+        message: z.string().min(1),
+        conversationId: z.string().optional(),
+        patientEmail: z.string().email().optional(),
+        patientPhone: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const multiChannelAgent = createMultiChannelAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const result = await multiChannelAgent.handleChatMessage(
+        input.sessionId,
+        input.message,
+        input.conversationId,
+        {
+          patientEmail: input.patientEmail,
+          patientPhone: input.patientPhone,
+        }
+      );
+
+      return result;
+    }),
+
+  /**
+   * Handle incoming SMS message
+   * US-306: Multi-channel support
+   */
+  handleSMSMessage: protectedProcedure
+    .input(
+      z.object({
+        phoneNumber: z.string().min(10),
+        message: z.string().min(1),
+        externalId: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const multiChannelAgent = createMultiChannelAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const result = await multiChannelAgent.handleSMSMessage(
+        input.phoneNumber,
+        input.message,
+        input.externalId
+      );
+
+      await auditLog('CREATE', 'SMSConversation', {
+        entityId: result.conversationId,
+        changes: { phoneNumber: input.phoneNumber },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return result;
+    }),
+
+  /**
+   * Send SMS response
+   * US-306: Multi-channel support
+   */
+  sendSMSResponse: protectedProcedure
+    .input(
+      z.object({
+        phoneNumber: z.string().min(10),
+        message: z.string().min(1),
+        conversationId: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const multiChannelAgent = createMultiChannelAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const result = await multiChannelAgent.sendSMSResponse(
+        input.phoneNumber,
+        input.message,
+        input.conversationId
+      );
+
+      await auditLog('CREATE', 'SMSResponse', {
+        entityId: result.messageId || input.conversationId,
+        changes: { phoneNumber: input.phoneNumber },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return result;
+    }),
+
+  /**
+   * End a multi-channel conversation
+   * US-306: Multi-channel support
+   */
+  endMultiChannelConversation: protectedProcedure
+    .input(
+      z.object({
+        conversationId: z.string(),
+        status: conversationStatusSchema.default('COMPLETED'),
+        summary: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const multiChannelAgent = createMultiChannelAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      await multiChannelAgent.endConversation(
+        input.conversationId,
+        input.status as AIConversationStatus,
+        input.summary
+      );
+
+      await auditLog('UPDATE', 'MultiChannelConversation', {
+        entityId: input.conversationId,
+        changes: { status: input.status },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { success: true };
+    }),
+
+  /**
+   * Detect language from text
+   * US-306: Multi-channel support
+   */
+  detectLanguage: protectedProcedure
+    .input(
+      z.object({
+        text: z.string().min(1),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const multiChannelAgent = createMultiChannelAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      return multiChannelAgent.detectLanguage(input.text);
+    }),
+
+  /**
+   * Get active multi-channel conversations
+   * US-306: Multi-channel support
+   */
+  getActiveMultiChannelConversations: protectedProcedure
+    .input(
+      z.object({
+        channel: conversationChannelSchema.optional(),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const multiChannelAgent = createMultiChannelAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const conversations = multiChannelAgent.getActiveConversations();
+
+      // Filter by channel if specified
+      if (input?.channel) {
+        return conversations.filter(c => c.channel === input.channel);
+      }
+
+      return conversations;
+    }),
+
+  /**
+   * Get conversation state
+   * US-306: Multi-channel support
+   */
+  getMultiChannelConversationState: protectedProcedure
+    .input(
+      z.object({
+        conversationId: z.string(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const multiChannelAgent = createMultiChannelAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const state = multiChannelAgent.getConversationState(input.conversationId);
+
+      if (!state) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Conversation not found or not active',
+        });
+      }
+
+      return state;
+    }),
+
+  /**
+   * Get supported languages
+   * US-306: Multi-channel support
+   */
+  getSupportedLanguages: protectedProcedure.query(async () => {
+    // Import from multi-channel-agent
+    const { SUPPORTED_LANGUAGES } = await import('@/lib/ai-receptionist/multi-channel-agent');
+    return SUPPORTED_LANGUAGES;
+  }),
 });

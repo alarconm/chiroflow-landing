@@ -60,3 +60,23 @@ export {
   type EscalationMetrics,
   type EscalationAgentConfig,
 } from './escalation-agent';
+
+// Multi-Channel Agent (US-306)
+export {
+  MultiChannelAgent,
+  createMultiChannelAgent,
+  SUPPORTED_LANGUAGES,
+  type MultiChannelConfig,
+  type ChatWidgetConfig,
+  type SMSConfig,
+  type EmailConfig,
+  type ChannelMessage,
+  type MessageAttachment,
+  type ConversationState,
+  type ConversationContext,
+  type ChannelHandoffRequest,
+  type ChannelHandoffResult,
+  type ChannelPreference,
+  type MultiChannelResponse,
+  type LanguageDetectionResult,
+} from './multi-channel-agent';
