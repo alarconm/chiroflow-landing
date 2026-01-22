@@ -579,3 +579,57 @@ Date: 2026-01-21T20:15:00Z
 - InsurancePayer model is global (not organization-specific)
 - PatientInsurance has priority field for primary/secondary/tertiary ordering
 
+--- Iteration 3 completed at 2026-01-21 20:30:00 ---
+Story: US-059 - Patient insurance policy management
+
+## Story: US-059 - Patient insurance policy management
+Date: 2026-01-21T20:30:00Z
+
+### What I Did
+- Verified insurancePolicy tRPC router already exists with all required CRUD operations
+- Confirmed all 8 acceptance criteria are met by existing implementation
+- Build compiles successfully
+
+### Router Procedures (Already Implemented)
+- insurancePolicy.create - Add insurance policy to patient with full subscriber info
+- insurancePolicy.update - Modify policy details (type, amounts, subscriber info)
+- insurancePolicy.list - List patient's insurance policies (with includeInactive option)
+- insurancePolicy.get - Get policy with payer details, patient demographics, and recent claims
+- insurancePolicy.delete - Soft delete policy (prevents removal if pending claims exist)
+- insurancePolicy.setPrimary - Set primary/secondary order (swaps types transactionally)
+- insurancePolicy.verify - Manual eligibility verification with notes
+- insurancePolicy.getSubscriberInfo - Get subscriber info (handles SELF vs dependent)
+
+### Subscriber/Dependent Support
+- subscriberRelationship: SELF, SPOUSE, CHILD, OTHER
+- subscriberId, subscriberFirstName, subscriberLastName, subscriberDob fields
+- getSubscriberInfo endpoint returns patient info if SELF, subscriber info otherwise
+
+### Financial Amounts Stored
+- copay: Per-visit copay amount
+- deductible: Annual deductible amount
+- deductibleMet: Amount of deductible met year-to-date
+- outOfPocketMax: Annual out-of-pocket maximum
+- outOfPocketMet: Out-of-pocket amount met year-to-date
+
+### Key Features
+- Multi-tenant scoping via patient organization verification
+- Conflict detection when adding duplicate insurance type (PRIMARY/SECONDARY/TERTIARY)
+- Type swapping when setting primary (transactional update)
+- Soft delete with pending claims check
+- Full audit logging on all mutations
+- Integration with InsurancePayer model for payer details
+
+### Build Status
+- ✓ Build compiles successfully
+- ✓ TypeScript checks pass
+
+### Learnings
+- InsuranceType enum: PRIMARY, SECONDARY, TERTIARY
+- SubscriberRelationship enum: SELF, SPOUSE, CHILD, OTHER
+- PatientInsurance links to both Patient and optional InsurancePayer
+- isActive flag used for soft delete pattern
+
+--- Iteration 1 completed at 2026-01-21 19:49:00 ---
+Story: US-058 - Insurance payer management
+
