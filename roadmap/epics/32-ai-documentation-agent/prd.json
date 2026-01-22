@@ -18,7 +18,7 @@
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-316",
@@ -35,7 +35,7 @@
         "Transcript editing capability"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-317",
@@ -52,7 +52,7 @@
         "Editable draft for provider review"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-318",
@@ -69,7 +69,7 @@
         "Flag potential upcoding/downcoding"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-319",
@@ -86,7 +86,7 @@
         "Pre-billing compliance gate"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-320",
@@ -102,7 +102,7 @@
         "Provider-specific model fine-tuning"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-321",
@@ -118,7 +118,7 @@
         "Customizable macro library"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-322",
@@ -135,7 +135,7 @@
         "Ambient mode toggle"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }
