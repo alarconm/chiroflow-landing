@@ -66,6 +66,22 @@ export {
   type ValidationResult,
 } from './edi-837';
 
+// Re-export EDI 835 ERA/Remittance utilities
+export {
+  EDI835Parser,
+  parseERA,
+  isERAContent,
+  generatePostingReport,
+  CAS_GROUP_CODES,
+  CARC_CODES,
+  type EDI835ParseResult,
+  type ParsedSegment,
+  type Adjustment,
+  type MatchResult,
+  type AutoPostResult,
+  type PostingReport,
+} from './edi-835';
+
 // Provider-specific circuit breakers (shared across instances)
 const circuitBreakers = new Map<string, CircuitBreaker>();
 

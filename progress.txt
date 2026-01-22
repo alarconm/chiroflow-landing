@@ -1278,3 +1278,109 @@ Date: 2026-01-21
 --- Iteration 5 completed at 2026-01-21 ---
 Story: US-073 - Real-time eligibility verification
 
+--- Iteration 6 completed at 2026-01-21 20:33:25 ---
+Story: US-073 - Real-time eligibility verification
+
+--- Iteration 7 started at 2026-01-21 ---
+Story: US-074 - EDI 835 remittance processing
+
+## Story: US-074 - EDI 835 remittance processing
+Date: 2026-01-21
+
+### What I Did
+- Created comprehensive EDI 835 parser library for remittance advice files
+- Implemented ANSI X12 005010X221A1 compliant 835 parsing
+- Added parseERA endpoint to parse 835 files and extract payment/adjustment data
+- Added autoPost endpoint to automatically post payments from ERA to charges
+- Added getPostingReport endpoint for viewing remittance posting reports
+- Implemented claim/charge matching with confidence scoring
+- Added posting report generation with adjustment breakdowns
+- Created line item storage with adjustment reason codes (CARC/RARC)
+
+### Files Created
+- app/src/lib/clearinghouse/edi-835.ts (~550 lines)
+  - EDI835Parser class for parsing 835 remittance files
+  - parseERA() convenience function
+  - isERAContent() validation function
+  - generatePostingReport() for posting reports
+  - CARC_CODES and CAS_GROUP_CODES constants
+  - Types: EDI835ParseResult, ParsedSegment, Adjustment, MatchResult, AutoPostResult, PostingReport
+
+### Files Modified
+- app/src/lib/clearinghouse/index.ts
+  - Added re-exports for edi-835 module (EDI835Parser, parseERA, isERAContent, etc.)
+
+- app/src/server/routers/clearinghouse.ts
+  - Added parseERA endpoint - Parse 835 EDI content and extract payment/adjustment data
+  - Added autoPost endpoint - Auto-post payments from ERA to charges
+  - Added getPostingReport endpoint - Get posting report for a remittance
+  - Added imports for ChargeStatus, PaymentMethod, CARC_CODES, CAS_GROUP_CODES
+
+### Key Features
+
+1. **EDI 835 Parsing (parseERA)**
+   - Auto-detects delimiters from ISA segment
+   - Parses header segments (ISA, GS, ST, BPR, TRN, DTM, N1)
+   - Parses claim loops (CLP) with patient info
+   - Parses service lines (SVC) with amounts
+   - Parses adjustments (CAS) with CARC/RARC codes
+   - Calculates totals (paid, adjusted, charged)
+
+2. **Claim/Charge Matching**
+   - Matches by patient account number (our claim number) - high confidence
+   - Matches by payer claim number - medium confidence
+   - Matches charges via claim line chargeId or by CPT code/date - high/medium confidence
+   - Returns match confidence and reason for each line
+
+3. **Auto-Post Functionality (autoPost)**
+   - Creates insurance payments from ERA
+   - Applies payments to matched charges
+   - Posts contractual adjustments (CO-45, etc.)
+   - Updates charge balances automatically
+   - Marks line items as posted with timestamp
+   - Updates remittance isProcessed status
+
+4. **Posting Report (getPostingReport)**
+   - Summary: total claims, service lines, paid, adjusted, denied
+   - Line item details with amounts and status
+   - Adjustment breakdown by CARC code with descriptions
+   - Posted vs unposted counts
+
+5. **Adjustment Processing**
+   - Group codes: CO (Contractual), PR (Patient Responsibility), OA, PI, CR
+   - CARC codes with descriptions (deductible, coinsurance, contractual, etc.)
+   - RARC remark codes for additional context
+   - Proper categorization and totaling
+
+### tRPC Endpoints Added
+
+1. **clearinghouse.parseERA**
+   - Input: ediContent (string), optional remittanceId
+   - Returns: success, remittanceId, parseResult, matchResults, postingReport, warnings
+   - Creates/updates Remittance and RemittanceLineItem records
+
+2. **clearinghouse.autoPost**
+   - Input: remittanceId, optional lineItemIds, postAdjustments, createPatientResponsibility
+   - Returns: success, message, totalPosted, totalPayments, totalAdjustments, postedLines, errors
+   - Creates Payment and PaymentAllocation records
+   - Updates Charge balances and status
+
+3. **clearinghouse.getPostingReport**
+   - Input: remittanceId
+   - Returns: Comprehensive posting report with summary, line items, adjustment breakdown
+
+### Build Status
+- ✓ Build compiles successfully
+- ✓ TypeScript checks pass
+
+### Acceptance Criteria Status
+1. clearinghouse.parseERA - Parse 835 file structure - ✓
+2. Extract payment amounts, adjustments, denials - ✓
+3. Match remittance lines to claims - ✓ (with confidence scoring)
+4. clearinghouse.autoPost - Auto-post payments from ERA - ✓
+5. Handle adjustment reason codes (CARC/RARC) - ✓
+6. Generate posting report - ✓
+
+--- Iteration 7 completed at 2026-01-21 ---
+Story: US-074 - EDI 835 remittance processing
+

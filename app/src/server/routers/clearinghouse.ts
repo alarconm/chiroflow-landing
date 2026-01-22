@@ -15,6 +15,8 @@ import {
   EligibilityStatus,
   DenialStatus,
   ClaimStatus,
+  ChargeStatus,
+  PaymentMethod,
 } from '@prisma/client';
 import {
   createClearinghouseProvider,
@@ -25,6 +27,11 @@ import {
   COMMON_RARC_CODES,
   generate837P,
   validateClaim as validateClaimFor837,
+  parseERA,
+  isERAContent,
+  generatePostingReport,
+  CARC_CODES,
+  CAS_GROUP_CODES,
 } from '@/lib/clearinghouse';
 import type {
   ClearinghouseConfigData,
@@ -2052,4 +2059,656 @@ export const clearinghouseRouter = router({
       })),
     };
   }),
+
+  // ============================================
+  // EDI 835 ERA Processing (US-074)
+  // ============================================
+
+  // Parse 835 EDI content and extract payment/adjustment data
+  parseERA: billerProcedure
+    .input(
+      z.object({
+        ediContent: z.string().min(1, 'EDI content is required'),
+        remittanceId: z.string().optional(), // If updating existing remittance
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { ediContent, remittanceId } = input;
+
+      // Validate content appears to be an 835
+      if (!isERAContent(ediContent)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Content does not appear to be a valid EDI 835 remittance file',
+        });
+      }
+
+      // Parse the 835
+      const parseResult = parseERA(ediContent);
+
+      if (!parseResult.success || !parseResult.remittance) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Failed to parse ERA: ${parseResult.errors.join(', ')}`,
+        });
+      }
+
+      const remittance = parseResult.remittance;
+
+      // Generate posting report
+      const postingReport = generatePostingReport(remittance);
+
+      // Match remittance lines to claims/charges
+      const matchResults = await Promise.all(
+        remittance.claims.flatMap((claim, claimIdx) =>
+          claim.services.map(async (service, svcIdx) => {
+            const lineNumber = claimIdx * 100 + svcIdx + 1;
+            let matchedClaimId: string | null = null;
+            let matchedChargeId: string | null = null;
+            let matchConfidence: 'high' | 'medium' | 'low' | 'none' = 'none';
+            let matchReason = 'No match found';
+
+            // Try to find matching claim by patient account number (our claim number)
+            if (claim.patientAccountNumber) {
+              const matchedClaim = await ctx.prisma.claim.findFirst({
+                where: {
+                  organizationId: ctx.user.organizationId,
+                  claimNumber: claim.patientAccountNumber,
+                },
+                include: {
+                  claimLines: true,
+                },
+              });
+
+              if (matchedClaim) {
+                matchedClaimId = matchedClaim.id;
+                matchConfidence = 'high';
+                matchReason = `Matched by claim number: ${claim.patientAccountNumber}`;
+
+                // Try to match specific charge by CPT code and date
+                const matchedLine = matchedClaim.claimLines.find(
+                  (line) =>
+                    line.cptCode === service.cptCode &&
+                    (!service.serviceDate ||
+                      line.serviceDateFrom?.toDateString() === service.serviceDate.toDateString())
+                );
+
+                if (matchedLine) {
+                  // Find the actual charge via claim line's chargeId
+                  if (matchedLine.chargeId) {
+                    matchedChargeId = matchedLine.chargeId;
+                    matchConfidence = 'high';
+                    matchReason = `Matched by claim number and CPT: ${service.cptCode}`;
+                  } else {
+                    // Try to find charge by CPT code and patient
+                    const charge = await ctx.prisma.charge.findFirst({
+                      where: {
+                        organizationId: ctx.user.organizationId,
+                        cptCode: service.cptCode,
+                        patientId: matchedClaim.patientId,
+                        serviceDate: service.serviceDate
+                          ? {
+                              gte: new Date(service.serviceDate.getTime() - 86400000),
+                              lte: new Date(service.serviceDate.getTime() + 86400000),
+                            }
+                          : undefined,
+                      },
+                    });
+
+                    if (charge) {
+                      matchedChargeId = charge.id;
+                      matchConfidence = 'medium';
+                      matchReason = `Matched by CPT and patient: ${service.cptCode}`;
+                    }
+                  }
+                }
+              }
+            }
+
+            // Fallback: Try to match by payer claim number
+            if (!matchedClaimId && claim.payerClaimNumber) {
+              const matchedClaim = await ctx.prisma.claim.findFirst({
+                where: {
+                  organizationId: ctx.user.organizationId,
+                  payerClaimNumber: claim.payerClaimNumber,
+                },
+              });
+
+              if (matchedClaim) {
+                matchedClaimId = matchedClaim.id;
+                matchConfidence = 'medium';
+                matchReason = `Matched by payer claim number: ${claim.payerClaimNumber}`;
+              }
+            }
+
+            return {
+              lineNumber,
+              claimInfo: {
+                patientName: claim.patientName,
+                patientAccountNumber: claim.patientAccountNumber,
+                payerClaimNumber: claim.payerClaimNumber,
+              },
+              service: {
+                cptCode: service.cptCode,
+                modifiers: service.modifiers,
+                units: service.units,
+                serviceDate: service.serviceDate,
+                chargedAmount: service.chargedAmount,
+                allowedAmount: service.allowedAmount,
+                paidAmount: service.paidAmount,
+                adjustedAmount: service.adjustedAmount,
+                patientAmount: service.patientAmount,
+                adjustmentReasonCodes: service.adjustmentReasonCodes,
+                remarkCodes: service.remarkCodes,
+              },
+              matchedClaimId,
+              matchedChargeId,
+              matchConfidence,
+              matchReason,
+            };
+          })
+        )
+      );
+
+      // Create/update remittance record
+      let savedRemittanceId = remittanceId;
+
+      if (!savedRemittanceId) {
+        // Check if remittance with this check number already exists
+        const existing = await ctx.prisma.remittance.findFirst({
+          where: {
+            organizationId: ctx.user.organizationId,
+            checkNumber: remittance.checkNumber,
+          },
+        });
+
+        if (existing) {
+          savedRemittanceId = existing.id;
+        }
+      }
+
+      // Get primary clearinghouse config for new remittances
+      let clearinghouseConfigId: string | undefined;
+      if (!savedRemittanceId) {
+        const primaryConfig = await ctx.prisma.clearinghouseConfig.findFirst({
+          where: {
+            organizationId: ctx.user.organizationId,
+            isPrimary: true,
+            isActive: true,
+          },
+        });
+        clearinghouseConfigId = primaryConfig?.id;
+
+        if (!clearinghouseConfigId) {
+          // Use any active config
+          const anyConfig = await ctx.prisma.clearinghouseConfig.findFirst({
+            where: {
+              organizationId: ctx.user.organizationId,
+              isActive: true,
+            },
+          });
+          clearinghouseConfigId = anyConfig?.id;
+        }
+      }
+
+      // Upsert remittance
+      const savedRemittance = savedRemittanceId
+        ? await ctx.prisma.remittance.update({
+            where: { id: savedRemittanceId },
+            data: {
+              payerName: remittance.payerName,
+              payerId: remittance.payerId,
+              checkDate: remittance.checkDate,
+              totalPaid: remittance.totalPaid,
+              totalAdjusted: remittance.totalAdjusted,
+              totalCharges: remittance.totalCharges,
+              claimCount: remittance.claims.length,
+              ediContent: ediContent,
+              parsedData: remittance as unknown as object,
+            },
+          })
+        : clearinghouseConfigId
+          ? await ctx.prisma.remittance.create({
+              data: {
+                organizationId: ctx.user.organizationId,
+                clearinghouseConfigId,
+                checkNumber: remittance.checkNumber || `ERA-${Date.now()}`,
+                checkDate: remittance.checkDate,
+                payerName: remittance.payerName,
+                payerId: remittance.payerId,
+                totalPaid: remittance.totalPaid,
+                totalAdjusted: remittance.totalAdjusted,
+                totalCharges: remittance.totalCharges,
+                claimCount: remittance.claims.length,
+                ediContent: ediContent,
+                parsedData: remittance as unknown as object,
+              },
+            })
+          : null;
+
+      // Store line items
+      if (savedRemittance) {
+        // Delete existing line items if updating
+        if (savedRemittanceId) {
+          await ctx.prisma.remittanceLineItem.deleteMany({
+            where: { remittanceId: savedRemittance.id },
+          });
+        }
+
+        // Create line items
+        for (const match of matchResults) {
+          await ctx.prisma.remittanceLineItem.create({
+            data: {
+              remittanceId: savedRemittance.id,
+              lineNumber: match.lineNumber,
+              patientName: match.claimInfo.patientName,
+              patientAccountNumber: match.claimInfo.patientAccountNumber,
+              payerClaimNumber: match.claimInfo.payerClaimNumber,
+              serviceDate: match.service.serviceDate,
+              cptCode: match.service.cptCode,
+              modifiers: match.service.modifiers,
+              units: match.service.units,
+              chargedAmount: match.service.chargedAmount,
+              allowedAmount: match.service.allowedAmount,
+              paidAmount: match.service.paidAmount,
+              adjustedAmount: match.service.adjustedAmount,
+              patientAmount: match.service.patientAmount,
+              adjustmentReasonCodes: match.service.adjustmentReasonCodes,
+              adjustmentAmounts: match.service.adjustmentReasonCodes.reduce(
+                (acc, code) => ({
+                  ...acc,
+                  [code]: match.service.adjustmentReasonCodes.includes(code)
+                    ? match.service.adjustedAmount / match.service.adjustmentReasonCodes.length
+                    : 0,
+                }),
+                {}
+              ),
+              remarkCodes: match.service.remarkCodes,
+              claimId: match.matchedClaimId,
+              chargeId: match.matchedChargeId,
+            },
+          });
+        }
+      }
+
+      await auditLog('REMITTANCE_PROCESS', 'Remittance', {
+        entityId: savedRemittance?.id,
+        changes: {
+          checkNumber: remittance.checkNumber,
+          totalPaid: remittance.totalPaid,
+          totalAdjusted: remittance.totalAdjusted,
+          lineItemCount: matchResults.length,
+          matchedCount: matchResults.filter((m) => m.matchedClaimId).length,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        success: true,
+        remittanceId: savedRemittance?.id,
+        parseResult: {
+          checkNumber: remittance.checkNumber,
+          checkDate: remittance.checkDate,
+          payerName: remittance.payerName,
+          totalPaid: remittance.totalPaid,
+          totalAdjusted: remittance.totalAdjusted,
+          totalCharges: remittance.totalCharges,
+          claimCount: remittance.claims.length,
+        },
+        matchResults,
+        postingReport,
+        warnings: parseResult.warnings,
+      };
+    }),
+
+  // Auto-post payments from ERA
+  autoPost: billerProcedure
+    .input(
+      z.object({
+        remittanceId: z.string(),
+        lineItemIds: z.array(z.string()).optional(), // Specific lines to post, or all if empty
+        postAdjustments: z.boolean().default(true), // Also post contractual adjustments
+        createPatientResponsibility: z.boolean().default(true), // Create patient balance from PR adjustments
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { remittanceId, lineItemIds, postAdjustments, createPatientResponsibility } = input;
+
+      // Get remittance with line items
+      const remittance = await ctx.prisma.remittance.findFirst({
+        where: { id: remittanceId, organizationId: ctx.user.organizationId },
+        include: {
+          lineItems: {
+            where: lineItemIds ? { id: { in: lineItemIds } } : undefined,
+            include: {
+              claim: { include: { patient: true } },
+              charge: true,
+            },
+          },
+        },
+      });
+
+      if (!remittance) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Remittance not found' });
+      }
+
+      // Filter to unposted line items
+      const unpostedItems = remittance.lineItems.filter((item) => !item.isPosted);
+
+      if (unpostedItems.length === 0) {
+        return {
+          success: true,
+          message: 'No unposted line items to process',
+          totalPosted: 0,
+          totalPayments: 0,
+          totalAdjustments: 0,
+          postedLines: [],
+          errors: [],
+        };
+      }
+
+      const postedLines: Array<{
+        lineItemId: string;
+        lineNumber: number;
+        cptCode: string | null;
+        paidAmount: number;
+        adjustedAmount: number;
+        claimId: string | null;
+        chargeId: string | null;
+        status: 'posted' | 'skipped' | 'error';
+        message?: string;
+      }> = [];
+      const errors: string[] = [];
+      let totalPayments = 0;
+      let totalAdjustments = 0;
+
+      // Process each line item in a transaction
+      await ctx.prisma.$transaction(async (tx) => {
+        for (const item of unpostedItems) {
+          const paidAmount = Number(item.paidAmount);
+          const adjustedAmount = Number(item.adjustedAmount);
+          const patientAmount = Number(item.patientAmount);
+
+          // Skip if no matched charge and we're posting to charges
+          if (!item.chargeId) {
+            postedLines.push({
+              lineItemId: item.id,
+              lineNumber: item.lineNumber,
+              cptCode: item.cptCode,
+              paidAmount,
+              adjustedAmount,
+              claimId: item.claimId,
+              chargeId: null,
+              status: 'skipped',
+              message: 'No matched charge - manual posting required',
+            });
+            continue;
+          }
+
+          try {
+            const charge = await tx.charge.findUnique({ where: { id: item.chargeId } });
+            if (!charge) {
+              postedLines.push({
+                lineItemId: item.id,
+                lineNumber: item.lineNumber,
+                cptCode: item.cptCode,
+                paidAmount,
+                adjustedAmount,
+                claimId: item.claimId,
+                chargeId: item.chargeId,
+                status: 'error',
+                message: 'Charge not found',
+              });
+              errors.push(`Line ${item.lineNumber}: Charge not found`);
+              continue;
+            }
+
+            // Create insurance payment if paid amount > 0
+            if (paidAmount > 0) {
+              const payment = await tx.payment.create({
+                data: {
+                  patientId: charge.patientId,
+                  organizationId: ctx.user.organizationId,
+                  amount: paidAmount,
+                  paymentMethod: PaymentMethod.INSURANCE,
+                  payerType: 'insurance',
+                  payerName: remittance.payerName || 'Insurance',
+                  checkNumber: remittance.checkNumber,
+                  checkDate: remittance.checkDate,
+                  paymentDate: new Date(),
+                  claimId: item.claimId,
+                  eobDate: remittance.checkDate,
+                  notes: `Auto-posted from ERA ${remittance.checkNumber} - Line ${item.lineNumber}`,
+                  unappliedAmount: 0, // Will be fully applied
+                },
+              });
+
+              // Create allocation to charge
+              await tx.paymentAllocation.create({
+                data: {
+                  paymentId: payment.id,
+                  chargeId: item.chargeId,
+                  amount: paidAmount,
+                },
+              });
+
+              totalPayments += paidAmount;
+            }
+
+            // Apply contractual adjustments
+            if (postAdjustments && adjustedAmount > 0) {
+              // Parse adjustment reason codes to determine adjustment type
+              const adjustmentCodes = item.adjustmentReasonCodes || [];
+              const isContractual = adjustmentCodes.some(
+                (code) => code.startsWith('CO-') || code === 'CO-45'
+              );
+
+              if (isContractual) {
+                totalAdjustments += adjustedAmount;
+              }
+            }
+
+            // Update charge balances
+            const currentPayments = Number(charge.payments);
+            const currentAdjustments = Number(charge.adjustments);
+            const fee = Number(charge.fee) * charge.units;
+
+            const newPayments = currentPayments + paidAmount;
+            const newAdjustments = postAdjustments
+              ? currentAdjustments + adjustedAmount
+              : currentAdjustments;
+            const newBalance = Math.max(
+              0,
+              fee - newPayments - newAdjustments + (createPatientResponsibility ? patientAmount : 0)
+            );
+
+            await tx.charge.update({
+              where: { id: item.chargeId },
+              data: {
+                payments: newPayments,
+                adjustments: newAdjustments,
+                balance: newBalance,
+                status:
+                  newBalance <= 0
+                    ? ChargeStatus.PAID
+                    : paidAmount > 0
+                      ? ChargeStatus.BILLED
+                      : charge.status,
+              },
+            });
+
+            // Mark line item as posted
+            await tx.remittanceLineItem.update({
+              where: { id: item.id },
+              data: {
+                isPosted: true,
+                postedAt: new Date(),
+                postedBy: ctx.user.id,
+              },
+            });
+
+            postedLines.push({
+              lineItemId: item.id,
+              lineNumber: item.lineNumber,
+              cptCode: item.cptCode,
+              paidAmount,
+              adjustedAmount,
+              claimId: item.claimId,
+              chargeId: item.chargeId,
+              status: 'posted',
+              message: `Posted $${paidAmount.toFixed(2)} payment, $${adjustedAmount.toFixed(2)} adjustment`,
+            });
+          } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+            postedLines.push({
+              lineItemId: item.id,
+              lineNumber: item.lineNumber,
+              cptCode: item.cptCode,
+              paidAmount,
+              adjustedAmount,
+              claimId: item.claimId,
+              chargeId: item.chargeId,
+              status: 'error',
+              message: errorMsg,
+            });
+            errors.push(`Line ${item.lineNumber}: ${errorMsg}`);
+          }
+        }
+
+        // Update remittance processed status
+        const allPosted = postedLines.every(
+          (p) => p.status === 'posted' || p.status === 'skipped'
+        );
+        if (allPosted && postedLines.some((p) => p.status === 'posted')) {
+          await tx.remittance.update({
+            where: { id: remittanceId },
+            data: {
+              isProcessed: true,
+              processedDate: new Date(),
+            },
+          });
+        }
+      });
+
+      await auditLog('REMITTANCE_POST', 'Remittance', {
+        entityId: remittanceId,
+        changes: {
+          postedCount: postedLines.filter((p) => p.status === 'posted').length,
+          skippedCount: postedLines.filter((p) => p.status === 'skipped').length,
+          errorCount: postedLines.filter((p) => p.status === 'error').length,
+          totalPayments,
+          totalAdjustments,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        success: errors.length === 0,
+        message:
+          errors.length === 0
+            ? `Successfully posted ${postedLines.filter((p) => p.status === 'posted').length} line items`
+            : `Posted with ${errors.length} error(s)`,
+        totalPosted: postedLines.filter((p) => p.status === 'posted').length,
+        totalPayments,
+        totalAdjustments,
+        postedLines,
+        errors,
+      };
+    }),
+
+  // Get posting report for a remittance
+  getPostingReport: protectedProcedure
+    .input(z.object({ remittanceId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const remittance = await ctx.prisma.remittance.findFirst({
+        where: { id: input.remittanceId, organizationId: ctx.user.organizationId },
+        include: {
+          lineItems: {
+            orderBy: { lineNumber: 'asc' },
+          },
+        },
+      });
+
+      if (!remittance) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Remittance not found' });
+      }
+
+      // Build posting report from stored data
+      const lineItems = remittance.lineItems;
+
+      // Aggregate adjustment codes
+      const adjustmentTotals = new Map<string, { amount: number; count: number }>();
+      for (const item of lineItems) {
+        for (const code of item.adjustmentReasonCodes || []) {
+          const existing = adjustmentTotals.get(code) || { amount: 0, count: 0 };
+          const amounts = (item.adjustmentAmounts as Record<string, number>) || {};
+          adjustmentTotals.set(code, {
+            amount: existing.amount + (amounts[code] || 0),
+            count: existing.count + 1,
+          });
+        }
+      }
+
+      const adjustmentBreakdown = Array.from(adjustmentTotals.entries()).map(([code, data]) => {
+        const [groupCode, reasonCode] = code.split('-');
+        return {
+          code,
+          description: CARC_CODES[reasonCode] || 'Unknown',
+          category: CAS_GROUP_CODES[groupCode as keyof typeof CAS_GROUP_CODES] || groupCode,
+          totalAmount: data.amount,
+          occurrences: data.count,
+        };
+      });
+
+      // Sort by total amount descending
+      adjustmentBreakdown.sort((a, b) => b.totalAmount - a.totalAmount);
+
+      return {
+        remittanceId: remittance.id,
+        checkNumber: remittance.checkNumber || '',
+        checkDate: remittance.checkDate || new Date(),
+        payerName: remittance.payerName || 'Unknown',
+        summary: {
+          totalClaims: remittance.claimCount,
+          totalServiceLines: lineItems.length,
+          totalCharged: Number(remittance.totalCharges),
+          totalPaid: Number(remittance.totalPaid),
+          totalContractualAdjustment: Number(remittance.totalAdjusted),
+          totalPatientResponsibility: lineItems.reduce(
+            (sum, item) => sum + Number(item.patientAmount),
+            0
+          ),
+          totalDenied: lineItems
+            .filter((item) => Number(item.paidAmount) === 0 && Number(item.chargedAmount) > 0)
+            .reduce((sum, item) => sum + Number(item.chargedAmount), 0),
+          postedCount: lineItems.filter((item) => item.isPosted).length,
+          unpostedCount: lineItems.filter((item) => !item.isPosted).length,
+        },
+        lineItems: lineItems.map((item) => ({
+          id: item.id,
+          lineNumber: item.lineNumber,
+          patientName: item.patientName,
+          patientAccountNumber: item.patientAccountNumber,
+          payerClaimNumber: item.payerClaimNumber,
+          cptCode: item.cptCode,
+          modifiers: item.modifiers,
+          serviceDate: item.serviceDate,
+          chargedAmount: Number(item.chargedAmount),
+          allowedAmount: Number(item.allowedAmount),
+          paidAmount: Number(item.paidAmount),
+          adjustedAmount: Number(item.adjustedAmount),
+          patientAmount: Number(item.patientAmount),
+          adjustmentReasonCodes: item.adjustmentReasonCodes,
+          remarkCodes: item.remarkCodes,
+          isPosted: item.isPosted,
+          postedAt: item.postedAt,
+          claimId: item.claimId,
+          chargeId: item.chargeId,
+        })),
+        adjustmentBreakdown,
+        generatedAt: new Date(),
+      };
+    }),
 });

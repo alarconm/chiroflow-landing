@@ -92,7 +92,7 @@
         "Generate posting report"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-083",
