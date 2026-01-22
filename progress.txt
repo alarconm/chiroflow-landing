@@ -256,3 +256,77 @@ Date: 2026-01-22
 --- Iteration 4 completed at 2026-01-22 ---
 Story: US-211 - Postural deviation analysis
 
+--- Iteration 4 completed at 2026-01-22 01:13:20 ---
+Story: US-211 - Postural deviation analysis
+
+## US-212: Range of motion tracking - COMPLETED
+Date: 2026-01-22
+
+### Changes Made:
+1. Created ROM analysis service at `app/src/lib/services/romAnalysis.ts`:
+   - Comprehensive ROM definitions for all joint movements:
+     - Cervical spine: Flexion, Extension, Lateral L/R, Rotation L/R (6 movements)
+     - Thoracic spine: Flexion, Extension, Rotation L/R (4 movements)
+     - Lumbar spine: Flexion, Extension, Lateral L/R (4 movements)
+     - Shoulder: Flexion, Extension, Abduction, Adduction, Internal/External Rotation (6 movements)
+     - Elbow: Flexion, Extension (2 movements)
+     - Hip: Flexion, Extension, Abduction, Adduction, Internal/External Rotation (6 movements)
+     - Knee: Flexion, Extension (2 movements)
+     - Ankle: Dorsiflexion, Plantarflexion, Inversion, Eversion (4 movements)
+   - Normal range reference values based on AMA Guides
+   - Percentage of normal calculation
+   - Restriction detection and severity grading (normal, mild, moderate, severe)
+   - ROM comparison across visits
+   - Summary statistics calculation
+   - Visual diagram data generation
+
+2. Created ROM tRPC router at `app/src/server/routers/rom.ts`:
+   - rom.create: Record a new ROM measurement
+   - rom.createBatch: Record multiple ROM measurements at once
+   - rom.list: List ROM measurements with filtering (region, joint, date range, restricted only)
+   - rom.listByDate: Get ROM history grouped by measurement date
+   - rom.compare: Compare ROM measurements across two visits
+   - rom.getTrend: Get trend data for specific joint over time
+   - rom.getJointDefinitions: Get all joint definitions with normal ranges
+   - rom.getJointsGrouped: Get joints grouped by region
+   - rom.getRegions: Get region definitions
+   - rom.getDiagramData: Get ROM data formatted for visual diagram
+   - rom.getPatientSummary: Get patient ROM summary for dashboard
+   - rom.update: Update a ROM measurement
+   - rom.delete: Delete a ROM measurement
+   - rom.deleteByDate: Delete all measurements for a specific date
+
+3. Created visual ROM diagram components at `app/src/components/rom/`:
+   - ROMDiagram: Main component with body diagram showing restriction severity by region
+   - SpineView: SVG body diagram with clickable joint regions
+   - RegionCard: Detailed view of ROM measurements for a region
+   - ROMBarChart: Bar chart visualization of ROM percentages
+   - ROMSummaryCard: Summary statistics card
+   - ROMComparisonView: Side-by-side visit comparison
+
+4. Registered rom router in index.ts
+
+5. TypeScript compilation passes
+
+### Files Created:
+- app/src/lib/services/romAnalysis.ts
+- app/src/server/routers/rom.ts
+- app/src/components/rom/ROMDiagram.tsx
+- app/src/components/rom/index.ts
+
+### Files Modified:
+- app/src/server/routers/index.ts (added rom router)
+
+### Acceptance Criteria Met:
+- [x] rom.create - Record ROM measurement
+- [x] rom.list - List patient ROM history
+- [x] rom.compare - Compare ROM across visits
+- [x] Support all spinal regions (cervical, thoracic, lumbar)
+- [x] Support extremity joints (shoulder, elbow, hip, knee, ankle)
+- [x] Normal range reference values (AMA Guides based)
+- [x] Percentage of normal calculation
+- [x] Visual ROM diagram
+
+--- Iteration 5 completed at 2026-01-22 ---
+Story: US-212 - Range of motion tracking
+
