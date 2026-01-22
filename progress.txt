@@ -383,3 +383,70 @@ Story: US-236 - Condition-specific education
 --- Iteration 7 completed at 2026-01-22 ---
 Story: US-237 - Patient progress tracking
 
+--- Iteration 7 completed at 2026-01-22 04:17:59 ---
+Story: US-237 - Patient progress tracking
+
+## US-238: Patient education portal - COMPLETED
+
+### Date: 2026-01-22
+
+### What was implemented:
+1. Created comprehensive portal education tRPC router (`app/src/server/routers/portalEducation.ts`) with:
+   - `portalEducation.getMyExercises` - Get active exercise prescriptions for patient portal
+   - `portalEducation.getExerciseDetails` - Get single exercise with full details
+   - `portalEducation.logExerciseCompletion` - Patient logs completed exercise with pain/difficulty tracking
+   - `portalEducation.getProgressHistory` - Get exercise progress history with chart data
+   - `portalEducation.getAchievements` - Get patient achievement badges with progress
+   - `portalEducation.getHomeCareInstructions` - Get active home care instructions
+   - `portalEducation.getEducationArticles` - Get education articles library with filtering
+   - `portalEducation.getArticle` - Get single education article with view tracking
+   - `portalEducation.getPrescribedArticles` - Get articles prescribed to patient
+   - `portalEducation.markArticleRead` - Mark prescribed article as read
+   - `portalEducation.askProviderQuestion` - Send question to provider about exercise/care
+   - `portalEducation.getDailyChecklist` - Get daily exercise checklist with status
+
+2. Created full-featured PatientEducationPortal component (`app/src/components/portal/PatientEducationPortal.tsx`):
+   - 5-tab interface: Exercises, Progress, Home Care, Education, Achievements
+   - Daily exercise checklist with completion/skip tracking
+   - Exercise cards with video player support, instructions, equipment
+   - Progress tracking with activity history and charts
+   - Home care instructions with ice/heat protocols, activity modifications, warning signs
+   - Education articles library with category filtering
+   - Prescribed articles section with read tracking
+   - Achievement badges with progress indicators
+   - Log exercise dialog with pain before/after sliders and difficulty rating
+   - Ask provider question dialog with context linking
+   - Mobile-responsive design with conditional text display
+
+3. Created exercises page route (`app/src/app/portal/exercises/page.tsx`)
+
+4. Updated navigation:
+   - Added Dumbbell icon import to PortalLayout
+   - Added "My Exercises" nav item to portal navigation
+
+5. Features matching all acceptance criteria:
+   - My Exercises page in patient portal ✓
+   - Exercise video player with instructions ✓
+   - Daily exercise checklist ✓
+   - Progress history and charts ✓
+   - Home care instructions view ✓
+   - Educational articles library ✓
+   - Ask provider question feature ✓
+   - Mobile-friendly design ✓
+
+### Files created:
+- app/src/server/routers/portalEducation.ts
+- app/src/components/portal/PatientEducationPortal.tsx
+- app/src/app/portal/exercises/page.tsx
+
+### Files modified:
+- app/src/server/routers/index.ts (added portalEducationRouter)
+- app/src/components/portal/index.ts (added PatientEducationPortal export)
+- app/src/components/portal/PortalLayout.tsx (added Dumbbell icon and exercises nav item)
+
+### Verification:
+- TypeScript compilation passed with no errors
+
+--- Iteration 8 completed at 2026-01-22 ---
+Story: US-238 - Patient education portal
+

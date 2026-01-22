@@ -26,6 +26,7 @@ import {
   Home,
   Bell,
   User,
+  Dumbbell,
 } from 'lucide-react';
 
 interface PortalLayoutProps {
@@ -100,6 +101,7 @@ export function PortalLayout({ children }: PortalLayoutProps) {
       icon: CalendarDays,
       badge: summary?.upcomingAppointments,
     },
+    { href: '/portal/exercises', label: 'My Exercises', icon: Dumbbell },
     {
       href: '/portal/forms',
       label: 'Forms',

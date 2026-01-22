@@ -73,6 +73,7 @@ import { prescriptionRouter } from './prescription';
 import { homeCareRouter } from './homeCare';
 import { educationRouter } from './education';
 import { progressRouter } from './progress';
+import { portalEducationRouter } from './portalEducation';
 
 export const appRouter = router({
   auth: authRouter,
@@ -149,6 +150,7 @@ export const appRouter = router({
   homeCare: homeCareRouter,
   education: educationRouter,
   progress: progressRouter,
+  portalEducation: portalEducationRouter,
 });
 
 
