@@ -258,6 +258,13 @@ model Organization {
   textMacros              TextMacro[]
   aiTemplateSuggestions   AITemplateSuggestion[]
 
+  // AI Care Coordinator Agent relations (Epic 33)
+  careGaps                CareGap[]
+  careOutreach            CareOutreach[]
+  patientEngagementScores PatientEngagementScore[]
+  careJourneys            CareJourney[]
+  careCoordinatorActions  CareCoordinatorAction[]
+
   @@index([subdomain])
 }
 
@@ -568,6 +575,13 @@ model Patient {
 
   // AI Billing Agent relations (Epic 31)
   aiBillingTasks AIBillingTask[]
+
+  // AI Care Coordinator Agent relations (Epic 33)
+  careGaps                CareGap[]
+  careOutreach            CareOutreach[]
+  patientEngagementScores PatientEngagementScore[]
+  careJourneys            CareJourney[]
+  careCoordinatorActions  CareCoordinatorAction[]
 
   @@unique([mrn, organizationId])
   @@index([organizationId])
@@ -11944,4 +11958,394 @@ model AITemplateSuggestion {
   @@index([appointmentType])
   @@index([encounterType])
   @@index([status])
+}
+
+// ============================================
+// EPIC 33: AI CARE COORDINATOR AGENT
+// ============================================
+
+// Types of care gaps that can be identified
+enum CareGapType {
+  OVERDUE_FOLLOWUP // Patient overdue for follow-up visit
+  MISSED_APPOINTMENT // Missed scheduled appointment
+  INCOMPLETE_TREATMENT // Treatment plan not completed
+  MISSING_ASSESSMENT // Outcome assessment not completed
+  LAPSED_PATIENT // Patient hasn't visited in extended period
+  OVERDUE_RECALL // Due for recall/maintenance visit
+  INCOMPLETE_DOCUMENTATION // Missing required documentation
+  MISSED_MILESTONE // Treatment milestone not achieved
+}
+
+// Status of care gaps
+enum CareGapStatus {
+  IDENTIFIED // Gap has been identified
+  OUTREACH_SCHEDULED // Outreach planned
+  OUTREACH_SENT // Outreach communication sent
+  RESPONDED // Patient responded to outreach
+  RESOLVED // Gap has been resolved
+  DISMISSED // Gap dismissed (not applicable)
+  ESCALATED // Escalated to provider
+}
+
+// Types of care outreach
+enum CareOutreachType {
+  APPOINTMENT_REMINDER // Upcoming appointment reminder
+  FOLLOWUP_SCHEDULING // Request to schedule follow-up
+  CARE_GAP_NOTIFICATION // Notification about care gap
+  TREATMENT_PROGRESS // Treatment progress check-in
+  REACTIVATION // Lapsed patient reactivation
+  RECALL_REMINDER // Maintenance/recall reminder
+  EXERCISE_REMINDER // Home exercise reminder
+  OUTCOME_ASSESSMENT // Request to complete assessment
+}
+
+// Status of outreach attempts
+enum CareOutreachStatus {
+  SCHEDULED // Outreach scheduled
+  SENT // Communication sent
+  DELIVERED // Confirmed delivered
+  OPENED // Email opened
+  CLICKED // Link clicked
+  RESPONDED // Patient responded
+  CONVERTED // Resulted in desired action
+  FAILED // Failed to deliver
+  BOUNCED // Email bounced
+}
+
+// Patient care journey types
+enum CareJourneyType {
+  NEW_PATIENT // New patient onboarding
+  ACTIVE_CARE // Active treatment phase
+  MAINTENANCE // Maintenance/wellness care
+  ACUTE_EPISODE // Acute care episode
+  POST_DISCHARGE // Post-discharge follow-up
+  REENGAGEMENT // Lapsed patient re-engagement
+  CUSTOM // Custom defined journey
+}
+
+// Journey stage status
+enum JourneyStageStatus {
+  NOT_STARTED // Stage not yet started
+  IN_PROGRESS // Currently in this stage
+  COMPLETED // Stage completed
+  SKIPPED // Stage was skipped
+  PAUSED // Stage paused
+}
+
+// Care coordinator action types
+enum CareCoordinatorActionType {
+  OUTREACH_SENT // Sent outreach message
+  APPOINTMENT_SCHEDULED // Scheduled appointment
+  APPOINTMENT_RESCHEDULED // Rescheduled appointment
+  GAP_IDENTIFIED // Identified a care gap
+  GAP_RESOLVED // Resolved a care gap
+  ENGAGEMENT_SCORED // Updated engagement score
+  JOURNEY_ADVANCED // Advanced patient in journey
+  ALERT_TRIGGERED // Triggered provider alert
+  RECOMMENDATION_MADE // Made care recommendation
+  TASK_CREATED // Created follow-up task
+}
+
+// CareGap model - tracks identified gaps in patient care
+model CareGap {
+  id      String        @id @default(cuid())
+  gapType CareGapType
+  status  CareGapStatus @default(IDENTIFIED)
+
+  // Gap details
+  title       String // Human-readable title
+  description String? @db.Text // Detailed description
+  dueDate     DateTime? // When this gap should be addressed
+  priority    Int       @default(5) // 1-10, higher = more urgent
+
+  // Resolution tracking
+  resolvedDate DateTime?
+  resolvedBy   String? // User ID who resolved
+  resolution   String? // How it was resolved
+  dismissedReason String? // If dismissed, why
+
+  // Related care data
+  treatmentPlanId String? // Related treatment plan
+  appointmentId   String? // Related appointment
+  encounterId     String? // Related encounter
+
+  // Auto-detection metadata
+  detectedBy      String? // Algorithm/rule that detected this
+  detectionScore  Float? // Confidence score of detection
+  detectionData   Json? // Additional detection context
+
+  // Outreach tracking
+  outreachCount   Int       @default(0) // Number of outreach attempts
+  lastOutreachAt  DateTime? // Last outreach attempt
+  nextOutreachAt  DateTime? // Scheduled next outreach
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Related outreach attempts
+  outreachAttempts CareOutreach[]
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([gapType])
+  @@index([status])
+  @@index([dueDate])
+  @@index([priority])
+  @@index([createdAt])
+}
+
+// CareOutreach model - tracks outreach communications to patients
+model CareOutreach {
+  id     String             @id @default(cuid())
+  type   CareOutreachType
+  status CareOutreachStatus @default(SCHEDULED)
+
+  // Scheduling
+  scheduledAt DateTime? // When outreach is scheduled
+  sentAt      DateTime? // When actually sent
+
+  // Communication details
+  channel    String // email, sms, phone, portal
+  subject    String? // Subject line (for emails)
+  content    String  @db.Text // Message content
+  templateId String? // Template used
+
+  // Delivery tracking
+  deliveredAt  DateTime?
+  openedAt     DateTime?
+  clickedAt    DateTime?
+  respondedAt  DateTime?
+
+  // Response details
+  response        String? @db.Text // Patient's response
+  responseChannel String? // How they responded
+  outcome         String? // Outcome of the outreach
+  convertedAction String? // What action did they take
+
+  // For appointment reminders
+  appointmentId        String? // Related appointment
+  reminderSequence     Int? // Which reminder in sequence
+  includeInstructions  Boolean @default(true)
+
+  // Personalization
+  personalizationData Json? // Data used for personalization
+
+  // AI optimization
+  optimalTimeUsed Boolean   @default(false) // Used AI-optimized timing
+  noShowRiskLevel Float? // No-show risk at time of send
+  sentimentScore  Float? // Sentiment of patient response
+
+  // Error tracking
+  errorMessage String? // If failed, why
+  retryCount   Int     @default(0)
+  lastRetryAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  // Optional link to care gap
+  careGapId String?
+  careGap   CareGap? @relation(fields: [careGapId], references: [id], onDelete: SetNull)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([type])
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([sentAt])
+  @@index([careGapId])
+}
+
+// PatientEngagementScore model - tracks patient engagement metrics
+model PatientEngagementScore {
+  id    String @id @default(cuid())
+  score Int // Overall engagement score 0-100
+
+  // Score components (each 0-100)
+  visitAttendanceScore     Int? // Based on appointment attendance
+  portalUsageScore         Int? // Based on portal activity
+  communicationScore       Int? // Based on message responses
+  exerciseComplianceScore  Int? // Based on home exercise completion
+  appointmentBookingScore  Int? // Proactive vs reactive booking
+  paymentTimelinessScore   Int? // Payment behavior
+
+  // Factor weights used (for transparency)
+  factorWeights Json? // { visitAttendance: 0.3, portalUsage: 0.15, ... }
+
+  // Score breakdown details
+  factors Json? // Detailed factor breakdown
+
+  // Trend data
+  previousScore Int? // Previous score for comparison
+  trend         String? // improving, stable, declining
+  trendDuration Int? // How many periods trending
+
+  // Segmentation
+  engagementLevel String // high, medium, low, at-risk
+  segment         String? // Additional segmentation label
+
+  // Calculation metadata
+  calculatedAt DateTime @default(now())
+  dataWindow   Int      @default(90) // Days of data used in calculation
+  dataPoints   Int? // Number of data points used
+
+  // Intervention tracking
+  interventionTriggered Boolean   @default(false)
+  interventionType      String?
+  interventionDate      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([score])
+  @@index([engagementLevel])
+  @@index([calculatedAt])
+}
+
+// CareJourney model - tracks patient through care journey stages
+model CareJourney {
+  id          String          @id @default(cuid())
+  journeyType CareJourneyType
+  name        String // Journey name for display
+
+  // Journey status
+  isActive    Boolean   @default(true)
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  pausedAt    DateTime?
+  pauseReason String?
+
+  // Current position in journey
+  currentStage      String // Current stage identifier
+  currentStageStart DateTime @default(now())
+
+  // Progress tracking
+  completedStages Json // Array of completed stage IDs with dates
+  skippedStages   Json? // Array of skipped stage IDs with reasons
+
+  // Milestones
+  milestones          Json? // Array of milestone definitions
+  completedMilestones Json? // Array of completed milestone IDs with dates
+  nextMilestone       String? // Next milestone to achieve
+  nextMilestoneTarget DateTime? // Target date for next milestone
+
+  // Journey configuration
+  journeyConfig Json? // Journey-specific configuration
+
+  // Outcome tracking
+  outcome       String? // success, abandoned, transferred, etc.
+  outcomeReason String?
+  outcomeDate   DateTime?
+
+  // AI personalization
+  personalizedPath   Boolean @default(false) // AI-customized path
+  pathAdjustments    Json? // Record of AI path adjustments
+  nextActionSuggestion String? // AI-suggested next action
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Related actions
+  actions CareCoordinatorAction[]
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([journeyType])
+  @@index([isActive])
+  @@index([currentStage])
+  @@index([startedAt])
+}
+
+// CareCoordinatorAction model - logs all AI care coordinator actions
+model CareCoordinatorAction {
+  id         String                    @id @default(cuid())
+  actionType CareCoordinatorActionType
+
+  // Action details
+  title       String // Human-readable title
+  description String? @db.Text // Detailed description of action
+
+  // Result tracking
+  result     String? // success, failed, pending, cancelled
+  resultData Json? // Detailed result data
+  errorMessage String? // If failed, error details
+
+  // Related entities (at least one should be set)
+  appointmentId   String?
+  encounterId     String?
+  careGapId       String?
+  outreachId      String?
+  treatmentPlanId String?
+
+  // Journey context
+  careJourneyId String?
+  careJourney   CareJourney? @relation(fields: [careJourneyId], references: [id], onDelete: SetNull)
+  journeyStage  String? // Stage at time of action
+
+  // AI metadata
+  aiInitiated     Boolean @default(true) // AI vs manual action
+  aiConfidence    Float? // AI confidence in action
+  aiReasoning     String? @db.Text // AI reasoning for action
+  modelUsed       String? // AI model used
+  promptVersion   String? // Prompt version used
+
+  // Performance tracking
+  executionTimeMs Int? // Time to execute action
+  retryCount      Int  @default(0)
+
+  // Approval tracking (for actions requiring approval)
+  requiresApproval Boolean   @default(false)
+  approvedBy       String? // User ID who approved
+  approvedAt       DateTime?
+  rejectedBy       String?
+  rejectedAt       DateTime?
+  rejectionReason  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([actionType])
+  @@index([result])
+  @@index([careJourneyId])
+  @@index([createdAt])
+  @@index([aiInitiated])
 }

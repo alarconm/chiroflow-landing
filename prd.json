@@ -1,141 +1,139 @@
 {
-  "branch": "feature/ai-documentation-agent",
-  "title": "Epic 32: AI Documentation Agent",
-  "description": "Real-time AI documentation assistant that listens to patient encounters, generates SOAP notes, suggests diagnosis and procedure codes, ensures compliance, and learns provider preferences.",
-  "epic": "32-ai-documentation-agent",
-  "dependencies": ["05-ehr-soap-notes", "06-ai-documentation"],
+  "branch": "feature/ai-care-coordinator",
+  "title": "Epic 33: AI Care Coordinator Agent",
+  "description": "Autonomous AI agent that manages patient care coordination - treatment plan adherence, appointment reminders, follow-up scheduling, care gap identification, and patient engagement throughout their care journey.",
+  "epic": "33-ai-care-coordinator",
+  "dependencies": ["05-ehr-soap-notes", "11-patient-communication"],
   "userStories": [
     {
-      "id": "US-315",
-      "title": "AI documentation agent schema",
-      "description": "Create database models for AI documentation activities.",
+      "id": "US-323",
+      "title": "AI care coordinator schema",
+      "description": "Create database models for AI care coordination activities.",
       "acceptanceCriteria": [
-        "AITranscription model with encounterId, audioUrl, transcript, duration",
-        "AIDraftNote model with encounterId, soapContent, confidence, status",
-        "AICodeSuggestion model with encounterId, codes, reasoning, accepted",
-        "AIComplianceCheck model with noteId, issues, severity, resolved",
-        "ProviderPreference model for learning provider documentation style",
+        "CareGap model with patientId, gapType, dueDate, status, resolvedDate",
+        "CareOutreach model with patientId, type, sentDate, response, outcome",
+        "PatientEngagementScore model with patientId, score, factors, date",
+        "CareJourney model with patientId, journeyType, stage, milestones",
+        "CareCoordinatorAction model with patientId, actionType, result",
         "Prisma migrations run successfully"
       ],
       "priority": 1,
       "passes": true
     },
     {
-      "id": "US-316",
-      "title": "Real-time encounter transcription",
-      "description": "Live transcription of patient encounters with speaker diarization.",
+      "id": "US-324",
+      "title": "Treatment plan monitoring",
+      "description": "AI monitors treatment plan adherence and progress.",
       "acceptanceCriteria": [
-        "aiDoc.startTranscription - Begin live transcription",
-        "Whisper API or Deepgram integration",
-        "Speaker identification (provider vs patient)",
-        "Real-time transcript display",
-        "Handle medical terminology accurately",
-        "Support ambient listening mode",
-        "aiDoc.stopTranscription - End and save",
-        "Transcript editing capability"
+        "aiCare.monitorPlan - Track treatment plan progress",
+        "Visit frequency compliance tracking",
+        "Outcome measure trending",
+        "Alert on missed appointments",
+        "Identify patients falling behind plan",
+        "Progress milestone tracking",
+        "Auto-adjust outreach based on adherence",
+        "Provider notifications for at-risk patients"
       ],
       "priority": 2,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-317",
-      "title": "AI SOAP note generation",
-      "description": "Generate complete SOAP notes from encounter transcription.",
+      "id": "US-325",
+      "title": "Intelligent appointment reminders",
+      "description": "Context-aware appointment reminders and confirmations.",
       "acceptanceCriteria": [
-        "aiDoc.generateSOAP - Create SOAP from transcript",
-        "Extract subjective complaints and history",
-        "Document objective findings mentioned",
-        "Generate assessment based on findings",
-        "Recommend treatment plan",
-        "Match provider's documentation style",
-        "Include all required elements",
-        "Editable draft for provider review"
+        "aiCare.sendReminders - Send smart reminders",
+        "Personalized reminder messages",
+        "Optimal timing based on patient behavior",
+        "Include relevant preparation instructions",
+        "Handle confirmation responses",
+        "Auto-reschedule from replies",
+        "No-show risk adjustment",
+        "Multi-channel delivery"
       ],
       "priority": 3,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-318",
-      "title": "Intelligent code suggestion",
-      "description": "AI suggests diagnosis and procedure codes based on documentation.",
+      "id": "US-326",
+      "title": "Proactive follow-up scheduling",
+      "description": "AI proactively schedules follow-up appointments.",
       "acceptanceCriteria": [
-        "aiDoc.suggestCodes - Get code recommendations",
-        "ICD-10 diagnosis code suggestions",
-        "CPT procedure code suggestions",
-        "Modifier recommendations",
-        "Code specificity optimization",
-        "Show reasoning for each suggestion",
-        "Learn from provider acceptance patterns",
-        "Flag potential upcoding/downcoding"
+        "aiCare.scheduleFollowUp - Book next appointment",
+        "Recommend follow-up timing based on condition",
+        "Auto-schedule at checkout with patient consent",
+        "Waitlist management for preferred times",
+        "Recall scheduling for maintenance care",
+        "Handle patient scheduling preferences",
+        "Optimize provider schedule utilization"
       ],
       "priority": 4,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-319",
-      "title": "Compliance checking",
-      "description": "Real-time compliance checking of documentation.",
+      "id": "US-327",
+      "title": "Care gap identification",
+      "description": "Identify gaps in patient care and trigger outreach.",
       "acceptanceCriteria": [
-        "aiDoc.checkCompliance - Validate note compliance",
-        "Medical necessity documentation check",
-        "Required element validation",
-        "Payer-specific requirements",
-        "Audit risk scoring",
-        "Missing documentation alerts",
-        "Compliance tips and suggestions",
-        "Pre-billing compliance gate"
+        "aiCare.identifyGaps - Find care gaps",
+        "Overdue for follow-up detection",
+        "Incomplete treatment plan detection",
+        "Missing outcome assessments",
+        "Lapsed patients identification",
+        "Condition-specific care gaps",
+        "Prioritize gaps by severity",
+        "Auto-generate outreach tasks"
       ],
       "priority": 5,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-320",
-      "title": "Provider preference learning",
-      "description": "Learn and apply provider documentation preferences.",
+      "id": "US-328",
+      "title": "Patient engagement scoring",
+      "description": "Calculate and track patient engagement levels.",
       "acceptanceCriteria": [
-        "Track provider edits to AI drafts",
-        "Learn terminology preferences",
-        "Learn documentation depth preferences",
-        "Template preference tracking",
-        "Phrase and wording preferences",
-        "Apply preferences to future drafts",
-        "Provider-specific model fine-tuning"
+        "aiCare.calculateEngagement - Compute engagement score",
+        "Factors: visit attendance, portal usage, communication response",
+        "Exercise compliance tracking",
+        "Engagement trend analysis",
+        "Segment patients by engagement level",
+        "Trigger interventions for low engagement",
+        "Engagement improvement recommendations"
       ],
       "priority": 6,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-321",
-      "title": "Documentation templates and macros",
-      "description": "AI-powered template suggestions and smart macros.",
+      "id": "US-329",
+      "title": "Care journey automation",
+      "description": "Automated patient journey workflows.",
       "acceptanceCriteria": [
-        "Suggest templates based on appointment type",
-        "Smart text expansion macros",
-        "Auto-complete common phrases",
-        "Previous note pull-forward",
-        "Condition-specific templates",
-        "Quick normal exam generation",
-        "Customizable macro library"
+        "New patient onboarding journey",
+        "Active care journey milestones",
+        "Maintenance/wellness journey",
+        "Re-engagement journey for lapsed",
+        "Journey stage progression logic",
+        "Personalized communication at each stage",
+        "Journey completion tracking"
       ],
       "priority": 7,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-322",
-      "title": "AI documentation assistant UI",
-      "description": "Interface for AI-assisted documentation.",
+      "id": "US-330",
+      "title": "AI care coordinator dashboard",
+      "description": "Dashboard for care coordination activities.",
       "acceptanceCriteria": [
-        "Transcription panel in encounter",
-        "Real-time transcript view",
-        "One-click SOAP generation",
-        "Code suggestion sidebar",
-        "Compliance alerts display",
-        "Quick accept/reject suggestions",
-        "Voice command support",
-        "Ambient mode toggle"
+        "Care gaps overview",
+        "Patient engagement heatmap",
+        "Treatment plan compliance metrics",
+        "Outreach queue and history",
+        "Journey stage distribution",
+        "At-risk patient alerts",
+        "Care coordinator performance metrics"
       ],
       "priority": 8,
-      "passes": true
+      "passes": false
     }
   ]
 }
