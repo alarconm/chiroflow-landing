@@ -2810,4 +2810,864 @@ BILLING INFORMATION:
     .query(async ({ input }) => {
       return getStateSpecificRequirements(input.stateCode);
     }),
+
+  // ==========================================
+  // REMOTE MONITORING (US-222)
+  // ==========================================
+
+  /**
+   * Create a remote monitoring submission (patient submits photo, video, pain diary, etc.)
+   */
+  createRemoteSubmission: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        submissionType: z.enum(['PHOTO', 'VIDEO', 'PAIN_DIARY', 'EXERCISE', 'ACTIVITY', 'QUESTIONNAIRE']),
+        title: z.string().optional(),
+        description: z.string().optional(),
+
+        // For media submissions (base64 encoded)
+        media: z.object({
+          content: z.string(),    // Base64 data
+          mimeType: z.string(),
+          fileName: z.string(),
+        }).optional(),
+
+        // For pain diary entries
+        painLevel: z.number().min(0).max(10).optional(),
+        painLocation: z.string().optional(),
+        painNotes: z.string().optional(),
+
+        // For exercise submissions
+        exerciseId: z.string().optional(),
+        exerciseName: z.string().optional(),
+        exerciseDuration: z.number().optional(),      // Seconds
+        exerciseReps: z.number().optional(),
+        exerciseSets: z.number().optional(),
+        exerciseFeedback: z.string().optional(),
+
+        // For activity tracking
+        activityType: z.string().optional(),
+        activityValue: z.number().optional(),
+        activityUnit: z.string().optional(),
+        activitySource: z.string().optional(),
+
+        // For questionnaires
+        questionnaireResponses: z.record(z.string(), z.unknown()).optional(),
+
+        // Optional links
+        telehealthSessionId: z.string().optional(),
+        encounterId: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Verify patient exists
+      const patient = await prisma.patient.findFirst({
+        where: {
+          id: input.patientId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          demographics: { select: { firstName: true, lastName: true } },
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      // Validate encounter if provided
+      if (input.encounterId) {
+        const encounter = await prisma.encounter.findFirst({
+          where: {
+            id: input.encounterId,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+        if (!encounter) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Encounter not found',
+          });
+        }
+      }
+
+      // Process media if provided (in production, would upload to encrypted storage)
+      let mediaUrl: string | undefined;
+      let mediaSize: number | undefined;
+      let mediaMimeType: string | undefined;
+      let thumbnailUrl: string | undefined;
+
+      if (input.media) {
+        // In production: upload to S3/GCS with encryption
+        // For now, we'll store a reference
+        mediaUrl = `submissions/${input.patientId}/${Date.now()}_${input.media.fileName}`;
+        mediaSize = Math.ceil((input.media.content.length * 3) / 4); // Approximate base64 -> bytes
+        mediaMimeType = input.media.mimeType;
+
+        // Generate thumbnail for images/videos (placeholder)
+        if (input.media.mimeType.startsWith('image/') || input.media.mimeType.startsWith('video/')) {
+          thumbnailUrl = `${mediaUrl}_thumb`;
+        }
+      }
+
+      // Create submission
+      const submission = await prisma.remoteMonitoringSubmission.create({
+        data: {
+          patientId: input.patientId,
+          organizationId: ctx.user.organizationId,
+          submissionType: input.submissionType,
+          status: 'PENDING',
+
+          title: input.title,
+          description: input.description,
+
+          // Media
+          mediaUrl,
+          mediaSize,
+          mediaMimeType,
+          thumbnailUrl,
+
+          // Pain diary
+          painLevel: input.painLevel,
+          painLocation: input.painLocation,
+          painNotes: input.painNotes,
+
+          // Exercise
+          exerciseId: input.exerciseId,
+          exerciseName: input.exerciseName,
+          exerciseDuration: input.exerciseDuration,
+          exerciseReps: input.exerciseReps,
+          exerciseSets: input.exerciseSets,
+          exerciseFeedback: input.exerciseFeedback,
+
+          // Activity
+          activityType: input.activityType,
+          activityValue: input.activityValue,
+          activityUnit: input.activityUnit,
+          activitySource: input.activitySource,
+
+          // Questionnaire
+          questionnaireResponses: input.questionnaireResponses as Prisma.InputJsonValue,
+
+          // Links
+          telehealthSessionId: input.telehealthSessionId,
+          encounterId: input.encounterId,
+        },
+      });
+
+      // Create alert for provider if this is a high-priority submission
+      const isHighPriority = input.painLevel !== undefined && input.painLevel >= 8;
+      const alertType = input.submissionType === 'PAIN_DIARY' && isHighPriority
+        ? 'high_pain'
+        : 'new_submission';
+      const alertPriority = isHighPriority ? 'high' : 'normal';
+
+      // Find the patient's primary provider (from most recent appointment)
+      const recentAppointment = await prisma.appointment.findFirst({
+        where: {
+          patientId: input.patientId,
+          organizationId: ctx.user.organizationId,
+          providerId: { not: undefined },
+        },
+        orderBy: { startTime: 'desc' },
+        include: { provider: true },
+      });
+
+      if (recentAppointment?.providerId) {
+        const patientName = patient.demographics
+          ? `${patient.demographics.firstName} ${patient.demographics.lastName}`
+          : 'Unknown Patient';
+
+        let alertMessage = `New ${input.submissionType.toLowerCase().replace('_', ' ')} from ${patientName}`;
+        if (isHighPriority) {
+          alertMessage = `High pain level (${input.painLevel}/10) reported by ${patientName}`;
+        }
+
+        await prisma.remoteMonitoringAlert.create({
+          data: {
+            patientId: input.patientId,
+            organizationId: ctx.user.organizationId,
+            providerId: recentAppointment.providerId,
+            submissionId: submission.id,
+            alertType,
+            priority: alertPriority,
+            message: alertMessage,
+          },
+        });
+      }
+
+      // Audit log
+      await createAuditLog({
+        organizationId: ctx.user.organizationId,
+        userId: ctx.user.id,
+        action: 'CREATE' as AuditAction,
+        entityType: 'RemoteMonitoringSubmission',
+        entityId: submission.id,
+        metadata: {
+          patientId: input.patientId,
+          submissionType: input.submissionType,
+          hasMedia: !!input.media,
+          painLevel: input.painLevel,
+        },
+      });
+
+      return {
+        submissionId: submission.id,
+        status: submission.status,
+        submittedAt: submission.submittedAt,
+        alertCreated: !!recentAppointment?.providerId,
+      };
+    }),
+
+  /**
+   * Get remote monitoring submissions for a patient
+   */
+  getPatientSubmissions: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        submissionType: z.enum(['PHOTO', 'VIDEO', 'PAIN_DIARY', 'EXERCISE', 'ACTIVITY', 'QUESTIONNAIRE']).optional(),
+        status: z.enum(['PENDING', 'REVIEWED', 'FLAGGED', 'ARCHIVED']).optional(),
+        fromDate: z.date().optional(),
+        toDate: z.date().optional(),
+        limit: z.number().min(1).max(100).optional().default(20),
+        cursor: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const where: Prisma.RemoteMonitoringSubmissionWhereInput = {
+        patientId: input.patientId,
+        organizationId: ctx.user.organizationId,
+        ...(input.submissionType && { submissionType: input.submissionType }),
+        ...(input.status && { status: input.status }),
+        ...(input.fromDate && { submittedAt: { gte: input.fromDate } }),
+        ...(input.toDate && { submittedAt: { lte: input.toDate } }),
+      };
+
+      const submissions = await prisma.remoteMonitoringSubmission.findMany({
+        where,
+        take: input.limit + 1,
+        cursor: input.cursor ? { id: input.cursor } : undefined,
+        orderBy: { submittedAt: 'desc' },
+        include: {
+          attachments: true,
+          patient: {
+            include: {
+              demographics: { select: { firstName: true, lastName: true } },
+            },
+          },
+        },
+      });
+
+      let nextCursor: string | undefined;
+      if (submissions.length > input.limit) {
+        const nextItem = submissions.pop();
+        nextCursor = nextItem?.id;
+      }
+
+      return {
+        submissions: submissions.map((s) => ({
+          ...s,
+          patientName: s.patient.demographics
+            ? `${s.patient.demographics.firstName} ${s.patient.demographics.lastName}`
+            : 'Unknown',
+        })),
+        nextCursor,
+      };
+    }),
+
+  /**
+   * Get pending submissions for provider review (asynchronous review workflow)
+   */
+  getPendingSubmissions: protectedProcedure
+    .input(
+      z.object({
+        submissionType: z.enum(['PHOTO', 'VIDEO', 'PAIN_DIARY', 'EXERCISE', 'ACTIVITY', 'QUESTIONNAIRE']).optional(),
+        limit: z.number().min(1).max(100).optional().default(20),
+        cursor: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const submissions = await prisma.remoteMonitoringSubmission.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: 'PENDING',
+          ...(input.submissionType && { submissionType: input.submissionType }),
+        },
+        take: input.limit + 1,
+        cursor: input.cursor ? { id: input.cursor } : undefined,
+        orderBy: { submittedAt: 'desc' },
+        include: {
+          attachments: true,
+          patient: {
+            include: {
+              demographics: { select: { firstName: true, lastName: true } },
+            },
+          },
+        },
+      });
+
+      let nextCursor: string | undefined;
+      if (submissions.length > input.limit) {
+        const nextItem = submissions.pop();
+        nextCursor = nextItem?.id;
+      }
+
+      return {
+        submissions: submissions.map((s) => ({
+          ...s,
+          patientName: s.patient.demographics
+            ? `${s.patient.demographics.firstName} ${s.patient.demographics.lastName}`
+            : 'Unknown',
+        })),
+        nextCursor,
+        totalPending: await prisma.remoteMonitoringSubmission.count({
+          where: {
+            organizationId: ctx.user.organizationId,
+            status: 'PENDING',
+          },
+        }),
+      };
+    }),
+
+  /**
+   * Review a remote monitoring submission
+   */
+  reviewSubmission: protectedProcedure
+    .input(
+      z.object({
+        submissionId: z.string(),
+        reviewNotes: z.string().optional(),
+        followUpRequired: z.boolean().default(false),
+        followUpNotes: z.string().optional(),
+        status: z.enum(['REVIEWED', 'FLAGGED']).default('REVIEWED'),
+        attachToEncounterId: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const submission = await prisma.remoteMonitoringSubmission.findFirst({
+        where: {
+          id: input.submissionId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          patient: {
+            include: {
+              demographics: { select: { firstName: true, lastName: true } },
+            },
+          },
+        },
+      });
+
+      if (!submission) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Submission not found',
+        });
+      }
+
+      // Validate encounter if attaching
+      if (input.attachToEncounterId) {
+        const encounter = await prisma.encounter.findFirst({
+          where: {
+            id: input.attachToEncounterId,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+        if (!encounter) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Encounter not found',
+          });
+        }
+      }
+
+      // Update submission
+      const updated = await prisma.remoteMonitoringSubmission.update({
+        where: { id: input.submissionId },
+        data: {
+          status: input.status,
+          reviewedAt: new Date(),
+          reviewedById: ctx.user.id,
+          reviewNotes: input.reviewNotes,
+          followUpRequired: input.followUpRequired,
+          followUpNotes: input.followUpNotes,
+          encounterId: input.attachToEncounterId || submission.encounterId,
+        },
+      });
+
+      // Mark related alerts as read
+      await prisma.remoteMonitoringAlert.updateMany({
+        where: {
+          submissionId: input.submissionId,
+          organizationId: ctx.user.organizationId,
+        },
+        data: {
+          isRead: true,
+          readAt: new Date(),
+        },
+      });
+
+      // Create follow-up alert if needed
+      if (input.followUpRequired) {
+        const patientName = submission.patient.demographics
+          ? `${submission.patient.demographics.firstName} ${submission.patient.demographics.lastName}`
+          : 'Unknown Patient';
+
+        // Find patient's provider
+        const recentAppointment = await prisma.appointment.findFirst({
+          where: {
+            patientId: submission.patientId,
+            organizationId: ctx.user.organizationId,
+            providerId: { not: undefined },
+          },
+          orderBy: { startTime: 'desc' },
+        });
+
+        if (recentAppointment?.providerId) {
+          await prisma.remoteMonitoringAlert.create({
+            data: {
+              patientId: submission.patientId,
+              organizationId: ctx.user.organizationId,
+              providerId: recentAppointment.providerId,
+              submissionId: input.submissionId,
+              alertType: 'follow_up_needed',
+              priority: 'high',
+              message: `Follow-up needed for ${patientName}: ${input.followUpNotes || 'See submission notes'}`,
+            },
+          });
+        }
+      }
+
+      // Audit log
+      await createAuditLog({
+        organizationId: ctx.user.organizationId,
+        userId: ctx.user.id,
+        action: 'UPDATE' as AuditAction,
+        entityType: 'RemoteMonitoringSubmission',
+        entityId: input.submissionId,
+        metadata: {
+          action: 'review',
+          previousStatus: submission.status,
+          newStatus: input.status,
+          followUpRequired: input.followUpRequired,
+          attachedToEncounter: input.attachToEncounterId,
+        },
+      });
+
+      return {
+        submissionId: updated.id,
+        status: updated.status,
+        reviewedAt: updated.reviewedAt,
+        followUpRequired: updated.followUpRequired,
+      };
+    }),
+
+  /**
+   * Get provider alerts for remote monitoring
+   */
+  getProviderAlerts: protectedProcedure
+    .input(
+      z.object({
+        unreadOnly: z.boolean().optional().default(false),
+        priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
+        limit: z.number().min(1).max(100).optional().default(20),
+        cursor: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      // Get provider for current user
+      const provider = await prisma.provider.findFirst({
+        where: {
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!provider) {
+        return { alerts: [], nextCursor: undefined, unreadCount: 0 };
+      }
+
+      const where: Prisma.RemoteMonitoringAlertWhereInput = {
+        providerId: provider.id,
+        organizationId: ctx.user.organizationId,
+        isDismissed: false,
+        ...(input.unreadOnly && { isRead: false }),
+        ...(input.priority && { priority: input.priority }),
+      };
+
+      const alerts = await prisma.remoteMonitoringAlert.findMany({
+        where,
+        take: input.limit + 1,
+        cursor: input.cursor ? { id: input.cursor } : undefined,
+        orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
+        include: {
+          patient: {
+            include: {
+              demographics: { select: { firstName: true, lastName: true } },
+            },
+          },
+        },
+      });
+
+      let nextCursor: string | undefined;
+      if (alerts.length > input.limit) {
+        const nextItem = alerts.pop();
+        nextCursor = nextItem?.id;
+      }
+
+      const unreadCount = await prisma.remoteMonitoringAlert.count({
+        where: {
+          providerId: provider.id,
+          organizationId: ctx.user.organizationId,
+          isRead: false,
+          isDismissed: false,
+        },
+      });
+
+      return {
+        alerts: alerts.map((a) => ({
+          ...a,
+          patientName: a.patient.demographics
+            ? `${a.patient.demographics.firstName} ${a.patient.demographics.lastName}`
+            : 'Unknown',
+        })),
+        nextCursor,
+        unreadCount,
+      };
+    }),
+
+  /**
+   * Mark alert as read
+   */
+  markAlertRead: protectedProcedure
+    .input(
+      z.object({
+        alertId: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const alert = await prisma.remoteMonitoringAlert.findFirst({
+        where: {
+          id: input.alertId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!alert) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Alert not found',
+        });
+      }
+
+      const updated = await prisma.remoteMonitoringAlert.update({
+        where: { id: input.alertId },
+        data: {
+          isRead: true,
+          readAt: new Date(),
+        },
+      });
+
+      return { alertId: updated.id, isRead: true };
+    }),
+
+  /**
+   * Dismiss alert
+   */
+  dismissAlert: protectedProcedure
+    .input(
+      z.object({
+        alertId: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const alert = await prisma.remoteMonitoringAlert.findFirst({
+        where: {
+          id: input.alertId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!alert) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Alert not found',
+        });
+      }
+
+      const updated = await prisma.remoteMonitoringAlert.update({
+        where: { id: input.alertId },
+        data: {
+          isDismissed: true,
+          dismissedAt: new Date(),
+          dismissedById: ctx.user.id,
+        },
+      });
+
+      return { alertId: updated.id, isDismissed: true };
+    }),
+
+  /**
+   * Get submission details
+   */
+  getSubmissionDetails: protectedProcedure
+    .input(
+      z.object({
+        submissionId: z.string(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const submission = await prisma.remoteMonitoringSubmission.findFirst({
+        where: {
+          id: input.submissionId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          attachments: true,
+          patient: {
+            include: {
+              demographics: { select: { firstName: true, lastName: true } },
+            },
+          },
+          encounter: {
+            select: {
+              id: true,
+              encounterDate: true,
+              status: true,
+            },
+          },
+        },
+      });
+
+      if (!submission) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Submission not found',
+        });
+      }
+
+      // Get reviewer info if reviewed
+      let reviewerName: string | undefined;
+      if (submission.reviewedById) {
+        const reviewer = await prisma.user.findUnique({
+          where: { id: submission.reviewedById },
+          select: { firstName: true, lastName: true },
+        });
+        if (reviewer) {
+          reviewerName = `${reviewer.firstName} ${reviewer.lastName}`;
+        }
+      }
+
+      return {
+        ...submission,
+        patientName: submission.patient.demographics
+          ? `${submission.patient.demographics.firstName} ${submission.patient.demographics.lastName}`
+          : 'Unknown',
+        reviewerName,
+      };
+    }),
+
+  /**
+   * Add attachment to an existing submission
+   */
+  addSubmissionAttachment: protectedProcedure
+    .input(
+      z.object({
+        submissionId: z.string(),
+        file: z.object({
+          content: z.string(),      // Base64 encoded
+          mimeType: z.string(),
+          fileName: z.string(),
+        }),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const submission = await prisma.remoteMonitoringSubmission.findFirst({
+        where: {
+          id: input.submissionId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!submission) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Submission not found',
+        });
+      }
+
+      // Calculate file size from base64
+      const fileSize = Math.ceil((input.file.content.length * 3) / 4);
+
+      // In production: upload to encrypted storage
+      const fileUrl = `submissions/${submission.patientId}/${Date.now()}_${input.file.fileName}`;
+
+      // Generate thumbnail for images/videos
+      let thumbnailUrl: string | undefined;
+      if (input.file.mimeType.startsWith('image/') || input.file.mimeType.startsWith('video/')) {
+        thumbnailUrl = `${fileUrl}_thumb`;
+      }
+
+      const attachment = await prisma.remoteSubmissionAttachment.create({
+        data: {
+          submissionId: input.submissionId,
+          fileName: input.file.fileName,
+          fileUrl,
+          mimeType: input.file.mimeType,
+          fileSize,
+          thumbnailUrl,
+        },
+      });
+
+      return {
+        attachmentId: attachment.id,
+        fileName: attachment.fileName,
+        fileSize: attachment.fileSize,
+      };
+    }),
+
+  /**
+   * Get pain diary summary for a patient (for charts/tracking)
+   */
+  getPainDiarySummary: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        days: z.number().min(7).max(365).optional().default(30),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - input.days);
+
+      const entries = await prisma.remoteMonitoringSubmission.findMany({
+        where: {
+          patientId: input.patientId,
+          organizationId: ctx.user.organizationId,
+          submissionType: 'PAIN_DIARY',
+          submittedAt: { gte: startDate },
+        },
+        orderBy: { submittedAt: 'asc' },
+        select: {
+          id: true,
+          submittedAt: true,
+          painLevel: true,
+          painLocation: true,
+          painNotes: true,
+        },
+      });
+
+      // Calculate statistics
+      const painLevels = entries.filter((e) => e.painLevel !== null).map((e) => e.painLevel!);
+      const averagePain = painLevels.length > 0
+        ? painLevels.reduce((a, b) => a + b, 0) / painLevels.length
+        : null;
+      const maxPain = painLevels.length > 0 ? Math.max(...painLevels) : null;
+      const minPain = painLevels.length > 0 ? Math.min(...painLevels) : null;
+
+      // Group by location
+      const locationCounts: Record<string, number> = {};
+      entries.forEach((e) => {
+        if (e.painLocation) {
+          locationCounts[e.painLocation] = (locationCounts[e.painLocation] || 0) + 1;
+        }
+      });
+
+      return {
+        entries,
+        statistics: {
+          totalEntries: entries.length,
+          averagePain: averagePain ? Math.round(averagePain * 10) / 10 : null,
+          maxPain,
+          minPain,
+          daysCovered: input.days,
+        },
+        locationBreakdown: locationCounts,
+        trend: painLevels.length >= 2
+          ? painLevels[painLevels.length - 1] > painLevels[0]
+            ? 'worsening'
+            : painLevels[painLevels.length - 1] < painLevels[0]
+              ? 'improving'
+              : 'stable'
+          : 'insufficient_data',
+      };
+    }),
+
+  /**
+   * Share exercise demonstration video with patient
+   */
+  shareExerciseVideo: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        exerciseName: z.string(),
+        videoUrl: z.string(),
+        instructions: z.string().optional(),
+        frequency: z.string().optional(),       // "3x daily"
+        duration: z.string().optional(),        // "30 seconds each"
+        reps: z.number().optional(),
+        sets: z.number().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Verify patient exists
+      const patient = await prisma.patient.findFirst({
+        where: {
+          id: input.patientId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      // Create a submission record representing shared content
+      const submission = await prisma.remoteMonitoringSubmission.create({
+        data: {
+          patientId: input.patientId,
+          organizationId: ctx.user.organizationId,
+          submissionType: 'EXERCISE',
+          status: 'PENDING',
+          title: `Exercise: ${input.exerciseName}`,
+          description: input.instructions,
+          mediaUrl: input.videoUrl,
+          mediaMimeType: 'video/mp4',
+          exerciseName: input.exerciseName,
+          exerciseReps: input.reps,
+          exerciseSets: input.sets,
+          reviewedById: ctx.user.id,
+          reviewedAt: new Date(),
+          reviewNotes: `Shared by provider. Frequency: ${input.frequency || 'As directed'}. Duration: ${input.duration || 'As shown'}`,
+        },
+      });
+
+      // Audit log
+      await createAuditLog({
+        organizationId: ctx.user.organizationId,
+        userId: ctx.user.id,
+        action: 'CREATE' as AuditAction,
+        entityType: 'RemoteMonitoringSubmission',
+        entityId: submission.id,
+        metadata: {
+          action: 'share_exercise_video',
+          patientId: input.patientId,
+          exerciseName: input.exerciseName,
+        },
+      });
+
+      return {
+        submissionId: submission.id,
+        exerciseName: input.exerciseName,
+        sharedAt: submission.createdAt,
+      };
+    }),
 });

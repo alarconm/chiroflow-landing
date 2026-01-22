@@ -34,6 +34,20 @@ export type {
   TelehealthProviderLocation,
   TelehealthDocumentation,
   TelehealthSOAPTemplate,
+  // Remote monitoring types (US-222)
+  RemoteSubmissionType,
+  RemoteSubmissionStatus,
+  RemoteAlertType,
+  RemoteAlertPriority,
+  PainDiaryEntry,
+  ExerciseSubmission,
+  ActivityData,
+  CreateRemoteSubmissionRequest,
+  RemoteSubmissionDetails,
+  RemoteMonitoringAlertDetails,
+  ReviewSubmissionRequest,
+  PainLocation,
+  ExerciseCategory,
 } from './types';
 
 // Telehealth documentation constants and templates (US-220)
@@ -41,6 +55,9 @@ export {
   TELEHEALTH_PLACE_OF_SERVICE,
   TELEHEALTH_MODIFIERS,
   DEFAULT_TELEHEALTH_SOAP_TEMPLATE,
+  // Remote monitoring constants (US-222)
+  PAIN_LOCATIONS,
+  EXERCISE_CATEGORIES,
 } from './types';
 
 // Provider interface and base class

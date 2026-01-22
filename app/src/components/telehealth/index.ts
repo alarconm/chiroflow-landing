@@ -8,3 +8,4 @@ export { ProviderWaitingRoomDashboard } from './ProviderWaitingRoomDashboard';
 export { VideoConsultation } from './VideoConsultation';
 export { TelehealthDocumentation } from './TelehealthDocumentation';
 export { TelehealthConsentForm } from './TelehealthConsentForm';
+export { RemoteMonitoring } from './RemoteMonitoring';

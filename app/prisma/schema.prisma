@@ -161,6 +161,10 @@ model Organization {
   telehealthConsents  TelehealthConsent[]
   sessionRecordings   SessionRecording[]
 
+  // Remote Monitoring relations (US-222)
+  remoteMonitoringSubmissions RemoteMonitoringSubmission[]
+  remoteMonitoringAlerts      RemoteMonitoringAlert[]
+
   @@index([subdomain])
 }
 
@@ -394,6 +398,10 @@ model Patient {
   // Telehealth & Virtual Care relations (Epic 21)
   virtualWaitingRooms VirtualWaitingRoom[]
   telehealthConsents  TelehealthConsent[]
+
+  // Remote Monitoring relations (US-222)
+  remoteMonitoringSubmissions RemoteMonitoringSubmission[]
+  remoteMonitoringAlerts      RemoteMonitoringAlert[]
 
   @@unique([mrn, organizationId])
   @@index([organizationId])
@@ -739,6 +747,9 @@ model Provider {
 
   // Chiropractic Clinical Intelligence relations (Epic 19)
   techniqueFavorites TechniqueFavorite[]
+
+  // Remote Monitoring relations (US-222)
+  remoteMonitoringAlerts RemoteMonitoringAlert[]
 
   @@index([organizationId])
   @@index([isActive])
@@ -1170,6 +1181,9 @@ model Encounter {
   postureAssessments  PostureAssessment[]
   rangeOfMotions      RangeOfMotion[]
   functionalMovements FunctionalMovement[]
+
+  // Remote Monitoring relations (US-222)
+  remoteMonitoringSubmissions RemoteMonitoringSubmission[]
 
   @@index([organizationId])
   @@index([patientId])
@@ -7760,4 +7774,161 @@ model SessionRecording {
   @@index([sessionId])
   @@index([status])
   @@index([deletionScheduledAt])
+}
+
+// ============================================
+// REMOTE MONITORING (US-222)
+// ============================================
+
+// Types of remote monitoring submissions
+enum RemoteSubmissionType {
+  PHOTO        // Patient-submitted photos
+  VIDEO        // Patient-submitted videos
+  PAIN_DIARY   // Daily pain diary entries
+  EXERCISE     // Exercise completion/feedback
+  ACTIVITY     // Activity tracking data
+  QUESTIONNAIRE // General questionnaire responses
+}
+
+// Status of remote submissions
+enum RemoteSubmissionStatus {
+  PENDING     // Awaiting provider review
+  REVIEWED    // Provider has reviewed
+  FLAGGED     // Needs follow-up
+  ARCHIVED    // No longer active
+}
+
+// Patient remote monitoring submission
+model RemoteMonitoringSubmission {
+  id               String                 @id @default(cuid())
+  submissionType   RemoteSubmissionType
+  status           RemoteSubmissionStatus @default(PENDING)
+
+  // Content
+  title            String?                // Optional title for the submission
+  description      String?     @db.Text   // Patient's description/notes
+
+  // For media submissions (photos/videos)
+  mediaUrl         String?                // Encrypted storage URL
+  mediaKey         String?                // Encryption key reference
+  mediaMimeType    String?                // image/jpeg, video/mp4, etc.
+  mediaSize        Int?                   // File size in bytes
+  mediaDuration    Int?                   // Duration in seconds (for videos)
+  thumbnailUrl     String?                // Thumbnail for videos
+
+  // For pain diary entries
+  painLevel        Int?                   // Pain level 0-10
+  painLocation     String?                // Body area affected
+  painNotes        String?     @db.Text   // Additional pain notes
+
+  // For exercise submissions
+  exerciseId       String?                // Link to prescribed exercise
+  exerciseName     String?                // Name of exercise
+  exerciseDuration Int?                   // Duration in seconds
+  exerciseReps     Int?                   // Number of repetitions
+  exerciseSets     Int?                   // Number of sets completed
+  exerciseFeedback String?     @db.Text   // Patient feedback on exercise
+
+  // For activity tracking
+  activityType     String?                // walking, steps, etc.
+  activityValue    Float?                 // Numeric value
+  activityUnit     String?                // steps, miles, minutes, etc.
+  activitySource   String?                // Device/app source
+
+  // Questionnaire responses (JSON)
+  questionnaireResponses Json?            // Structured responses
+
+  // Provider review
+  reviewedAt       DateTime?
+  reviewedById     String?                // Provider who reviewed
+  reviewNotes      String?     @db.Text   // Provider's review notes
+  followUpRequired Boolean     @default(false)
+  followUpNotes    String?     @db.Text
+
+  // Timestamps
+  submittedAt      DateTime    @default(now())
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  // Relations
+  patientId        String
+  patient          Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  encounterId      String?                // Optional link to encounter
+  encounter        Encounter?  @relation(fields: [encounterId], references: [id], onDelete: SetNull)
+
+  telehealthSessionId String?             // Optional link to telehealth session
+
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Attachments (for multiple files per submission)
+  attachments      RemoteSubmissionAttachment[]
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([status])
+  @@index([submissionType])
+  @@index([submittedAt])
+  @@index([encounterId])
+  @@index([telehealthSessionId])
+}
+
+// Attachments for remote monitoring submissions (for multi-file uploads)
+model RemoteSubmissionAttachment {
+  id            String   @id @default(cuid())
+
+  fileName      String                   // Original file name
+  fileUrl       String                   // Encrypted storage URL
+  fileKey       String?                  // Encryption key reference
+  mimeType      String                   // MIME type
+  fileSize      Int                      // Size in bytes
+  duration      Int?                     // Duration for videos (seconds)
+  thumbnailUrl  String?                  // Thumbnail for images/videos
+
+  createdAt     DateTime @default(now())
+
+  // Relations
+  submissionId  String
+  submission    RemoteMonitoringSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+}
+
+// Provider alerts for new submissions
+model RemoteMonitoringAlert {
+  id            String   @id @default(cuid())
+
+  alertType     String                   // new_submission, high_pain, missed_exercise, etc.
+  priority      String   @default("normal") // low, normal, high, urgent
+  message       String   @db.Text
+
+  isRead        Boolean  @default(false)
+  readAt        DateTime?
+
+  isDismissed   Boolean  @default(false)
+  dismissedAt   DateTime?
+  dismissedById String?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  patientId     String
+  patient       Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  submissionId  String?                  // Optional link to submission
+
+  providerId    String                   // Provider to alert
+  provider      Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([providerId])
+  @@index([patientId])
+  @@index([isRead])
+  @@index([priority])
+  @@index([createdAt])
 }

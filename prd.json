@@ -116,7 +116,7 @@
         "Attach to patient record"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-223",

@@ -786,3 +786,253 @@ Clinical Decision Making:
     defaultModifier: '95', // Synchronous telemedicine via audio/video
   },
 };
+
+// ============================================
+// REMOTE MONITORING TYPES (US-222)
+// ============================================
+
+/**
+ * Types of remote monitoring submissions
+ */
+export type RemoteSubmissionType =
+  | 'PHOTO'
+  | 'VIDEO'
+  | 'PAIN_DIARY'
+  | 'EXERCISE'
+  | 'ACTIVITY'
+  | 'QUESTIONNAIRE';
+
+/**
+ * Status of remote submissions
+ */
+export type RemoteSubmissionStatus =
+  | 'PENDING'
+  | 'REVIEWED'
+  | 'FLAGGED'
+  | 'ARCHIVED';
+
+/**
+ * Alert types for remote monitoring
+ */
+export type RemoteAlertType =
+  | 'new_submission'
+  | 'high_pain'
+  | 'missed_exercise'
+  | 'follow_up_needed'
+  | 'activity_change';
+
+/**
+ * Alert priority levels
+ */
+export type RemoteAlertPriority = 'low' | 'normal' | 'high' | 'urgent';
+
+/**
+ * Pain diary entry data
+ */
+export interface PainDiaryEntry {
+  painLevel: number;       // 0-10 scale
+  painLocation: string;    // Body area
+  painNotes?: string;      // Additional notes
+  triggers?: string[];     // What caused/worsened the pain
+  relievers?: string[];    // What helped the pain
+  timestamp: Date;
+}
+
+/**
+ * Exercise completion data
+ */
+export interface ExerciseSubmission {
+  exerciseId?: string;
+  exerciseName: string;
+  duration?: number;       // Seconds
+  reps?: number;
+  sets?: number;
+  difficulty?: 'easy' | 'moderate' | 'hard' | 'too_hard';
+  feedback?: string;
+  videoUrl?: string;       // If patient recorded themselves
+}
+
+/**
+ * Activity tracking data
+ */
+export interface ActivityData {
+  activityType: string;    // steps, walking, etc.
+  value: number;
+  unit: string;            // steps, miles, minutes
+  source?: string;         // Device/app name
+  startTime?: Date;
+  endTime?: Date;
+}
+
+/**
+ * Remote monitoring submission request
+ */
+export interface CreateRemoteSubmissionRequest {
+  patientId: string;
+  submissionType: RemoteSubmissionType;
+  title?: string;
+  description?: string;
+
+  // For media submissions
+  mediaFile?: {
+    content: string;       // Base64 encoded
+    mimeType: string;
+    fileName: string;
+  };
+
+  // For pain diary
+  painDiary?: PainDiaryEntry;
+
+  // For exercise submissions
+  exercise?: ExerciseSubmission;
+
+  // For activity tracking
+  activity?: ActivityData;
+
+  // For questionnaires
+  questionnaireResponses?: Record<string, unknown>;
+
+  // Optional links
+  telehealthSessionId?: string;
+  encounterId?: string;
+}
+
+/**
+ * Remote monitoring submission with full details
+ */
+export interface RemoteSubmissionDetails {
+  id: string;
+  patientId: string;
+  patientName?: string;
+  submissionType: RemoteSubmissionType;
+  status: RemoteSubmissionStatus;
+
+  title?: string;
+  description?: string;
+
+  // Media
+  mediaUrl?: string;
+  mediaMimeType?: string;
+  thumbnailUrl?: string;
+
+  // Pain diary
+  painLevel?: number;
+  painLocation?: string;
+  painNotes?: string;
+
+  // Exercise
+  exerciseName?: string;
+  exerciseDuration?: number;
+  exerciseReps?: number;
+  exerciseSets?: number;
+  exerciseFeedback?: string;
+
+  // Activity
+  activityType?: string;
+  activityValue?: number;
+  activityUnit?: string;
+  activitySource?: string;
+
+  // Questionnaire
+  questionnaireResponses?: Record<string, unknown>;
+
+  // Review info
+  reviewedAt?: Date;
+  reviewedById?: string;
+  reviewerName?: string;
+  reviewNotes?: string;
+  followUpRequired: boolean;
+  followUpNotes?: string;
+
+  // Timestamps
+  submittedAt: Date;
+  createdAt: Date;
+
+  // Attachments
+  attachments?: Array<{
+    id: string;
+    fileName: string;
+    fileUrl: string;
+    mimeType: string;
+    fileSize: number;
+    thumbnailUrl?: string;
+  }>;
+}
+
+/**
+ * Provider alert for remote monitoring
+ */
+export interface RemoteMonitoringAlertDetails {
+  id: string;
+  alertType: RemoteAlertType;
+  priority: RemoteAlertPriority;
+  message: string;
+
+  patientId: string;
+  patientName?: string;
+
+  submissionId?: string;
+  submissionType?: RemoteSubmissionType;
+
+  isRead: boolean;
+  readAt?: Date;
+  isDismissed: boolean;
+  dismissedAt?: Date;
+
+  createdAt: Date;
+}
+
+/**
+ * Asynchronous review workflow request
+ */
+export interface ReviewSubmissionRequest {
+  submissionId: string;
+  reviewNotes?: string;
+  followUpRequired: boolean;
+  followUpNotes?: string;
+  attachToEncounter?: boolean;
+  newEncounterId?: string;
+}
+
+/**
+ * Pre-defined pain locations for body diagram
+ */
+export const PAIN_LOCATIONS = [
+  'Neck (Cervical)',
+  'Upper Back (Thoracic)',
+  'Lower Back (Lumbar)',
+  'Sacrum/Tailbone',
+  'Left Shoulder',
+  'Right Shoulder',
+  'Left Arm',
+  'Right Arm',
+  'Left Hand/Wrist',
+  'Right Hand/Wrist',
+  'Left Hip',
+  'Right Hip',
+  'Left Leg',
+  'Right Leg',
+  'Left Knee',
+  'Right Knee',
+  'Left Foot/Ankle',
+  'Right Foot/Ankle',
+  'Headache',
+  'Other',
+] as const;
+
+export type PainLocation = typeof PAIN_LOCATIONS[number];
+
+/**
+ * Pre-defined exercise categories
+ */
+export const EXERCISE_CATEGORIES = [
+  'Stretching',
+  'Strengthening',
+  'Range of Motion',
+  'Balance',
+  'Core Stability',
+  'Posture Correction',
+  'Other',
+] as const;
+
+export type ExerciseCategory = typeof EXERCISE_CATEGORIES[number];
