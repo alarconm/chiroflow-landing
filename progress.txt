@@ -81,16 +81,63 @@
 - Added router to index.ts as `aiDoc`
 - Added audit actions: AI_TRANSCRIPTION_START, AI_TRANSCRIPTION_STOP, AI_TRANSCRIPTION_EDIT, AI_AMBIENT_MODE_START, AI_AMBIENT_MODE_STOP
 
+### US-317: AI SOAP note generation - COMPLETED
+- Extended `aiDoc` tRPC router with SOAP note generation endpoints:
+  1. **generateSOAP** - Main entry point for AI SOAP note generation
+     - Takes encounter transcript and generates complete SOAP note
+     - Retrieves patient info, encounter context, and previous visit notes
+     - Uses aiService.generateSOAPSuggestion() for AI generation
+     - Applies provider style preferences if enabled
+     - Creates AIDraftNote record with confidence scores
+  2. **getDraftNote** - Get a specific draft SOAP note by ID
+  3. **listDraftNotes** - List all draft notes for an encounter with status filtering
+  4. **updateDraftNote** - Edit draft note with edit tracking for learning
+     - Tracks which sections were edited and reasons
+     - Stores edit history for provider preference learning
+  5. **approveDraftNote** - Mark draft ready for application
+  6. **rejectDraftNote** - Reject draft with reason
+  7. **applyDraftNote** - Apply approved/edited draft to encounter SOAPNote
+     - Creates or updates the encounter's SOAPNote record
+  8. **regenerateSOAP** - Regenerate with different parameters
+     - Supports additional context injection
+     - Can focus regeneration on specific sections
+  9. **getSOAPStats** - Statistics on draft note acceptance rate, confidence, edits
+
+- Added helper functions:
+  - calculateAge() - Calculate patient age from DOB
+  - applyProviderStyle() - Apply learned provider preferences to SOAP content
+    - Handles terminology replacements
+    - Style preferences (bullet points vs paragraphs)
+    - Format preferences
+    - Phrase preferences (closing phrases)
+
+- Added audit actions for SOAP generation:
+  - AI_SOAP_GENERATE, AI_SOAP_EDIT, AI_SOAP_APPROVE
+  - AI_SOAP_REJECT, AI_SOAP_APPLY, AI_SOAP_REGENERATE
+
+- Features implemented per acceptance criteria:
+  ✓ aiDoc.generateSOAP - Create SOAP from transcript
+  ✓ Extract subjective complaints and history
+  ✓ Document objective findings mentioned
+  ✓ Generate assessment based on findings
+  ✓ Recommend treatment plan
+  ✓ Match provider's documentation style (via ProviderPreference)
+  ✓ Include all required SOAP elements
+  ✓ Editable draft for provider review (updateDraftNote)
+
 ### Remaining Stories:
-- US-317: AI SOAP note generation
 - US-318: Intelligent code suggestion
 - US-319: Compliance checking
 - US-320: Provider preference learning
 - US-321: Documentation templates and macros
 - US-322: AI documentation assistant UI
+
 --- Iteration 1 completed at 2026-01-22 11:33:29 ---
 Story: US-315 - AI documentation agent schema
 
---- Iteration 2 completed at 2026-01-22 ---
+--- Iteration 2 completed at 2026-01-22 11:38:52 ---
 Story: US-316 - Real-time encounter transcription
+
+--- Iteration 3 completed at 2026-01-22 ---
+Story: US-317 - AI SOAP note generation
 

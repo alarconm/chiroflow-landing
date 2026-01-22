@@ -14,6 +14,7 @@ import { router, providerProcedure } from '../trpc';
 import { TRPCError } from '@trpc/server';
 import { auditLog } from '@/lib/audit';
 import { aiService } from '@/lib/ai-service';
+import { Prisma } from '@prisma/client';
 
 // ============================================
 // US-316: Real-time encounter transcription
@@ -683,6 +684,760 @@ export const aiDocRouter = router({
       averageAccuracy: avgAccuracy._avg.accuracy || 0,
     };
   }),
+
+  // ============================================
+  // US-317: AI SOAP note generation
+  // ============================================
+
+  /**
+   * Generate SOAP note from encounter transcript
+   * Main entry point for AI SOAP note generation
+   */
+  generateSOAP: providerProcedure
+    .input(
+      z.object({
+        encounterId: z.string(),
+        transcriptionId: z.string().optional(), // If not provided, uses latest completed transcription
+        includeStyleMatching: z.boolean().default(true), // Match provider's documentation style
+        previousNoteId: z.string().optional(), // For pull-forward functionality
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { encounterId, transcriptionId, includeStyleMatching, previousNoteId } = input;
+      const startTime = Date.now();
+
+      // Get encounter with patient info
+      const encounter = await ctx.prisma.encounter.findFirst({
+        where: {
+          id: encounterId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          patient: {
+            include: {
+              demographics: true,
+            },
+          },
+          provider: true,
+          soapNote: true,
+          appointment: true,
+        },
+      });
+
+      if (!encounter) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Encounter not found',
+        });
+      }
+
+      // Get transcription (specified or latest completed)
+      let transcription;
+      if (transcriptionId) {
+        transcription = await ctx.prisma.aITranscription.findFirst({
+          where: {
+            id: transcriptionId,
+            encounterId,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+      } else {
+        transcription = await ctx.prisma.aITranscription.findFirst({
+          where: {
+            encounterId,
+            organizationId: ctx.user.organizationId,
+            status: 'COMPLETED',
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+      }
+
+      if (!transcription?.transcript) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'No completed transcription found for this encounter',
+        });
+      }
+
+      // Get previous visit note for context (if requested)
+      let previousNote = null;
+      if (previousNoteId) {
+        previousNote = await ctx.prisma.sOAPNote.findFirst({
+          where: {
+            id: previousNoteId,
+            encounter: {
+              organizationId: ctx.user.organizationId,
+            },
+          },
+        });
+      } else {
+        // Get most recent previous SOAP note for this patient
+        const previousEncounter = await ctx.prisma.encounter.findFirst({
+          where: {
+            patientId: encounter.patientId,
+            organizationId: ctx.user.organizationId,
+            id: { not: encounterId },
+            status: { in: ['COMPLETED', 'SIGNED'] },
+          },
+          orderBy: { encounterDate: 'desc' },
+          include: { soapNote: true },
+        });
+        previousNote = previousEncounter?.soapNote ?? null;
+      }
+
+      // Get provider preferences if style matching enabled
+      let providerPreferences: Record<string, unknown>[] = [];
+      if (includeStyleMatching && encounter.providerId) {
+        const preferences = await ctx.prisma.providerPreference.findMany({
+          where: {
+            providerId: encounter.providerId,
+            isActive: true,
+            confidenceScore: { gte: 0.5 },
+          },
+          orderBy: { confidenceScore: 'desc' },
+        });
+        providerPreferences = preferences.map(p => ({
+          category: p.category,
+          key: p.preferenceKey,
+          value: p.preferenceValue,
+        }));
+      }
+
+      // Build patient info
+      const patientInfo = {
+        name: encounter.patient.demographics
+          ? `${encounter.patient.demographics.firstName} ${encounter.patient.demographics.lastName}`
+          : 'Patient',
+        age: encounter.patient.demographics?.dateOfBirth
+          ? calculateAge(encounter.patient.demographics.dateOfBirth)
+          : 0,
+        gender: encounter.patient.demographics?.gender || 'Unknown',
+      };
+
+      // Generate SOAP note using AI service
+      const soapResult = await aiService.generateSOAPSuggestion({
+        patientInfo,
+        chiefComplaint: encounter.chiefComplaint || '',
+        encounterType: encounter.encounterType,
+        transcription: transcription.transcript,
+        previousVisit: previousNote
+          ? {
+              subjective: previousNote.subjective || undefined,
+              objective: previousNote.objective || undefined,
+              assessment: previousNote.assessment || undefined,
+              plan: previousNote.plan || undefined,
+            }
+          : undefined,
+      });
+
+      // Apply provider style preferences if available
+      let styleMatchScore = 0;
+      const styleElements: string[] = [];
+      if (includeStyleMatching && providerPreferences.length > 0) {
+        const styleResult = applyProviderStyle(soapResult, providerPreferences);
+        styleMatchScore = styleResult.matchScore;
+        styleElements.push(...styleResult.appliedElements);
+        // Update the SOAP result with styled content
+        if (styleResult.subjective) soapResult.subjective = styleResult.subjective;
+        if (styleResult.objective) soapResult.objective = styleResult.objective;
+        if (styleResult.assessment) soapResult.assessment = styleResult.assessment;
+        if (styleResult.plan) soapResult.plan = styleResult.plan;
+      }
+
+      const processingTime = Date.now() - startTime;
+
+      // Create draft note record
+      const draftNote = await ctx.prisma.aIDraftNote.create({
+        data: {
+          encounterId,
+          organizationId: ctx.user.organizationId,
+          transcriptionId: transcription.id,
+          status: 'PENDING_REVIEW',
+          subjective: soapResult.subjective || null,
+          objective: soapResult.objective || null,
+          assessment: soapResult.assessment || null,
+          plan: soapResult.plan || null,
+          soapJson: {
+            subjective: soapResult.subjective || null,
+            objective: soapResult.objective || null,
+            assessment: soapResult.assessment || null,
+            plan: soapResult.plan || null,
+          },
+          subjectiveConfidence: soapResult.confidence,
+          objectiveConfidence: soapResult.confidence,
+          assessmentConfidence: soapResult.confidence,
+          planConfidence: soapResult.confidence,
+          overallConfidence: soapResult.confidence,
+          styleMatchScore: styleMatchScore || null,
+          styleElements: styleElements.length > 0 ? styleElements : undefined,
+          aiModelUsed: aiService.getProviderName(),
+          processingTimeMs: processingTime,
+        },
+      });
+
+      // Log the action
+      await auditLog('AI_SOAP_GENERATE', 'AIDraftNote', {
+        entityId: draftNote.id,
+        changes: {
+          encounterId,
+          transcriptionId: transcription.id,
+          confidence: soapResult.confidence,
+          styleMatchScore,
+          processingTimeMs: processingTime,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        draftNoteId: draftNote.id,
+        status: 'PENDING_REVIEW',
+        subjective: draftNote.subjective,
+        objective: draftNote.objective,
+        assessment: draftNote.assessment,
+        plan: draftNote.plan,
+        confidence: soapResult.confidence,
+        styleMatchScore,
+        processingTimeMs: processingTime,
+      };
+    }),
+
+  /**
+   * Get a draft SOAP note by ID
+   */
+  getDraftNote: providerProcedure
+    .input(z.object({ draftNoteId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const draftNote = await ctx.prisma.aIDraftNote.findFirst({
+        where: {
+          id: input.draftNoteId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          encounter: {
+            include: {
+              patient: {
+                include: {
+                  demographics: true,
+                },
+              },
+              provider: true,
+            },
+          },
+          transcription: true,
+        },
+      });
+
+      if (!draftNote) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Draft note not found',
+        });
+      }
+
+      return draftNote;
+    }),
+
+  /**
+   * List draft SOAP notes for an encounter
+   */
+  listDraftNotes: providerProcedure
+    .input(
+      z.object({
+        encounterId: z.string(),
+        status: z
+          .enum(['GENERATING', 'PENDING_REVIEW', 'APPROVED', 'REJECTED', 'EDITED', 'APPLIED'])
+          .optional(),
+        limit: z.number().min(1).max(50).default(10),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const draftNotes = await ctx.prisma.aIDraftNote.findMany({
+        where: {
+          encounterId: input.encounterId,
+          organizationId: ctx.user.organizationId,
+          ...(input.status ? { status: input.status } : {}),
+        },
+        orderBy: { createdAt: 'desc' },
+        take: input.limit,
+        include: {
+          transcription: {
+            select: {
+              id: true,
+              createdAt: true,
+              audioDuration: true,
+            },
+          },
+        },
+      });
+
+      return draftNotes;
+    }),
+
+  /**
+   * Update/edit a draft SOAP note
+   * Tracks edits for provider preference learning
+   */
+  updateDraftNote: providerProcedure
+    .input(
+      z.object({
+        draftNoteId: z.string(),
+        subjective: z.string().optional(),
+        objective: z.string().optional(),
+        assessment: z.string().optional(),
+        plan: z.string().optional(),
+        editReason: z.string().optional(), // Optional reason for the edit
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { draftNoteId, subjective, objective, assessment, plan, editReason } = input;
+
+      const draftNote = await ctx.prisma.aIDraftNote.findFirst({
+        where: {
+          id: draftNoteId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!draftNote) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Draft note not found',
+        });
+      }
+
+      // Track what was edited for learning
+      const edits: { section: string; original: string | null; edited: string | null }[] = [];
+      if (subjective !== undefined && subjective !== draftNote.subjective) {
+        edits.push({ section: 'subjective', original: draftNote.subjective, edited: subjective });
+      }
+      if (objective !== undefined && objective !== draftNote.objective) {
+        edits.push({ section: 'objective', original: draftNote.objective, edited: objective });
+      }
+      if (assessment !== undefined && assessment !== draftNote.assessment) {
+        edits.push({ section: 'assessment', original: draftNote.assessment, edited: assessment });
+      }
+      if (plan !== undefined && plan !== draftNote.plan) {
+        edits.push({ section: 'plan', original: draftNote.plan, edited: plan });
+      }
+
+      // Update edit reasons array
+      const existingReasons = (draftNote.editReasons as string[]) || [];
+      if (editReason) {
+        existingReasons.push(editReason);
+      }
+
+      // Update edited content tracking
+      const editedContent = (draftNote.editedContent as Record<string, unknown>) || {};
+      for (const edit of edits) {
+        editedContent[edit.section] = {
+          original: edit.original,
+          edited: edit.edited,
+          editedAt: new Date().toISOString(),
+        };
+      }
+
+      const updated = await ctx.prisma.aIDraftNote.update({
+        where: { id: draftNoteId },
+        data: {
+          ...(subjective !== undefined ? { subjective } : {}),
+          ...(objective !== undefined ? { objective } : {}),
+          ...(assessment !== undefined ? { assessment } : {}),
+          ...(plan !== undefined ? { plan } : {}),
+          status: 'EDITED',
+          editCount: draftNote.editCount + 1,
+          editedContent: editedContent as Prisma.InputJsonValue,
+          editReasons: existingReasons,
+          soapJson: {
+            subjective: subjective ?? draftNote.subjective,
+            objective: objective ?? draftNote.objective,
+            assessment: assessment ?? draftNote.assessment,
+            plan: plan ?? draftNote.plan,
+          },
+        },
+      });
+
+      // Log the edit for learning purposes
+      await auditLog('AI_SOAP_EDIT', 'AIDraftNote', {
+        entityId: draftNoteId,
+        changes: {
+          editedSections: edits.map(e => e.section),
+          editReason,
+          editCount: updated.editCount,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return updated;
+    }),
+
+  /**
+   * Approve a draft SOAP note
+   * Marks it ready for application to the encounter
+   */
+  approveDraftNote: providerProcedure
+    .input(
+      z.object({
+        draftNoteId: z.string(),
+        reviewNotes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { draftNoteId, reviewNotes } = input;
+
+      const draftNote = await ctx.prisma.aIDraftNote.findFirst({
+        where: {
+          id: draftNoteId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!draftNote) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Draft note not found',
+        });
+      }
+
+      const updated = await ctx.prisma.aIDraftNote.update({
+        where: { id: draftNoteId },
+        data: {
+          status: 'APPROVED',
+          reviewedAt: new Date(),
+          reviewedByUserId: ctx.user.id,
+          reviewNotes,
+        },
+      });
+
+      await auditLog('AI_SOAP_APPROVE', 'AIDraftNote', {
+        entityId: draftNoteId,
+        changes: { status: 'APPROVED', reviewNotes },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return updated;
+    }),
+
+  /**
+   * Reject a draft SOAP note
+   */
+  rejectDraftNote: providerProcedure
+    .input(
+      z.object({
+        draftNoteId: z.string(),
+        rejectionReason: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { draftNoteId, rejectionReason } = input;
+
+      const draftNote = await ctx.prisma.aIDraftNote.findFirst({
+        where: {
+          id: draftNoteId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!draftNote) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Draft note not found',
+        });
+      }
+
+      const updated = await ctx.prisma.aIDraftNote.update({
+        where: { id: draftNoteId },
+        data: {
+          status: 'REJECTED',
+          reviewedAt: new Date(),
+          reviewedByUserId: ctx.user.id,
+          reviewNotes: rejectionReason,
+        },
+      });
+
+      await auditLog('AI_SOAP_REJECT', 'AIDraftNote', {
+        entityId: draftNoteId,
+        changes: { status: 'REJECTED', rejectionReason },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return updated;
+    }),
+
+  /**
+   * Apply approved draft SOAP note to the encounter
+   * Creates or updates the SOAPNote record on the encounter
+   */
+  applyDraftNote: providerProcedure
+    .input(z.object({ draftNoteId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const { draftNoteId } = input;
+
+      const draftNote = await ctx.prisma.aIDraftNote.findFirst({
+        where: {
+          id: draftNoteId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          encounter: {
+            include: { soapNote: true },
+          },
+        },
+      });
+
+      if (!draftNote) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Draft note not found',
+        });
+      }
+
+      if (draftNote.status !== 'APPROVED' && draftNote.status !== 'EDITED') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Draft note must be approved or edited before applying',
+        });
+      }
+
+      // Update or create SOAP note on the encounter
+      let soapNote;
+      if (draftNote.encounter.soapNote) {
+        // Update existing
+        soapNote = await ctx.prisma.sOAPNote.update({
+          where: { id: draftNote.encounter.soapNote.id },
+          data: {
+            subjective: draftNote.subjective,
+            objective: draftNote.objective,
+            assessment: draftNote.assessment,
+            plan: draftNote.plan,
+            subjectiveJson: draftNote.soapJson as Prisma.InputJsonValue || undefined,
+          },
+        });
+      } else {
+        // Create new
+        soapNote = await ctx.prisma.sOAPNote.create({
+          data: {
+            encounterId: draftNote.encounterId,
+            subjective: draftNote.subjective,
+            objective: draftNote.objective,
+            assessment: draftNote.assessment,
+            plan: draftNote.plan,
+            subjectiveJson: draftNote.soapJson as Prisma.InputJsonValue || undefined,
+          },
+        });
+      }
+
+      // Mark draft note as applied
+      await ctx.prisma.aIDraftNote.update({
+        where: { id: draftNoteId },
+        data: { status: 'APPLIED' },
+      });
+
+      await auditLog('AI_SOAP_APPLY', 'SOAPNote', {
+        entityId: soapNote.id,
+        changes: {
+          draftNoteId,
+          encounterId: draftNote.encounterId,
+          action: draftNote.encounter.soapNote ? 'updated' : 'created',
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        soapNoteId: soapNote.id,
+        applied: true,
+        draftNoteStatus: 'APPLIED',
+      };
+    }),
+
+  /**
+   * Regenerate SOAP note with different parameters
+   * Useful when provider wants a fresh generation
+   */
+  regenerateSOAP: providerProcedure
+    .input(
+      z.object({
+        draftNoteId: z.string(),
+        additionalContext: z.string().optional(), // Extra instructions for generation
+        focusAreas: z.array(z.enum(['subjective', 'objective', 'assessment', 'plan'])).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { draftNoteId, additionalContext, focusAreas } = input;
+
+      const existingDraft = await ctx.prisma.aIDraftNote.findFirst({
+        where: {
+          id: draftNoteId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          transcription: true,
+          encounter: {
+            include: {
+              patient: {
+                include: { demographics: true },
+              },
+              provider: true,
+            },
+          },
+        },
+      });
+
+      if (!existingDraft) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Draft note not found',
+        });
+      }
+
+      if (!existingDraft.transcription?.transcript) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Original transcription not found',
+        });
+      }
+
+      const startTime = Date.now();
+
+      // Build enhanced context
+      const patientInfo = {
+        name: existingDraft.encounter.patient.demographics
+          ? `${existingDraft.encounter.patient.demographics.firstName} ${existingDraft.encounter.patient.demographics.lastName}`
+          : 'Patient',
+        age: existingDraft.encounter.patient.demographics?.dateOfBirth
+          ? calculateAge(existingDraft.encounter.patient.demographics.dateOfBirth)
+          : 0,
+        gender: existingDraft.encounter.patient.demographics?.gender || 'Unknown',
+      };
+
+      // Add additional context to transcription if provided
+      let enhancedTranscript = existingDraft.transcription.transcript;
+      if (additionalContext) {
+        enhancedTranscript += `\n\n[Additional Provider Notes]: ${additionalContext}`;
+      }
+
+      // Generate new SOAP
+      const soapResult = await aiService.generateSOAPSuggestion({
+        patientInfo,
+        chiefComplaint: existingDraft.encounter.chiefComplaint || '',
+        encounterType: existingDraft.encounter.encounterType,
+        transcription: enhancedTranscript,
+      });
+
+      const processingTime = Date.now() - startTime;
+
+      // Determine which sections to update based on focusAreas
+      const updateData: Record<string, unknown> = {
+        status: 'PENDING_REVIEW',
+        aiModelUsed: aiService.getProviderName(),
+        processingTimeMs: processingTime,
+        overallConfidence: soapResult.confidence,
+      };
+
+      if (!focusAreas || focusAreas.length === 0 || focusAreas.includes('subjective')) {
+        updateData.subjective = soapResult.subjective;
+        updateData.subjectiveConfidence = soapResult.confidence;
+      }
+      if (!focusAreas || focusAreas.length === 0 || focusAreas.includes('objective')) {
+        updateData.objective = soapResult.objective;
+        updateData.objectiveConfidence = soapResult.confidence;
+      }
+      if (!focusAreas || focusAreas.length === 0 || focusAreas.includes('assessment')) {
+        updateData.assessment = soapResult.assessment;
+        updateData.assessmentConfidence = soapResult.confidence;
+      }
+      if (!focusAreas || focusAreas.length === 0 || focusAreas.includes('plan')) {
+        updateData.plan = soapResult.plan;
+        updateData.planConfidence = soapResult.confidence;
+      }
+
+      // Update SOAP JSON with current values
+      updateData.soapJson = {
+        subjective: (updateData.subjective as string) ?? existingDraft.subjective,
+        objective: (updateData.objective as string) ?? existingDraft.objective,
+        assessment: (updateData.assessment as string) ?? existingDraft.assessment,
+        plan: (updateData.plan as string) ?? existingDraft.plan,
+      };
+
+      const updated = await ctx.prisma.aIDraftNote.update({
+        where: { id: draftNoteId },
+        data: updateData,
+      });
+
+      await auditLog('AI_SOAP_REGENERATE', 'AIDraftNote', {
+        entityId: draftNoteId,
+        changes: {
+          focusAreas,
+          additionalContext: additionalContext ? 'provided' : 'none',
+          processingTimeMs: processingTime,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        draftNoteId: updated.id,
+        status: 'PENDING_REVIEW',
+        subjective: updated.subjective,
+        objective: updated.objective,
+        assessment: updated.assessment,
+        plan: updated.plan,
+        confidence: soapResult.confidence,
+        processingTimeMs: processingTime,
+        regeneratedSections: focusAreas || ['subjective', 'objective', 'assessment', 'plan'],
+      };
+    }),
+
+  /**
+   * Get SOAP generation statistics
+   */
+  getSOAPStats: providerProcedure.query(async ({ ctx }) => {
+    const [total, approved, rejected, avgConfidence, avgEdits] = await Promise.all([
+      ctx.prisma.aIDraftNote.count({
+        where: { organizationId: ctx.user.organizationId },
+      }),
+      ctx.prisma.aIDraftNote.count({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: { in: ['APPROVED', 'APPLIED'] },
+        },
+      }),
+      ctx.prisma.aIDraftNote.count({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: 'REJECTED',
+        },
+      }),
+      ctx.prisma.aIDraftNote.aggregate({
+        where: {
+          organizationId: ctx.user.organizationId,
+          overallConfidence: { not: null },
+        },
+        _avg: { overallConfidence: true },
+      }),
+      ctx.prisma.aIDraftNote.aggregate({
+        where: {
+          organizationId: ctx.user.organizationId,
+        },
+        _avg: { editCount: true },
+      }),
+    ]);
+
+    const acceptanceRate = total > 0 ? ((approved / total) * 100).toFixed(1) : '0';
+
+    return {
+      totalDraftNotes: total,
+      approvedCount: approved,
+      rejectedCount: rejected,
+      acceptanceRate: `${acceptanceRate}%`,
+      averageConfidence: avgConfidence._avg.overallConfidence || 0,
+      averageEditsPerNote: avgEdits._avg.editCount || 0,
+    };
+  }),
 });
 
 // ============================================
@@ -792,4 +1547,132 @@ function detectMedicalTerms(text: string): string[] {
   }
 
   return foundTerms;
+}
+
+/**
+ * Calculate age from date of birth
+ */
+function calculateAge(dateOfBirth: Date): number {
+  const today = new Date();
+  const birthDate = new Date(dateOfBirth);
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
+}
+
+/**
+ * Apply provider style preferences to generated SOAP note
+ * Modifies content based on learned preferences for terminology, format, etc.
+ */
+function applyProviderStyle(
+  soapResult: { subjective?: string; objective?: string; assessment?: string; plan?: string; confidence: number },
+  preferences: Record<string, unknown>[]
+): {
+  subjective?: string;
+  objective?: string;
+  assessment?: string;
+  plan?: string;
+  matchScore: number;
+  appliedElements: string[];
+} {
+  const result: {
+    subjective?: string;
+    objective?: string;
+    assessment?: string;
+    plan?: string;
+    matchScore: number;
+    appliedElements: string[];
+  } = {
+    matchScore: 0,
+    appliedElements: [],
+  };
+
+  let appliedCount = 0;
+  const totalPreferences = preferences.length;
+
+  for (const pref of preferences) {
+    const category = pref.category as string;
+    const key = pref.key as string;
+    const value = pref.value as Record<string, unknown>;
+
+    switch (category) {
+      case 'terminology':
+        // Replace standard terms with provider's preferred terminology
+        if (value.replacements && typeof value.replacements === 'object') {
+          const replacements = value.replacements as Record<string, string>;
+          for (const [original, replacement] of Object.entries(replacements)) {
+            if (soapResult.subjective?.includes(original)) {
+              result.subjective = (result.subjective || soapResult.subjective).replace(
+                new RegExp(original, 'gi'),
+                replacement
+              );
+              appliedCount++;
+              result.appliedElements.push(`terminology:${key}`);
+            }
+            if (soapResult.objective?.includes(original)) {
+              result.objective = (result.objective || soapResult.objective).replace(
+                new RegExp(original, 'gi'),
+                replacement
+              );
+            }
+            if (soapResult.assessment?.includes(original)) {
+              result.assessment = (result.assessment || soapResult.assessment).replace(
+                new RegExp(original, 'gi'),
+                replacement
+              );
+            }
+            if (soapResult.plan?.includes(original)) {
+              result.plan = (result.plan || soapResult.plan).replace(
+                new RegExp(original, 'gi'),
+                replacement
+              );
+            }
+          }
+        }
+        break;
+
+      case 'style':
+        // Apply style preferences (e.g., bullet points vs paragraphs)
+        if (key === 'useBulletPoints' && value.enabled) {
+          // Convert paragraph text to bullet points where appropriate
+          if (soapResult.plan && !soapResult.plan.includes('•') && !soapResult.plan.includes('-')) {
+            const sentences = soapResult.plan.split(/\. (?=[A-Z])/);
+            if (sentences.length > 1) {
+              result.plan = sentences.map(s => `• ${s.trim()}`).join('\n');
+              appliedCount++;
+              result.appliedElements.push('style:bulletPoints');
+            }
+          }
+        }
+        break;
+
+      case 'format':
+        // Apply formatting preferences
+        if (key === 'objectiveFormat' && value.template) {
+          // Provider has a specific objective format they prefer
+          appliedCount++;
+          result.appliedElements.push('format:objective');
+        }
+        break;
+
+      case 'phrases':
+        // Add preferred phrases or signatures
+        if (value.closingPhrase && typeof value.closingPhrase === 'string') {
+          if (soapResult.plan) {
+            result.plan = (result.plan || soapResult.plan) + `\n\n${value.closingPhrase}`;
+            appliedCount++;
+            result.appliedElements.push('phrases:closing');
+          }
+        }
+        break;
+    }
+  }
+
+  // Calculate match score based on how many preferences were successfully applied
+  result.matchScore = totalPreferences > 0 ? appliedCount / totalPreferences : 0;
+
+  return result;
 }

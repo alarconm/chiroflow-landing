@@ -115,6 +115,13 @@ export type AuditAction =
   | 'AI_TRANSCRIPTION_EDIT'
   | 'AI_AMBIENT_MODE_START'
   | 'AI_AMBIENT_MODE_STOP'
+  // AI SOAP Generation actions (Epic 32 - US-317)
+  | 'AI_SOAP_GENERATE'
+  | 'AI_SOAP_EDIT'
+  | 'AI_SOAP_APPROVE'
+  | 'AI_SOAP_REJECT'
+  | 'AI_SOAP_APPLY'
+  | 'AI_SOAP_REGENERATE'
   // AI Billing actions (Epic 09)
   | 'AI_BILLING_SCRUB'
   | 'AI_BILLING_BATCH_SCRUB'

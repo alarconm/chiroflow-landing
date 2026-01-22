@@ -52,7 +52,7 @@
         "Editable draft for provider review"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-318",
