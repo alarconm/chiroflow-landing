@@ -1,0 +1,318 @@
+# Ralph Progress Log - Epic 33: AI Care Coordinator Agent
+
+## US-323: AI care coordinator schema - COMPLETED
+
+### What was implemented:
+
+1. **Enums created:**
+   - CareGapType: OVERDUE_FOLLOWUP, MISSED_APPOINTMENT, INCOMPLETE_TREATMENT, etc.
+   - CareGapStatus: IDENTIFIED, OUTREACH_SCHEDULED, OUTREACH_SENT, etc.
+   - CareOutreachType: APPOINTMENT_REMINDER, FOLLOWUP_SCHEDULING, CARE_GAP_NOTIFICATION, etc.
+   - CareOutreachStatus: SCHEDULED, SENT, DELIVERED, OPENED, etc.
+   - CareJourneyType: NEW_PATIENT, ACTIVE_CARE, MAINTENANCE, etc.
+   - JourneyStageStatus: NOT_STARTED, IN_PROGRESS, COMPLETED, etc.
+   - CareCoordinatorActionType: OUTREACH_SENT, APPOINTMENT_SCHEDULED, GAP_IDENTIFIED, etc.
+
+2. **Models created:**
+   - CareGap: Tracks identified gaps in patient care (overdue follow-ups, missed appointments, etc.)
+   - CareOutreach: Tracks outreach communications to patients
+   - PatientEngagementScore: Tracks patient engagement metrics and scores
+   - CareJourney: Tracks patient through care journey stages
+   - CareCoordinatorAction: Logs all AI care coordinator actions
+
+3. **Relations added:**
+   - Organization model: Added relations to all 5 new models
+   - Patient model: Added relations to all 5 new models
+
+4. **Schema validation:**
+   - Prisma schema validated successfully
+   - Prisma client generated successfully
+   - Database schema pushed successfully
+
+### Files modified:
+- app/prisma/schema.prisma
+
+### Note:
+Pre-existing build error in audit.ts (unrelated to this change) - next/headers import issue in client component context.
+--- Iteration 1 completed at 2026-01-22 13:36:43 ---
+Story: US-323 - AI care coordinator schema
+
+## US-324: Treatment plan monitoring - COMPLETED
+
+### What was implemented:
+
+1. **aiCare tRPC router created** (`app/src/server/routers/aiCare.ts`):
+   - `monitorPlan` - Comprehensive treatment plan compliance monitoring with risk levels
+   - `getVisitFrequencyCompliance` - Track visit frequency against treatment plan requirements
+   - `getOutcomeTrends` - Analyze outcome assessment trends (improving/stable/declining)
+   - `getMissedAppointmentAlerts` - Alert on patients with missed appointments
+   - `getPatientsBehindPlan` - Identify patients falling behind their treatment plan
+   - `getMilestoneProgress` - Track treatment plan goal/milestone progress
+   - `getOutreachRecommendations` - Auto-recommend outreach based on adherence
+   - `getAtRiskPatientNotifications` - Provider notifications for at-risk patients
+
+2. **Risk calculation logic:**
+   - Compliance rate factor (50%, 70%, 85% thresholds)
+   - Days since last visit factor (7, 14, 30 day thresholds)
+   - Missed appointments factor (1, 2, 3+ thresholds)
+   - Combined risk levels: LOW, MEDIUM, HIGH, CRITICAL
+
+3. **New audit action types added** to `app/src/lib/audit.ts`:
+   - AI_CARE_MONITOR_PLAN
+   - AI_CARE_RISK_NOTIFICATION
+   - AI_CARE_OUTREACH_RECOMMEND
+   - AI_CARE_GAP_IDENTIFY
+   - AI_CARE_ENGAGEMENT_CALCULATE
+   - AI_CARE_JOURNEY_UPDATE
+
+4. **Router registered** in `app/src/server/routers/index.ts` as `aiCare`
+
+### Files modified:
+- app/src/server/routers/aiCare.ts (new)
+- app/src/server/routers/index.ts
+- app/src/lib/audit.ts
+
+### Features implemented per acceptance criteria:
+- ✅ aiCare.monitorPlan - Track treatment plan progress
+- ✅ Visit frequency compliance tracking
+- ✅ Outcome measure trending
+- ✅ Alert on missed appointments
+- ✅ Identify patients falling behind plan
+- ✅ Progress milestone tracking
+- ✅ Auto-adjust outreach based on adherence
+- ✅ Provider notifications for at-risk patients
+
+--- Iteration 2 completed at 2026-01-22 ---
+Story: US-324 - Treatment plan monitoring
+
+--- Iteration 2 completed at 2026-01-22 13:46:40 ---
+Story: US-324 - Treatment plan monitoring
+
+## US-325: Intelligent appointment reminders - COMPLETED
+
+### What was implemented:
+
+1. **Core helper functions added:**
+   - `calculateNoShowRisk` - Calculates patient no-show risk based on history, visit gaps, treatment plan status, and reminder response rates
+   - `calculateOptimalTiming` - Determines optimal reminder send time based on appointment proximity, patient preferences, and no-show risk
+   - `generatePersonalizedMessage` - Creates personalized SMS and email messages with preparation instructions
+   - `getPreparationInstructions` - Returns appointment-type-specific preparation instructions
+
+2. **New types defined:**
+   - `ReminderTiming` - Tracks optimal send timing and reasoning
+   - `NoShowRisk` - Risk level, score, factors, and recommended actions
+   - `PersonalizedReminder` - Complete reminder payload with all context
+   - `ReminderResponse` - Tracks patient responses and actions taken
+
+3. **New tRPC procedures added:**
+   - `aiCare.sendReminders` - Main endpoint for sending intelligent reminders with:
+     - Personalized message generation based on patient name, appointment details, provider
+     - Optimal timing calculation based on patient behavior patterns
+     - No-show risk assessment (LOW, MEDIUM, HIGH, VERY_HIGH)
+     - Multi-channel delivery (SMS, email, phone, portal)
+     - Preparation instructions by appointment type
+     - Dry run mode for previewing reminders
+     - Creates CareOutreach records tracking all reminders
+   - `aiCare.handleReminderResponse` - Process patient responses:
+     - CONFIRMED - Updates appointment to confirmed status
+     - RESCHEDULE_REQUESTED - Creates follow-up action for staff
+     - CANCEL_REQUESTED - Cancels appointment
+     - Creates CareCoordinatorAction for reschedule requests
+   - `aiCare.processRescheduleRequest` - Auto-reschedule workflow:
+     - Finds available slots based on patient preferences
+     - Respects preferred dates and time of day
+     - Checks provider availability
+     - Creates action with slot options
+   - `aiCare.getReminderQueue` - Get appointments needing reminders:
+     - Filters by time window and reminder sequence
+     - Categorizes by urgency (IMMEDIATE, SOON, SCHEDULED)
+     - Respects patient opt-out preferences
+   - `aiCare.getReminderStats` - Reminder effectiveness analytics:
+     - Stats by channel (SMS, email, phone, portal)
+     - Outcome tracking (confirmed, completed, no-show, cancelled)
+     - Response rates and confirmation rates
+     - Show rates for reminded appointments
+
+4. **No-show risk calculation factors:**
+   - Historical no-show rate (0-40 points)
+   - Days since last visit (0-25 points)
+   - Treatment plan engagement (0-15 points)
+   - Reminder response rate (0-20 points)
+   - Risk levels: LOW (<30), MEDIUM (30-49), HIGH (50-69), VERY_HIGH (70+)
+
+5. **Preparation instructions by appointment type:**
+   - Initial/New patient: Arrive early, bring ID/insurance, medical records, comfortable clothing
+   - X-ray/Imaging: Remove metal, loose clothing, pregnancy notification
+   - Adjustment/Treatment: Comfortable clothing, hydration, avoid heavy meals
+   - Exam/Evaluation: Easy movement clothing, note symptoms, medication list
+   - Follow-up/Recheck: Progress discussion, symptom changes
+
+### Files modified:
+- app/src/server/routers/aiCare.ts
+
+### Features implemented per acceptance criteria:
+- ✅ aiCare.sendReminders - Send smart reminders
+- ✅ Personalized reminder messages
+- ✅ Optimal timing based on patient behavior
+- ✅ Include relevant preparation instructions
+- ✅ Handle confirmation responses
+- ✅ Auto-reschedule from replies
+- ✅ No-show risk adjustment
+- ✅ Multi-channel delivery
+
+--- Iteration 3 completed at 2026-01-22 ---
+Story: US-325 - Intelligent appointment reminders
+
+--- Iteration 3 completed at 2026-01-22 13:54:13 ---
+Story: US-325 - Intelligent appointment reminders
+
+## US-326: Proactive follow-up scheduling - COMPLETED
+
+### What was implemented:
+
+1. **New tRPC procedures added to aiCare router:**
+   - `aiCare.getFollowUpRecommendation` - Recommends follow-up timing based on:
+     - Treatment plan frequency (3x/week, 2x/week, weekly, biweekly, monthly)
+     - Condition type (acute, chronic, maintenance, wellness)
+     - Recent encounter diagnoses and severity
+     - Treatment plan progress and completion rate
+     - Returns recommended days, date, urgency, appointment type, and reasoning
+
+   - `aiCare.scheduleFollowUp` - Books follow-up appointments with:
+     - Preferred date and time of day support
+     - Auto-slot selection with patient consent
+     - Provider availability checking
+     - Schedule block conflict detection
+     - Slot scoring based on patient preferences
+     - Creates CareCoordinatorAction for tracking
+     - Audit logging for compliance
+
+   - `aiCare.autoScheduleAtCheckout` - Checkout-integrated scheduling:
+     - Analyzes encounter diagnoses for condition type
+     - Uses treatment plan frequency for timing
+     - Auto-finds available slots
+     - Falls back to waitlist if no slots available
+     - Creates CareCoordinatorAction log
+
+   - `aiCare.manageWaitlist` - Comprehensive waitlist management:
+     - Add/remove patients from waitlist
+     - Find matching available slots for waitlist entries
+     - Notify patients when preferred slots become available
+     - Priority-based ordering (LOW, NORMAL, HIGH, URGENT)
+     - Preferred days and time range filtering
+
+   - `aiCare.scheduleRecall` - Maintenance/recall scheduling:
+     - Supports recall types: maintenance, annual, recheck, preventive
+     - Configurable interval (1-365 days)
+     - Calculates recall from last completed appointment
+     - Creates CareJourney entry for tracking
+     - Falls back to waitlist if slots unavailable
+
+   - `aiCare.getPatientSchedulingPreferences` - Preference analysis:
+     - Explicit preferences from CommunicationPreference model
+     - Implied preferences from appointment history analysis
+     - Day-of-week frequency analysis
+     - Time-of-day preference detection
+     - Waitlist entry count
+
+   - `aiCare.optimizeScheduleUtilization` - Provider schedule optimization:
+     - Daily utilization calculation
+     - Gap detection between appointments
+     - Waitlist match recommendations
+     - Target utilization comparison
+     - Schedule optimization recommendations
+
+2. **Follow-up recommendation logic:**
+   - Acute conditions: Max 3 days between visits
+   - Chronic conditions: Follow treatment plan frequency
+   - Maintenance care: Minimum 2-week intervals
+   - Wellness care: Monthly check-ins
+   - Severity-based adjustments from diagnoses
+   - Treatment plan completion-based recommendations
+
+3. **Schedule optimization features:**
+   - Slot scoring algorithm (preference matching)
+   - Schedule block detection
+   - Workday hours management (9am-5pm)
+   - Weekend skipping
+   - Provider availability checking
+   - Gap analysis for schedule fragmentation
+
+### Files modified:
+- app/src/server/routers/aiCare.ts
+
+### Features implemented per acceptance criteria:
+- ✅ aiCare.scheduleFollowUp - Book next appointment
+- ✅ Recommend follow-up timing based on condition
+- ✅ Auto-schedule at checkout with patient consent
+- ✅ Waitlist management for preferred times
+- ✅ Recall scheduling for maintenance care
+- ✅ Handle patient scheduling preferences
+- ✅ Optimize provider schedule utilization
+
+--- Iteration 4 completed at 2026-01-22 ---
+Story: US-326 - Proactive follow-up scheduling
+
+--- Iteration 4 completed at 2026-01-22 14:04:03 ---
+Story: US-326 - Proactive follow-up scheduling
+
+--- Iteration 5 completed at 2026-01-22 14:10:51 ---
+Story: US-327 - Care gap identification
+
+--- Iteration 6 completed at 2026-01-22 14:11:01 ---
+Story: US-327 - Care gap identification
+
+--- Iteration 7 completed at 2026-01-22 14:11:10 ---
+Story: US-327 - Care gap identification
+
+--- Iteration 8 completed at 2026-01-22 14:11:20 ---
+Story: US-327 - Care gap identification
+
+--- Iteration 9 completed at 2026-01-22 14:11:29 ---
+Story: US-327 - Care gap identification
+
+--- Iteration 10 completed at 2026-01-22 14:11:40 ---
+Story: US-327 - Care gap identification
+
+--- Iteration 11 completed at 2026-01-22 14:11:50 ---
+Story: US-327 - Care gap identification
+
+--- Iteration 12 completed at 2026-01-22 14:12:01 ---
+Story: US-327 - Care gap identification
+
+--- Iteration 13 completed at 2026-01-22 14:12:11 ---
+Story: US-327 - Care gap identification
+
+--- Iteration 14 completed at 2026-01-22 14:12:21 ---
+Story: US-327 - Care gap identification
+
+--- Iteration 15 completed at 2026-01-22 14:12:31 ---
+Story: US-327 - Care gap identification
+
+--- Iteration 16 completed at 2026-01-22 14:12:41 ---
+Story: US-327 - Care gap identification
+
+--- Iteration 17 completed at 2026-01-22 14:12:50 ---
+Story: US-327 - Care gap identification
+
+--- Iteration 18 completed at 2026-01-22 14:12:59 ---
+Story: US-327 - Care gap identification
+
+--- Iteration 19 completed at 2026-01-22 14:13:16 ---
+Story: US-327 - Care gap identification
+
+--- Iteration 20 completed at 2026-01-22 14:13:48 ---
+Story: US-327 - Care gap identification
+
+--- Iteration 21 completed at 2026-01-22 14:14:21 ---
+Story: US-327 - Care gap identification
+
+--- Iteration 22 completed at 2026-01-22 14:14:38 ---
+Story: US-327 - Care gap identification
+
+--- Iteration 23 completed at 2026-01-22 14:14:54 ---
+Story: US-327 - Care gap identification
+
+--- Iteration 24 completed at 2026-01-22 14:15:05 ---
+Story: US-327 - Care gap identification
+

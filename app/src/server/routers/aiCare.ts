@@ -3897,4 +3897,1271 @@ export const aiCareRouter = router({
         recommendations,
       };
     }),
+
+  // ===== CARE GAP IDENTIFICATION (US-327) =====
+
+  // Main procedure to identify all care gaps for patients
+  identifyGaps: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string().optional(),
+        gapTypes: z.array(z.enum([
+          'OVERDUE_FOLLOWUP',
+          'MISSED_APPOINTMENT',
+          'INCOMPLETE_TREATMENT',
+          'MISSING_ASSESSMENT',
+          'LAPSED_PATIENT',
+          'OVERDUE_RECALL',
+          'INCOMPLETE_DOCUMENTATION',
+          'MISSED_MILESTONE',
+        ])).optional(),
+        minPriority: z.number().min(1).max(10).default(1),
+        includeResolved: z.boolean().default(false),
+        createRecords: z.boolean().default(true), // Create CareGap records for new gaps
+        limit: z.number().min(1).max(200).default(100),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { patientId, gapTypes, minPriority, includeResolved, createRecords, limit } = input;
+
+      // Get all patients or specific patient
+      const patients = await ctx.prisma.patient.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          ...(patientId ? { id: patientId } : {}),
+          status: 'ACTIVE',
+        },
+        take: limit,
+        include: {
+          demographics: {
+            select: { firstName: true, lastName: true },
+          },
+          treatmentPlans: {
+            where: { status: { in: ['ACTIVE', 'DRAFT'] } },
+            include: {
+              goals: true,
+              encounters: {
+                orderBy: { encounterDate: 'desc' },
+                take: 10,
+              },
+            },
+          },
+          appointments: {
+            orderBy: { startTime: 'desc' },
+            take: 20,
+            include: {
+              appointmentType: true,
+            },
+          },
+          outcomeAssessments: {
+            orderBy: { assessmentDate: 'desc' },
+            take: 10,
+          },
+          careGaps: includeResolved ? undefined : {
+            where: { status: { not: 'RESOLVED' } },
+          },
+        },
+      });
+
+      const identifiedGaps: Array<{
+        patientId: string;
+        patientName: string;
+        gapType: string;
+        title: string;
+        description: string;
+        priority: number;
+        dueDate: Date | null;
+        relatedId: string | null;
+        relatedType: string | null;
+        detectionScore: number;
+        existingGapId: string | null;
+        isNew: boolean;
+      }> = [];
+
+      const now = new Date();
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+      const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+
+      for (const patient of patients) {
+        const patientName = getPatientName(patient);
+        const existingGapTypes = new Set(patient.careGaps?.map(g => `${g.gapType}:${g.treatmentPlanId || g.appointmentId || g.encounterId || 'general'}`) || []);
+
+        // 1. OVERDUE_FOLLOWUP - Check for patients needing follow-up based on treatment plan
+        if (!gapTypes || gapTypes.includes('OVERDUE_FOLLOWUP')) {
+          for (const plan of patient.treatmentPlans) {
+            if (plan.status !== 'ACTIVE') continue;
+
+            const lastEncounter = plan.encounters[0];
+            const lastVisitDate = lastEncounter?.encounterDate;
+            const daysSinceVisit = lastVisitDate
+              ? Math.floor((now.getTime() - lastVisitDate.getTime()) / (1000 * 60 * 60 * 24))
+              : 999;
+
+            // Determine expected frequency (days between visits)
+            let expectedDays = 14; // Default bi-weekly
+            if (plan.frequency?.toLowerCase().includes('3x')) expectedDays = 3;
+            else if (plan.frequency?.toLowerCase().includes('2x')) expectedDays = 4;
+            else if (plan.frequency?.toLowerCase().includes('weekly')) expectedDays = 7;
+            else if (plan.frequency?.toLowerCase().includes('monthly')) expectedDays = 30;
+
+            // Check if overdue (more than 50% past expected interval)
+            const overdueThreshold = Math.floor(expectedDays * 1.5);
+            if (daysSinceVisit > overdueThreshold) {
+              const gapKey = `OVERDUE_FOLLOWUP:${plan.id}`;
+              const isNew = !existingGapTypes.has(gapKey);
+              const priority = calculateGapPriority('OVERDUE_FOLLOWUP', daysSinceVisit, expectedDays);
+
+              if (priority >= minPriority) {
+                identifiedGaps.push({
+                  patientId: patient.id,
+                  patientName,
+                  gapType: 'OVERDUE_FOLLOWUP',
+                  title: `Overdue for follow-up visit`,
+                  description: `Patient is ${daysSinceVisit} days since last visit (expected every ${expectedDays} days). Treatment plan: ${plan.name || 'Active Plan'}`,
+                  priority,
+                  dueDate: new Date(now.getTime() - (daysSinceVisit - expectedDays) * 24 * 60 * 60 * 1000),
+                  relatedId: plan.id,
+                  relatedType: 'treatmentPlan',
+                  detectionScore: Math.min(0.99, 0.7 + (daysSinceVisit / overdueThreshold - 1) * 0.3),
+                  existingGapId: patient.careGaps?.find(g => g.gapType === 'OVERDUE_FOLLOWUP' && g.treatmentPlanId === plan.id)?.id || null,
+                  isNew,
+                });
+              }
+            }
+          }
+        }
+
+        // 2. MISSED_APPOINTMENT - Check for recent no-shows
+        if (!gapTypes || gapTypes.includes('MISSED_APPOINTMENT')) {
+          const missedAppts = patient.appointments.filter(
+            a => a.status === 'NO_SHOW' && a.startTime >= thirtyDaysAgo
+          );
+
+          for (const appt of missedAppts) {
+            const gapKey = `MISSED_APPOINTMENT:${appt.id}`;
+            const isNew = !existingGapTypes.has(gapKey);
+            const daysSinceMissed = Math.floor((now.getTime() - appt.startTime.getTime()) / (1000 * 60 * 60 * 24));
+            const priority = calculateGapPriority('MISSED_APPOINTMENT', daysSinceMissed, 7);
+
+            if (priority >= minPriority) {
+              identifiedGaps.push({
+                patientId: patient.id,
+                patientName,
+                gapType: 'MISSED_APPOINTMENT',
+                title: `Missed appointment on ${appt.startTime.toLocaleDateString()}`,
+                description: `Patient missed ${appt.appointmentType?.name || 'scheduled'} appointment. No reschedule on file.`,
+                priority,
+                dueDate: appt.startTime,
+                relatedId: appt.id,
+                relatedType: 'appointment',
+                detectionScore: 0.95,
+                existingGapId: patient.careGaps?.find(g => g.gapType === 'MISSED_APPOINTMENT' && g.appointmentId === appt.id)?.id || null,
+                isNew,
+              });
+            }
+          }
+        }
+
+        // 3. INCOMPLETE_TREATMENT - Treatment plans not progressing
+        if (!gapTypes || gapTypes.includes('INCOMPLETE_TREATMENT')) {
+          for (const plan of patient.treatmentPlans) {
+            if (plan.status !== 'ACTIVE') continue;
+
+            const plannedVisits = plan.plannedVisits || 0;
+            const completedVisits = plan.encounters.filter(e => e.status === 'COMPLETED').length;
+            const completionRate = plannedVisits > 0 ? completedVisits / plannedVisits : 0;
+
+            // Check if plan is significantly behind (less than 50% complete when more than 50% of time elapsed)
+            const planDuration = plan.endDate
+              ? (plan.endDate.getTime() - plan.startDate.getTime()) / (1000 * 60 * 60 * 24)
+              : 90; // Default 90 day plan
+            const daysElapsed = (now.getTime() - plan.startDate.getTime()) / (1000 * 60 * 60 * 24);
+            const expectedCompletion = Math.min(1, daysElapsed / planDuration);
+
+            if (completionRate < expectedCompletion * 0.5 && daysElapsed > 14) {
+              const gapKey = `INCOMPLETE_TREATMENT:${plan.id}`;
+              const isNew = !existingGapTypes.has(gapKey);
+              const priority = calculateGapPriority('INCOMPLETE_TREATMENT', completionRate, 0.5);
+
+              if (priority >= minPriority) {
+                identifiedGaps.push({
+                  patientId: patient.id,
+                  patientName,
+                  gapType: 'INCOMPLETE_TREATMENT',
+                  title: `Treatment plan falling behind`,
+                  description: `${(completionRate * 100).toFixed(0)}% complete but ${(expectedCompletion * 100).toFixed(0)}% of plan time elapsed. Plan: ${plan.name || 'Active Plan'}`,
+                  priority,
+                  dueDate: plan.endDate,
+                  relatedId: plan.id,
+                  relatedType: 'treatmentPlan',
+                  detectionScore: Math.min(0.95, 0.6 + (expectedCompletion - completionRate) * 0.5),
+                  existingGapId: patient.careGaps?.find(g => g.gapType === 'INCOMPLETE_TREATMENT' && g.treatmentPlanId === plan.id)?.id || null,
+                  isNew,
+                });
+              }
+            }
+
+            // Check for missed milestones/goals
+            if (!gapTypes || gapTypes.includes('MISSED_MILESTONE')) {
+              for (const goal of plan.goals) {
+                if (goal.status === 'ACHIEVED' || !goal.targetDate) continue;
+
+                if (goal.targetDate < now && goal.status !== 'ACHIEVED') {
+                  const gapKey = `MISSED_MILESTONE:${goal.id}`;
+                  const isNew = !existingGapTypes.has(gapKey);
+                  const daysOverdue = Math.floor((now.getTime() - goal.targetDate.getTime()) / (1000 * 60 * 60 * 24));
+                  const priority = calculateGapPriority('MISSED_MILESTONE', daysOverdue, 14);
+
+                  if (priority >= minPriority) {
+                    identifiedGaps.push({
+                      patientId: patient.id,
+                      patientName,
+                      gapType: 'MISSED_MILESTONE',
+                      title: `Missed treatment goal: ${goal.description}`,
+                      description: `Goal was due ${goal.targetDate.toLocaleDateString()} (${daysOverdue} days ago). Current progress: ${goal.progress || 0}%`,
+                      priority,
+                      dueDate: goal.targetDate,
+                      relatedId: plan.id,
+                      relatedType: 'treatmentPlan',
+                      detectionScore: 0.9,
+                      existingGapId: patient.careGaps?.find(g => g.gapType === 'MISSED_MILESTONE' && g.treatmentPlanId === plan.id)?.id || null,
+                      isNew,
+                    });
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        // 4. MISSING_ASSESSMENT - Outcome assessments not completed
+        if (!gapTypes || gapTypes.includes('MISSING_ASSESSMENT')) {
+          // Check if patient has active plan but no recent outcome assessments
+          const hasActivePlan = patient.treatmentPlans.some(p => p.status === 'ACTIVE');
+          const recentAssessments = patient.outcomeAssessments || [];
+          const lastAssessmentDate = recentAssessments.length > 0
+            ? new Date(Math.max(...recentAssessments.map(a => a.assessmentDate.getTime())))
+            : null;
+          const daysSinceAssessment = lastAssessmentDate
+            ? Math.floor((now.getTime() - lastAssessmentDate.getTime()) / (1000 * 60 * 60 * 24))
+            : 999;
+
+          // Should have assessment at least every 30 days if on active treatment
+          if (hasActivePlan && daysSinceAssessment > 30) {
+            const gapKey = `MISSING_ASSESSMENT:general`;
+            const isNew = !existingGapTypes.has(gapKey);
+            const priority = calculateGapPriority('MISSING_ASSESSMENT', daysSinceAssessment, 30);
+
+            if (priority >= minPriority) {
+              identifiedGaps.push({
+                patientId: patient.id,
+                patientName,
+                gapType: 'MISSING_ASSESSMENT',
+                title: `Overdue for outcome assessment`,
+                description: lastAssessmentDate
+                  ? `Last assessment was ${daysSinceAssessment} days ago (expected every 30 days)`
+                  : `No outcome assessments on record for patient with active treatment plan`,
+                priority,
+                dueDate: lastAssessmentDate
+                  ? new Date(lastAssessmentDate.getTime() + 30 * 24 * 60 * 60 * 1000)
+                  : new Date(),
+                relatedId: null,
+                relatedType: null,
+                detectionScore: Math.min(0.95, 0.7 + (daysSinceAssessment / 60) * 0.25),
+                existingGapId: patient.careGaps?.find(g => g.gapType === 'MISSING_ASSESSMENT')?.id || null,
+                isNew,
+              });
+            }
+          }
+        }
+
+        // 5. LAPSED_PATIENT - No visits in extended period
+        if (!gapTypes || gapTypes.includes('LAPSED_PATIENT')) {
+          const lastCompletedAppt = patient.appointments.find(a => a.status === 'COMPLETED');
+          const daysSinceLastVisit = lastCompletedAppt
+            ? Math.floor((now.getTime() - lastCompletedAppt.startTime.getTime()) / (1000 * 60 * 60 * 24))
+            : null;
+
+          // No upcoming appointments scheduled
+          const hasUpcoming = patient.appointments.some(a =>
+            a.status === 'SCHEDULED' && a.startTime > now
+          );
+
+          // Lapsed if no visit in 60+ days and no upcoming
+          if (daysSinceLastVisit && daysSinceLastVisit > 60 && !hasUpcoming) {
+            const gapKey = `LAPSED_PATIENT:general`;
+            const isNew = !existingGapTypes.has(gapKey);
+            const priority = calculateGapPriority('LAPSED_PATIENT', daysSinceLastVisit, 60);
+
+            if (priority >= minPriority) {
+              identifiedGaps.push({
+                patientId: patient.id,
+                patientName,
+                gapType: 'LAPSED_PATIENT',
+                title: `Lapsed patient - ${daysSinceLastVisit} days since last visit`,
+                description: `Patient has not visited in ${daysSinceLastVisit} days and has no upcoming appointments scheduled.`,
+                priority,
+                dueDate: new Date(now.getTime() - (daysSinceLastVisit - 60) * 24 * 60 * 60 * 1000),
+                relatedId: null,
+                relatedType: null,
+                detectionScore: Math.min(0.99, 0.6 + (daysSinceLastVisit / 180) * 0.4),
+                existingGapId: patient.careGaps?.find(g => g.gapType === 'LAPSED_PATIENT')?.id || null,
+                isNew,
+              });
+            }
+          }
+        }
+
+        // 6. OVERDUE_RECALL - Due for maintenance/recall visit
+        if (!gapTypes || gapTypes.includes('OVERDUE_RECALL')) {
+          // Check for completed treatment plans that should have recall
+          const completedPlans = await ctx.prisma.treatmentPlan.findMany({
+            where: {
+              patientId: patient.id,
+              organizationId: ctx.user.organizationId,
+              status: 'COMPLETED',
+            },
+            orderBy: { endDate: 'desc' },
+            take: 1,
+          });
+
+          if (completedPlans.length > 0) {
+            const lastPlan = completedPlans[0];
+            const planEndDate = lastPlan.endDate || lastPlan.updatedAt;
+            const daysSincePlanEnd = Math.floor((now.getTime() - planEndDate.getTime()) / (1000 * 60 * 60 * 24));
+
+            // Should have recall/maintenance every 60-90 days after completing treatment
+            if (daysSincePlanEnd > 60) {
+              const hasUpcoming = patient.appointments.some(a =>
+                a.status === 'SCHEDULED' && a.startTime > now
+              );
+
+              if (!hasUpcoming) {
+                const gapKey = `OVERDUE_RECALL:${lastPlan.id}`;
+                const isNew = !existingGapTypes.has(gapKey);
+                const priority = calculateGapPriority('OVERDUE_RECALL', daysSincePlanEnd, 60);
+
+                if (priority >= minPriority) {
+                  identifiedGaps.push({
+                    patientId: patient.id,
+                    patientName,
+                    gapType: 'OVERDUE_RECALL',
+                    title: `Due for maintenance/recall visit`,
+                    description: `${daysSincePlanEnd} days since completing treatment plan. Recommended recall interval: 60-90 days.`,
+                    priority,
+                    dueDate: new Date(planEndDate.getTime() + 60 * 24 * 60 * 60 * 1000),
+                    relatedId: lastPlan.id,
+                    relatedType: 'treatmentPlan',
+                    detectionScore: Math.min(0.9, 0.6 + (daysSincePlanEnd / 120) * 0.3),
+                    existingGapId: patient.careGaps?.find(g => g.gapType === 'OVERDUE_RECALL' && g.treatmentPlanId === lastPlan.id)?.id || null,
+                    isNew,
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Sort gaps by priority (highest first) and then by detection score
+      identifiedGaps.sort((a, b) => {
+        if (b.priority !== a.priority) return b.priority - a.priority;
+        return b.detectionScore - a.detectionScore;
+      });
+
+      // Create CareGap records for new gaps if requested
+      const createdGaps: string[] = [];
+      if (createRecords) {
+        for (const gap of identifiedGaps.filter(g => g.isNew)) {
+          const created = await ctx.prisma.careGap.create({
+            data: {
+              organizationId: ctx.user.organizationId,
+              patientId: gap.patientId,
+              gapType: gap.gapType as any,
+              status: 'IDENTIFIED',
+              title: gap.title,
+              description: gap.description,
+              priority: gap.priority,
+              dueDate: gap.dueDate,
+              treatmentPlanId: gap.relatedType === 'treatmentPlan' ? gap.relatedId : null,
+              appointmentId: gap.relatedType === 'appointment' ? gap.relatedId : null,
+              detectedBy: 'aiCare.identifyGaps',
+              detectionScore: gap.detectionScore,
+              detectionData: {
+                timestamp: now.toISOString(),
+                userId: ctx.user.id,
+              },
+            },
+          });
+          createdGaps.push(created.id);
+
+          // Create CareCoordinatorAction record
+          await ctx.prisma.careCoordinatorAction.create({
+            data: {
+              organizationId: ctx.user.organizationId,
+              patientId: gap.patientId,
+              actionType: 'GAP_IDENTIFIED',
+              title: `Identified care gap: ${gap.gapType}`,
+              description: gap.description,
+              result: 'success',
+              careGapId: created.id,
+              aiInitiated: true,
+              aiConfidence: gap.detectionScore,
+              aiReasoning: `Detected ${gap.gapType} gap with priority ${gap.priority}/10`,
+            },
+          });
+        }
+      }
+
+      // Log audit
+      await auditLog({
+        organizationId: ctx.user.organizationId,
+        userId: ctx.user.id,
+        action: 'AI_CARE_GAP_IDENTIFY',
+        resourceType: 'CareGap',
+        details: {
+          totalPatientsScanned: patients.length,
+          totalGapsFound: identifiedGaps.length,
+          newGapsCreated: createdGaps.length,
+          gapsByType: identifiedGaps.reduce((acc, g) => {
+            acc[g.gapType] = (acc[g.gapType] || 0) + 1;
+            return acc;
+          }, {} as Record<string, number>),
+        },
+      });
+
+      return {
+        totalPatientsScanned: patients.length,
+        totalGapsFound: identifiedGaps.length,
+        newGapsCreated: createdGaps.length,
+        gaps: identifiedGaps,
+        summary: {
+          byType: identifiedGaps.reduce((acc, g) => {
+            acc[g.gapType] = (acc[g.gapType] || 0) + 1;
+            return acc;
+          }, {} as Record<string, number>),
+          byPriority: {
+            critical: identifiedGaps.filter(g => g.priority >= 9).length,
+            high: identifiedGaps.filter(g => g.priority >= 7 && g.priority < 9).length,
+            medium: identifiedGaps.filter(g => g.priority >= 4 && g.priority < 7).length,
+            low: identifiedGaps.filter(g => g.priority < 4).length,
+          },
+          newVsExisting: {
+            new: identifiedGaps.filter(g => g.isNew).length,
+            existing: identifiedGaps.filter(g => !g.isNew).length,
+          },
+        },
+      };
+    }),
+
+  // Get overdue follow-up patients
+  getOverdueFollowups: protectedProcedure
+    .input(
+      z.object({
+        providerId: z.string().optional(),
+        minDaysOverdue: z.number().default(7),
+        limit: z.number().min(1).max(100).default(50),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { providerId, minDaysOverdue, limit } = input;
+      const now = new Date();
+      const overdueThreshold = new Date(now.getTime() - minDaysOverdue * 24 * 60 * 60 * 1000);
+
+      // Find active treatment plans with no recent encounters
+      const overduePlans = await ctx.prisma.treatmentPlan.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: 'ACTIVE',
+          ...(providerId ? { providerId } : {}),
+          encounters: {
+            none: {
+              encounterDate: { gte: overdueThreshold },
+              status: 'COMPLETED',
+            },
+          },
+        },
+        take: limit,
+        include: {
+          patient: {
+            include: {
+              demographics: {
+                select: { firstName: true, lastName: true, phone: true, email: true },
+              },
+              appointments: {
+                where: {
+                  status: 'SCHEDULED',
+                  startTime: { gt: now },
+                },
+                orderBy: { startTime: 'asc' },
+                take: 1,
+              },
+            },
+          },
+          provider: {
+            include: {
+              user: { select: { firstName: true, lastName: true } },
+            },
+          },
+          encounters: {
+            orderBy: { encounterDate: 'desc' },
+            take: 1,
+            select: { encounterDate: true },
+          },
+        },
+      });
+
+      return overduePlans.map(plan => {
+        const lastVisit = plan.encounters[0]?.encounterDate;
+        const daysSinceVisit = lastVisit
+          ? Math.floor((now.getTime() - lastVisit.getTime()) / (1000 * 60 * 60 * 24))
+          : null;
+        const hasUpcomingAppt = plan.patient.appointments.length > 0;
+
+        return {
+          patientId: plan.patientId,
+          patientName: getPatientName(plan.patient),
+          phone: plan.patient.demographics?.phone,
+          email: plan.patient.demographics?.email,
+          treatmentPlanId: plan.id,
+          treatmentPlanName: plan.name,
+          providerId: plan.providerId,
+          providerName: plan.provider?.user
+            ? `${plan.provider.user.firstName} ${plan.provider.user.lastName}`
+            : 'Unknown',
+          lastVisitDate: lastVisit,
+          daysSinceVisit,
+          hasUpcomingAppointment: hasUpcomingAppt,
+          nextAppointmentDate: plan.patient.appointments[0]?.startTime || null,
+          frequency: plan.frequency,
+          urgency: daysSinceVisit && daysSinceVisit > 30 ? 'HIGH'
+            : daysSinceVisit && daysSinceVisit > 14 ? 'MEDIUM'
+            : 'LOW',
+        };
+      });
+    }),
+
+  // Get patients with incomplete treatment plans
+  getIncompleteTreatments: protectedProcedure
+    .input(
+      z.object({
+        providerId: z.string().optional(),
+        maxCompletionRate: z.number().min(0).max(1).default(0.5),
+        limit: z.number().min(1).max(100).default(50),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { providerId, maxCompletionRate, limit } = input;
+      const now = new Date();
+
+      const plans = await ctx.prisma.treatmentPlan.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: 'ACTIVE',
+          ...(providerId ? { providerId } : {}),
+          plannedVisits: { gt: 0 },
+        },
+        take: limit * 2, // Get extra to filter by completion rate
+        include: {
+          patient: {
+            include: {
+              demographics: {
+                select: { firstName: true, lastName: true },
+              },
+            },
+          },
+          provider: {
+            include: {
+              user: { select: { firstName: true, lastName: true } },
+            },
+          },
+          encounters: {
+            where: { status: 'COMPLETED' },
+            select: { id: true },
+          },
+          goals: {
+            select: { id: true, name: true, status: true, progress: true },
+          },
+        },
+      });
+
+      const incompletePlans = plans
+        .map(plan => {
+          const completedVisits = plan.encounters.length;
+          const plannedVisits = plan.plannedVisits || 1;
+          const completionRate = completedVisits / plannedVisits;
+
+          // Calculate time elapsed
+          const planDuration = plan.endDate
+            ? (plan.endDate.getTime() - plan.startDate.getTime()) / (1000 * 60 * 60 * 24)
+            : 90;
+          const daysElapsed = (now.getTime() - plan.startDate.getTime()) / (1000 * 60 * 60 * 24);
+          const expectedCompletionRate = Math.min(1, daysElapsed / planDuration);
+
+          // Calculate goal progress
+          const totalGoals = plan.goals.length;
+          const achievedGoals = plan.goals.filter(g => g.status === 'ACHIEVED').length;
+          const avgGoalProgress = totalGoals > 0
+            ? plan.goals.reduce((sum, g) => sum + (g.progress || 0), 0) / totalGoals
+            : 0;
+
+          return {
+            patientId: plan.patientId,
+            patientName: getPatientName(plan.patient),
+            treatmentPlanId: plan.id,
+            treatmentPlanName: plan.name,
+            providerId: plan.providerId,
+            providerName: plan.provider?.user
+              ? `${plan.provider.user.firstName} ${plan.provider.user.lastName}`
+              : 'Unknown',
+            startDate: plan.startDate,
+            endDate: plan.endDate,
+            plannedVisits,
+            completedVisits,
+            completionRate,
+            expectedCompletionRate,
+            behindBy: Math.round((expectedCompletionRate - completionRate) * plannedVisits),
+            totalGoals,
+            achievedGoals,
+            avgGoalProgress,
+            riskLevel: completionRate < expectedCompletionRate * 0.3 ? 'CRITICAL'
+              : completionRate < expectedCompletionRate * 0.5 ? 'HIGH'
+              : completionRate < expectedCompletionRate * 0.75 ? 'MEDIUM'
+              : 'LOW',
+          };
+        })
+        .filter(p => p.completionRate <= maxCompletionRate)
+        .sort((a, b) => a.completionRate - b.completionRate)
+        .slice(0, limit);
+
+      return incompletePlans;
+    }),
+
+  // Get patients missing outcome assessments
+  getMissingAssessments: protectedProcedure
+    .input(
+      z.object({
+        assessmentType: z.string().optional(),
+        minDaysSinceAssessment: z.number().default(30),
+        limit: z.number().min(1).max(100).default(50),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { assessmentType, minDaysSinceAssessment, limit } = input;
+      const now = new Date();
+      const threshold = new Date(now.getTime() - minDaysSinceAssessment * 24 * 60 * 60 * 1000);
+
+      // Get patients with active treatment plans
+      const patients = await ctx.prisma.patient.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          isActive: true,
+          treatmentPlans: {
+            some: { status: 'ACTIVE' },
+          },
+        },
+        take: limit * 2,
+        include: {
+          demographics: {
+            select: { firstName: true, lastName: true },
+          },
+          treatmentPlans: {
+            where: { status: 'ACTIVE' },
+            select: { id: true, name: true },
+          },
+          encounters: {
+            orderBy: { encounterDate: 'desc' },
+            take: 10,
+            include: {
+              outcomeAssessments: {
+                ...(assessmentType ? { where: { type: assessmentType } } : {}),
+                orderBy: { assessmentDate: 'desc' },
+              },
+            },
+          },
+        },
+      });
+
+      const missingAssessments = patients
+        .map(patient => {
+          const allAssessments = patient.encounters.flatMap(e => e.outcomeAssessments);
+          const lastAssessment = allAssessments.length > 0
+            ? allAssessments.reduce((latest, a) =>
+                a.assessmentDate > latest.assessmentDate ? a : latest
+              )
+            : null;
+
+          const daysSinceAssessment = lastAssessment
+            ? Math.floor((now.getTime() - lastAssessment.assessmentDate.getTime()) / (1000 * 60 * 60 * 24))
+            : null;
+
+          return {
+            patientId: patient.id,
+            patientName: getPatientName(patient),
+            activeTreatmentPlans: patient.treatmentPlans.map(p => ({
+              id: p.id,
+              name: p.name,
+            })),
+            lastAssessmentDate: lastAssessment?.assessmentDate || null,
+            lastAssessmentType: lastAssessment?.type || null,
+            lastAssessmentScore: lastAssessment?.score || null,
+            daysSinceAssessment,
+            totalAssessmentsOnRecord: allAssessments.length,
+            needsAssessment: !lastAssessment || daysSinceAssessment! > minDaysSinceAssessment,
+            urgency: !lastAssessment ? 'HIGH'
+              : daysSinceAssessment! > 60 ? 'HIGH'
+              : daysSinceAssessment! > 45 ? 'MEDIUM'
+              : 'LOW',
+          };
+        })
+        .filter(p => p.needsAssessment)
+        .sort((a, b) => (b.daysSinceAssessment || 999) - (a.daysSinceAssessment || 999))
+        .slice(0, limit);
+
+      return missingAssessments;
+    }),
+
+  // Get lapsed patients
+  getLapsedPatients: protectedProcedure
+    .input(
+      z.object({
+        minDaysLapsed: z.number().default(60),
+        maxDaysLapsed: z.number().default(365),
+        excludeCompletedPlans: z.boolean().default(false),
+        limit: z.number().min(1).max(100).default(50),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { minDaysLapsed, maxDaysLapsed, excludeCompletedPlans, limit } = input;
+      const now = new Date();
+      const minThreshold = new Date(now.getTime() - maxDaysLapsed * 24 * 60 * 60 * 1000);
+      const maxThreshold = new Date(now.getTime() - minDaysLapsed * 24 * 60 * 60 * 1000);
+
+      // Find patients with last completed appointment in the lapsed window
+      const lapsedPatients = await ctx.prisma.patient.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          isActive: true,
+          appointments: {
+            some: {
+              status: 'COMPLETED',
+              startTime: {
+                gte: minThreshold,
+                lte: maxThreshold,
+              },
+            },
+            none: {
+              status: 'SCHEDULED',
+              startTime: { gt: now },
+            },
+          },
+          ...(excludeCompletedPlans
+            ? {
+                treatmentPlans: {
+                  none: {
+                    status: 'COMPLETED',
+                    endDate: { gte: maxThreshold },
+                  },
+                },
+              }
+            : {}),
+        },
+        take: limit,
+        include: {
+          demographics: {
+            select: { firstName: true, lastName: true, phone: true, email: true },
+          },
+          appointments: {
+            where: { status: 'COMPLETED' },
+            orderBy: { startTime: 'desc' },
+            take: 1,
+          },
+          treatmentPlans: {
+            orderBy: { updatedAt: 'desc' },
+            take: 1,
+            select: { id: true, name: true, status: true },
+          },
+          careOutreaches: {
+            where: { type: 'REACTIVATION' },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
+        },
+      });
+
+      return lapsedPatients.map(patient => {
+        const lastVisit = patient.appointments[0]?.startTime;
+        const daysSinceVisit = lastVisit
+          ? Math.floor((now.getTime() - lastVisit.getTime()) / (1000 * 60 * 60 * 24))
+          : null;
+        const lastOutreach = patient.careOutreaches[0];
+
+        return {
+          patientId: patient.id,
+          patientName: getPatientName(patient),
+          phone: patient.demographics?.phone,
+          email: patient.demographics?.email,
+          lastVisitDate: lastVisit,
+          daysSinceVisit,
+          lastTreatmentPlan: patient.treatmentPlans[0] || null,
+          lastReactivationOutreach: lastOutreach
+            ? {
+                date: lastOutreach.createdAt,
+                status: lastOutreach.status,
+                responded: !!lastOutreach.respondedAt,
+              }
+            : null,
+          reactivationPriority: daysSinceVisit && daysSinceVisit > 180 ? 'LOW'
+            : daysSinceVisit && daysSinceVisit > 120 ? 'MEDIUM'
+            : 'HIGH',
+          suggestedAction: !lastOutreach || (lastOutreach.createdAt < maxThreshold)
+            ? 'SEND_REACTIVATION'
+            : lastOutreach.status === 'SENT' && !lastOutreach.respondedAt
+            ? 'FOLLOW_UP_CALL'
+            : 'MONITOR',
+        };
+      });
+    }),
+
+  // Get condition-specific care gaps
+  getConditionSpecificGaps: protectedProcedure
+    .input(
+      z.object({
+        conditionCode: z.string().optional(), // ICD-10 code filter
+        conditionCategory: z.enum(['ACUTE', 'CHRONIC', 'MAINTENANCE', 'WELLNESS']).optional(),
+        limit: z.number().min(1).max(100).default(50),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { conditionCode, conditionCategory, limit } = input;
+      const now = new Date();
+
+      // Get patients with diagnoses matching the condition
+      const encounters = await ctx.prisma.encounter.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: 'COMPLETED',
+          diagnoses: {
+            some: {
+              ...(conditionCode ? { code: { contains: conditionCode } } : {}),
+            },
+          },
+        },
+        orderBy: { encounterDate: 'desc' },
+        take: limit * 3,
+        include: {
+          patient: {
+            include: {
+              demographics: {
+                select: { firstName: true, lastName: true },
+              },
+              treatmentPlans: {
+                where: { status: 'ACTIVE' },
+              },
+              appointments: {
+                where: {
+                  status: 'SCHEDULED',
+                  startTime: { gt: now },
+                },
+                orderBy: { startTime: 'asc' },
+                take: 1,
+              },
+            },
+          },
+          diagnoses: true,
+        },
+      });
+
+      // Group by patient and analyze gaps based on condition
+      const patientMap = new Map<string, typeof encounters[0]>();
+      for (const enc of encounters) {
+        if (!patientMap.has(enc.patientId)) {
+          patientMap.set(enc.patientId, enc);
+        }
+      }
+
+      const conditionGaps = Array.from(patientMap.values())
+        .map(enc => {
+          const diagnosis = enc.diagnoses[0];
+          const daysSinceEncounter = Math.floor(
+            (now.getTime() - enc.encounterDate.getTime()) / (1000 * 60 * 60 * 24)
+          );
+
+          // Determine expected follow-up based on condition characteristics
+          // This is a simplified heuristic - real implementation would use condition-specific protocols
+          const isAcute = diagnosis?.code?.startsWith('S') || diagnosis?.code?.startsWith('M54');
+          const isChronic = diagnosis?.code?.startsWith('M') && !isAcute;
+
+          let expectedFollowupDays: number;
+          let conditionType: string;
+
+          if (isAcute) {
+            expectedFollowupDays = 7;
+            conditionType = 'ACUTE';
+          } else if (isChronic) {
+            expectedFollowupDays = 14;
+            conditionType = 'CHRONIC';
+          } else {
+            expectedFollowupDays = 30;
+            conditionType = 'MAINTENANCE';
+          }
+
+          // Filter by condition category if specified
+          if (conditionCategory && conditionType !== conditionCategory) {
+            return null;
+          }
+
+          const isOverdue = daysSinceEncounter > expectedFollowupDays;
+          const hasUpcoming = enc.patient.appointments.length > 0;
+          const hasActivePlan = enc.patient.treatmentPlans.length > 0;
+
+          if (!isOverdue || hasUpcoming) {
+            return null;
+          }
+
+          return {
+            patientId: enc.patientId,
+            patientName: getPatientName(enc.patient),
+            conditionCode: diagnosis?.code,
+            conditionDescription: diagnosis?.description,
+            conditionType,
+            lastEncounterDate: enc.encounterDate,
+            daysSinceEncounter,
+            expectedFollowupDays,
+            daysOverdue: daysSinceEncounter - expectedFollowupDays,
+            hasActiveTreatmentPlan: hasActivePlan,
+            hasUpcomingAppointment: hasUpcoming,
+            recommendedAction: !hasActivePlan
+              ? 'CREATE_TREATMENT_PLAN'
+              : daysSinceEncounter > expectedFollowupDays * 2
+              ? 'URGENT_OUTREACH'
+              : 'SCHEDULE_FOLLOWUP',
+            priority: daysSinceEncounter > expectedFollowupDays * 3 ? 10
+              : daysSinceEncounter > expectedFollowupDays * 2 ? 8
+              : daysSinceEncounter > expectedFollowupDays * 1.5 ? 6
+              : 4,
+          };
+        })
+        .filter((g): g is NonNullable<typeof g> => g !== null)
+        .sort((a, b) => b.priority - a.priority)
+        .slice(0, limit);
+
+      return conditionGaps;
+    }),
+
+  // Auto-generate outreach tasks for care gaps
+  generateOutreachTasks: protectedProcedure
+    .input(
+      z.object({
+        gapIds: z.array(z.string()).optional(), // Specific gaps to process
+        gapTypes: z.array(z.string()).optional(),
+        minPriority: z.number().min(1).max(10).default(5),
+        maxTasks: z.number().min(1).max(50).default(20),
+        scheduleOutreach: z.boolean().default(true),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { gapIds, gapTypes, minPriority, maxTasks, scheduleOutreach } = input;
+
+      // Get unaddressed care gaps
+      const gaps = await ctx.prisma.careGap.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: { in: ['IDENTIFIED', 'ESCALATED'] },
+          priority: { gte: minPriority },
+          ...(gapIds ? { id: { in: gapIds } } : {}),
+          ...(gapTypes ? { gapType: { in: gapTypes as any } } : {}),
+        },
+        take: maxTasks,
+        orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
+        include: {
+          patient: {
+            include: {
+              demographics: {
+                select: { firstName: true, lastName: true, phone: true, email: true },
+              },
+              communicationPreferences: true,
+            },
+          },
+        },
+      });
+
+      const tasks: Array<{
+        gapId: string;
+        patientId: string;
+        patientName: string;
+        outreachType: string;
+        channel: string;
+        scheduledAt: Date;
+        message: string;
+        outreachId: string | null;
+      }> = [];
+
+      const now = new Date();
+
+      for (const gap of gaps) {
+        const patientName = getPatientName(gap.patient);
+        const firstName = gap.patient.demographics?.firstName || 'there';
+
+        // Determine outreach type based on gap type
+        let outreachType: CareOutreachType;
+        let message: string;
+
+        switch (gap.gapType) {
+          case 'OVERDUE_FOLLOWUP':
+            outreachType = 'FOLLOWUP_SCHEDULING';
+            message = `Hi ${firstName}, we noticed it's been a while since your last visit. We'd like to schedule a follow-up to check on your progress. Please call us or reply to schedule your next appointment.`;
+            break;
+          case 'MISSED_APPOINTMENT':
+            outreachType = 'FOLLOWUP_SCHEDULING';
+            message = `Hi ${firstName}, we missed you at your recent appointment. Your health is important to us - please call or reply to reschedule at your earliest convenience.`;
+            break;
+          case 'LAPSED_PATIENT':
+            outreachType = 'REACTIVATION';
+            message = `Hi ${firstName}, we hope you're doing well! It's been a while since we've seen you. If you're experiencing any issues or would like a check-up, we'd love to have you back. Reply or call to schedule.`;
+            break;
+          case 'MISSING_ASSESSMENT':
+            outreachType = 'OUTCOME_ASSESSMENT';
+            message = `Hi ${firstName}, we'd like to track your progress with a quick assessment at your next visit. This helps us ensure your treatment is on track. Please schedule your next appointment.`;
+            break;
+          case 'OVERDUE_RECALL':
+            outreachType = 'RECALL_REMINDER';
+            message = `Hi ${firstName}, you're due for your maintenance visit. Regular check-ups help maintain your progress. Call or reply to schedule your appointment.`;
+            break;
+          default:
+            outreachType = 'CARE_GAP_NOTIFICATION';
+            message = `Hi ${firstName}, we'd like to follow up with you about your care. Please contact us to schedule your next appointment.`;
+        }
+
+        // Determine preferred channel
+        const prefs = gap.patient.communicationPreferences;
+        const prefersSMS = prefs?.find(p => p.channel === 'sms' && p.optIn);
+        const prefersEmail = prefs?.find(p => p.channel === 'email' && p.optIn);
+        const channel = prefersSMS ? 'sms' : prefersEmail ? 'email' : 'sms';
+
+        // Schedule outreach for tomorrow morning by default
+        const scheduledAt = new Date(now);
+        scheduledAt.setDate(scheduledAt.getDate() + 1);
+        scheduledAt.setHours(9, 0, 0, 0);
+
+        let outreachId: string | null = null;
+
+        if (scheduleOutreach) {
+          // Create outreach record
+          const outreach = await ctx.prisma.careOutreach.create({
+            data: {
+              organizationId: ctx.user.organizationId,
+              patientId: gap.patientId,
+              type: outreachType,
+              status: 'SCHEDULED',
+              scheduledAt,
+              channel,
+              content: message,
+              personalizationData: {
+                gapType: gap.gapType,
+                gapPriority: gap.priority,
+              },
+            },
+          });
+          outreachId = outreach.id;
+
+          // Update gap status
+          await ctx.prisma.careGap.update({
+            where: { id: gap.id },
+            data: {
+              status: 'OUTREACH_SCHEDULED',
+              outreachCount: { increment: 1 },
+              nextOutreachAt: scheduledAt,
+            },
+          });
+
+          // Create action record
+          await ctx.prisma.careCoordinatorAction.create({
+            data: {
+              organizationId: ctx.user.organizationId,
+              patientId: gap.patientId,
+              actionType: 'TASK_CREATED',
+              title: `Scheduled ${outreachType} outreach`,
+              description: `Auto-generated outreach task for ${gap.gapType} care gap`,
+              result: 'success',
+              careGapId: gap.id,
+              outreachId: outreach.id,
+              aiInitiated: true,
+              aiReasoning: `Gap priority ${gap.priority}/10 triggered automatic outreach scheduling`,
+            },
+          });
+        }
+
+        tasks.push({
+          gapId: gap.id,
+          patientId: gap.patientId,
+          patientName,
+          outreachType,
+          channel,
+          scheduledAt,
+          message,
+          outreachId,
+        });
+      }
+
+      // Log audit
+      await auditLog({
+        organizationId: ctx.user.organizationId,
+        userId: ctx.user.id,
+        action: 'AI_CARE_OUTREACH_RECOMMEND',
+        resourceType: 'CareOutreach',
+        details: {
+          gapsProcessed: gaps.length,
+          tasksGenerated: tasks.length,
+          outreachScheduled: scheduleOutreach,
+        },
+      });
+
+      return {
+        gapsProcessed: gaps.length,
+        tasksGenerated: tasks.length,
+        tasks,
+      };
+    }),
+
+  // Get prioritized care gaps summary
+  getCareGapsSummary: protectedProcedure
+    .input(
+      z.object({
+        providerId: z.string().optional(),
+        includeResolved: z.boolean().default(false),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { providerId, includeResolved } = input;
+
+      // Build base where clause
+      const whereBase: Prisma.CareGapWhereInput = {
+        organizationId: ctx.user.organizationId,
+        ...(includeResolved ? {} : { status: { not: 'RESOLVED' } }),
+      };
+
+      // Get counts by type and priority
+      const gapsByType = await ctx.prisma.careGap.groupBy({
+        by: ['gapType'],
+        where: whereBase,
+        _count: true,
+      });
+
+      const gapsByStatus = await ctx.prisma.careGap.groupBy({
+        by: ['status'],
+        where: whereBase,
+        _count: true,
+      });
+
+      const gapsByPriority = await ctx.prisma.careGap.groupBy({
+        by: ['priority'],
+        where: whereBase,
+        _count: true,
+      });
+
+      // Get critical gaps (priority >= 8)
+      const criticalGaps = await ctx.prisma.careGap.findMany({
+        where: {
+          ...whereBase,
+          priority: { gte: 8 },
+        },
+        take: 10,
+        orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
+        include: {
+          patient: {
+            include: {
+              demographics: {
+                select: { firstName: true, lastName: true },
+              },
+            },
+          },
+        },
+      });
+
+      // Get recent resolutions
+      const recentResolutions = await ctx.prisma.careGap.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: 'RESOLVED',
+          resolvedDate: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+        },
+        take: 5,
+        orderBy: { resolvedDate: 'desc' },
+      });
+
+      // Calculate totals
+      const totalOpen = gapsByStatus
+        .filter(g => g.status !== 'RESOLVED' && g.status !== 'DISMISSED')
+        .reduce((sum, g) => sum + g._count, 0);
+
+      const priorityCounts = {
+        critical: gapsByPriority.filter(g => g.priority >= 9).reduce((sum, g) => sum + g._count, 0),
+        high: gapsByPriority.filter(g => g.priority >= 7 && g.priority < 9).reduce((sum, g) => sum + g._count, 0),
+        medium: gapsByPriority.filter(g => g.priority >= 4 && g.priority < 7).reduce((sum, g) => sum + g._count, 0),
+        low: gapsByPriority.filter(g => g.priority < 4).reduce((sum, g) => sum + g._count, 0),
+      };
+
+      return {
+        totalOpenGaps: totalOpen,
+        byType: Object.fromEntries(gapsByType.map(g => [g.gapType, g._count])),
+        byStatus: Object.fromEntries(gapsByStatus.map(g => [g.status, g._count])),
+        byPriority: priorityCounts,
+        criticalGaps: criticalGaps.map(g => ({
+          id: g.id,
+          patientId: g.patientId,
+          patientName: getPatientName(g.patient),
+          gapType: g.gapType,
+          title: g.title,
+          priority: g.priority,
+          dueDate: g.dueDate,
+          daysSinceIdentified: Math.floor(
+            (Date.now() - g.createdAt.getTime()) / (1000 * 60 * 60 * 24)
+          ),
+        })),
+        recentResolutions: recentResolutions.length,
+        resolutionRate: totalOpen > 0
+          ? Math.round((recentResolutions.length / (totalOpen + recentResolutions.length)) * 100)
+          : 100,
+      };
+    }),
 });
+
+// Helper function to calculate gap priority based on type and severity
+function calculateGapPriority(gapType: string, value: number, threshold: number): number {
+  const ratio = value / threshold;
+
+  let basePriority: number;
+  switch (gapType) {
+    case 'MISSED_APPOINTMENT':
+      basePriority = 7;
+      break;
+    case 'OVERDUE_FOLLOWUP':
+      basePriority = 6;
+      break;
+    case 'INCOMPLETE_TREATMENT':
+      basePriority = 6;
+      break;
+    case 'LAPSED_PATIENT':
+      basePriority = 5;
+      break;
+    case 'MISSING_ASSESSMENT':
+      basePriority = 4;
+      break;
+    case 'OVERDUE_RECALL':
+      basePriority = 4;
+      break;
+    case 'MISSED_MILESTONE':
+      basePriority = 5;
+      break;
+    default:
+      basePriority = 5;
+  }
+
+  // Adjust priority based on how far past threshold
+  if (ratio >= 3) return Math.min(10, basePriority + 3);
+  if (ratio >= 2) return Math.min(10, basePriority + 2);
+  if (ratio >= 1.5) return Math.min(10, basePriority + 1);
+  return basePriority;
+}

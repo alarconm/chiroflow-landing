@@ -146,6 +146,12 @@ model Organization {
   revenueOpportunities RevenueOpportunity[]
   nlQueryHistory       NLQueryHistory[]
 
+  // AI Revenue Optimizer relations (Epic 35)
+  revenueLeakages     RevenueLeakage[]
+  feeScheduleAnalyses FeeScheduleAnalysis[]
+  revenueGoals        RevenueGoal[]
+  optimizationActions OptimizationAction[]
+
   // Marketing & Referrals relations (Epic 18)
   referralPrograms  ReferralProgram[]
   referrals         Referral[]
@@ -250,13 +256,13 @@ model Organization {
   aiBillingMetrics   AIBillingMetric[]
 
   // AI Documentation Agent relations (Epic 32)
-  aiTranscriptions        AITranscription[]
-  aiDraftNotes            AIDraftNote[]
-  aiCodeSuggestions       AICodeSuggestion[]
-  aiComplianceChecks      AIComplianceCheck[]
-  providerPreferences     ProviderPreference[]
-  textMacros              TextMacro[]
-  aiTemplateSuggestions   AITemplateSuggestion[]
+  aiTranscriptions      AITranscription[]
+  aiDraftNotes          AIDraftNote[]
+  aiCodeSuggestions     AICodeSuggestion[]
+  aiComplianceChecks    AIComplianceCheck[]
+  providerPreferences   ProviderPreference[]
+  textMacros            TextMacro[]
+  aiTemplateSuggestions AITemplateSuggestion[]
 
   // AI Care Coordinator Agent relations (Epic 33)
   careGaps                CareGap[]
@@ -1436,11 +1442,11 @@ model Encounter {
   homeCareInstructions  HomeCareInstruction[]
 
   // AI Documentation Agent relations (Epic 32)
-  aiTranscriptions       AITranscription[]
-  aiDraftNotes           AIDraftNote[]
-  aiCodeSuggestions      AICodeSuggestion[]
-  aiComplianceChecks     AIComplianceCheck[]
-  aiTemplateSuggestions  AITemplateSuggestion[]
+  aiTranscriptions      AITranscription[]
+  aiDraftNotes          AIDraftNote[]
+  aiCodeSuggestions     AICodeSuggestion[]
+  aiComplianceChecks    AIComplianceCheck[]
+  aiTemplateSuggestions AITemplateSuggestion[]
 
   @@index([organizationId])
   @@index([patientId])
@@ -6553,11 +6559,210 @@ model RevenueOpportunity {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  // Actions taken on this opportunity
+  actions OptimizationAction[]
+
   @@index([organizationId])
   @@index([opportunityType])
   @@index([status])
   @@index([detectedAt])
   @@index([estimatedValue])
+}
+
+// ============================================
+// EPIC 35: AI REVENUE OPTIMIZER
+// ============================================
+
+// Revenue leakage tracking - identifies lost revenue
+model RevenueLeakage {
+  id          String @id @default(cuid())
+  leakageType String // unbilled_service, undercoding, missed_modifier, unbilled_supplies, write_off, collection_issue
+
+  // Source of leakage
+  source      String // e.g., "Patient visits", "CMT codes", "Supply billing"
+  description String @db.Text
+
+  // Financial impact
+  amount       Decimal  @db.Decimal(10, 2) // Estimated leaked amount
+  frequency    String? // daily, weekly, monthly, one_time
+  annualImpact Decimal? @db.Decimal(12, 2) // Projected annual impact
+
+  // Context
+  entityType String? // Patient, Encounter, Claim, Provider
+  entityId   String?
+  cptCode    String?
+  payerName  String?
+  providerId String?
+
+  // Recommendation
+  recommendation String  @db.Text
+  priority       String  @default("medium") // low, medium, high, critical
+  effortLevel    String? // easy, moderate, complex
+
+  // Status
+  status     String    @default("identified") // identified, investigating, fixing, resolved, ignored
+  resolvedAt DateTime?
+  resolvedBy String?
+  resolution String?   @db.Text
+
+  detectedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([leakageType])
+  @@index([status])
+  @@index([priority])
+  @@index([detectedAt])
+  @@index([amount])
+}
+
+// Fee schedule analysis - pricing optimization
+model FeeScheduleAnalysis {
+  id      String  @id @default(cuid())
+  cptCode String
+  cptName String?
+
+  // Current pricing
+  currentFee Decimal @db.Decimal(10, 2)
+
+  // Recommended pricing
+  recommendedFee Decimal @db.Decimal(10, 2)
+  feeChange      Decimal @db.Decimal(10, 2) // Difference
+  changePercent  Decimal @db.Decimal(5, 2) // Percentage change
+
+  // Analysis reasoning
+  reasoning String @db.Text
+
+  // Benchmark comparisons
+  medicareRate      Decimal? @db.Decimal(10, 2)
+  regionalAverage   Decimal? @db.Decimal(10, 2)
+  percentOfMedicare Decimal? @db.Decimal(5, 2) // e.g., 125 = 125% of Medicare
+
+  // Payer analysis
+  topPayerRate     Decimal? @db.Decimal(10, 2)
+  avgReimbursement Decimal? @db.Decimal(10, 2)
+  utilizationCount Int? // How many times this code is used
+
+  // Revenue impact
+  projectedAnnualImpact Decimal? @db.Decimal(12, 2)
+  confidence            Decimal? @db.Decimal(5, 2) // 0-100
+
+  // Status
+  status        String    @default("pending") // pending, approved, rejected, implemented
+  approvedBy    String?
+  approvedAt    DateTime?
+  effectiveDate DateTime?
+
+  analyzedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, cptCode, analyzedAt])
+  @@index([organizationId])
+  @@index([cptCode])
+  @@index([status])
+  @@index([changePercent])
+  @@index([projectedAnnualImpact])
+}
+
+// Revenue goals and tracking
+model RevenueGoal {
+  id         String @id @default(cuid())
+  period     String // 2024-01, 2024-Q1, 2024, etc.
+  periodType String // daily, weekly, monthly, quarterly, annual
+
+  // Goal details
+  goalType String  @default("total_revenue") // total_revenue, collections, new_patients, etc.
+  name     String? // Custom name for the goal
+
+  // Financial targets
+  target   Decimal @db.Decimal(12, 2)
+  actual   Decimal @default(0) @db.Decimal(12, 2)
+  variance Decimal @default(0) @db.Decimal(12, 2) // actual - target
+
+  // Performance metrics
+  percentAchieved Decimal  @default(0) @db.Decimal(5, 2)
+  onTrack         Boolean  @default(true)
+  projectedFinal  Decimal? @db.Decimal(12, 2) // Projected end-of-period
+
+  // Breakdown (optional)
+  breakdown Json? // { "services": 50000, "products": 10000, etc. }
+
+  // Notes and context
+  notes       String?  @db.Text
+  createdBy   String?
+  lastUpdated DateTime @default(now())
+
+  startDate DateTime
+  endDate   DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, period, goalType])
+  @@index([organizationId])
+  @@index([period])
+  @@index([periodType])
+  @@index([goalType])
+  @@index([onTrack])
+}
+
+// Optimization actions taken
+model OptimizationAction {
+  id String @id @default(cuid())
+
+  // Link to opportunity (optional - can be standalone action)
+  opportunityId String?
+  opportunity   RevenueOpportunity? @relation(fields: [opportunityId], references: [id])
+
+  // Action details
+  actionType String // fee_update, coding_change, process_improvement, etc.
+  action     String  @db.Text // Description of action taken
+  rationale  String? @db.Text // Why this action was taken
+
+  // Impact tracking
+  projectedImpact Decimal? @db.Decimal(12, 2)
+  actualImpact    Decimal? @db.Decimal(12, 2)
+  impactPeriod    String? // monthly, annual
+
+  // Result
+  result  String?  @db.Text // Outcome description
+  success Boolean? // Was the action successful
+
+  // Status
+  status      String    @default("planned") // planned, in_progress, completed, failed, cancelled
+  completedAt DateTime?
+  completedBy String?
+
+  // Tracking
+  startedAt DateTime?
+  dueDate   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([opportunityId])
+  @@index([actionType])
+  @@index([status])
+  @@index([createdAt])
 }
 
 // Natural language query history
@@ -11576,16 +11781,16 @@ model AITranscription {
   status TranscriptionStatus @default(RECORDING)
 
   // Audio information
-  audioUrl     String? // URL to stored audio file
+  audioUrl      String? // URL to stored audio file
   audioDuration Int     @default(0) // Duration in seconds
 
   // Transcription content
-  transcript   String? @db.Text // Full transcript text
-  segments     Json? // Array of { speaker, text, startTime, endTime, confidence }
+  transcript String? @db.Text // Full transcript text
+  segments   Json? // Array of { speaker, text, startTime, endTime, confidence }
 
   // Speaker diarization
-  speakerCount    Int     @default(2) // Number of speakers detected
-  speakerLabels   Json? // { "SPEAKER_1": "provider", "SPEAKER_2": "patient" }
+  speakerCount  Int   @default(2) // Number of speakers detected
+  speakerLabels Json? // { "SPEAKER_1": "provider", "SPEAKER_2": "patient" }
 
   // Processing metadata
   transcriptionModel String? // e.g., "whisper-1", "deepgram"
@@ -11593,12 +11798,12 @@ model AITranscription {
   accuracy           Float? // Overall transcription accuracy 0-1
 
   // Medical terminology processing
-  medicalTermsFound   Json? // Array of detected medical terms
-  correctedTerms      Json? // Auto-corrections made { original, corrected }
+  medicalTermsFound Json? // Array of detected medical terms
+  correctedTerms    Json? // Auto-corrections made { original, corrected }
 
   // Timing
-  startedAt   DateTime  @default(now())
-  endedAt     DateTime?
+  startedAt    DateTime  @default(now())
+  endedAt      DateTime?
   processingMs Int? // Time to process transcription
 
   // Error tracking
@@ -11650,14 +11855,14 @@ model AIDraftNote {
   styleElements   Json? // Which style elements were applied
 
   // Provider review
-  reviewedAt      DateTime?
+  reviewedAt       DateTime?
   reviewedByUserId String?
-  reviewNotes     String? @db.Text
+  reviewNotes      String?   @db.Text
 
   // Edits tracking
-  editedContent   Json? // Provider's edited version
-  editCount       Int   @default(0)
-  editReasons     Json? // Array of edit reasons for learning
+  editedContent Json? // Provider's edited version
+  editCount     Int   @default(0)
+  editReasons   Json? // Array of edit reasons for learning
 
   // AI metadata
   aiModelUsed      String?
@@ -11700,7 +11905,7 @@ model AICodeSuggestion {
   codeDescription String? // Human-readable description
 
   // Reasoning
-  reasoning      String @db.Text // Why this code was suggested
+  reasoning      String  @db.Text // Why this code was suggested
   evidenceQuotes Json? // Quotes from documentation supporting this code
   relevantText   String? @db.Text // Text that triggered suggestion
 
@@ -11712,8 +11917,8 @@ model AICodeSuggestion {
   alternatives Json? // Array of { code, description, confidence, reasoning }
 
   // Code validation
-  codeValid      Boolean @default(true) // Is the code currently valid
-  specificityOk  Boolean @default(true) // Is specificity appropriate
+  codeValid       Boolean @default(true) // Is the code currently valid
+  specificityOk   Boolean @default(true) // Is specificity appropriate
   modifiersNeeded Json? // Suggested modifiers
 
   // Compliance flags
@@ -11759,7 +11964,7 @@ model AIComplianceCheck {
   issueType   String // e.g., "MISSING_ELEMENT", "SPECIFICITY", "MEDICAL_NECESSITY"
   severity    ComplianceSeverity
   title       String
-  description String @db.Text
+  description String             @db.Text
 
   // Location of issue
   soapSection String? // subjective, objective, assessment, plan
@@ -11772,17 +11977,17 @@ model AIComplianceCheck {
   payerSpecific     String? // Which payer this applies to (null = all)
 
   // Suggestions
-  suggestion     String? @db.Text // How to fix the issue
-  exampleFix     String? @db.Text // Example correction
-  autoFixable    Boolean @default(false) // Can AI auto-fix
-  suggestedText  String? @db.Text // If autoFixable, the suggested text
+  suggestion    String? @db.Text // How to fix the issue
+  exampleFix    String? @db.Text // Example correction
+  autoFixable   Boolean @default(false) // Can AI auto-fix
+  suggestedText String? @db.Text // If autoFixable, the suggested text
 
   // Resolution
-  resolved       Boolean   @default(false)
-  resolvedAt     DateTime?
-  resolvedBy     String? // User ID who resolved
-  resolution     String? // How it was resolved
-  wasDismissed   Boolean   @default(false) // Dismissed without fixing
+  resolved     Boolean   @default(false)
+  resolvedAt   DateTime?
+  resolvedBy   String? // User ID who resolved
+  resolution   String? // How it was resolved
+  wasDismissed Boolean   @default(false) // Dismissed without fixing
 
   // Risk scoring
   auditRiskImpact Int? // Impact on audit risk 0-100
@@ -11827,14 +12032,14 @@ model ProviderPreference {
   preferenceValue Json // The learned value/pattern
 
   // Learning data
-  learnedFrom    Int      @default(0) // Number of examples this was learned from
-  confidenceScore Float   @default(0.5) // How confident we are in this preference
-  lastUpdated    DateTime @default(now()) // When preference was last updated
+  learnedFrom     Int      @default(0) // Number of examples this was learned from
+  confidenceScore Float    @default(0.5) // How confident we are in this preference
+  lastUpdated     DateTime @default(now()) // When preference was last updated
 
   // Usage tracking
-  timesApplied  Int       @default(0) // Times this preference was applied
-  timesAccepted Int       @default(0) // Times the result was accepted
-  timesRejected Int       @default(0) // Times the result was rejected/edited
+  timesApplied  Int @default(0) // Times this preference was applied
+  timesAccepted Int @default(0) // Times the result was accepted
+  timesRejected Int @default(0) // Times the result was rejected/edited
 
   // Example data
   examples Json? // Array of examples that formed this preference
@@ -11868,7 +12073,7 @@ model TextMacro {
 
   // Macro trigger and expansion
   trigger     String // Short trigger text like ".hpi" or ".pain"
-  expansion   String @db.Text // Full expansion text
+  expansion   String  @db.Text // Full expansion text
   description String? // Human-readable description
 
   // Macro category
@@ -11885,8 +12090,8 @@ model TextMacro {
   variables Json? // Variables that need to be filled in
 
   // Usage tracking
-  usageCount    Int      @default(0)
-  lastUsedAt    DateTime?
+  usageCount Int       @default(0)
+  lastUsedAt DateTime?
 
   // AI learning
   learnedFromProvider Boolean @default(false) // Was this learned from provider patterns?
@@ -12054,14 +12259,14 @@ model CareGap {
 
   // Gap details
   title       String // Human-readable title
-  description String? @db.Text // Detailed description
+  description String?   @db.Text // Detailed description
   dueDate     DateTime? // When this gap should be addressed
   priority    Int       @default(5) // 1-10, higher = more urgent
 
   // Resolution tracking
-  resolvedDate DateTime?
-  resolvedBy   String? // User ID who resolved
-  resolution   String? // How it was resolved
+  resolvedDate    DateTime?
+  resolvedBy      String? // User ID who resolved
+  resolution      String? // How it was resolved
   dismissedReason String? // If dismissed, why
 
   // Related care data
@@ -12070,14 +12275,14 @@ model CareGap {
   encounterId     String? // Related encounter
 
   // Auto-detection metadata
-  detectedBy      String? // Algorithm/rule that detected this
-  detectionScore  Float? // Confidence score of detection
-  detectionData   Json? // Additional detection context
+  detectedBy     String? // Algorithm/rule that detected this
+  detectionScore Float? // Confidence score of detection
+  detectionData  Json? // Additional detection context
 
   // Outreach tracking
-  outreachCount   Int       @default(0) // Number of outreach attempts
-  lastOutreachAt  DateTime? // Last outreach attempt
-  nextOutreachAt  DateTime? // Scheduled next outreach
+  outreachCount  Int       @default(0) // Number of outreach attempts
+  lastOutreachAt DateTime? // Last outreach attempt
+  nextOutreachAt DateTime? // Scheduled next outreach
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -12118,10 +12323,10 @@ model CareOutreach {
   templateId String? // Template used
 
   // Delivery tracking
-  deliveredAt  DateTime?
-  openedAt     DateTime?
-  clickedAt    DateTime?
-  respondedAt  DateTime?
+  deliveredAt DateTime?
+  openedAt    DateTime?
+  clickedAt   DateTime?
+  respondedAt DateTime?
 
   // Response details
   response        String? @db.Text // Patient's response
@@ -12130,21 +12335,21 @@ model CareOutreach {
   convertedAction String? // What action did they take
 
   // For appointment reminders
-  appointmentId        String? // Related appointment
-  reminderSequence     Int? // Which reminder in sequence
-  includeInstructions  Boolean @default(true)
+  appointmentId       String? // Related appointment
+  reminderSequence    Int? // Which reminder in sequence
+  includeInstructions Boolean @default(true)
 
   // Personalization
   personalizationData Json? // Data used for personalization
 
   // AI optimization
-  optimalTimeUsed Boolean   @default(false) // Used AI-optimized timing
+  optimalTimeUsed Boolean @default(false) // Used AI-optimized timing
   noShowRiskLevel Float? // No-show risk at time of send
   sentimentScore  Float? // Sentiment of patient response
 
   // Error tracking
   errorMessage String? // If failed, why
-  retryCount   Int     @default(0)
+  retryCount   Int       @default(0)
   lastRetryAt  DateTime?
 
   createdAt DateTime @default(now())
@@ -12176,12 +12381,12 @@ model PatientEngagementScore {
   score Int // Overall engagement score 0-100
 
   // Score components (each 0-100)
-  visitAttendanceScore     Int? // Based on appointment attendance
-  portalUsageScore         Int? // Based on portal activity
-  communicationScore       Int? // Based on message responses
-  exerciseComplianceScore  Int? // Based on home exercise completion
-  appointmentBookingScore  Int? // Proactive vs reactive booking
-  paymentTimelinessScore   Int? // Payment behavior
+  visitAttendanceScore    Int? // Based on appointment attendance
+  portalUsageScore        Int? // Based on portal activity
+  communicationScore      Int? // Based on message responses
+  exerciseComplianceScore Int? // Based on home exercise completion
+  appointmentBookingScore Int? // Proactive vs reactive booking
+  paymentTimelinessScore  Int? // Payment behavior
 
   // Factor weights used (for transparency)
   factorWeights Json? // { visitAttendance: 0.3, portalUsage: 0.15, ... }
@@ -12261,8 +12466,8 @@ model CareJourney {
   outcomeDate   DateTime?
 
   // AI personalization
-  personalizedPath   Boolean @default(false) // AI-customized path
-  pathAdjustments    Json? // Record of AI path adjustments
+  personalizedPath     Boolean @default(false) // AI-customized path
+  pathAdjustments      Json? // Record of AI path adjustments
   nextActionSuggestion String? // AI-suggested next action
 
   createdAt DateTime @default(now())
@@ -12296,8 +12501,8 @@ model CareCoordinatorAction {
   description String? @db.Text // Detailed description of action
 
   // Result tracking
-  result     String? // success, failed, pending, cancelled
-  resultData Json? // Detailed result data
+  result       String? // success, failed, pending, cancelled
+  resultData   Json? // Detailed result data
   errorMessage String? // If failed, error details
 
   // Related entities (at least one should be set)
@@ -12313,11 +12518,11 @@ model CareCoordinatorAction {
   journeyStage  String? // Stage at time of action
 
   // AI metadata
-  aiInitiated     Boolean @default(true) // AI vs manual action
-  aiConfidence    Float? // AI confidence in action
-  aiReasoning     String? @db.Text // AI reasoning for action
-  modelUsed       String? // AI model used
-  promptVersion   String? // Prompt version used
+  aiInitiated   Boolean @default(true) // AI vs manual action
+  aiConfidence  Float? // AI confidence in action
+  aiReasoning   String? @db.Text // AI reasoning for action
+  modelUsed     String? // AI model used
+  promptVersion String? // Prompt version used
 
   // Performance tracking
   executionTimeMs Int? // Time to execute action
