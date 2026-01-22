@@ -79,6 +79,7 @@ import { devicesRouter } from './devices';
 // Multi-Location Enterprise (Epic 25)
 import { locationRouter } from './location';
 import { locationStaffRouter } from './locationStaff';
+import { patientLocationRouter } from './patientLocation';
 
 export const appRouter = router({
   auth: authRouter,
@@ -161,6 +162,7 @@ export const appRouter = router({
   // Multi-Location Enterprise (Epic 25)
   location: locationRouter,
   locationStaff: locationStaffRouter,
+  patientLocation: patientLocationRouter,
 });
 
 

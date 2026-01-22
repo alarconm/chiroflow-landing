@@ -246,3 +246,105 @@ Date: 2026-01-22
 --- Iteration 3 completed at 2026-01-22 ---
 Story: US-250 - Staff location assignment
 
+--- Iteration 3 completed at 2026-01-22 05:44:38 ---
+Story: US-250 - Staff location assignment
+
+## US-251: Cross-location patient access - COMPLETED
+Date: 2026-01-22
+
+### Changes Made:
+
+1. **Extended Patient model** (`app/prisma/schema.prisma`)
+   - Added homeLocationId - Patient's home/primary location
+   - Added homeLocation relation to Location
+   - Added consentForCrossLocationSharing boolean
+   - Added crossLocationConsentDate timestamp
+   - Added crossLocationAccessLogs relation
+   - Added balanceByLocation relation
+   - Added index on homeLocationId
+
+2. **Created CrossLocationAccessType enum** (`app/prisma/schema.prisma`)
+   - VIEW_RECORD - Viewed patient record from another location
+   - VIEW_ENCOUNTERS - Viewed patient encounters
+   - VIEW_BALANCE - Viewed patient balance/financial info
+   - VIEW_DOCUMENTS - Viewed patient documents
+   - CREATE_ENCOUNTER - Created encounter at non-home location
+   - CREATE_APPOINTMENT - Created appointment at non-home location
+   - UPDATE_RECORD - Updated patient info from another location
+
+3. **Created CrossLocationAccessLog model** (`app/prisma/schema.prisma`)
+   - Full audit trail for cross-location patient access
+   - Tracks accessType, entityType, entityId
+   - Records reason and notes for access
+   - Captures IP address and user agent for security
+   - Links to patient, user, and accessing location
+   - Organization-scoped with proper indexes
+
+4. **Created PatientLocationBalance model** (`app/prisma/schema.prisma`)
+   - Per-location balance tracking (optional feature)
+   - Tracks totalCharges, totalPayments, totalAdjustments, currentBalance
+   - Records lastChargeDate and lastPaymentDate
+   - Unique constraint on patientId + locationId
+
+5. **Updated Location model** (`app/prisma/schema.prisma`)
+   - Added homePatients relation
+   - Added crossLocationAccessLogs relation
+   - Added patientBalances relation
+
+6. **Updated User and Organization models** (`app/prisma/schema.prisma`)
+   - Added crossLocationAccessLogs relations for audit trail
+
+7. **Added audit log actions** (`app/src/lib/audit.ts`)
+   - PATIENT_HOME_LOCATION_SET
+   - PATIENT_HOME_LOCATION_CHANGE
+   - PATIENT_CROSS_LOCATION_CONSENT
+   - PATIENT_CROSS_LOCATION_ACCESS
+   - PATIENT_CROSS_LOCATION_VIEW
+   - PATIENT_CROSS_LOCATION_ENCOUNTER
+   - PATIENT_BALANCE_BY_LOCATION_UPDATE
+
+8. **Created patientLocation router** (`app/src/server/routers/patientLocation.ts`)
+   - **setHomeLocation** - Set patient's home/primary location
+   - **updateCrossLocationConsent** - Update patient consent for cross-location sharing
+   - **getCrossLocation** - Get patient with cross-location access verification
+     - Checks location settings for allowCrossLocationAccess
+     - Verifies patient consent before allowing access
+     - Logs cross-location access with full audit trail
+   - **getVisitHistory** - Get patient visit history with location info
+     - Shows location for each encounter
+     - Supports filtering by location or all locations
+   - **getBalanceByLocation** - Get patient balance broken down by location
+     - Shows per-location balance details
+     - Calculates consolidated balance across all locations
+   - **getAccessLog** - Get cross-location access audit log for a patient
+   - **logAccess** - Manual logging endpoint for other routers
+   - **listByLocation** - List patients by home location
+   - **updateLocationBalance** - Update patient balance (for billing module)
+
+9. **Registered router** (`app/src/server/routers/index.ts`)
+   - Added patientLocationRouter import and registration
+
+10. **Fixed pre-existing bug in locationStaff.ts**
+    - Corrected `npi` to `npiNumber` in provider select
+
+### Files Created:
+- app/src/server/routers/patientLocation.ts
+
+### Files Modified:
+- app/prisma/schema.prisma
+- app/src/lib/audit.ts
+- app/src/server/routers/index.ts
+- app/src/server/routers/locationStaff.ts (bug fix)
+
+### Acceptance Criteria Status:
+- [x] Patient records visible at all locations
+- [x] Location of service recorded on encounters
+- [x] Patient home location designation
+- [x] Visit history shows location
+- [x] Balance tracking by location option
+- [x] Consent for cross-location sharing
+- [x] Audit trail for cross-location access
+
+--- Iteration 4 completed at 2026-01-22 ---
+Story: US-251 - Cross-location patient access
+

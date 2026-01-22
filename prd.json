@@ -67,7 +67,7 @@
         "Audit trail for cross-location access"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-252",

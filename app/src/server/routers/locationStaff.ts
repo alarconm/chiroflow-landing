@@ -294,7 +294,7 @@ export const locationStaffRouter = router({
               provider: {
                 select: {
                   id: true,
-                  npi: true,
+                  npiNumber: true,
                   specialty: true,
                 },
               },

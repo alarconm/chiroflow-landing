@@ -196,6 +196,10 @@ model Organization {
   heartRateData     HeartRateData[]
   activityGoals     ActivityGoal[]
 
+  // Cross-Location Patient Access relations (Epic 25)
+  crossLocationAccessLogs CrossLocationAccessLog[]
+  patientLocationBalances PatientLocationBalance[]
+
   @@index([subdomain])
 }
 
@@ -236,7 +240,8 @@ model User {
   createdActivityGoals ActivityGoal[]
 
   // Multi-location relations (Epic 25)
-  locationAssignments LocationStaff[]
+  locationAssignments      LocationStaff[]
+  crossLocationAccessLogs  CrossLocationAccessLog[]
 
   @@unique([email, organizationId])
   @@index([organizationId])
@@ -457,10 +462,19 @@ model Patient {
   heartRateData     HeartRateData[]
   activityGoals     ActivityGoal[]
 
+  // Multi-Location Enterprise relations (Epic 25)
+  homeLocationId                 String?   // Patient's home/primary location
+  homeLocation                   Location? @relation("PatientHomeLocation", fields: [homeLocationId], references: [id])
+  consentForCrossLocationSharing Boolean   @default(false) // Explicit consent for cross-location access
+  crossLocationConsentDate       DateTime? // When consent was given/updated
+  crossLocationAccessLogs        CrossLocationAccessLog[]
+  balanceByLocation              PatientLocationBalance[]
+
   @@unique([mrn, organizationId])
   @@index([organizationId])
   @@index([status])
   @@index([createdAt])
+  @@index([homeLocationId])
 }
 
 // Patient demographics (1:1 with Patient)
@@ -9011,6 +9025,11 @@ model Location {
   inventoryItems     InventoryItem[]
   inventoryMovements InventoryMovement[]
 
+  // Multi-Location Patient relations (Epic 25)
+  homePatients               Patient[]                @relation("PatientHomeLocation")
+  crossLocationAccessLogs    CrossLocationAccessLog[]
+  patientBalances            PatientLocationBalance[]
+
   @@unique([code, organizationId])
   @@index([organizationId])
   @@index([isActive])
@@ -9116,4 +9135,92 @@ model LocationSettings {
   // Relations
   locationId String   @unique
   location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+}
+
+// =============================================================================
+// Cross-Location Patient Access (Epic 25 - US-251)
+// =============================================================================
+
+// Access type for cross-location audit
+enum CrossLocationAccessType {
+  VIEW_RECORD      // Viewed patient record from another location
+  VIEW_ENCOUNTERS  // Viewed patient encounters
+  VIEW_BALANCE     // Viewed patient balance/financial info
+  VIEW_DOCUMENTS   // Viewed patient documents
+  CREATE_ENCOUNTER // Created encounter at non-home location
+  CREATE_APPOINTMENT // Created appointment at non-home location
+  UPDATE_RECORD    // Updated patient info from another location
+}
+
+// Audit log for cross-location patient access
+model CrossLocationAccessLog {
+  id        String                  @id @default(cuid())
+  accessedAt DateTime               @default(now())
+  accessType CrossLocationAccessType
+
+  // What was accessed
+  entityType String  // Encounter, Appointment, Document, etc.
+  entityId   String? // ID of the entity accessed
+
+  // Access details
+  reason     String? // Optional reason for access
+  notes      String? // Optional notes
+
+  // IP and user agent for security audit
+  ipAddress  String?
+  userAgent  String?
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  // Location where access occurred (different from patient's home location)
+  accessingLocationId String
+  accessingLocation   Location @relation(fields: [accessingLocationId], references: [id])
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@index([userId])
+  @@index([accessingLocationId])
+  @@index([accessedAt])
+  @@index([organizationId])
+}
+
+// Patient balance tracking by location (optional feature)
+model PatientLocationBalance {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Balance amounts
+  totalCharges    Decimal @default(0) @db.Decimal(10, 2)
+  totalPayments   Decimal @default(0) @db.Decimal(10, 2)
+  totalAdjustments Decimal @default(0) @db.Decimal(10, 2)
+  currentBalance  Decimal @default(0) @db.Decimal(10, 2)
+
+  // Last activity
+  lastChargeDate   DateTime?
+  lastPaymentDate  DateTime?
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([patientId, locationId])
+  @@index([patientId])
+  @@index([locationId])
+  @@index([organizationId])
 }
