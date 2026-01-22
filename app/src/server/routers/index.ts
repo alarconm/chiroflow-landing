@@ -67,6 +67,8 @@ import { fmsRouter } from './fms';
 import { telehealthRouter } from './telehealth';
 // Imaging & X-Ray Integration (Epic 22)
 import { imagingRouter } from './imaging';
+// Patient Education & Home Care (Epic 23)
+import { exerciseRouter } from './exercise';
 
 export const appRouter = router({
   auth: authRouter,
@@ -137,6 +139,8 @@ export const appRouter = router({
   telehealth: telehealthRouter,
   // Imaging & X-Ray Integration (Epic 22)
   imaging: imagingRouter,
+  // Patient Education & Home Care (Epic 23)
+  exercise: exerciseRouter,
 });
 
 

@@ -62,3 +62,64 @@ Epic 23: Patient Education & Home Care - Progress Log
 - Prisma client generated successfully
 - Database schema synchronized with `prisma db push`
 - TypeScript compilation passed with no errors
+--- Iteration 1 completed at 2026-01-22 03:47:29 ---
+Story: US-232 - Education content schema
+
+## US-233: Exercise library management - COMPLETED
+
+### Date: 2026-01-22
+
+### What was implemented:
+1. Created comprehensive exercise tRPC router (`app/src/server/routers/exercise.ts`) with:
+   - `exercise.list` - Browse exercises by category, body region, difficulty
+   - `exercise.get` - Get exercise with full details, video URL, and instructions
+   - `exercise.create` - Add custom exercise (admin only)
+   - `exercise.update` - Update exercise details (admin only)
+   - `exercise.delete` - Delete exercise if not in use (admin only)
+   - `exercise.search` - Search by name or condition with filters
+
+2. Additional helper endpoints:
+   - `exercise.getCategories` - List all exercise categories with counts
+   - `exercise.getBodyRegions` - Get body regions with exercise counts
+   - `exercise.getDifficultyLevels` - Get difficulty levels with counts
+   - `exercise.createCategory` - Add new exercise category (admin)
+   - `exercise.seedLibrary` - Seed database with standard exercises (admin)
+
+3. Seeded exercise library with 14 common chiropractic exercises:
+   - Cervical Stretches: Chin Tucks, Upper Trapezius Stretch, Levator Scapulae Stretch
+   - Cervical Strengthening: Isometric Neck Flexion
+   - Lumbar Stretches: Knee to Chest, Cat-Cow, Piriformis Stretch
+   - Core Stability: Dead Bug, Bird Dog, Plank
+   - Posture Correction: Wall Angels, Bruegger's Relief Position
+   - Thoracic Mobility: Thoracic Extension on Foam Roller
+   - Hip & Pelvis: Hip Flexor Stretch (Kneeling)
+   - Balance: Single Leg Balance
+
+4. Created 10 standard exercise categories:
+   - Cervical Stretches, Cervical Strengthening
+   - Lumbar Stretches, Lumbar Strengthening
+   - Core Stability, Posture Correction
+   - Thoracic Mobility, Hip & Pelvis
+   - Shoulder Rehabilitation, Balance & Proprioception
+
+5. Each exercise includes:
+   - Video demonstration hosting support (videoUrl field)
+   - Difficulty levels (beginner, intermediate, advanced)
+   - Equipment requirements
+   - Step-by-step instructions
+   - Target muscles and conditions
+   - Default parameters (sets, reps, hold time, frequency)
+   - Contraindications and precautions
+   - Modifications for different abilities
+
+### Files created:
+- app/src/server/routers/exercise.ts
+
+### Files modified:
+- app/src/server/routers/index.ts
+
+### Verification:
+- TypeScript compilation passed with no errors
+--- Iteration 2 completed at 2026-01-22 ---
+Story: US-233 - Exercise library management
+
