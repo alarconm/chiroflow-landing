@@ -269,3 +269,116 @@ Story: US-226 - DICOM viewer
 --- Iteration 4 completed at 2026-01-22 ---
 Story: US-227 - X-ray annotation tools
 
+--- Iteration 4 completed at 2026-01-22 03:13:23 ---
+Story: US-227 - X-ray annotation tools
+
+## US-228: Spinal measurement tools
+**Status:** COMPLETED
+**Date:** 2026-01-22
+
+### What was done:
+1. Created comprehensive spinal measurements library at `app/src/lib/imaging/spinal-measurements.ts`:
+   - **Types and Interfaces**:
+     - `Point` - 2D coordinate type
+     - `NormalRange` - Min/max values with unit and description
+     - `DeviationSeverity` - Classification (normal, mild, moderate, severe)
+     - `SpinalMeasurementResult` - Complete result with value, deviation, severity, and clinical finding
+     - `CobbAngleInput` - Superior/inferior endplate lines for scoliosis
+     - `LordosisInput` - Endplate points for lordosis measurement
+     - `DiscHeightInput` - Anterior/posterior disc height points
+     - `VertebralHeightInput` - Vertebral body height measurement points
+     - `AtlasPlaneInput` - C1 lateral mass and reference points
+
+   - **Normal Ranges (Evidence-based)**:
+     - Cobb Angle: 0-10 degrees (normal)
+     - Cervical Lordosis: 31-40 degrees (C2-C7)
+     - Lumbar Lordosis: 40-60 degrees (L1-S1)
+     - Thoracic Kyphosis: 20-40 degrees (T1-T12)
+     - Disc Height Ratio: 0.6-0.8 (posterior/anterior)
+     - Cervical Disc Height: 3-7mm
+     - Lumbar Disc Height: 8-14mm
+     - Vertebral Height Ratio: 0.85-1.15 (compression detection)
+     - Atlas Plane Angle: ±2 degrees from horizontal
+
+   - **Classification Systems**:
+     - Scoliosis Classification (SRS): Normal (<10°), Mild (10-25°), Moderate (25-40°), Severe (>40°)
+     - Disc Degeneration Grades (0-4): Based on height loss percentage
+     - Vertebral Compression Grades (0-3): Based on height loss percentage
+
+   - **Measurement Functions**:
+     - `measureCobbAngle()` - Calculate Cobb angle with scoliosis severity
+     - `measureCervicalLordosis()` - C2-C7 lordosis with clinical interpretation
+     - `measureLumbarLordosis()` - L1-S1 lordosis with clinical interpretation
+     - `measureDiscHeight()` - Disc space height with degeneration grading
+     - `measureVertebralHeightRatio()` - Compression fracture detection
+     - `measureAtlasPlane()` - C1 alignment and lateral mass offset
+
+   - **Helper Functions**:
+     - `calculateDistance()` - Pixel distance calculation
+     - `pixelsToMm()` - Convert to millimeters using pixel spacing
+     - `lineAngleFromHorizontal()` - Line angle calculation
+     - `angleBetweenLines()` - Angle between two lines
+     - `classifyDeviation()` - Severity classification
+
+2. Extended imaging router (`app/src/server/routers/imaging.ts`) with spinal measurement procedures:
+   - `getNormalRanges` - Get all normal reference ranges
+   - `measureCobbAngle` - Cobb angle measurement with auto-severity
+   - `measureCervicalLordosis` - Cervical lordosis measurement
+   - `measureLumbarLordosis` - Lumbar lordosis measurement
+   - `measureDiscHeight` - Disc height with degeneration grading
+   - `measureVertebralHeightRatio` - Compression fracture detection
+   - `measureAtlasPlane` - Atlas plane angle measurement
+   - `getSpinalMeasurementSummary` - Summary of all spinal measurements for an image
+   - All procedures:
+     - Validate image ownership
+     - Calculate measurement using spinal-measurements library
+     - Save measurement to database with normal range and deviation
+     - Create audit log entry
+     - Return measurement record and full result
+
+3. Created SpinalMeasurementTools UI component (`app/src/components/imaging/SpinalMeasurementTools.tsx`):
+   - **Tool Selection Panel**:
+     - 6 spinal measurement tools with icons and tooltips
+     - Cobb Angle, Cervical Lordosis, Lumbar Lordosis, Disc Height, Vertebral Height, Atlas Plane
+     - Collapsible step-by-step instructions for each tool
+     - Normal range displayed in tooltips
+
+   - **Measurement Summary Card**:
+     - Total measurements count
+     - Abnormal findings count with progress bar
+     - Severe deviation alerts
+
+   - **Measurements List**:
+     - Expandable measurement cards with severity color-coding
+     - Normal range visualization with value indicator
+     - Deviation display with color indication
+     - Severity badge
+     - Clinical finding/description
+     - Delete measurement button
+
+   - **Reference Values Card**:
+     - Collapsible list of all normal reference ranges
+     - Easy reference during measurement
+
+   - **Features**:
+     - Severity color-coding (green/yellow/orange/red)
+     - Visual deviation indicator relative to normal range
+     - Responsive design with shadcn/ui components
+
+4. Updated exports:
+   - `app/src/lib/imaging/index.ts` - Added spinal measurements exports
+   - `app/src/components/imaging/index.ts` - Added SpinalMeasurementTools exports
+
+5. Verified TypeScript compilation passes
+
+### Acceptance Criteria Met:
+- [x] Cobb angle measurement for scoliosis (measureCobbAngle with SRS classification)
+- [x] Cervical lordosis angle (measureCervicalLordosis, 31-40° normal)
+- [x] Lumbar lordosis angle (measureLumbarLordosis, 40-60° normal)
+- [x] Disc space height measurement (measureDiscHeight with degeneration grading)
+- [x] Vertebral body height ratio (measureVertebralHeightRatio with compression grades)
+- [x] Atlas plane line (measureAtlasPlane with lateral offset detection)
+- [x] Auto-calculate deviation from normal (all measurements include deviation, deviationPercent, severity, and clinical finding)
+--- Iteration 5 completed at 2026-01-22 ---
+Story: US-228 - Spinal measurement tools
+

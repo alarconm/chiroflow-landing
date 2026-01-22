@@ -34,6 +34,19 @@ import {
   VIEW_POSITIONS,
   parseModality,
   type ImageUploadInput,
+  // Spinal measurements (US-228)
+  measureCobbAngle,
+  measureCervicalLordosis,
+  measureLumbarLordosis,
+  measureDiscHeight,
+  measureVertebralHeightRatio,
+  measureAtlasPlane,
+  NORMAL_RANGES,
+  type CobbAngleInput,
+  type LordosisInput,
+  type DiscHeightInput,
+  type VertebralHeightInput,
+  type AtlasPlaneInput,
 } from '@/lib/imaging';
 
 // ============================================
@@ -1700,6 +1713,558 @@ export const imagingRouter = router({
             ? 'Normal posterior vertebral body alignment'
             : 'Abnormal alignment detected - review recommended',
       };
+    }),
+
+  // ============================================
+  // SPINAL MEASUREMENT TOOLS (US-228)
+  // ============================================
+
+  /**
+   * Get normal ranges for spinal measurements
+   */
+  getNormalRanges: protectedProcedure.query(() => {
+    return NORMAL_RANGES;
+  }),
+
+  /**
+   * Measure Cobb Angle for Scoliosis Assessment
+   * Measures angle between superior and inferior endplates of the curve
+   */
+  measureCobbAngle: providerProcedure
+    .input(
+      z.object({
+        imageId: z.string(),
+        superiorLine: z.object({
+          left: z.object({ x: z.number(), y: z.number() }),
+          right: z.object({ x: z.number(), y: z.number() }),
+          vertebralLevel: z.string(),
+        }),
+        inferiorLine: z.object({
+          left: z.object({ x: z.number(), y: z.number() }),
+          right: z.object({ x: z.number(), y: z.number() }),
+          vertebralLevel: z.string(),
+        }),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { imageId, superiorLine, inferiorLine } = input;
+
+      // Verify image
+      const image = await ctx.prisma.imagingImage.findFirst({
+        where: { id: imageId },
+        include: {
+          study: { select: { organizationId: true } },
+        },
+      });
+
+      if (!image || image.study.organizationId !== ctx.user.organizationId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Image not found',
+        });
+      }
+
+      // Calculate Cobb angle
+      const result = measureCobbAngle({ superiorLine, inferiorLine });
+
+      // Save measurement to database
+      const measurement = await ctx.prisma.imagingMeasurement.create({
+        data: {
+          imageId,
+          type: 'COBB_ANGLE',
+          value: result.value,
+          unit: result.unit,
+          coordinates: result.coordinates as Prisma.InputJsonValue,
+          label: `Cobb Angle (${superiorLine.vertebralLevel}-${inferiorLine.vertebralLevel})`,
+          description: result.finding,
+          normalMin: result.normalRange.min,
+          normalMax: result.normalRange.max,
+          deviation: result.deviation,
+          color: result.severity === 'normal' ? '#00FF00' : result.severity === 'mild' ? '#FFFF00' : '#FF0000',
+          createdById: ctx.user.id,
+        },
+      });
+
+      await createAuditLog({
+        action: 'CREATE',
+        entityType: 'ImagingMeasurement',
+        entityId: measurement.id,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          type: 'COBB_ANGLE',
+          value: result.value,
+          severity: result.severity,
+        },
+      });
+
+      return {
+        measurement,
+        result,
+      };
+    }),
+
+  /**
+   * Measure Cervical Lordosis Angle (C2-C7)
+   */
+  measureCervicalLordosis: providerProcedure
+    .input(
+      z.object({
+        imageId: z.string(),
+        superiorEndplate: z.object({
+          anterior: z.object({ x: z.number(), y: z.number() }),
+          posterior: z.object({ x: z.number(), y: z.number() }),
+          vertebralLevel: z.string(),
+        }),
+        inferiorEndplate: z.object({
+          anterior: z.object({ x: z.number(), y: z.number() }),
+          posterior: z.object({ x: z.number(), y: z.number() }),
+          vertebralLevel: z.string(),
+        }),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { imageId, superiorEndplate, inferiorEndplate } = input;
+
+      // Verify image
+      const image = await ctx.prisma.imagingImage.findFirst({
+        where: { id: imageId },
+        include: {
+          study: { select: { organizationId: true } },
+        },
+      });
+
+      if (!image || image.study.organizationId !== ctx.user.organizationId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Image not found',
+        });
+      }
+
+      // Calculate cervical lordosis
+      const result = measureCervicalLordosis({ superiorEndplate, inferiorEndplate });
+
+      // Save measurement
+      const measurement = await ctx.prisma.imagingMeasurement.create({
+        data: {
+          imageId,
+          type: 'CERVICAL_LORDOSIS',
+          value: result.value,
+          unit: result.unit,
+          coordinates: result.coordinates as Prisma.InputJsonValue,
+          label: `Cervical Lordosis (${superiorEndplate.vertebralLevel}-${inferiorEndplate.vertebralLevel})`,
+          description: result.finding,
+          normalMin: result.normalRange.min,
+          normalMax: result.normalRange.max,
+          deviation: result.deviation,
+          color: result.severity === 'normal' ? '#00FF00' : result.severity === 'mild' ? '#FFFF00' : '#FF0000',
+          createdById: ctx.user.id,
+        },
+      });
+
+      await createAuditLog({
+        action: 'CREATE',
+        entityType: 'ImagingMeasurement',
+        entityId: measurement.id,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          type: 'CERVICAL_LORDOSIS',
+          value: result.value,
+          severity: result.severity,
+        },
+      });
+
+      return {
+        measurement,
+        result,
+      };
+    }),
+
+  /**
+   * Measure Lumbar Lordosis Angle (L1-S1)
+   */
+  measureLumbarLordosis: providerProcedure
+    .input(
+      z.object({
+        imageId: z.string(),
+        superiorEndplate: z.object({
+          anterior: z.object({ x: z.number(), y: z.number() }),
+          posterior: z.object({ x: z.number(), y: z.number() }),
+          vertebralLevel: z.string(),
+        }),
+        inferiorEndplate: z.object({
+          anterior: z.object({ x: z.number(), y: z.number() }),
+          posterior: z.object({ x: z.number(), y: z.number() }),
+          vertebralLevel: z.string(),
+        }),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { imageId, superiorEndplate, inferiorEndplate } = input;
+
+      // Verify image
+      const image = await ctx.prisma.imagingImage.findFirst({
+        where: { id: imageId },
+        include: {
+          study: { select: { organizationId: true } },
+        },
+      });
+
+      if (!image || image.study.organizationId !== ctx.user.organizationId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Image not found',
+        });
+      }
+
+      // Calculate lumbar lordosis
+      const result = measureLumbarLordosis({ superiorEndplate, inferiorEndplate });
+
+      // Save measurement
+      const measurement = await ctx.prisma.imagingMeasurement.create({
+        data: {
+          imageId,
+          type: 'LUMBAR_LORDOSIS',
+          value: result.value,
+          unit: result.unit,
+          coordinates: result.coordinates as Prisma.InputJsonValue,
+          label: `Lumbar Lordosis (${superiorEndplate.vertebralLevel}-${inferiorEndplate.vertebralLevel})`,
+          description: result.finding,
+          normalMin: result.normalRange.min,
+          normalMax: result.normalRange.max,
+          deviation: result.deviation,
+          color: result.severity === 'normal' ? '#00FF00' : result.severity === 'mild' ? '#FFFF00' : '#FF0000',
+          createdById: ctx.user.id,
+        },
+      });
+
+      await createAuditLog({
+        action: 'CREATE',
+        entityType: 'ImagingMeasurement',
+        entityId: measurement.id,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          type: 'LUMBAR_LORDOSIS',
+          value: result.value,
+          severity: result.severity,
+        },
+      });
+
+      return {
+        measurement,
+        result,
+      };
+    }),
+
+  /**
+   * Measure Disc Space Height
+   */
+  measureDiscHeight: providerProcedure
+    .input(
+      z.object({
+        imageId: z.string(),
+        level: z.string(), // e.g., "L4-L5"
+        anteriorSuperior: z.object({ x: z.number(), y: z.number() }),
+        anteriorInferior: z.object({ x: z.number(), y: z.number() }),
+        posteriorSuperior: z.object({ x: z.number(), y: z.number() }),
+        posteriorInferior: z.object({ x: z.number(), y: z.number() }),
+        pixelSpacing: z.number().optional().default(0.3),
+        adjacentLevel: z
+          .object({
+            level: z.string(),
+            anteriorHeight: z.number(),
+            posteriorHeight: z.number(),
+          })
+          .optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { imageId, level, anteriorSuperior, anteriorInferior, posteriorSuperior, posteriorInferior, pixelSpacing, adjacentLevel } = input;
+
+      // Verify image
+      const image = await ctx.prisma.imagingImage.findFirst({
+        where: { id: imageId },
+        include: {
+          study: { select: { organizationId: true } },
+        },
+      });
+
+      if (!image || image.study.organizationId !== ctx.user.organizationId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Image not found',
+        });
+      }
+
+      // Calculate disc height
+      const result = measureDiscHeight(
+        {
+          level,
+          anteriorSuperior,
+          anteriorInferior,
+          posteriorSuperior,
+          posteriorInferior,
+          adjacentLevel,
+        },
+        pixelSpacing
+      );
+
+      // Save measurement
+      const measurement = await ctx.prisma.imagingMeasurement.create({
+        data: {
+          imageId,
+          type: 'DISC_HEIGHT',
+          value: result.value,
+          unit: result.unit,
+          coordinates: result.coordinates as Prisma.InputJsonValue,
+          label: `Disc Height (${level})`,
+          description: result.finding,
+          normalMin: result.normalRange.min,
+          normalMax: result.normalRange.max,
+          deviation: result.deviation,
+          color: result.severity === 'normal' ? '#00FF00' : result.severity === 'mild' ? '#FFFF00' : '#FF0000',
+          createdById: ctx.user.id,
+        },
+      });
+
+      await createAuditLog({
+        action: 'CREATE',
+        entityType: 'ImagingMeasurement',
+        entityId: measurement.id,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          type: 'DISC_HEIGHT',
+          level,
+          value: result.value,
+          severity: result.severity,
+        },
+      });
+
+      return {
+        measurement,
+        result,
+      };
+    }),
+
+  /**
+   * Measure Vertebral Body Height Ratio
+   * Used to detect compression fractures
+   */
+  measureVertebralHeightRatio: providerProcedure
+    .input(
+      z.object({
+        imageId: z.string(),
+        level: z.string(), // e.g., "L1"
+        anteriorHeight: z.object({
+          superior: z.object({ x: z.number(), y: z.number() }),
+          inferior: z.object({ x: z.number(), y: z.number() }),
+        }),
+        posteriorHeight: z.object({
+          superior: z.object({ x: z.number(), y: z.number() }),
+          inferior: z.object({ x: z.number(), y: z.number() }),
+        }),
+        pixelSpacing: z.number().optional().default(0.3),
+        referenceVertebra: z
+          .object({
+            level: z.string(),
+            anteriorHeight: z.number(),
+            posteriorHeight: z.number(),
+          })
+          .optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { imageId, level, anteriorHeight, posteriorHeight, pixelSpacing, referenceVertebra } = input;
+
+      // Verify image
+      const image = await ctx.prisma.imagingImage.findFirst({
+        where: { id: imageId },
+        include: {
+          study: { select: { organizationId: true } },
+        },
+      });
+
+      if (!image || image.study.organizationId !== ctx.user.organizationId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Image not found',
+        });
+      }
+
+      // Calculate vertebral height ratio
+      const result = measureVertebralHeightRatio(
+        {
+          level,
+          anteriorHeight,
+          posteriorHeight,
+          referenceVertebra,
+        },
+        pixelSpacing
+      );
+
+      // Save measurement
+      const measurement = await ctx.prisma.imagingMeasurement.create({
+        data: {
+          imageId,
+          type: 'VERTEBRAL_HEIGHT',
+          value: result.value,
+          unit: result.unit,
+          coordinates: result.coordinates as Prisma.InputJsonValue,
+          label: `Vertebral Height Ratio (${level})`,
+          description: result.finding,
+          normalMin: result.normalRange.min,
+          normalMax: result.normalRange.max,
+          deviation: result.deviation,
+          color: result.severity === 'normal' ? '#00FF00' : result.severity === 'mild' ? '#FFFF00' : '#FF0000',
+          createdById: ctx.user.id,
+        },
+      });
+
+      await createAuditLog({
+        action: 'CREATE',
+        entityType: 'ImagingMeasurement',
+        entityId: measurement.id,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          type: 'VERTEBRAL_HEIGHT',
+          level,
+          value: result.value,
+          severity: result.severity,
+        },
+      });
+
+      return {
+        measurement,
+        result,
+      };
+    }),
+
+  /**
+   * Measure Atlas Plane Line
+   * Assesses C1 horizontal alignment
+   */
+  measureAtlasPlane: providerProcedure
+    .input(
+      z.object({
+        imageId: z.string(),
+        leftLateralMass: z.object({ x: z.number(), y: z.number() }),
+        rightLateralMass: z.object({ x: z.number(), y: z.number() }),
+        leftOccipitalCondyle: z.object({ x: z.number(), y: z.number() }).optional(),
+        rightOccipitalCondyle: z.object({ x: z.number(), y: z.number() }).optional(),
+        axisOdontoid: z.object({ x: z.number(), y: z.number() }).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { imageId, leftLateralMass, rightLateralMass, leftOccipitalCondyle, rightOccipitalCondyle, axisOdontoid } = input;
+
+      // Verify image
+      const image = await ctx.prisma.imagingImage.findFirst({
+        where: { id: imageId },
+        include: {
+          study: { select: { organizationId: true } },
+        },
+      });
+
+      if (!image || image.study.organizationId !== ctx.user.organizationId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Image not found',
+        });
+      }
+
+      // Calculate atlas plane
+      const result = measureAtlasPlane({
+        leftLateralMass,
+        rightLateralMass,
+        leftOccipitalCondyle,
+        rightOccipitalCondyle,
+        axisOdontoid,
+      });
+
+      // Save measurement
+      const measurement = await ctx.prisma.imagingMeasurement.create({
+        data: {
+          imageId,
+          type: 'ATLAS_PLANE',
+          value: result.value,
+          unit: result.unit,
+          coordinates: result.coordinates as Prisma.InputJsonValue,
+          label: 'Atlas Plane Line',
+          description: result.finding,
+          normalMin: result.normalRange.min,
+          normalMax: result.normalRange.max,
+          deviation: result.deviation,
+          color: result.severity === 'normal' ? '#00FF00' : result.severity === 'mild' ? '#FFFF00' : '#FF0000',
+          createdById: ctx.user.id,
+        },
+      });
+
+      await createAuditLog({
+        action: 'CREATE',
+        entityType: 'ImagingMeasurement',
+        entityId: measurement.id,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          type: 'ATLAS_PLANE',
+          value: result.value,
+          severity: result.severity,
+        },
+      });
+
+      return {
+        measurement,
+        result,
+      };
+    }),
+
+  /**
+   * Get spinal measurement summary for an image
+   * Returns all spinal measurements with deviation analysis
+   */
+  getSpinalMeasurementSummary: protectedProcedure
+    .input(z.object({ imageId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const image = await ctx.prisma.imagingImage.findFirst({
+        where: { id: input.imageId },
+        include: {
+          study: { select: { organizationId: true, bodyPart: true } },
+          measurements: {
+            where: {
+              type: {
+                in: ['COBB_ANGLE', 'CERVICAL_LORDOSIS', 'LUMBAR_LORDOSIS', 'DISC_HEIGHT', 'VERTEBRAL_HEIGHT', 'ATLAS_PLANE'],
+              },
+            },
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+      });
+
+      if (!image || image.study.organizationId !== ctx.user.organizationId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Image not found',
+        });
+      }
+
+      // Categorize measurements
+      const summary = {
+        cobbAngles: image.measurements.filter((m) => m.type === 'COBB_ANGLE'),
+        cervicalLordosis: image.measurements.filter((m) => m.type === 'CERVICAL_LORDOSIS'),
+        lumbarLordosis: image.measurements.filter((m) => m.type === 'LUMBAR_LORDOSIS'),
+        discHeights: image.measurements.filter((m) => m.type === 'DISC_HEIGHT'),
+        vertebralHeights: image.measurements.filter((m) => m.type === 'VERTEBRAL_HEIGHT'),
+        atlasPlane: image.measurements.filter((m) => m.type === 'ATLAS_PLANE'),
+        totalMeasurements: image.measurements.length,
+        abnormalFindings: image.measurements.filter((m) => m.deviation && Math.abs(m.deviation) > 0).length,
+        bodyPart: image.study.bodyPart,
+      };
+
+      return summary;
     }),
 });
 

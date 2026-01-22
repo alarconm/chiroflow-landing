@@ -8,6 +8,12 @@
 export { DICOMViewer, type DICOMViewerProps } from './DICOMViewer';
 export { AnnotationToolbar, type AnnotationToolbarProps } from './AnnotationToolbar';
 export { AnnotationCanvas, drawAnnotations, type AnnotationCanvasProps } from './AnnotationCanvas';
+export {
+  SpinalMeasurementTools,
+  type SpinalMeasurementToolsProps,
+  type SpinalMeasurementType,
+  type SpinalMeasurement,
+} from './SpinalMeasurementTools';
 
 export {
   type ViewportState,
