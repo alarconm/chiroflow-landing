@@ -39,11 +39,72 @@ Created comprehensive database models for the AI Billing Agent system in Epic 31
 - Prisma client generates successfully
 - Pre-existing TypeScript errors unrelated to this change
 
+### US-308 - Autonomous claim submission
+**Status**: COMPLETED
+**Date**: 2026-01-22
+
+**Implementation Summary**:
+Implemented autonomous claim submission system for AI billing agent with pre-submission validation, auto-correction, and configurable rules.
+
+**Files Created**:
+- `app/src/lib/ai-billing/claim-submitter.ts` - New ClaimSubmitter service class (~980 lines)
+
+**Files Modified**:
+- `app/src/lib/ai-billing/index.ts` - Added ClaimSubmitter exports and types
+- `app/src/server/routers/aiBilling.ts` - Added 8 new endpoints for claim submission
+- `app/src/lib/audit.ts` - Added AI_BILLING_SUBMIT audit action
+
+**ClaimSubmitter Service Features**:
+1. `submitClaims()` - Main batch submission with configurable options
+2. `processClaim()` - Process single claim with scrubbing and corrections
+3. `applyAutoCorrections()` - Apply 5 auto-correction rules:
+   - AT modifier for chiropractic spinal manipulation
+   - Modifier 25 for E/M with procedures
+   - Default place of service (11 - Office)
+   - Diagnosis pointer validation
+   - Service date validation
+4. `selectClaimsForSubmission()` - Select claims based on rules
+5. `createTaskRecord()` - Create AIBillingTask records for tracking
+6. `updateMetrics()` - Update AIBillingMetric for performance tracking
+7. `getSubmissionStats()` - Get submission statistics
+8. `getAutoSubmitRules()` / `saveAutoSubmitRule()` - Manage configurable rules
+9. `createFailureAlert()` - Alert on submission failures
+
+**New tRPC Endpoints**:
+1. `submitClaims` - Main batch submission mutation
+2. `getSubmissionStats` - Get statistics query
+3. `getClaimsReadyForSubmission` - Get submittable claims query
+4. `getAutoSubmitRules` - Get rules query
+5. `saveAutoSubmitRule` - Save rule mutation
+6. `deleteAutoSubmitRule` - Delete rule mutation
+7. `toggleAutoSubmitRule` - Toggle rule mutation
+8. `getSubmissionAlerts` - Get failure alerts query
+
+**Type Exports Added**:
+- ClaimSubmissionInput, ClaimSubmissionResult, ClaimCorrection
+- SubmitClaimsOutput, AutoSubmitRule, RuleCondition, SubmissionStats
+
+**Acceptance Criteria Met**:
+- ✅ aiBilling.submitClaims - Auto-submit ready claims
+- ✅ Pre-submission validation and scrubbing (uses ClaimScrubber)
+- ✅ Auto-correct common errors (5 correction rules)
+- ✅ Optimize code selection for reimbursement (via scrubbing)
+- ✅ Batch submission scheduling (via selectClaimsForSubmission)
+- ✅ Track submission success rate (via updateMetrics)
+- ✅ Alert on submission failures (via createFailureAlert)
+- ✅ Configurable auto-submit rules (via AIBillingRule model)
+
+**Validation**:
+- TypeScript compiles successfully for new files
+- Pre-existing TypeScript errors unrelated to this change
+
 ## Next Stories to Implement
-- US-308 (2nd) - Autonomous claim submission
 - US-309 - Denial analysis and routing
 - US-310 - Automated appeal generation
 - US-311 - Claim follow-up automation
 - US-312 - Smart payment posting
 - US-313 - Billing optimization recommendations
 - US-314 - AI billing agent dashboard
+--- Iteration 1 completed at 2026-01-22 10:01:45 ---
+Story: US-308 - AI billing agent schema
+

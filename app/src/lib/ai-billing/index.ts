@@ -13,6 +13,7 @@ export { DenialPredictor } from './denial-predictor';
 export { AppealGenerator } from './appeal-generator';
 export { PaymentMatcher } from './payment-matcher';
 export { UnderpaymentDetector } from './underpayment-detector';
+export { ClaimSubmitter } from './claim-submitter';
 
 // Convenience type re-exports for common usage
 export type {
@@ -40,3 +41,14 @@ export type {
   BatchJobResult,
   AuditLogInput,
 } from './types';
+
+// Claim Submitter types (Epic 31: US-308)
+export type {
+  ClaimSubmissionInput,
+  ClaimSubmissionResult,
+  ClaimCorrection,
+  SubmitClaimsOutput,
+  AutoSubmitRule,
+  RuleCondition,
+  SubmissionStats,
+} from './claim-submitter';

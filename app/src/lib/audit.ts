@@ -117,6 +117,8 @@ export type AuditAction =
   | 'AI_BILLING_MATCH'
   | 'AI_BILLING_UNDERPAYMENT'
   | 'AI_BILLING_BATCH_JOB'
+  // AI Billing Agent actions (Epic 31)
+  | 'AI_BILLING_SUBMIT'
   // AI Insights actions (Epic 10)
   | 'AI_INSIGHT_STATUS_UPDATE'
   | 'AI_NL_QUERY'

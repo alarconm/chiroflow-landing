@@ -16,6 +16,7 @@ import {
   AppealGenerator,
   PaymentMatcher,
   UnderpaymentDetector,
+  ClaimSubmitter,
 } from '@/lib/ai-billing';
 
 // ============================================
@@ -70,6 +71,33 @@ const batchJobInputSchema = z.object({
   ]),
   config: z.record(z.string(), z.unknown()).optional(),
   scheduledFor: z.date().optional(),
+});
+
+// US-308: Autonomous Claim Submission Schemas
+const submitClaimsInputSchema = z.object({
+  claimIds: z.array(z.string()).optional(),
+  autoSelectClaims: z.boolean().default(false),
+  maxClaims: z.number().min(1).max(100).default(50),
+  minScore: z.number().min(0).max(100).optional(),
+  autoCorrect: z.boolean().default(true),
+  dryRun: z.boolean().default(false),
+});
+
+const autoSubmitRuleConditionSchema = z.object({
+  field: z.string(),
+  operator: z.enum(['equals', 'notEquals', 'contains', 'greaterThan', 'lessThan', 'in', 'notIn']),
+  value: z.union([z.string(), z.number(), z.array(z.string()), z.array(z.number())]),
+});
+
+const autoSubmitRuleInputSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().min(1),
+  conditions: z.array(autoSubmitRuleConditionSchema),
+  enabled: z.boolean().default(true),
+  priority: z.number().default(0),
+  minScore: z.number().min(0).max(100).default(80),
+  maxClaimsPerRun: z.number().min(1).max(1000).default(100),
+  scheduleCron: z.string().optional(),
 });
 
 // ============================================
@@ -1230,5 +1258,293 @@ export const aiBillingRouter = router({
       });
 
       return logs;
+    }),
+
+  // ============================================
+  // US-308: Autonomous Claim Submission
+  // ============================================
+
+  /**
+   * Submit claims automatically with validation and auto-correction
+   */
+  submitClaims: billerProcedure
+    .input(submitClaimsInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const submitter = new ClaimSubmitter(ctx.prisma, ctx.user.organizationId);
+        const result = await submitter.submitClaims(input);
+
+        // Audit log
+        await ctx.prisma.aIBillingAudit.create({
+          data: {
+            action: 'SUBMIT_CLAIMS',
+            entityType: 'Batch',
+            entityId: result.batchId,
+            decision: `Submitted ${result.submitted + result.correctedAndSubmitted} claims`,
+            confidence: result.successRate / 100,
+            reasoning: `Batch submission: ${result.submitted} direct, ${result.correctedAndSubmitted} corrected, ${result.pendingReview} pending, ${result.failed} failed, ${result.skipped} skipped`,
+            inputData: input,
+            outputData: {
+              batchId: result.batchId,
+              submitted: result.submitted,
+              correctedAndSubmitted: result.correctedAndSubmitted,
+              pendingReview: result.pendingReview,
+              failed: result.failed,
+              skipped: result.skipped,
+              successRate: result.successRate,
+            },
+            processingTimeMs: result.processingTimeMs,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+
+        await auditLog('AI_BILLING_SUBMIT', 'Batch', {
+          entityId: result.batchId,
+          changes: {
+            action: 'batch_submit',
+            submitted: result.submitted + result.correctedAndSubmitted,
+            failed: result.failed,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return result;
+      } catch (error) {
+        console.error('Claim submission failed:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to submit claims',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Get submission statistics and success rates
+   */
+  getSubmissionStats: billerProcedure
+    .input(
+      z.object({
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      try {
+        const submitter = new ClaimSubmitter(ctx.prisma, ctx.user.organizationId);
+        return submitter.getSubmissionStats(input.dateFrom, input.dateTo);
+      } catch (error) {
+        console.error('Failed to get submission stats:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to get submission statistics',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Get claims ready for auto-submission
+   */
+  getClaimsReadyForSubmission: billerProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(100).default(50),
+        minScore: z.number().min(0).max(100).optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      // Get claims in DRAFT or READY status
+      const claims = await ctx.prisma.claim.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: { in: ['DRAFT', 'READY'] },
+        },
+        include: {
+          patient: {
+            include: { demographics: true },
+          },
+          payer: true,
+          insurancePolicy: true,
+          scrubResults: {
+            take: 1,
+            orderBy: { scrubDate: 'desc' },
+            where: input.minScore ? { overallScore: { gte: input.minScore } } : undefined,
+          },
+          _count: { select: { claimLines: true } },
+        },
+        take: input.limit,
+        orderBy: { createdAt: 'asc' },
+      });
+
+      // Filter by scrub score if specified
+      const filteredClaims = input.minScore
+        ? claims.filter(c => c.scrubResults.length > 0 && c.scrubResults[0].overallScore >= input.minScore!)
+        : claims;
+
+      return filteredClaims.map(c => ({
+        ...c,
+        lastScrubScore: c.scrubResults[0]?.overallScore || null,
+        lastScrubDate: c.scrubResults[0]?.scrubDate || null,
+        lastScrubStatus: c.scrubResults[0]?.status || null,
+      }));
+    }),
+
+  /**
+   * Get auto-submit rules
+   */
+  getAutoSubmitRules: billerProcedure.query(async ({ ctx }) => {
+    try {
+      const submitter = new ClaimSubmitter(ctx.prisma, ctx.user.organizationId);
+      return submitter.getAutoSubmitRules();
+    } catch (error) {
+      console.error('Failed to get auto-submit rules:', error);
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to get auto-submit rules',
+        cause: error,
+      });
+    }
+  }),
+
+  /**
+   * Create or update an auto-submit rule
+   */
+  saveAutoSubmitRule: billerProcedure
+    .input(autoSubmitRuleInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const submitter = new ClaimSubmitter(ctx.prisma, ctx.user.organizationId);
+        const rule = await submitter.saveAutoSubmitRule(input);
+
+        await auditLog(input.id ? 'UPDATE' : 'CREATE', 'AIBillingRule', {
+          entityId: rule.id,
+          changes: { name: rule.name, enabled: rule.enabled, priority: rule.priority },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return rule;
+      } catch (error) {
+        console.error('Failed to save auto-submit rule:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to save auto-submit rule',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Delete an auto-submit rule
+   */
+  deleteAutoSubmitRule: billerProcedure
+    .input(z.object({ ruleId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const rule = await ctx.prisma.aIBillingRule.findFirst({
+        where: {
+          id: input.ruleId,
+          organizationId: ctx.user.organizationId,
+          category: 'submission',
+        },
+      });
+
+      if (!rule) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Auto-submit rule not found',
+        });
+      }
+
+      await ctx.prisma.aIBillingRule.delete({
+        where: { id: input.ruleId },
+      });
+
+      await auditLog('DELETE', 'AIBillingRule', {
+        entityId: input.ruleId,
+        changes: { name: rule.name },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { success: true };
+    }),
+
+  /**
+   * Toggle auto-submit rule enabled status
+   */
+  toggleAutoSubmitRule: billerProcedure
+    .input(z.object({ ruleId: z.string(), enabled: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const rule = await ctx.prisma.aIBillingRule.findFirst({
+        where: {
+          id: input.ruleId,
+          organizationId: ctx.user.organizationId,
+          category: 'submission',
+        },
+      });
+
+      if (!rule) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Auto-submit rule not found',
+        });
+      }
+
+      const updated = await ctx.prisma.aIBillingRule.update({
+        where: { id: input.ruleId },
+        data: { isActive: input.enabled },
+      });
+
+      await auditLog('UPDATE', 'AIBillingRule', {
+        entityId: input.ruleId,
+        changes: { enabled: input.enabled },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        id: updated.id,
+        name: updated.name,
+        enabled: updated.isActive,
+      };
+    }),
+
+  /**
+   * Get submission alerts (failed submissions)
+   */
+  getSubmissionAlerts: billerProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(100).default(20),
+        includeResolved: z.boolean().default(false),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const alerts = await ctx.prisma.claimNote.findMany({
+        where: {
+          noteType: 'ai_alert',
+          claim: {
+            organizationId: ctx.user.organizationId,
+          },
+        },
+        include: {
+          claim: {
+            select: {
+              id: true,
+              claimNumber: true,
+              status: true,
+              patient: {
+                include: { demographics: true },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: input.limit,
+      });
+
+      return alerts;
     }),
 });
