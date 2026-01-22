@@ -116,3 +116,75 @@ New file created:
 --- Iteration 2 completed at 2026-01-21 ---
 Story: US-086 - Payment processor abstraction layer
 
+--- Iteration 2 completed at 2026-01-21 21:12:06 ---
+Story: US-086 - Payment processor abstraction layer
+
+## 2026-01-21: US-087 - Card payment processing
+
+**Status:** COMPLETE
+
+### What was done:
+
+Verified and enhanced the card payment processing system. The core functionality already existed in `payment-processing.ts` router; added automatic email receipt functionality.
+
+#### 1. processPayment Procedure (Existing - `payment-processing.ts:281`)
+Already implemented with full functionality:
+- Accepts `patientId`, `paymentMethodId`, `amount`, `description`
+- Optional `applyTo` for specific charge allocation
+- Optional `autoAllocate` for oldest-first charge allocation
+- `idempotencyKey` support for duplicate prevention
+
+#### 2. Secure Card Entry (Existing)
+- Cards are tokenized via Stripe Elements or similar on client-side
+- Only payment tokens (not raw card numbers) are stored
+- `StoredPaymentMethod` model holds tokenized card references
+- `PaymentForm.tsx` component uses stored payment methods only
+
+#### 3. Handle Declined Cards (Existing)
+- Payment provider returns detailed error info: `errorCode`, `errorMessage`, `declineCode`
+- Transaction record created with failure details
+- TRPCError thrown with user-friendly message
+- Audit log captures failure details
+
+#### 4. Create Ledger Entry (Existing)
+- On success, creates `Payment` record
+- Optionally creates `PaymentAllocation` records linking to charges
+- Updates charge balances and statuses
+- Transaction linked to Payment for full audit trail
+
+#### 5. Email Receipt to Patient (NEW)
+Added automatic email receipt functionality:
+- Fetches patient contact info with `allowEmail` preference
+- Sends receipt after successful payment (non-blocking)
+- Beautiful HTML email with:
+  - Payment confirmation header
+  - Amount, date, payment method
+  - Transaction reference number
+  - Allocation details
+  - Credit balance if applicable
+  - Organization branding
+- Plain text fallback for email clients
+
+### Files Modified:
+- `app/src/server/routers/payment-processing.ts` - Added email receipt functionality
+  - Line 25: Added imports for `getCardBrandDisplayName`, `maskCardNumber`, `notificationService`
+  - Lines 308-324: Enhanced patient query to include contacts
+  - Lines 325-328: Added organization query for branding
+  - Lines 510-606: Added email receipt sending logic
+
+### Acceptance Criteria Met:
+✅ payment.processCard - Charge a card for patient balance (as `processPayment`)
+✅ Secure card entry using Stripe Elements or equivalent
+✅ Store payment method for future use (with patient consent)
+✅ Handle declined cards gracefully with clear error messages
+✅ Create ledger entry and receipt on successful payment
+✅ Email receipt to patient automatically
+
+### Validation:
+- TypeScript compiles without errors
+- Email sending is fire-and-forget (doesn't block payment response)
+- Respects patient email preferences (`allowEmail` flag)
+
+--- Iteration 3 completed at 2026-01-21 ---
+Story: US-087 - Card payment processing
+

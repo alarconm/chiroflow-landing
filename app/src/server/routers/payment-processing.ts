@@ -26,7 +26,10 @@ import {
   toCents,
   toDollars,
   formatCurrency,
+  getCardBrandDisplayName,
+  maskCardNumber,
 } from '@/lib/payment';
+import { notificationService } from '@/lib/notification-service';
 
 // ============================================
 // Audit Action Types for Payment Processing
@@ -302,7 +305,7 @@ export const paymentProcessingRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { patientId, paymentMethodId, amount, description, applyTo, autoAllocate, idempotencyKey } = input;
 
-      // Verify patient
+      // Verify patient and get contact info for receipt
       const patient = await ctx.prisma.patient.findFirst({
         where: {
           id: patientId,
@@ -310,6 +313,10 @@ export const paymentProcessingRouter = router({
         },
         include: {
           demographics: true,
+          contacts: {
+            where: { isPrimary: true },
+            take: 1,
+          },
         },
       });
 
@@ -319,6 +326,11 @@ export const paymentProcessingRouter = router({
           message: 'Patient not found',
         });
       }
+
+      // Get organization for receipt branding
+      const organization = await ctx.prisma.organization.findUnique({
+        where: { id: ctx.user.organizationId },
+      });
 
       // Get payment method
       const paymentMethod = await ctx.prisma.storedPaymentMethod.findFirst({
@@ -356,7 +368,7 @@ export const paymentProcessingRouter = router({
           amount,
           currency: 'USD',
           status: result.status,
-          processorId: result.transactionId,
+          externalTransactionId: result.transactionId,
           processorResponse: result.rawResponse as object,
           errorCode: result.errorCode,
           errorMessage: result.errorMessage,
@@ -488,12 +500,123 @@ export const paymentProcessingRouter = router({
             patientId,
             amount,
             status: 'success',
-            processorId: result.transactionId,
+            externalTransactionId: result.transactionId,
             allocations: allocations.length,
           },
           userId: ctx.user.id,
           organizationId: ctx.user.organizationId,
         });
+
+        // Send email receipt to patient (non-blocking)
+        const patientContact = patient.contacts[0];
+        if (patientContact?.email && patientContact.allowEmail) {
+          const patientName = patient.demographics
+            ? `${patient.demographics.firstName} ${patient.demographics.lastName}`
+            : 'Valued Patient';
+          const orgName = organization?.name ?? 'Our Practice';
+          const cardDisplay = `${getCardBrandDisplayName(paymentMethod.cardBrand)} ${maskCardNumber(paymentMethod.last4)}`;
+          const formattedAmount = formatCurrency(toCents(amount));
+          const receiptDate = new Date().toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+          });
+
+          // Fire and forget - don't block the payment response
+          notificationService.sendEmail(
+            patientContact.email,
+            `Payment Receipt - ${formattedAmount}`,
+            `Dear ${patientName},
+
+Thank you for your payment. Here are your receipt details:
+
+Payment Details
+---------------
+Date: ${receiptDate}
+Amount: ${formattedAmount}
+Payment Method: ${cardDisplay}
+Reference: ${result.transactionId ?? payment.id}
+${description ? `Description: ${description}` : ''}
+
+${allocations.length > 0 ? `This payment was applied to ${allocations.length} charge(s) on your account.` : 'This payment has been recorded on your account.'}
+
+${unappliedAmount > 0 ? `Credit Balance: ${formatCurrency(toCents(unappliedAmount))} will be applied to future charges.` : ''}
+
+If you have any questions about this payment, please contact our office.
+
+Thank you for choosing ${orgName}.
+
+This is an automated receipt. Please do not reply to this email.`,
+            {
+              html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background-color: #053e67; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+    .content { background-color: #f9f9f9; padding: 20px; border: 1px solid #ddd; }
+    .receipt-box { background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #e0e0e0; }
+    .amount { font-size: 32px; font-weight: bold; color: #053e67; }
+    .detail-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
+    .detail-label { color: #666; }
+    .detail-value { font-weight: 500; }
+    .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+    .success-icon { font-size: 48px; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="success-icon">✓</div>
+      <h1 style="margin: 0;">Payment Received</h1>
+    </div>
+    <div class="content">
+      <p>Dear ${patientName},</p>
+      <p>Thank you for your payment. Your transaction has been processed successfully.</p>
+
+      <div class="receipt-box">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <div class="amount">${formattedAmount}</div>
+          <div style="color: #28a745;">Payment Successful</div>
+        </div>
+
+        <div class="detail-row">
+          <span class="detail-label">Date</span>
+          <span class="detail-value">${receiptDate}</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Payment Method</span>
+          <span class="detail-value">${cardDisplay}</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Reference #</span>
+          <span class="detail-value">${result.transactionId ?? payment.id}</span>
+        </div>
+        ${description ? `<div class="detail-row"><span class="detail-label">Description</span><span class="detail-value">${description}</span></div>` : ''}
+        ${allocations.length > 0 ? `<div class="detail-row"><span class="detail-label">Applied to</span><span class="detail-value">${allocations.length} charge(s)</span></div>` : ''}
+        ${unappliedAmount > 0 ? `<div class="detail-row"><span class="detail-label">Credit Balance</span><span class="detail-value">${formatCurrency(toCents(unappliedAmount))}</span></div>` : ''}
+      </div>
+
+      <p>If you have any questions about this payment, please contact our office.</p>
+      <p>Thank you for choosing ${orgName}.</p>
+    </div>
+    <div class="footer">
+      <p>This is an automated receipt. Please do not reply to this email.</p>
+      <p>${orgName}</p>
+    </div>
+  </div>
+</body>
+</html>
+              `,
+            }
+          ).catch((err) => {
+            console.error('Failed to send payment receipt email:', err);
+            // Don't throw - receipt email failure shouldn't fail the payment
+          });
+        }
 
         return {
           success: true,
@@ -583,7 +706,7 @@ export const paymentProcessingRouter = router({
       // Process refund with provider
       const provider = await getPaymentProvider();
       const result = await provider.processRefund({
-        transactionId: originalTransaction.processorId!,
+        transactionId: originalTransaction.externalTransactionId!,
         amount: toCents(refundAmount),
         reason,
       });
@@ -609,7 +732,7 @@ export const paymentProcessingRouter = router({
             isRefund: true,
             originalTransactionId: transactionId,
             refundReason: reason,
-            processorId: result.refundId,
+            externalTransactionId: result.refundId,
             processorResponse: result.rawResponse as object,
             processedAt: new Date(),
           },

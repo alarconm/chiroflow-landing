@@ -47,7 +47,7 @@
         "Email receipt to patient automatically"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-088",
