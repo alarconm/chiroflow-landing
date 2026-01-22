@@ -19,7 +19,7 @@
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-217",
@@ -35,7 +35,7 @@
         "Fallback provider support"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-218",
@@ -51,7 +51,7 @@
         "Notification when provider is ready"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-219",
@@ -68,7 +68,7 @@
         "Connection quality indicator"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-220",
@@ -84,7 +84,7 @@
         "Place of service code auto-selection"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-221",
@@ -100,7 +100,7 @@
         "Block session without valid consent"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-222",
@@ -116,7 +116,7 @@
         "Attach to patient record"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-223",
@@ -132,7 +132,7 @@
         "Mobile-friendly video interface"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }
