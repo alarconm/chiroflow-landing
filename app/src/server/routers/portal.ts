@@ -103,6 +103,24 @@ const appointmentRequestSchema = z.object({
   isUrgent: z.boolean().default(false),
 });
 
+const bookAppointmentSchema = z.object({
+  sessionToken: z.string(),
+  providerId: z.string(),
+  appointmentTypeId: z.string(),
+  startTime: z.coerce.date(),
+  endTime: z.coerce.date(),
+  chiefComplaint: z.string().optional(),
+  patientNotes: z.string().optional(),
+});
+
+const rescheduleSchema = z.object({
+  sessionToken: z.string(),
+  appointmentId: z.string(),
+  newStartTime: z.coerce.date(),
+  newEndTime: z.coerce.date(),
+  newProviderId: z.string().optional(),
+});
+
 const messageSchema = z.object({
   sessionToken: z.string(),
   subject: z.string().min(1, 'Subject is required'),
@@ -605,6 +623,510 @@ export const portalRouter = router({
 
       return { success: true };
     }),
+
+  // Get providers for online booking
+  getProviders: publicProcedure
+    .input(z.object({ sessionToken: z.string() }))
+    .query(async ({ input }) => {
+      const user = await getPortalUserFromToken(input.sessionToken);
+
+      const providers = await prisma.provider.findMany({
+        where: {
+          organizationId: user.organizationId,
+          isActive: true,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+        orderBy: [{ sortOrder: 'asc' }, { user: { lastName: 'asc' } }],
+      });
+
+      return providers.map((p) => ({
+        id: p.id,
+        title: p.title,
+        firstName: p.user.firstName,
+        lastName: p.user.lastName,
+        specialty: p.specialty,
+        color: p.color,
+      }));
+    }),
+
+  // Get appointment types for online booking
+  getAppointmentTypes: publicProcedure
+    .input(z.object({ sessionToken: z.string() }))
+    .query(async ({ input }) => {
+      const user = await getPortalUserFromToken(input.sessionToken);
+
+      const types = await prisma.appointmentType.findMany({
+        where: {
+          organizationId: user.organizationId,
+          isActive: true,
+        },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      });
+
+      return types.map((t) => ({
+        id: t.id,
+        name: t.name,
+        duration: t.duration,
+        description: t.description,
+        color: t.color,
+      }));
+    }),
+
+  // Get available time slots for a date range
+  getAvailableSlots: publicProcedure
+    .input(
+      z.object({
+        sessionToken: z.string(),
+        startDate: z.coerce.date(),
+        endDate: z.coerce.date(),
+        providerId: z.string().optional(),
+        appointmentTypeId: z.string().optional(),
+      })
+    )
+    .query(async ({ input }) => {
+      const { sessionToken, startDate, endDate, providerId, appointmentTypeId } = input;
+      const user = await getPortalUserFromToken(sessionToken);
+
+      // Get appointment duration
+      let duration = 30; // Default duration in minutes
+      if (appointmentTypeId) {
+        const appointmentType = await prisma.appointmentType.findFirst({
+          where: { id: appointmentTypeId, organizationId: user.organizationId },
+        });
+        if (appointmentType) {
+          duration = appointmentType.duration;
+        }
+      }
+
+      // Get providers to check availability for
+      const providerWhere: Record<string, unknown> = {
+        organizationId: user.organizationId,
+        isActive: true,
+      };
+      if (providerId) {
+        providerWhere.id = providerId;
+      }
+
+      const providers = await prisma.provider.findMany({
+        where: providerWhere,
+        include: {
+          schedules: { where: { isActive: true } },
+          exceptions: {
+            where: {
+              date: { gte: startDate, lte: endDate },
+            },
+          },
+          user: {
+            select: { firstName: true, lastName: true },
+          },
+        },
+      });
+
+      // Get existing appointments in range
+      const existingAppointments = await prisma.appointment.findMany({
+        where: {
+          organizationId: user.organizationId,
+          providerId: providerId ? providerId : { in: providers.map((p) => p.id) },
+          startTime: { gte: startDate },
+          endTime: { lte: endDate },
+          status: { notIn: ['CANCELLED', 'NO_SHOW'] },
+        },
+        select: {
+          providerId: true,
+          startTime: true,
+          endTime: true,
+        },
+      });
+
+      // Get schedule blocks
+      const blocks = await prisma.scheduleBlock.findMany({
+        where: {
+          organizationId: user.organizationId,
+          startTime: { gte: startDate },
+          endTime: { lte: endDate },
+          OR: [
+            { providerId: null },
+            { providerId: providerId || { in: providers.map((p) => p.id) } },
+          ],
+        },
+        select: {
+          providerId: true,
+          startTime: true,
+          endTime: true,
+        },
+      });
+
+      // Day mapping for DayOfWeek enum
+      const dayOfWeekMap: Record<number, string> = {
+        0: 'SUNDAY',
+        1: 'MONDAY',
+        2: 'TUESDAY',
+        3: 'WEDNESDAY',
+        4: 'THURSDAY',
+        5: 'FRIDAY',
+        6: 'SATURDAY',
+      };
+
+      // Generate available slots for each day
+      const slots: Array<{
+        date: string;
+        providerId: string;
+        providerName: string;
+        startTime: Date;
+        endTime: Date;
+      }> = [];
+
+      const currentDate = new Date(startDate);
+      const endDateTime = new Date(endDate);
+      const now = new Date();
+
+      while (currentDate <= endDateTime) {
+        const dayOfWeek = dayOfWeekMap[currentDate.getDay()];
+        const dateStr = currentDate.toISOString().split('T')[0];
+
+        for (const provider of providers) {
+          // Check for exceptions (days off or custom hours)
+          const exception = provider.exceptions.find(
+            (e) => e.date.toISOString().split('T')[0] === dateStr
+          );
+
+          if (exception && !exception.isAvailable) {
+            // Provider is off this day
+            continue;
+          }
+
+          // Get working hours for this day
+          let workStart: string | null = null;
+          let workEnd: string | null = null;
+
+          if (exception && exception.isAvailable && exception.startTime && exception.endTime) {
+            // Use exception hours
+            workStart = exception.startTime;
+            workEnd = exception.endTime;
+          } else {
+            // Use regular schedule
+            const schedule = provider.schedules.find((s) => s.dayOfWeek === dayOfWeek);
+            if (schedule) {
+              workStart = schedule.startTime;
+              workEnd = schedule.endTime;
+            }
+          }
+
+          if (!workStart || !workEnd) {
+            continue;
+          }
+
+          // Parse work hours
+          const [startHour, startMin] = workStart.split(':').map(Number);
+          const [endHour, endMin] = workEnd.split(':').map(Number);
+
+          const dayStart = new Date(currentDate);
+          dayStart.setHours(startHour, startMin, 0, 0);
+
+          const dayEnd = new Date(currentDate);
+          dayEnd.setHours(endHour, endMin, 0, 0);
+
+          // Generate slots for this day
+          let slotStart = new Date(dayStart);
+          while (slotStart.getTime() + duration * 60 * 1000 <= dayEnd.getTime()) {
+            const slotEnd = new Date(slotStart.getTime() + duration * 60 * 1000);
+
+            // Skip slots in the past
+            if (slotStart <= now) {
+              slotStart = new Date(slotStart.getTime() + duration * 60 * 1000);
+              continue;
+            }
+
+            // Check for conflicts with existing appointments
+            const hasAppointmentConflict = existingAppointments.some(
+              (apt) =>
+                apt.providerId === provider.id &&
+                apt.startTime < slotEnd &&
+                apt.endTime > slotStart
+            );
+
+            // Check for conflicts with schedule blocks
+            const hasBlockConflict = blocks.some(
+              (block) =>
+                (block.providerId === null || block.providerId === provider.id) &&
+                block.startTime < slotEnd &&
+                block.endTime > slotStart
+            );
+
+            if (!hasAppointmentConflict && !hasBlockConflict) {
+              slots.push({
+                date: dateStr,
+                providerId: provider.id,
+                providerName: `${provider.title || ''} ${provider.user.firstName} ${provider.user.lastName}`.trim(),
+                startTime: new Date(slotStart),
+                endTime: new Date(slotEnd),
+              });
+            }
+
+            slotStart = new Date(slotStart.getTime() + duration * 60 * 1000);
+          }
+        }
+
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+
+      return slots;
+    }),
+
+  // Book an appointment directly
+  bookAppointment: publicProcedure.input(bookAppointmentSchema).mutation(async ({ input, ctx }) => {
+    const { sessionToken, providerId, appointmentTypeId, startTime, endTime, chiefComplaint, patientNotes } = input;
+    const user = await getPortalUserFromToken(sessionToken);
+    const ipAddress = (ctx as Record<string, unknown>).ipAddress as string | undefined;
+
+    // Validate provider exists
+    const provider = await prisma.provider.findFirst({
+      where: { id: providerId, organizationId: user.organizationId, isActive: true },
+    });
+
+    if (!provider) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Provider not found' });
+    }
+
+    // Validate appointment type
+    const appointmentType = await prisma.appointmentType.findFirst({
+      where: { id: appointmentTypeId, organizationId: user.organizationId, isActive: true },
+    });
+
+    if (!appointmentType) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Appointment type not found' });
+    }
+
+    // Check for conflicts
+    const conflict = await prisma.appointment.findFirst({
+      where: {
+        providerId,
+        status: { notIn: ['CANCELLED', 'NO_SHOW'] },
+        startTime: { lt: endTime },
+        endTime: { gt: startTime },
+      },
+    });
+
+    if (conflict) {
+      throw new TRPCError({
+        code: 'CONFLICT',
+        message: 'This time slot is no longer available. Please select another time.',
+      });
+    }
+
+    // Check for schedule blocks
+    const blockConflict = await prisma.scheduleBlock.findFirst({
+      where: {
+        OR: [{ providerId }, { providerId: null, organizationId: user.organizationId }],
+        startTime: { lt: endTime },
+        endTime: { gt: startTime },
+      },
+    });
+
+    if (blockConflict) {
+      throw new TRPCError({
+        code: 'CONFLICT',
+        message: 'This time slot is blocked. Please select another time.',
+      });
+    }
+
+    // Create the appointment
+    const appointment = await prisma.appointment.create({
+      data: {
+        organizationId: user.organizationId,
+        patientId: user.patientId,
+        providerId,
+        appointmentTypeId,
+        startTime,
+        endTime,
+        chiefComplaint,
+        patientNotes,
+        status: 'SCHEDULED',
+        createdBy: 'PORTAL',
+      },
+      include: {
+        provider: {
+          include: { user: { select: { firstName: true, lastName: true } } },
+        },
+        appointmentType: { select: { name: true, duration: true } },
+      },
+    });
+
+    // Log the booking
+    await logPortalAccess({
+      action: 'PORTAL_BOOK_APPOINTMENT',
+      portalUserId: user.id,
+      organizationId: user.organizationId,
+      resource: 'Appointment',
+      resourceId: appointment.id,
+      ipAddress,
+      success: true,
+    });
+
+    // TODO: Send confirmation email
+
+    return {
+      success: true,
+      appointment: {
+        id: appointment.id,
+        startTime: appointment.startTime,
+        endTime: appointment.endTime,
+        provider: {
+          id: appointment.provider.id,
+          name: `${appointment.provider.title || ''} ${appointment.provider.user.firstName} ${appointment.provider.user.lastName}`.trim(),
+        },
+        appointmentType: appointment.appointmentType
+          ? {
+              name: appointment.appointmentType.name,
+              duration: appointment.appointmentType.duration,
+            }
+          : undefined,
+      },
+    };
+  }),
+
+  // Reschedule an appointment
+  rescheduleAppointment: publicProcedure.input(rescheduleSchema).mutation(async ({ input, ctx }) => {
+    const { sessionToken, appointmentId, newStartTime, newEndTime, newProviderId } = input;
+    const user = await getPortalUserFromToken(sessionToken);
+    const ipAddress = (ctx as Record<string, unknown>).ipAddress as string | undefined;
+
+    // Verify appointment belongs to patient
+    const appointment = await prisma.appointment.findFirst({
+      where: {
+        id: appointmentId,
+        patientId: user.patientId,
+        organizationId: user.organizationId,
+      },
+    });
+
+    if (!appointment) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Appointment not found' });
+    }
+
+    // Check if can be rescheduled
+    if (!['SCHEDULED', 'CONFIRMED'].includes(appointment.status)) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'This appointment cannot be rescheduled',
+      });
+    }
+
+    if (appointment.startTime <= new Date()) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Cannot reschedule past appointments',
+      });
+    }
+
+    const targetProviderId = newProviderId || appointment.providerId;
+
+    // Validate new provider if different
+    if (newProviderId && newProviderId !== appointment.providerId) {
+      const newProvider = await prisma.provider.findFirst({
+        where: { id: newProviderId, organizationId: user.organizationId, isActive: true },
+      });
+
+      if (!newProvider) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Provider not found' });
+      }
+    }
+
+    // Check for conflicts at new time (excluding current appointment)
+    const conflict = await prisma.appointment.findFirst({
+      where: {
+        id: { not: appointmentId },
+        providerId: targetProviderId,
+        status: { notIn: ['CANCELLED', 'NO_SHOW'] },
+        startTime: { lt: newEndTime },
+        endTime: { gt: newStartTime },
+      },
+    });
+
+    if (conflict) {
+      throw new TRPCError({
+        code: 'CONFLICT',
+        message: 'This time slot is no longer available. Please select another time.',
+      });
+    }
+
+    // Check for schedule blocks
+    const blockConflict = await prisma.scheduleBlock.findFirst({
+      where: {
+        OR: [
+          { providerId: targetProviderId },
+          { providerId: null, organizationId: user.organizationId },
+        ],
+        startTime: { lt: newEndTime },
+        endTime: { gt: newStartTime },
+      },
+    });
+
+    if (blockConflict) {
+      throw new TRPCError({
+        code: 'CONFLICT',
+        message: 'This time slot is blocked. Please select another time.',
+      });
+    }
+
+    // Update the appointment
+    const updated = await prisma.appointment.update({
+      where: { id: appointmentId },
+      data: {
+        startTime: newStartTime,
+        endTime: newEndTime,
+        providerId: targetProviderId,
+        status: 'SCHEDULED', // Reset to scheduled after reschedule
+      },
+      include: {
+        provider: {
+          include: { user: { select: { firstName: true, lastName: true } } },
+        },
+        appointmentType: { select: { name: true, duration: true } },
+      },
+    });
+
+    // Log the reschedule
+    await logPortalAccess({
+      action: 'PORTAL_RESCHEDULE_APPOINTMENT',
+      portalUserId: user.id,
+      organizationId: user.organizationId,
+      resource: 'Appointment',
+      resourceId: appointmentId,
+      ipAddress,
+      success: true,
+      metadata: { oldStartTime: appointment.startTime, newStartTime },
+    });
+
+    // TODO: Send confirmation email
+
+    return {
+      success: true,
+      appointment: {
+        id: updated.id,
+        startTime: updated.startTime,
+        endTime: updated.endTime,
+        provider: {
+          id: updated.provider.id,
+          name: `${updated.provider.title || ''} ${updated.provider.user.firstName} ${updated.provider.user.lastName}`.trim(),
+        },
+        appointmentType: updated.appointmentType
+          ? {
+              name: updated.appointmentType.name,
+              duration: updated.appointmentType.duration,
+            }
+          : undefined,
+      },
+    };
+  }),
 
   // ============================================
   // FORMS

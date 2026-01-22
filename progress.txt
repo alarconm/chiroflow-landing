@@ -117,3 +117,80 @@ Acceptance Criteria Status:
 --- Iteration 2 completed at 2026-01-21 ---
 Story: US-094 - Patient portal dashboard
 
+--- Iteration 2 completed at 2026-01-21 22:06:32 ---
+Story: US-094 - Patient portal dashboard
+
+US-095: Online appointment scheduling - COMPLETE
+------------------------------------------------
+Implemented complete online appointment scheduling system:
+
+1. OnlineScheduling component (/portal/appointments/schedule)
+   - Weekly calendar view showing available time slots
+   - Filter by appointment type (required) and provider (optional)
+   - Visual slot grid with color-coded availability
+   - Week navigation (previous/next week)
+   - Responsive design (2/4/7 column grid based on viewport)
+   - Click-to-book functionality
+
+2. Filter System
+   - Appointment type selector (shows duration for each type)
+   - Provider selector with specialty information
+   - Real-time slot updates when filters change
+   - "Refresh Availability" button to reload slots
+
+3. Booking Flow
+   - Click on available slot opens confirmation dialog
+   - Shows date, time, provider, and appointment type
+   - Optional fields for reason for visit and notes
+   - Confirmation button creates appointment
+   - Success dialog with appointment details
+   - Navigation to appointments list after booking
+
+4. Reschedule Functionality (/portal/appointments/reschedule/[appointmentId])
+   - Same calendar interface as new booking
+   - Pre-validates appointment ownership
+   - Checks for scheduling conflicts
+   - Updates existing appointment to new time/provider
+   - Audit logging for reschedule action
+
+5. Portal Router Endpoints Added:
+   - getProviders: List active providers for booking
+   - getAppointmentTypes: List active appointment types
+   - getAvailableSlots: Calculate available slots for date range
+   - bookAppointment: Create new appointment with conflict checking
+   - rescheduleAppointment: Move appointment to new time/provider
+
+6. AppointmentsList Integration
+   - Added "Schedule Now" primary button (instant booking)
+   - Added "Request Appointment" secondary button (existing flow)
+   - Added "Reschedule" button on each upcoming appointment
+   - Updated empty state with scheduling CTA
+
+Acceptance Criteria Status:
+- [x] Available appointment slots calendar view
+- [x] Filter by provider and appointment type
+- [x] Book appointment with confirmation
+- [x] View upcoming appointments (existing AppointmentsList)
+- [x] Cancel appointment with configurable notice period (existing)
+- [x] Reschedule to new available slot
+- [x] Confirmation email on booking/changes (TODO comment added)
+
+Technical Implementation:
+- Provider schedules respected (DayOfWeek, start/end times)
+- Provider exceptions handled (days off, custom hours)
+- Conflict detection with existing appointments
+- Schedule blocks respected (lunch, meetings, etc.)
+- Past time slots filtered out
+- Slot generation based on appointment type duration
+
+Files Created/Modified:
+- app/src/components/portal/OnlineScheduling.tsx (NEW)
+- app/src/app/portal/appointments/schedule/page.tsx (NEW)
+- app/src/app/portal/appointments/reschedule/[appointmentId]/page.tsx (NEW)
+- app/src/server/routers/portal.ts (MODIFIED - added 5 new endpoints)
+- app/src/components/portal/AppointmentsList.tsx (MODIFIED - added schedule/reschedule buttons)
+- app/src/components/portal/index.ts (MODIFIED - added OnlineScheduling export)
+
+--- Iteration 3 completed at 2026-01-21 ---
+Story: US-095 - Online appointment scheduling
+

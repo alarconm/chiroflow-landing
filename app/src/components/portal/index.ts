@@ -10,6 +10,7 @@ export { PortalLayout } from './PortalLayout';
 export { PortalDashboard } from './PortalDashboard';
 export { AppointmentsList } from './AppointmentsList';
 export { RequestAppointment } from './RequestAppointment';
+export { OnlineScheduling } from './OnlineScheduling';
 export { FormsList } from './FormsList';
 export { StatementsList } from './StatementsList';
 export { PaymentForm } from './PaymentForm';

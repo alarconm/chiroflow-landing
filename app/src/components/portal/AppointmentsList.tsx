@@ -25,7 +25,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { trpc } from '@/trpc/client';
 import { format, isPast, isToday, isTomorrow, addDays } from 'date-fns';
-import { Calendar, Clock, User, X, CalendarPlus, MapPin, Phone } from 'lucide-react';
+import { Calendar, Clock, User, X, CalendarPlus, MapPin, Phone, RefreshCw } from 'lucide-react';
 
 // Demo appointments data
 const DEMO_APPOINTMENTS = [
@@ -200,7 +200,17 @@ export function AppointmentsList() {
           </div>
 
           {showCancel && appointment.canCancel && (
-            <div className="flex-shrink-0">
+            <div className="flex-shrink-0 flex gap-2">
+              <Link href={`/portal/appointments/reschedule/${appointment.id}`}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-[#053e67] border-blue-200 hover:bg-blue-50"
+                >
+                  <RefreshCw className="h-4 w-4 mr-1" />
+                  Reschedule
+                </Button>
+              </Link>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button
@@ -249,12 +259,19 @@ export function AppointmentsList() {
           <h1 className="text-2xl font-bold text-stone-900">Appointments</h1>
           <p className="text-stone-600">View and manage your appointments</p>
         </div>
-        <Link href="/portal/appointments/request">
-          <Button className="bg-[#053e67] hover:bg-[#053e67] text-white">
-            <CalendarPlus className="h-4 w-4 mr-2" />
-            Request Appointment
-          </Button>
-        </Link>
+        <div className="flex gap-2">
+          <Link href="/portal/appointments/schedule">
+            <Button className="bg-[#053e67] hover:bg-[#042d4d] text-white">
+              <CalendarPlus className="h-4 w-4 mr-2" />
+              Schedule Now
+            </Button>
+          </Link>
+          <Link href="/portal/appointments/request">
+            <Button variant="outline" className="border-[#053e67] text-[#053e67] hover:bg-blue-50">
+              Request Appointment
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Location Info Card */}
@@ -305,11 +322,13 @@ export function AppointmentsList() {
               <CardContent className="py-12 text-center">
                 <Calendar className="h-12 w-12 mx-auto text-stone-300 mb-4" />
                 <p className="text-stone-500 mb-4">No upcoming appointments</p>
-                <Link href="/portal/appointments/request">
-                  <Button className="bg-[#053e67] hover:bg-[#053e67] text-white">
-                    Request an Appointment
-                  </Button>
-                </Link>
+                <div className="flex justify-center gap-2">
+                  <Link href="/portal/appointments/schedule">
+                    <Button className="bg-[#053e67] hover:bg-[#042d4d] text-white">
+                      Schedule an Appointment
+                    </Button>
+                  </Link>
+                </div>
               </CardContent>
             </Card>
           ) : (
