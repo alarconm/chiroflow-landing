@@ -3381,6 +3381,975 @@ export const devicesRouter = router({
         };
       }
     }),
+
+  // ============================================
+  // Activity Goals and Alerts (US-245)
+  // ============================================
+
+  // Set a daily activity goal for a patient
+  setGoal: protectedProcedure
+    .input(z.object({
+      patientId: z.string(),
+      goalType: z.enum(['STEPS', 'ACTIVE_MINUTES', 'SLEEP_DURATION', 'CALORIES', 'DISTANCE']),
+      targetValue: z.number().positive(),
+      unit: z.string().optional(),
+      alertOnAchieve: z.boolean().optional().default(true),
+      alertOnDecrease: z.boolean().optional().default(true),
+      decreaseThreshold: z.number().min(10).max(90).optional().default(30),
+      notes: z.string().optional(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional().nullable(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const {
+        patientId,
+        goalType,
+        targetValue,
+        unit,
+        alertOnAchieve,
+        alertOnDecrease,
+        decreaseThreshold,
+        notes,
+        startDate,
+        endDate,
+      } = input;
+
+      // Verify patient belongs to organization
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      // Determine default unit based on goal type
+      const defaultUnits: Record<string, string> = {
+        STEPS: 'steps',
+        ACTIVE_MINUTES: 'minutes',
+        SLEEP_DURATION: 'hours',
+        CALORIES: 'calories',
+        DISTANCE: 'meters',
+      };
+
+      const goalUnit = unit || defaultUnits[goalType] || 'units';
+
+      // Upsert goal (one per type per patient)
+      const goal = await ctx.prisma.activityGoal.upsert({
+        where: {
+          patientId_goalType: {
+            patientId,
+            goalType,
+          },
+        },
+        create: {
+          patientId,
+          goalType,
+          targetValue,
+          unit: goalUnit,
+          alertOnAchieve: alertOnAchieve ?? true,
+          alertOnDecrease: alertOnDecrease ?? true,
+          decreaseThreshold: decreaseThreshold ?? 30,
+          notes,
+          startDate: startDate || new Date(),
+          endDate,
+          organizationId: ctx.user.organizationId,
+          createdById: ctx.user.id,
+        },
+        update: {
+          targetValue,
+          unit: goalUnit,
+          alertOnAchieve: alertOnAchieve ?? true,
+          alertOnDecrease: alertOnDecrease ?? true,
+          decreaseThreshold: decreaseThreshold ?? 30,
+          notes,
+          startDate: startDate || undefined,
+          endDate,
+          isActive: true,
+        },
+      });
+
+      await auditLog('CREATE', 'ActivityGoal', {
+        entityId: goal.id,
+        changes: {
+          goalType,
+          targetValue,
+          patientId,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return goal;
+    }),
+
+  // Get all goals for a patient
+  getGoals: protectedProcedure
+    .input(z.object({
+      patientId: z.string(),
+      activeOnly: z.boolean().optional().default(true),
+    }))
+    .query(async ({ ctx, input }) => {
+      const { patientId, activeOnly } = input;
+
+      // Verify patient belongs to organization
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      const goals = await ctx.prisma.activityGoal.findMany({
+        where: {
+          patientId,
+          organizationId: ctx.user.organizationId,
+          ...(activeOnly ? { isActive: true } : {}),
+        },
+        include: {
+          createdBy: {
+            select: {
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      return goals;
+    }),
+
+  // Update a goal
+  updateGoal: protectedProcedure
+    .input(z.object({
+      goalId: z.string(),
+      targetValue: z.number().positive().optional(),
+      alertOnAchieve: z.boolean().optional(),
+      alertOnDecrease: z.boolean().optional(),
+      decreaseThreshold: z.number().min(10).max(90).optional(),
+      isActive: z.boolean().optional(),
+      notes: z.string().optional(),
+      endDate: z.date().optional().nullable(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { goalId, ...updates } = input;
+
+      const existingGoal = await ctx.prisma.activityGoal.findFirst({
+        where: {
+          id: goalId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!existingGoal) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Goal not found',
+        });
+      }
+
+      const updatedGoal = await ctx.prisma.activityGoal.update({
+        where: { id: goalId },
+        data: updates,
+      });
+
+      await auditLog('UPDATE', 'ActivityGoal', {
+        entityId: goalId,
+        changes: updates,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return updatedGoal;
+    }),
+
+  // Delete (deactivate) a goal
+  deleteGoal: protectedProcedure
+    .input(z.object({
+      goalId: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { goalId } = input;
+
+      const existingGoal = await ctx.prisma.activityGoal.findFirst({
+        where: {
+          id: goalId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!existingGoal) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Goal not found',
+        });
+      }
+
+      // Soft delete by deactivating
+      await ctx.prisma.activityGoal.update({
+        where: { id: goalId },
+        data: { isActive: false },
+      });
+
+      await auditLog('DELETE', 'ActivityGoal', {
+        entityId: goalId,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { success: true };
+    }),
+
+  // Check goal achievement for a patient (called after data sync)
+  checkGoalAchievement: protectedProcedure
+    .input(z.object({
+      patientId: z.string(),
+      date: z.date().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { patientId, date = new Date() } = input;
+
+      // Verify patient belongs to organization
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      // Get active goals
+      const goals = await ctx.prisma.activityGoal.findMany({
+        where: {
+          patientId,
+          isActive: true,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (goals.length === 0) {
+        return { achievements: [], alerts: [] };
+      }
+
+      // Get activity data for the date
+      const startOfDay = new Date(date);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(date);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const activityData = await ctx.prisma.activityData.findFirst({
+        where: {
+          patientId,
+          date: {
+            gte: startOfDay,
+            lte: endOfDay,
+          },
+        },
+      });
+
+      const sleepData = await ctx.prisma.sleepData.findFirst({
+        where: {
+          patientId,
+          date: {
+            gte: startOfDay,
+            lte: endOfDay,
+          },
+        },
+      });
+
+      const achievements: Array<{
+        goalId: string;
+        goalType: string;
+        targetValue: number;
+        actualValue: number;
+        achieved: boolean;
+        percentComplete: number;
+      }> = [];
+
+      const alerts: Array<{
+        type: 'achievement' | 'decrease';
+        goalType: string;
+        message: string;
+        severity: 'info' | 'warning' | 'success';
+      }> = [];
+
+      for (const goal of goals) {
+        let actualValue = 0;
+
+        switch (goal.goalType) {
+          case 'STEPS':
+            actualValue = activityData?.steps ?? 0;
+            break;
+          case 'ACTIVE_MINUTES':
+            actualValue = activityData?.activeMinutes ?? 0;
+            break;
+          case 'SLEEP_DURATION':
+            // Sleep duration is in minutes, convert to hours if needed
+            actualValue = sleepData && sleepData.duration ? sleepData.duration / 60 : 0;
+            break;
+          case 'CALORIES':
+            actualValue = activityData?.calories ?? 0;
+            break;
+          case 'DISTANCE':
+            actualValue = activityData?.distance ?? 0;
+            break;
+        }
+
+        const percentComplete = Math.round((actualValue / goal.targetValue) * 100);
+        const achieved = actualValue >= goal.targetValue;
+
+        achievements.push({
+          goalId: goal.id,
+          goalType: goal.goalType,
+          targetValue: goal.targetValue,
+          actualValue,
+          achieved,
+          percentComplete,
+        });
+
+        // Check if goal was just achieved (wasn't achieved yesterday)
+        if (achieved && goal.alertOnAchieve) {
+          const wasAchievedToday = goal.lastAchievedAt &&
+            goal.lastAchievedAt >= startOfDay;
+
+          if (!wasAchievedToday) {
+            alerts.push({
+              type: 'achievement',
+              goalType: goal.goalType,
+              message: `Goal achieved! ${actualValue} ${goal.unit} (target: ${goal.targetValue})`,
+              severity: 'success',
+            });
+
+            // Update goal achievement tracking
+            await ctx.prisma.activityGoal.update({
+              where: { id: goal.id },
+              data: {
+                lastAchievedAt: new Date(),
+                totalAchievements: { increment: 1 },
+                currentStreak: { increment: 1 },
+                longestStreak: goal.currentStreak + 1 > goal.longestStreak
+                  ? goal.currentStreak + 1
+                  : goal.longestStreak,
+              },
+            });
+          }
+        } else if (!achieved && goal.currentStreak > 0) {
+          // Reset streak if goal not achieved today
+          await ctx.prisma.activityGoal.update({
+            where: { id: goal.id },
+            data: { currentStreak: 0 },
+          });
+        }
+      }
+
+      await auditLog('VIEW', 'GoalAchievement', {
+        entityId: patientId,
+        changes: { date: date.toISOString(), achievements: achievements.length },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { achievements, alerts };
+    }),
+
+  // Check for significant activity decrease
+  checkActivityDecrease: protectedProcedure
+    .input(z.object({
+      patientId: z.string(),
+      lookbackDays: z.number().min(3).max(30).optional().default(7),
+    }))
+    .query(async ({ ctx, input }) => {
+      const { patientId, lookbackDays } = input;
+
+      // Verify patient belongs to organization
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      // Get active goals with decrease alerts enabled
+      const goals = await ctx.prisma.activityGoal.findMany({
+        where: {
+          patientId,
+          isActive: true,
+          alertOnDecrease: true,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (goals.length === 0) {
+        return { alerts: [], summary: null };
+      }
+
+      // Calculate date ranges
+      const today = new Date();
+      const startDate = new Date(today);
+      startDate.setDate(startDate.getDate() - lookbackDays);
+      startDate.setHours(0, 0, 0, 0);
+
+      const midPoint = new Date(today);
+      midPoint.setDate(midPoint.getDate() - Math.floor(lookbackDays / 2));
+
+      // Get activity data for the period
+      const activityData = await ctx.prisma.activityData.findMany({
+        where: {
+          patientId,
+          date: { gte: startDate },
+        },
+        orderBy: { date: 'asc' },
+      });
+
+      const sleepData = await ctx.prisma.sleepData.findMany({
+        where: {
+          patientId,
+          date: { gte: startDate },
+        },
+        orderBy: { date: 'asc' },
+      });
+
+      // Split data into first half and second half
+      const firstHalfActivity = activityData.filter(d => d.date < midPoint);
+      const secondHalfActivity = activityData.filter(d => d.date >= midPoint);
+      const firstHalfSleep = sleepData.filter(d => d.date < midPoint);
+      const secondHalfSleep = sleepData.filter(d => d.date >= midPoint);
+
+      const alerts: Array<{
+        goalType: string;
+        previousAvg: number;
+        currentAvg: number;
+        decreasePercent: number;
+        threshold: number;
+        severity: 'warning' | 'critical';
+        recommendation: string;
+      }> = [];
+
+      for (const goal of goals) {
+        let firstHalfValues: number[] = [];
+        let secondHalfValues: number[] = [];
+
+        switch (goal.goalType) {
+          case 'STEPS':
+            firstHalfValues = firstHalfActivity.map(d => d.steps ?? 0);
+            secondHalfValues = secondHalfActivity.map(d => d.steps ?? 0);
+            break;
+          case 'ACTIVE_MINUTES':
+            firstHalfValues = firstHalfActivity.map(d => d.activeMinutes ?? 0);
+            secondHalfValues = secondHalfActivity.map(d => d.activeMinutes ?? 0);
+            break;
+          case 'SLEEP_DURATION':
+            firstHalfValues = firstHalfSleep.map(d => (d.duration ?? 0) / 60); // Convert to hours
+            secondHalfValues = secondHalfSleep.map(d => (d.duration ?? 0) / 60);
+            break;
+          case 'CALORIES':
+            firstHalfValues = firstHalfActivity.map(d => d.calories ?? 0);
+            secondHalfValues = secondHalfActivity.map(d => d.calories ?? 0);
+            break;
+          case 'DISTANCE':
+            firstHalfValues = firstHalfActivity.map(d => d.distance ?? 0);
+            secondHalfValues = secondHalfActivity.map(d => d.distance ?? 0);
+            break;
+        }
+
+        if (firstHalfValues.length === 0 || secondHalfValues.length === 0) {
+          continue;
+        }
+
+        const previousAvg = calculateAverage(firstHalfValues);
+        const currentAvg = calculateAverage(secondHalfValues);
+
+        if (previousAvg === 0) continue;
+
+        const decreasePercent = Math.round(((previousAvg - currentAvg) / previousAvg) * 100);
+
+        if (decreasePercent >= goal.decreaseThreshold) {
+          const severity = decreasePercent >= 50 ? 'critical' : 'warning';
+
+          let recommendation = '';
+          switch (goal.goalType) {
+            case 'STEPS':
+              recommendation = 'Consider scheduling a follow-up to discuss activity level changes and any pain concerns.';
+              break;
+            case 'ACTIVE_MINUTES':
+              recommendation = 'Patient may be experiencing pain or mobility issues limiting activity. Review recent symptoms.';
+              break;
+            case 'SLEEP_DURATION':
+              recommendation = 'Sleep quality decrease may indicate pain or discomfort. Consider sleep hygiene discussion.';
+              break;
+            case 'CALORIES':
+              recommendation = 'Reduced calorie burn may indicate decreased activity. Check for mobility or pain issues.';
+              break;
+            case 'DISTANCE':
+              recommendation = 'Reduced movement distance may indicate mobility concerns. Consider assessment.';
+              break;
+          }
+
+          alerts.push({
+            goalType: goal.goalType,
+            previousAvg: Math.round(previousAvg * 10) / 10,
+            currentAvg: Math.round(currentAvg * 10) / 10,
+            decreasePercent,
+            threshold: goal.decreaseThreshold,
+            severity,
+            recommendation,
+          });
+        }
+      }
+
+      return {
+        alerts,
+        summary: {
+          lookbackDays,
+          activityDaysRecorded: activityData.length,
+          sleepDaysRecorded: sleepData.length,
+          alertCount: alerts.length,
+          criticalAlerts: alerts.filter(a => a.severity === 'critical').length,
+        },
+      };
+    }),
+
+  // Generate weekly progress report
+  getWeeklyProgressReport: protectedProcedure
+    .input(z.object({
+      patientId: z.string(),
+      weekStartDate: z.date().optional(),
+    }))
+    .query(async ({ ctx, input }) => {
+      const { patientId, weekStartDate } = input;
+
+      // Verify patient belongs to organization
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          demographics: {
+            select: {
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      // Calculate week boundaries
+      const endDate = weekStartDate ? new Date(weekStartDate) : new Date();
+      const startDate = new Date(endDate);
+      startDate.setDate(startDate.getDate() - 7);
+      startDate.setHours(0, 0, 0, 0);
+      endDate.setHours(23, 59, 59, 999);
+
+      // Previous week for comparison
+      const prevWeekEnd = new Date(startDate);
+      prevWeekEnd.setMilliseconds(-1);
+      const prevWeekStart = new Date(prevWeekEnd);
+      prevWeekStart.setDate(prevWeekStart.getDate() - 7);
+      prevWeekStart.setHours(0, 0, 0, 0);
+
+      // Get goals
+      const goals = await ctx.prisma.activityGoal.findMany({
+        where: {
+          patientId,
+          isActive: true,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      // Get activity data for this week and previous week
+      const thisWeekActivity = await ctx.prisma.activityData.findMany({
+        where: {
+          patientId,
+          date: { gte: startDate, lte: endDate },
+        },
+        orderBy: { date: 'asc' },
+      });
+
+      const prevWeekActivity = await ctx.prisma.activityData.findMany({
+        where: {
+          patientId,
+          date: { gte: prevWeekStart, lte: prevWeekEnd },
+        },
+      });
+
+      // Get sleep data
+      const thisWeekSleep = await ctx.prisma.sleepData.findMany({
+        where: {
+          patientId,
+          date: { gte: startDate, lte: endDate },
+        },
+        orderBy: { date: 'asc' },
+      });
+
+      const prevWeekSleep = await ctx.prisma.sleepData.findMany({
+        where: {
+          patientId,
+          date: { gte: prevWeekStart, lte: prevWeekEnd },
+        },
+      });
+
+      // Calculate summaries
+      const thisWeekSteps = thisWeekActivity.map(d => d.steps ?? 0);
+      const prevWeekSteps = prevWeekActivity.map(d => d.steps ?? 0);
+      const thisWeekActiveMin = thisWeekActivity.map(d => d.activeMinutes ?? 0);
+      const prevWeekActiveMin = prevWeekActivity.map(d => d.activeMinutes ?? 0);
+      const thisWeekCalories = thisWeekActivity.map(d => d.calories ?? 0);
+      const prevWeekCalories = prevWeekActivity.map(d => d.calories ?? 0);
+      const thisWeekSleepHours = thisWeekSleep.map(d => (d.duration ?? 0) / 60);
+      const prevWeekSleepHours = prevWeekSleep.map(d => (d.duration ?? 0) / 60);
+
+      const goalProgress = goals.map(goal => {
+        let thisWeekValues: number[] = [];
+        let daysAchieved = 0;
+
+        switch (goal.goalType) {
+          case 'STEPS':
+            thisWeekValues = thisWeekSteps;
+            daysAchieved = thisWeekSteps.filter(v => v >= goal.targetValue).length;
+            break;
+          case 'ACTIVE_MINUTES':
+            thisWeekValues = thisWeekActiveMin;
+            daysAchieved = thisWeekActiveMin.filter(v => v >= goal.targetValue).length;
+            break;
+          case 'SLEEP_DURATION':
+            thisWeekValues = thisWeekSleepHours;
+            daysAchieved = thisWeekSleepHours.filter(v => v >= goal.targetValue).length;
+            break;
+          case 'CALORIES':
+            thisWeekValues = thisWeekCalories;
+            daysAchieved = thisWeekCalories.filter(v => v >= goal.targetValue).length;
+            break;
+          case 'DISTANCE':
+            thisWeekValues = thisWeekActivity.map(d => d.distance ?? 0);
+            daysAchieved = thisWeekValues.filter(v => v >= goal.targetValue).length;
+            break;
+        }
+
+        const avgValue = thisWeekValues.length > 0
+          ? Math.round(calculateAverage(thisWeekValues) * 10) / 10
+          : 0;
+
+        return {
+          goalType: goal.goalType,
+          targetValue: goal.targetValue,
+          unit: goal.unit,
+          avgValue,
+          daysAchieved,
+          daysTracked: thisWeekValues.length,
+          achievementRate: thisWeekValues.length > 0
+            ? Math.round((daysAchieved / thisWeekValues.length) * 100)
+            : 0,
+          currentStreak: goal.currentStreak,
+          longestStreak: goal.longestStreak,
+        };
+      });
+
+      // Calculate week-over-week changes
+      const weekOverWeek = {
+        steps: {
+          thisWeek: Math.round(calculateAverage(thisWeekSteps)),
+          prevWeek: Math.round(calculateAverage(prevWeekSteps)),
+          change: calculatePercentChange(
+            calculateAverage(prevWeekSteps),
+            calculateAverage(thisWeekSteps)
+          ),
+        },
+        activeMinutes: {
+          thisWeek: Math.round(calculateAverage(thisWeekActiveMin)),
+          prevWeek: Math.round(calculateAverage(prevWeekActiveMin)),
+          change: calculatePercentChange(
+            calculateAverage(prevWeekActiveMin),
+            calculateAverage(thisWeekActiveMin)
+          ),
+        },
+        calories: {
+          thisWeek: Math.round(calculateAverage(thisWeekCalories)),
+          prevWeek: Math.round(calculateAverage(prevWeekCalories)),
+          change: calculatePercentChange(
+            calculateAverage(prevWeekCalories),
+            calculateAverage(thisWeekCalories)
+          ),
+        },
+        sleepHours: {
+          thisWeek: Math.round(calculateAverage(thisWeekSleepHours) * 10) / 10,
+          prevWeek: Math.round(calculateAverage(prevWeekSleepHours) * 10) / 10,
+          change: calculatePercentChange(
+            calculateAverage(prevWeekSleepHours),
+            calculateAverage(thisWeekSleepHours)
+          ),
+        },
+      };
+
+      // Daily breakdown
+      const dailyBreakdown = thisWeekActivity.map(activity => {
+        const sleepForDay = thisWeekSleep.find(s =>
+          s.date.toDateString() === activity.date.toDateString()
+        );
+
+        return {
+          date: activity.date,
+          steps: activity.steps ?? 0,
+          activeMinutes: activity.activeMinutes ?? 0,
+          calories: activity.calories ?? 0,
+          distance: activity.distance ?? 0,
+          sleepHours: sleepForDay && sleepForDay.duration ? Math.round(sleepForDay.duration / 6) / 10 : null,
+          sleepQuality: sleepForDay?.quality ?? null,
+        };
+      });
+
+      // Generate highlights and recommendations
+      const highlights: string[] = [];
+      const recommendations: string[] = [];
+
+      if (weekOverWeek.steps.change > 10) {
+        highlights.push(`Great job! Steps increased by ${weekOverWeek.steps.change}% this week.`);
+      } else if (weekOverWeek.steps.change < -20) {
+        recommendations.push('Activity has decreased significantly. Consider a follow-up.');
+      }
+
+      if (weekOverWeek.sleepHours.thisWeek < 7) {
+        recommendations.push('Average sleep is below 7 hours. Discuss sleep hygiene.');
+      } else if (weekOverWeek.sleepHours.thisWeek >= 7 && weekOverWeek.sleepHours.thisWeek <= 9) {
+        highlights.push('Sleep duration is in the healthy 7-9 hour range.');
+      }
+
+      const highAchievementGoals = goalProgress.filter(g => g.achievementRate >= 80);
+      if (highAchievementGoals.length > 0) {
+        highlights.push(
+          `Excellent consistency on ${highAchievementGoals.map(g => g.goalType.toLowerCase().replace('_', ' ')).join(', ')} goals.`
+        );
+      }
+
+      const lowAchievementGoals = goalProgress.filter(g => g.achievementRate < 50 && g.daysTracked >= 3);
+      if (lowAchievementGoals.length > 0) {
+        recommendations.push(
+          `Consider adjusting ${lowAchievementGoals.map(g => g.goalType.toLowerCase().replace('_', ' ')).join(', ')} targets.`
+        );
+      }
+
+      return {
+        patient: {
+          id: patient.id,
+          name: patient.demographics
+            ? `${patient.demographics.firstName} ${patient.demographics.lastName}`
+            : 'Unknown',
+        },
+        period: {
+          startDate,
+          endDate,
+        },
+        goalProgress,
+        weekOverWeek,
+        dailyBreakdown,
+        summary: {
+          totalSteps: thisWeekSteps.reduce((a, b) => a + b, 0),
+          totalActiveMinutes: thisWeekActiveMin.reduce((a, b) => a + b, 0),
+          totalCalories: thisWeekCalories.reduce((a, b) => a + b, 0),
+          avgSleepHours: Math.round(calculateAverage(thisWeekSleepHours) * 10) / 10,
+          daysWithData: thisWeekActivity.length,
+          overallTrend: weekOverWeek.steps.change >= 0 && weekOverWeek.activeMinutes.change >= 0
+            ? 'improving'
+            : weekOverWeek.steps.change <= -10 || weekOverWeek.activeMinutes.change <= -10
+              ? 'declining'
+              : 'stable',
+        },
+        highlights,
+        recommendations,
+      };
+    }),
+
+  // Get provider alert summary for all patients with goals
+  getProviderAlertSummary: protectedProcedure
+    .input(z.object({
+      lookbackDays: z.number().min(1).max(30).optional().default(7),
+    }))
+    .query(async ({ ctx, input }) => {
+      const { lookbackDays } = input;
+
+      // Get all patients with active goals
+      const patientsWithGoals = await ctx.prisma.patient.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          activityGoals: {
+            some: {
+              isActive: true,
+              alertOnDecrease: true,
+            },
+          },
+        },
+        include: {
+          demographics: {
+            select: {
+              firstName: true,
+              lastName: true,
+            },
+          },
+          activityGoals: {
+            where: {
+              isActive: true,
+            },
+          },
+        },
+      });
+
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - lookbackDays);
+      startDate.setHours(0, 0, 0, 0);
+
+      const midPoint = new Date();
+      midPoint.setDate(midPoint.getDate() - Math.floor(lookbackDays / 2));
+
+      const patientAlerts: Array<{
+        patientId: string;
+        patientName: string;
+        alerts: Array<{
+          goalType: string;
+          severity: string;
+          decreasePercent: number;
+        }>;
+      }> = [];
+
+      for (const patient of patientsWithGoals) {
+        const activityData = await ctx.prisma.activityData.findMany({
+          where: {
+            patientId: patient.id,
+            date: { gte: startDate },
+          },
+          orderBy: { date: 'asc' },
+        });
+
+        const sleepData = await ctx.prisma.sleepData.findMany({
+          where: {
+            patientId: patient.id,
+            date: { gte: startDate },
+          },
+          orderBy: { date: 'asc' },
+        });
+
+        const firstHalfActivity = activityData.filter(d => d.date < midPoint);
+        const secondHalfActivity = activityData.filter(d => d.date >= midPoint);
+        const firstHalfSleep = sleepData.filter(d => d.date < midPoint);
+        const secondHalfSleep = sleepData.filter(d => d.date >= midPoint);
+
+        const alerts: Array<{
+          goalType: string;
+          severity: string;
+          decreasePercent: number;
+        }> = [];
+
+        for (const goal of patient.activityGoals) {
+          if (!goal.alertOnDecrease) continue;
+
+          let firstHalfValues: number[] = [];
+          let secondHalfValues: number[] = [];
+
+          switch (goal.goalType) {
+            case 'STEPS':
+              firstHalfValues = firstHalfActivity.map(d => d.steps ?? 0);
+              secondHalfValues = secondHalfActivity.map(d => d.steps ?? 0);
+              break;
+            case 'ACTIVE_MINUTES':
+              firstHalfValues = firstHalfActivity.map(d => d.activeMinutes ?? 0);
+              secondHalfValues = secondHalfActivity.map(d => d.activeMinutes ?? 0);
+              break;
+            case 'SLEEP_DURATION':
+              firstHalfValues = firstHalfSleep.map(d => (d.duration ?? 0) / 60);
+              secondHalfValues = secondHalfSleep.map(d => (d.duration ?? 0) / 60);
+              break;
+            case 'CALORIES':
+              firstHalfValues = firstHalfActivity.map(d => d.calories ?? 0);
+              secondHalfValues = secondHalfActivity.map(d => d.calories ?? 0);
+              break;
+            case 'DISTANCE':
+              firstHalfValues = firstHalfActivity.map(d => d.distance ?? 0);
+              secondHalfValues = secondHalfActivity.map(d => d.distance ?? 0);
+              break;
+          }
+
+          if (firstHalfValues.length === 0 || secondHalfValues.length === 0) continue;
+
+          const previousAvg = calculateAverage(firstHalfValues);
+          const currentAvg = calculateAverage(secondHalfValues);
+
+          if (previousAvg === 0) continue;
+
+          const decreasePercent = Math.round(((previousAvg - currentAvg) / previousAvg) * 100);
+
+          if (decreasePercent >= goal.decreaseThreshold) {
+            alerts.push({
+              goalType: goal.goalType,
+              severity: decreasePercent >= 50 ? 'critical' : 'warning',
+              decreasePercent,
+            });
+          }
+        }
+
+        if (alerts.length > 0) {
+          patientAlerts.push({
+            patientId: patient.id,
+            patientName: patient.demographics
+              ? `${patient.demographics.firstName} ${patient.demographics.lastName}`
+              : 'Unknown',
+            alerts,
+          });
+        }
+      }
+
+      // Sort by severity (critical first) and number of alerts
+      patientAlerts.sort((a, b) => {
+        const aCritical = a.alerts.filter(al => al.severity === 'critical').length;
+        const bCritical = b.alerts.filter(al => al.severity === 'critical').length;
+        if (aCritical !== bCritical) return bCritical - aCritical;
+        return b.alerts.length - a.alerts.length;
+      });
+
+      return {
+        lookbackDays,
+        totalPatientsMonitored: patientsWithGoals.length,
+        patientsWithAlerts: patientAlerts.length,
+        totalAlerts: patientAlerts.reduce((sum, p) => sum + p.alerts.length, 0),
+        criticalAlerts: patientAlerts.reduce(
+          (sum, p) => sum + p.alerts.filter(a => a.severity === 'critical').length,
+          0
+        ),
+        patientAlerts,
+      };
+    }),
 });
 
 // ============================================
@@ -3775,6 +4744,11 @@ function calculateStdDev(numbers: number[]): number {
   const avg = calculateAverage(numbers);
   const squaredDiffs = numbers.map(n => Math.pow(n - avg, 2));
   return Math.sqrt(calculateAverage(squaredDiffs));
+}
+
+function calculatePercentChange(oldValue: number, newValue: number): number {
+  if (oldValue === 0) return newValue > 0 ? 100 : 0;
+  return Math.round(((newValue - oldValue) / oldValue) * 100);
 }
 
 function getWeekStart(date: Date): string {

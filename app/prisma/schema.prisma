@@ -181,6 +181,7 @@ model Organization {
   sleepData         SleepData[]
   postureData       PostureData[]
   heartRateData     HeartRateData[]
+  activityGoals     ActivityGoal[]
 
   @@index([subdomain])
 }
@@ -217,6 +218,9 @@ model User {
 
   // Chiropractic Clinical Intelligence relations (Epic 19)
   subluxationHistoryEntries SubluxationHistory[]
+
+  // Wearable & Device Integration relations (Epic 24)
+  createdActivityGoals ActivityGoal[]
 
   @@unique([email, organizationId])
   @@index([organizationId])
@@ -435,6 +439,7 @@ model Patient {
   sleepData         SleepData[]
   postureData       PostureData[]
   heartRateData     HeartRateData[]
+  activityGoals     ActivityGoal[]
 
   @@unique([mrn, organizationId])
   @@index([organizationId])
@@ -8856,5 +8861,61 @@ model HeartRateData {
   @@index([patientId])
   @@index([timestamp])
   @@index([type])
+  @@index([organizationId])
+}
+
+// Goal types for activity tracking
+enum GoalType {
+  STEPS          // Daily step count goal
+  ACTIVE_MINUTES // Active minutes goal
+  SLEEP_DURATION // Sleep duration goal
+  CALORIES       // Calories burned goal
+  DISTANCE       // Distance goal
+}
+
+// Activity goal tracking model
+model ActivityGoal {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Goal configuration
+  goalType    GoalType
+  targetValue Int       // Target value (steps, minutes, etc.)
+  unit        String    // Unit of measurement (steps, minutes, hours, etc.)
+
+  // Goal status
+  isActive    Boolean   @default(true)
+  startDate   DateTime  @default(now()) // When goal becomes active
+  endDate     DateTime? // Optional end date for time-limited goals
+
+  // Alert preferences
+  alertOnAchieve     Boolean @default(true)  // Alert when goal is achieved
+  alertOnDecrease    Boolean @default(true)  // Alert on significant activity decrease
+  decreaseThreshold  Int     @default(30)    // Percentage decrease to trigger alert
+
+  // Progress tracking
+  currentStreak      Int     @default(0)     // Days in a row goal was achieved
+  longestStreak      Int     @default(0)     // Best streak ever
+  lastAchievedAt     DateTime? // Last time goal was achieved
+  totalAchievements  Int     @default(0)     // Total times goal was achieved
+
+  // Notes
+  notes       String?   @db.Text // Provider notes about the goal
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdById String
+  createdBy   User @relation(fields: [createdById], references: [id])
+
+  @@unique([patientId, goalType]) // One active goal per type per patient
+  @@index([patientId])
+  @@index([goalType])
+  @@index([isActive])
   @@index([organizationId])
 }

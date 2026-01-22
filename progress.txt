@@ -328,3 +328,66 @@ Story: US-243 - Posture sensor integration
 --- Iteration 5 completed at 2026-01-22 ---
 Story: US-244 - Activity correlation analysis
 
+--- Iteration 5 completed at 2026-01-22 05:02:45 ---
+Story: US-244 - Activity correlation analysis
+
+## US-245: Activity goals and alerts - COMPLETED
+
+### What was done:
+1. Created database schema for activity goals:
+   - GoalType enum (STEPS, ACTIVE_MINUTES, SLEEP_DURATION, CALORIES, DISTANCE)
+   - ActivityGoal model with target values, alert preferences, streak tracking
+   - Relations to Patient, Organization, and User models
+   - Prisma schema pushed to database successfully
+
+2. Implemented tRPC procedures for goal management:
+   - `devices.setGoal` - Set daily activity goals with upsert logic
+   - `devices.getGoals` - Retrieve all goals for a patient
+   - `devices.updateGoal` - Modify goal settings
+   - `devices.deleteGoal` - Soft delete (deactivate) a goal
+
+3. Implemented goal achievement tracking:
+   - `devices.checkGoalAchievement` - Check if goals are achieved for a date
+   - Achievement alerts with success severity
+   - Automatic streak tracking (current streak, longest streak)
+   - Total achievement counter
+
+4. Implemented activity decrease alerts:
+   - `devices.checkActivityDecrease` - Detect significant decreases
+   - Compares first half vs second half of lookback period
+   - Configurable threshold per goal (default 30%)
+   - Severity levels: warning (30-49%) and critical (50%+)
+   - Recommendations based on goal type
+
+5. Implemented weekly progress reports:
+   - `devices.getWeeklyProgressReport` - Comprehensive weekly summary
+   - Goal progress with achievement rates
+   - Week-over-week comparisons for all metrics
+   - Daily breakdown with activity and sleep data
+   - Auto-generated highlights and recommendations
+   - Summary with overall trend (improving/stable/declining)
+
+6. Provider alert dashboard:
+   - `devices.getProviderAlertSummary` - All patients with alerts
+   - Sorted by severity (critical first)
+   - Total alert counts and monitoring summary
+
+7. TypeScript compilation verified - no errors
+
+### Acceptance Criteria Met:
+- [x] devices.setGoal - Set daily activity goals
+- [x] Step count goals
+- [x] Active minutes goals
+- [x] Sleep duration goals
+- [x] Alert on goal achievement
+- [x] Alert on significant decrease in activity
+- [x] Weekly progress reports
+
+---
+
+## Remaining Stories:
+- US-246: Device data dashboard
+- US-247: Device connection portal
+--- Iteration 6 completed at 2026-01-22 ---
+Story: US-245 - Activity goals and alerts
+
