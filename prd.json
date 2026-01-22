@@ -68,7 +68,7 @@
         "Generate deviation report with severity"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-212",

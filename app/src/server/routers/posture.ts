@@ -11,6 +11,15 @@ import {
   type LandmarkName,
   type DetectedLandmark,
 } from '@/lib/services/landmarkDetection';
+import {
+  DEVIATION_TYPES,
+  analyzeDeviationsForView,
+  analyzeAssessmentDeviations,
+  generateDeviationReport,
+  calculateSeverity,
+  type DeviationMeasurement,
+  type SeverityLevel,
+} from '@/lib/services/deviationAnalysis';
 
 // Validation schemas
 const postureViewSchema = z.enum(['ANTERIOR', 'POSTERIOR', 'LATERAL_LEFT', 'LATERAL_RIGHT']);
@@ -1024,5 +1033,463 @@ export const postureRouter = router({
           landmarkCount: img._count.landmarks,
         })),
       };
+    }),
+
+  // ============================================
+  // POSTURAL DEVIATION ANALYSIS (US-211)
+  // ============================================
+
+  // Analyze deviations from landmarks - main analysis procedure
+  analyzeDeviations: providerProcedure
+    .input(
+      z.object({
+        assessmentId: z.string(),
+        patientHeightCm: z.number().min(50).max(250).optional().default(170),
+        forceReanalyze: z.boolean().default(false),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { assessmentId, patientHeightCm, forceReanalyze } = input;
+
+      // Get assessment with images and landmarks
+      const assessment = await ctx.prisma.postureAssessment.findFirst({
+        where: {
+          id: assessmentId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          images: {
+            include: {
+              landmarks: true,
+            },
+          },
+          deviations: true,
+          patient: {
+            include: {
+              demographics: true,
+            },
+          },
+        },
+      });
+
+      if (!assessment) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Assessment not found',
+        });
+      }
+
+      // Check if we have analyzed images
+      const analyzedImages = assessment.images.filter(
+        (img) => img.isAnalyzed && img.landmarks.length > 0
+      );
+
+      if (analyzedImages.length === 0) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'No analyzed images found. Please run landmark detection first.',
+        });
+      }
+
+      // Check if already has deviations (unless force reanalyze)
+      if (assessment.deviations.length > 0 && !forceReanalyze) {
+        return {
+          success: true,
+          message: 'Deviations already calculated. Use forceReanalyze to recalculate.',
+          deviations: assessment.deviations,
+          wasReanalyzed: false,
+        };
+      }
+
+      // Delete existing deviations if reanalyzing
+      if (forceReanalyze && assessment.deviations.length > 0) {
+        await ctx.prisma.postureDeviation.deleteMany({
+          where: { assessmentId },
+        });
+      }
+
+      // Prepare image analyses
+      const imageAnalyses = analyzedImages.map((img) => ({
+        view: img.view as 'ANTERIOR' | 'POSTERIOR' | 'LATERAL_LEFT' | 'LATERAL_RIGHT',
+        landmarks: img.landmarks.map((lm) => ({
+          name: lm.name as LandmarkName,
+          x: lm.x,
+          y: lm.y,
+          z: lm.z || undefined,
+          confidence: lm.confidence ?? 0.5, // Default confidence if null
+          isManual: lm.isManual,
+        })),
+      }));
+
+      // Run deviation analysis
+      const analysisResult = analyzeAssessmentDeviations(imageAnalyses, patientHeightCm);
+
+      // Store deviations in database
+      const createdDeviations = await Promise.all(
+        analysisResult.deviations.map((deviation) =>
+          ctx.prisma.postureDeviation.create({
+            data: {
+              assessmentId,
+              deviationType: deviation.deviationType,
+              description: deviation.description,
+              measurementValue: deviation.measurementValue,
+              measurementUnit: deviation.measurementUnit,
+              normalRangeMin: deviation.normalRangeMin,
+              normalRangeMax: deviation.normalRangeMax,
+              deviationAmount: deviation.deviationAmount,
+              severity: deviation.severity,
+              direction: deviation.direction || null,
+              notes: deviation.notes || null,
+            },
+          })
+        )
+      );
+
+      // Update assessment with summary
+      await ctx.prisma.postureAssessment.update({
+        where: { id: assessmentId },
+        data: {
+          overallAssessment: analysisResult.summaryNotes,
+        },
+      });
+
+      return {
+        success: true,
+        message: `Analyzed ${analysisResult.deviations.length} deviations across ${analysisResult.analyzedViews.length} views`,
+        deviations: createdDeviations,
+        overallSeverity: analysisResult.overallSeverity,
+        summaryNotes: analysisResult.summaryNotes,
+        warnings: analysisResult.warnings,
+        wasReanalyzed: forceReanalyze,
+      };
+    }),
+
+  // Get deviations for an assessment
+  getDeviations: protectedProcedure
+    .input(z.object({ assessmentId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const assessment = await ctx.prisma.postureAssessment.findFirst({
+        where: {
+          id: input.assessmentId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          deviations: {
+            orderBy: [
+              { severity: 'desc' },
+              { deviationType: 'asc' },
+            ],
+          },
+        },
+      });
+
+      if (!assessment) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Assessment not found',
+        });
+      }
+
+      // Group deviations by type
+      const groupedDeviations = {
+        headNeck: assessment.deviations.filter((d) =>
+          ['head_forward', 'head_tilt', 'head_rotation'].includes(d.deviationType)
+        ),
+        shoulders: assessment.deviations.filter((d) =>
+          ['shoulder_uneven', 'shoulder_protracted'].includes(d.deviationType)
+        ),
+        spine: assessment.deviations.filter((d) =>
+          ['kyphosis', 'lordosis', 'scoliosis'].includes(d.deviationType)
+        ),
+        pelvis: assessment.deviations.filter((d) =>
+          ['hip_uneven', 'pelvic_tilt_lateral', 'pelvic_tilt_anterior'].includes(d.deviationType)
+        ),
+        knees: assessment.deviations.filter((d) =>
+          ['knee_valgus', 'knee_varus', 'knee_hyperextension'].includes(d.deviationType)
+        ),
+        ankles: assessment.deviations.filter((d) =>
+          ['ankle_pronation', 'ankle_supination'].includes(d.deviationType)
+        ),
+        overall: assessment.deviations.filter((d) =>
+          ['weight_shift'].includes(d.deviationType)
+        ),
+      };
+
+      // Calculate overall severity
+      const severityOrder = ['MINIMAL', 'MILD', 'MODERATE', 'SEVERE', 'EXTREME'];
+      const overallSeverity = assessment.deviations.reduce<string>((highest, dev) => {
+        const currentIndex = severityOrder.indexOf(dev.severity);
+        const highestIndex = severityOrder.indexOf(highest);
+        return currentIndex > highestIndex ? dev.severity : highest;
+      }, 'MINIMAL');
+
+      return {
+        deviations: assessment.deviations,
+        groupedDeviations,
+        overallSeverity,
+        totalCount: assessment.deviations.length,
+        significantCount: assessment.deviations.filter((d) => d.severity !== 'MINIMAL').length,
+      };
+    }),
+
+  // Create or update a single deviation manually
+  createDeviation: providerProcedure
+    .input(
+      z.object({
+        assessmentId: z.string(),
+        deviationType: z.string(),
+        description: z.string().optional(),
+        measurementValue: z.number().optional(),
+        measurementUnit: z.string().optional(),
+        normalRangeMin: z.number().optional(),
+        normalRangeMax: z.number().optional(),
+        severity: z.enum(['MINIMAL', 'MILD', 'MODERATE', 'SEVERE', 'EXTREME']),
+        direction: z.string().optional(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { assessmentId, ...deviationData } = input;
+
+      // Verify assessment access
+      const assessment = await ctx.prisma.postureAssessment.findFirst({
+        where: {
+          id: assessmentId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!assessment) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Assessment not found',
+        });
+      }
+
+      // Calculate deviation amount if measurement provided
+      let deviationAmount: number | undefined;
+      if (
+        deviationData.measurementValue !== undefined &&
+        deviationData.normalRangeMin !== undefined &&
+        deviationData.normalRangeMax !== undefined
+      ) {
+        if (deviationData.measurementValue < deviationData.normalRangeMin) {
+          deviationAmount = deviationData.normalRangeMin - deviationData.measurementValue;
+        } else if (deviationData.measurementValue > deviationData.normalRangeMax) {
+          deviationAmount = deviationData.measurementValue - deviationData.normalRangeMax;
+        } else {
+          deviationAmount = 0;
+        }
+      }
+
+      return ctx.prisma.postureDeviation.create({
+        data: {
+          assessmentId,
+          ...deviationData,
+          deviationAmount,
+        },
+      });
+    }),
+
+  // Update an existing deviation
+  updateDeviation: providerProcedure
+    .input(
+      z.object({
+        deviationId: z.string(),
+        measurementValue: z.number().optional(),
+        severity: z.enum(['MINIMAL', 'MILD', 'MODERATE', 'SEVERE', 'EXTREME']).optional(),
+        direction: z.string().optional(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { deviationId, ...updateData } = input;
+
+      // Verify deviation access
+      const deviation = await ctx.prisma.postureDeviation.findFirst({
+        where: {
+          id: deviationId,
+          assessment: {
+            organizationId: ctx.user.organizationId,
+          },
+        },
+      });
+
+      if (!deviation) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Deviation not found',
+        });
+      }
+
+      // Recalculate deviation amount if measurement changed
+      let deviationAmount = deviation.deviationAmount;
+      if (
+        updateData.measurementValue !== undefined &&
+        deviation.normalRangeMin !== null &&
+        deviation.normalRangeMax !== null
+      ) {
+        if (updateData.measurementValue < deviation.normalRangeMin) {
+          deviationAmount = deviation.normalRangeMin - updateData.measurementValue;
+        } else if (updateData.measurementValue > deviation.normalRangeMax) {
+          deviationAmount = updateData.measurementValue - deviation.normalRangeMax;
+        } else {
+          deviationAmount = 0;
+        }
+      }
+
+      return ctx.prisma.postureDeviation.update({
+        where: { id: deviationId },
+        data: {
+          ...updateData,
+          deviationAmount,
+        },
+      });
+    }),
+
+  // Delete a deviation
+  deleteDeviation: providerProcedure
+    .input(z.object({ deviationId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const deviation = await ctx.prisma.postureDeviation.findFirst({
+        where: {
+          id: input.deviationId,
+          assessment: {
+            organizationId: ctx.user.organizationId,
+          },
+        },
+      });
+
+      if (!deviation) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Deviation not found',
+        });
+      }
+
+      await ctx.prisma.postureDeviation.delete({
+        where: { id: input.deviationId },
+      });
+
+      return { success: true };
+    }),
+
+  // Get deviation type definitions
+  getDeviationTypes: protectedProcedure.query(() => {
+    return Object.entries(DEVIATION_TYPES).map(([key, value]) => ({
+      key,
+      ...value,
+    }));
+  }),
+
+  // Generate deviation report
+  generateDeviationReport: protectedProcedure
+    .input(z.object({ assessmentId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const assessment = await ctx.prisma.postureAssessment.findFirst({
+        where: {
+          id: input.assessmentId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          deviations: {
+            orderBy: { severity: 'desc' },
+          },
+          images: true,
+          patient: {
+            include: {
+              demographics: true,
+            },
+          },
+        },
+      });
+
+      if (!assessment) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Assessment not found',
+        });
+      }
+
+      if (assessment.deviations.length === 0) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'No deviations found. Please run deviation analysis first.',
+        });
+      }
+
+      // Convert database deviations to DeviationMeasurement format
+      const deviations: DeviationMeasurement[] = assessment.deviations.map((d) => ({
+        deviationType: d.deviationType,
+        name: DEVIATION_TYPES[d.deviationType as keyof typeof DEVIATION_TYPES]?.name || d.deviationType,
+        description: d.description || '',
+        measurementValue: d.measurementValue || 0,
+        measurementUnit: d.measurementUnit || '',
+        normalRangeMin: d.normalRangeMin || 0,
+        normalRangeMax: d.normalRangeMax || 0,
+        deviationAmount: d.deviationAmount || 0,
+        severity: d.severity as SeverityLevel,
+        direction: d.direction || undefined,
+        clinicalSignificance: '',
+        landmarks: [],
+        view: 'ANTERIOR' as const,
+        notes: d.notes || undefined,
+      }));
+
+      // Calculate overall severity
+      const severityOrder: SeverityLevel[] = ['MINIMAL', 'MILD', 'MODERATE', 'SEVERE', 'EXTREME'];
+      const overallSeverity = deviations.reduce<SeverityLevel>((highest, dev) => {
+        const currentIndex = severityOrder.indexOf(dev.severity);
+        const highestIndex = severityOrder.indexOf(highest);
+        return currentIndex > highestIndex ? dev.severity : highest;
+      }, 'MINIMAL');
+
+      // Generate analysis result for report
+      const analysisResult = {
+        success: true,
+        deviations,
+        overallSeverity,
+        summaryNotes: assessment.overallAssessment || '',
+        warnings: [] as string[],
+        analyzedViews: assessment.images
+          .filter((i) => i.isAnalyzed)
+          .map((i) => i.view as 'ANTERIOR' | 'POSTERIOR' | 'LATERAL_LEFT' | 'LATERAL_RIGHT'),
+        analysisTimestamp: new Date(),
+      };
+
+      const patientName = assessment.patient.demographics
+        ? `${assessment.patient.demographics.firstName} ${assessment.patient.demographics.lastName}`
+        : `Patient ${assessment.patient.mrn}`;
+      const practitionerName = `${ctx.user.firstName} ${ctx.user.lastName}`;
+      const report = generateDeviationReport(
+        analysisResult,
+        patientName,
+        practitionerName || 'Provider',
+        assessment.assessmentDate
+      );
+
+      return {
+        report,
+        assessment: {
+          id: assessment.id,
+          date: assessment.assessmentDate,
+          isComplete: assessment.isComplete,
+        },
+      };
+    }),
+
+  // Calculate severity for a specific measurement
+  calculateDeviationSeverity: protectedProcedure
+    .input(
+      z.object({
+        measurementValue: z.number(),
+        normalRangeMin: z.number(),
+        normalRangeMax: z.number(),
+        unit: z.string(),
+      })
+    )
+    .query(({ input }) => {
+      const { measurementValue, normalRangeMin, normalRangeMax, unit } = input;
+      return calculateSeverity(measurementValue, normalRangeMin, normalRangeMax, unit);
     }),
 });

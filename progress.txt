@@ -186,3 +186,73 @@ Date: 2026-01-22
 --- Iteration 3 completed at 2026-01-22 ---
 Story: US-210 - AI landmark detection
 
+--- Iteration 3 completed at 2026-01-22 01:06:19 ---
+Story: US-210 - AI landmark detection
+
+## US-211: Postural deviation analysis - COMPLETED
+Date: 2026-01-22
+
+### Changes Made:
+1. Created deviation analysis service at `app/src/lib/services/deviationAnalysis.ts`:
+   - Comprehensive deviation type definitions (18 types) covering:
+     - Head/neck: Forward head posture, head tilt, head rotation
+     - Shoulders: Level difference, protraction
+     - Pelvis: Hip level, lateral pelvic tilt, anterior pelvic tilt
+     - Spine: Thoracic kyphosis, lumbar lordosis, scoliosis
+     - Knees: Valgus, varus, hyperextension
+     - Ankles: Pronation, supination
+     - Overall: Weight distribution shift
+   - Severity calculation system (MINIMAL, MILD, MODERATE, SEVERE, EXTREME)
+   - Deviation measurement calculators for each type
+   - Clinical significance assessment
+   - Report generation with recommendations
+   - Normal range reference values for each measurement
+
+2. Added deviation analysis tRPC procedures to posture router:
+   - analyzeDeviations: Main procedure to analyze landmarks and calculate deviations
+   - getDeviations: Get deviations for an assessment with grouping by body region
+   - createDeviation: Manually create a deviation record
+   - updateDeviation: Update an existing deviation
+   - deleteDeviation: Remove a deviation record
+   - getDeviationTypes: Get all deviation type definitions
+   - generateDeviationReport: Create comprehensive report with recommendations
+   - calculateDeviationSeverity: Calculate severity for a specific measurement
+
+3. Deviation calculations implemented:
+   - Forward head posture (craniovertebral angle from ear-C7-vertical)
+   - Shoulder level difference (mm conversion with patient height calibration)
+   - Hip level difference (mm conversion)
+   - Scoliotic curve (lateral spine deviation angle)
+   - Thoracic kyphosis (T12-C7 angle assessment)
+   - Lumbar lordosis (T12-S2 angle assessment)
+   - Weight distribution shift (center of mass calculation)
+
+4. Report generation features:
+   - Patient and practitioner identification
+   - Assessment date and views analyzed
+   - Deviations grouped by body region
+   - Overall severity rating
+   - Summary notes with key findings
+   - Treatment recommendations based on deviations
+
+5. TypeScript compilation passes
+
+### Files Created:
+- app/src/lib/services/deviationAnalysis.ts
+
+### Files Modified:
+- app/src/server/routers/posture.ts (added 8 deviation analysis procedures, updated imports)
+
+### Acceptance Criteria Met:
+- [x] posture.analyzeDeviations - Calculate deviations from ideal
+- [x] Head forward posture measurement (degrees)
+- [x] Shoulder level difference (mm/inches)
+- [x] Hip level difference
+- [x] Scoliotic curves detection
+- [x] Kyphosis/lordosis assessment
+- [x] Weight distribution analysis
+- [x] Generate deviation report with severity
+
+--- Iteration 4 completed at 2026-01-22 ---
+Story: US-211 - Postural deviation analysis
+
