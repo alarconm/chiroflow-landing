@@ -94,6 +94,7 @@ import { mobileScheduleRouter } from './mobileSchedule';
 import { mobileChartingRouter } from './mobileCharting';
 import { mobilePatientAppointmentsRouter } from './mobilePatientAppointments';
 import { mobilePatientHealthRouter } from './mobilePatientHealth';
+import { offlineRouter } from './offline';
 
 export const appRouter = router({
   auth: authRouter,
@@ -191,6 +192,8 @@ export const appRouter = router({
   mobileCharting: mobileChartingRouter,
   mobilePatientAppointments: mobilePatientAppointmentsRouter,
   mobilePatientHealth: mobilePatientHealthRouter,
+  // Offline Mode (US-270)
+  offline: offlineRouter,
 });
 
 

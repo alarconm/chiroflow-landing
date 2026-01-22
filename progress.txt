@@ -358,3 +358,101 @@ All acceptance criteria met:
 --- Iteration 6 completed at 2026-01-22 ---
 Story: US-269 - Patient mobile app - health
 
+--- Iteration 6 completed at 2026-01-22 08:26:47 ---
+Story: US-269 - Patient mobile app - health
+
+2026-01-22: US-270 - Offline mode with sync
+-------------------------------------------
+Implemented comprehensive offline mode functionality for Epic 27 (Mobile Applications).
+
+Files Created:
+- app/src/lib/offline-sync.ts - Complete offline sync library with cache management
+- app/src/server/routers/offline.ts - tRPC router for offline sync procedures
+- app/src/components/mobile-offline/MobileSyncStatus.tsx - Sync status card component
+- app/src/components/mobile-offline/MobileConflictResolver.tsx - Conflict resolution UI
+- app/src/components/mobile-offline/MobileOfflineIndicator.tsx - Compact offline badge
+- app/src/components/mobile-offline/MobileCacheManager.tsx - Cache management UI
+- app/src/components/mobile-offline/index.ts - Component exports
+
+Files Modified:
+- app/prisma/schema.prisma (added OfflineCache, SyncConflict, DeviceSyncState models)
+- app/src/server/routers/index.ts (added offlineRouter)
+- app/src/lib/audit.ts (added offline audit actions)
+
+Prisma Models Added:
+- OfflineCache - Entity cache storage with expiration and device tracking
+- SyncConflict - Conflict tracking with client/server data snapshots
+- DeviceSyncState - Per-device sync state tracking with entity timestamps
+
+Offline Sync Library Features:
+1. queueOfflineOperation - Queue operations for sync when offline
+2. getPendingOperations - Get all pending sync operations
+3. processSyncOperations - Process operations with conflict detection
+4. detectConflict - Version-based conflict detection
+5. resolveConflict - Conflict resolution (client_wins, server_wins, merge, manual)
+6. cacheEntityData - Cache entity data with TTL
+7. getCachedEntity - Retrieve cached data
+8. getCacheablePatientData - Get patient data optimized for offline caching
+9. getCacheableScheduleData - Get schedule data for offline viewing
+10. retryFailedOperations - Retry failed sync operations
+11. cleanupCompletedOperations - Clean up old completed operations
+12. CACHEABLE_ENTITIES - List of entities that can be cached offline
+
+tRPC Procedures (offline router):
+Sync Operations:
+- offline.pushOperations - Push offline operations to server
+- offline.pullChanges - Pull changes since timestamp
+- offline.getSyncStatus - Get sync status summary
+- offline.getPendingOperations - Get pending operations
+- offline.triggerSync - Manual sync trigger
+- offline.retryFailed - Retry failed operations
+
+Conflict Resolution:
+- offline.getConflicts - Get pending conflicts
+- offline.resolveConflict - Resolve conflict manually
+
+Cache Management:
+- offline.cacheEntity - Cache entity data
+- offline.getCachedEntity - Get cached entity
+- offline.getDeviceCache - Get all cached entities for device
+- offline.cachePatient - Cache patient data for offline
+- offline.cacheSchedule - Cache schedule data for offline
+- offline.clearCache - Clear device cache
+- offline.cleanupExpired - Cleanup expired cache entries
+
+Device State:
+- offline.updateDeviceState - Update device sync state
+- offline.getDeviceState - Get device sync state
+- offline.getAllDeviceStates - Get all device states (admin)
+
+Utilities:
+- offline.performFullSync - Full sync for new device
+- offline.cleanupOldOperations - Cleanup old operations
+- offline.getCacheableEntityTypes - Get list of cacheable entities
+
+Mobile Offline Components:
+- MobileSyncStatus: Full sync status card with stats, progress, action buttons
+- MobileConflictResolver: Side-by-side comparison for resolving conflicts
+- MobileOfflineIndicator: Compact badge showing online/syncing/offline state
+- MobileCacheManager: Storage info, entity list, clear cache controls
+
+Audit Actions Added:
+- OFFLINE_SYNC_PUSH - Offline operations pushed to server
+- OFFLINE_SYNC_MANUAL - Manual sync triggered
+- OFFLINE_SYNC_RETRY - Failed operations retried
+- OFFLINE_CONFLICT_RESOLVED - Conflict resolved
+- OFFLINE_CACHE_CLEARED - Cache cleared
+- OFFLINE_FULL_SYNC - Full sync performed
+- OFFLINE_CLEANUP - Old operations cleaned up
+
+All acceptance criteria met:
+✓ Cache recent patient data - cachePatient procedure with demographics, appointments, treatment plans
+✓ View appointments offline - getCacheableScheduleData for schedule caching
+✓ Draft notes offline - MobileChartingDraft (from US-267) with offline queue
+✓ Queue actions for sync - queueOfflineOperation with conflict detection
+✓ Conflict resolution - Multiple strategies (client_wins, server_wins, merge, manual)
+✓ Sync status indicator - MobileSyncStatus and MobileOfflineIndicator components
+✓ Manual sync trigger - triggerSync procedure and UI button
+--- Iteration 7 completed at 2026-01-22 ---
+Story: US-270 - Offline mode with sync
+

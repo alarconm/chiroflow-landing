@@ -230,6 +230,11 @@ model Organization {
   progressPhotos       ProgressPhoto[]
   patientGoals         PatientGoal[]
 
+  // Offline Mode relations (US-270)
+  offlineCaches        OfflineCache[]
+  syncConflicts        SyncConflict[]
+  deviceSyncStates     DeviceSyncState[]
+
   @@index([subdomain])
 }
 
@@ -298,6 +303,10 @@ model User {
   pushNotifications        PushNotification[]
   notificationPreference   NotificationPreference?
   notificationLogs         NotificationLog[]
+
+  // Offline Mode relations (US-270)
+  offlineCache             OfflineCache[]
+  deviceSyncStates         DeviceSyncState[]
 
   @@unique([email, organizationId])
   @@index([organizationId])
@@ -10673,4 +10682,131 @@ model PatientGoal {
   @@index([status])
   @@index([goalType])
   @@index([organizationId])
+}
+
+// =============================================================================
+// Epic 27: Offline Mode (US-270)
+// =============================================================================
+
+// Offline cache for storing entity data locally
+model OfflineCache {
+  id          String   @id @default(cuid())
+
+  // Entity identification
+  entityType  String   // "patient", "appointment", "encounter", etc.
+  entityId    String   // ID of the cached entity
+
+  // Cached data
+  data        Json     // The full entity data
+  version     Int      // Version number for conflict detection
+
+  // Cache metadata
+  cachedAt    DateTime @default(now())
+  expiresAt   DateTime // When this cache entry expires
+
+  // Device tracking
+  deviceId    String   // Which device has this cached
+
+  // User relation (for multi-user devices)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([entityType, entityId, deviceId, organizationId])
+  @@index([organizationId])
+  @@index([deviceId])
+  @@index([userId])
+  @@index([entityType])
+  @@index([expiresAt])
+}
+
+// Sync conflict record for manual resolution
+model SyncConflict {
+  id          String   @id @default(cuid())
+
+  // Operation that caused conflict
+  syncQueueId String?  // Reference to OfflineSyncQueue
+
+  // Entity details
+  entityType  String
+  entityId    String
+
+  // Conflict data
+  clientData  Json     // Data from client
+  serverData  Json     // Data from server
+  conflictType String  // "version_mismatch", "deleted_on_server", "updated_on_server"
+
+  // Resolution
+  status      String   @default("pending") // "pending", "resolved_client", "resolved_server", "resolved_merge"
+  resolvedData Json?   // Final merged data if resolved
+  resolvedAt  DateTime?
+  resolvedBy  String?  // User ID who resolved
+
+  // Device info
+  deviceId    String
+
+  // Timestamps
+  detectedAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([entityType])
+  @@index([deviceId])
+}
+
+// Device sync state for tracking what data each device has
+model DeviceSyncState {
+  id          String   @id @default(cuid())
+
+  // Device identification
+  deviceId    String
+
+  // Sync watermarks (timestamps of last synced data per entity type)
+  patientSyncedAt     DateTime?
+  appointmentSyncedAt DateTime?
+  encounterSyncedAt   DateTime?
+  scheduleSyncedAt    DateTime?
+
+  // General sync tracking
+  lastFullSyncAt      DateTime?
+  lastIncrementalSyncAt DateTime?
+
+  // Sync stats
+  pendingOperations   Int      @default(0)
+  failedOperations    Int      @default(0)
+  conflictCount       Int      @default(0)
+
+  // Connection tracking
+  isOnline            Boolean  @default(true)
+  lastOnlineAt        DateTime @default(now())
+
+  // Cache stats
+  cacheSize           Int      @default(0) // Approximate size in bytes
+  cachedEntities      Int      @default(0) // Number of cached entities
+
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // User relation
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, userId, organizationId])
+  @@index([organizationId])
+  @@index([userId])
+  @@index([deviceId])
 }
