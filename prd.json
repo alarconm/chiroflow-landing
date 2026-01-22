@@ -129,7 +129,7 @@
         "Overpayment handling (credit balance)"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-064",
@@ -147,7 +147,7 @@
         "Statement includes payment instructions and aging"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-065",
@@ -166,7 +166,7 @@
         "Claim validation before submission"
       ],
       "priority": 9,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-066",
@@ -184,7 +184,7 @@
         "Place of service codes"
       ],
       "priority": 10,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-067",
@@ -201,7 +201,7 @@
         "Filter by date range and provider"
       ],
       "priority": 11,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-068",
@@ -218,7 +218,7 @@
         "Ledger transaction history"
       ],
       "priority": 12,
-      "passes": false
+      "passes": true
     }
   ]
 }

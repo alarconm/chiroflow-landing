@@ -798,3 +798,91 @@ The PDF data structure is organized to align with standard CMS-1500 form boxes:
 --- Iteration 5 completed at 2026-01-21 ---
 Story: US-062 - Superbill generation
 
+--- Iteration 6 started at 2026-01-21 ---
+Stories: US-063 through US-068 (Verification Pass)
+
+## Verification of Remaining Stories
+
+All remaining stories (US-063 through US-068) were already implemented in previous iterations.
+Performed verification that all acceptance criteria are met:
+
+### US-063 - Payment posting ✓
+All 10 acceptance criteria met:
+- payment.create, update, list, get, void
+- applyToCharges, unapplyFromCharge
+- Support for payment methods (PaymentMethod enum)
+- Auto-allocation with autoAllocate param
+- Overpayment handling via unappliedAmount field
+
+### US-064 - Patient ledger and statements ✓
+All 9 acceptance criteria met:
+- ledger.getByPatient, getBalance, getTransactions
+- generateStatement with PDF data structure
+- listStatements via audit log
+- Running balance calculation
+- Chronological ordering
+- Date range filtering
+- Payment instructions and aging buckets
+
+### US-065 - Claim creation and management ✓
+All 10 acceptance criteria met:
+- claim.create, update, list, get, submit, addNote, void
+- ClaimStatus enum with all required statuses
+- Primary/secondary via insurancePolicyId
+- validate endpoint for claim validation
+
+### US-066 - CMS-1500 claim form generation ✓
+All 9 acceptance criteria met:
+- cms1500.generate with all 33 boxes
+- cms1500.getPdf for PDF generation
+- Provider NPI and taxonomy (Box 24J, 33)
+- Facility information (Box 32)
+- Diagnosis pointer mapping (Box 21)
+- Modifier handling (Box 24)
+- Place of service codes
+
+### US-067 - Billing dashboard and reports ✓
+All 8 acceptance criteria met:
+- /billing dashboard with BillingOverview
+- Today's charges/collections
+- Unbilled encounters (ChargesList)
+- Claims pending (EnhancedClaimsTab)
+- AR aging (ARAgingReport)
+- Recent payments (PaymentProcessingTab)
+- Quick actions (Post Payment, Submit Claims, etc.)
+- Date range filtering
+
+### US-068 - Patient billing UI ✓
+All 8 acceptance criteria met:
+- /patients/[id]/billing page
+- Insurance policies (PatientInsurance)
+- Charges list (PatientLedger)
+- Payments list (PatientLedger)
+- Current balance prominently displayed
+- Quick actions (RecordPaymentDialog)
+- Claims via ledger
+- Ledger transaction history
+
+--- Iteration 6 completed at 2026-01-21 ---
+All 12 stories in Epic 07 (Billing & Claims Core) COMPLETE
+
+=================================================
+EPIC 07: BILLING & CLAIMS CORE - COMPLETE!
+=================================================
+
+All user stories implemented:
+- US-057: Billing database schema ✓
+- US-058: Insurance payer management ✓
+- US-059: Patient insurance policy management ✓
+- US-060: Fee schedule management ✓
+- US-061: Charge capture from encounters ✓
+- US-062: Superbill generation ✓
+- US-063: Payment posting ✓
+- US-064: Patient ledger and statements ✓
+- US-065: Claim creation and management ✓
+- US-066: CMS-1500 claim form generation ✓
+- US-067: Billing dashboard and reports ✓
+- US-068: Patient billing UI ✓
+
+Total: 12/12 stories complete (100%)
+
