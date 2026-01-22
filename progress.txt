@@ -52,3 +52,68 @@ Files Created/Modified:
 - app/src/components/portal/index.ts (MODIFIED - added exports)
 - app/src/app/portal/layout.tsx (MODIFIED - added public paths)
 - app/src/server/routers/portal.ts (MODIFIED - added verifyEmail endpoint)
+--- Iteration 1 completed at 2026-01-21 22:04:08 ---
+Story: US-093 - Patient portal authentication
+
+US-094: Patient portal dashboard - COMPLETE
+--------------------------------------------
+Verified existing dashboard implementation meets all acceptance criteria:
+
+1. Dashboard at /portal/dashboard
+   - Personalized welcome message with patient name
+   - Overview of health information and upcoming care
+
+2. Upcoming appointments widget
+   - Shows next appointment date, time, and day of week
+   - Displays appointment type (badge)
+   - Shows provider name with title
+   - "View All" and "Details" action buttons
+   - Empty state with "Request an Appointment" CTA
+
+3. Outstanding balance summary
+   - Prominent blue card showing current balance
+   - Large currency display
+   - "Make a Payment" button linking to billing
+
+4. Pending forms requiring completion
+   - Quick stats card showing pending forms count
+   - Action items section highlighting forms that need attention
+   - Direct link to /portal/forms
+
+5. Quick links to common actions
+   - Request Appointment
+   - Send Message
+   - Make Payment
+   - View Documents
+
+6. Mobile-responsive layout
+   - Responsive grid: 1-col on mobile, 2-col on tablet, 3-4 col on desktop
+   - Flex column to row transitions for smaller components
+   - All components stack appropriately on mobile
+
+Additional Features Already Implemented:
+- Loading skeleton states
+- Recent visit summary section
+- Contact information card
+- Wellness tips section with health advice
+- Unread messages notification in action items
+- Demo data fallback when API unavailable
+
+Files Verified:
+- app/src/app/portal/dashboard/page.tsx (EXISTING - fully implemented)
+- app/src/components/portal/PortalDashboard.tsx (EXISTING - component version)
+- app/src/server/routers/portal.ts (EXISTING - getDashboardSummary endpoint)
+- app/src/app/portal/page.tsx (EXISTING - redirects to dashboard when authenticated)
+- app/src/app/portal/layout.tsx (EXISTING - auth protection)
+
+Acceptance Criteria Status:
+- [x] Dashboard at /portal showing patient name and welcome message
+- [x] Upcoming appointments widget with date, time, provider
+- [x] Outstanding balance summary
+- [x] Pending forms requiring completion
+- [x] Quick links to common actions
+- [x] Mobile-responsive layout
+
+--- Iteration 2 completed at 2026-01-21 ---
+Story: US-094 - Patient portal dashboard
+

@@ -33,7 +33,7 @@
         "Mobile-responsive layout"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-095",
