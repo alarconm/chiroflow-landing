@@ -210,6 +210,12 @@ model Organization {
   encryptionKeys     EncryptionKey[]
   securitySetting    SecuritySetting?
 
+  // Access Control Enhancement relations (US-262)
+  accessRequests       AccessRequest[]
+  emergencyAccessLogs  EmergencyAccessLog[]
+  permissionGrants     PermissionGrant[]
+  roleInheritances     RoleInheritance[]
+
   @@index([subdomain])
 }
 
@@ -262,6 +268,15 @@ model User {
   mfaConfigurations        MFAConfiguration[]
   securityEvents           SecurityEvent[]
   userSessions             UserSession[]
+
+  // Access Control Enhancement relations (US-262)
+  accessRequestsRequested  AccessRequest[]        @relation("AccessRequestRequester")
+  accessRequestsReviewed   AccessRequest[]        @relation("AccessRequestReviewer")
+  emergencyAccessLogs      EmergencyAccessLog[]
+  permissionGrants         PermissionGrant[]
+  permissionsGranted       PermissionGrant[]      @relation("PermissionGranter")
+  permissionsRevoked       PermissionGrant[]      @relation("PermissionRevoker")
+  roleInheritancesCreated  RoleInheritance[]
 
   @@unique([email, organizationId])
   @@index([organizationId])
@@ -9773,4 +9788,169 @@ model SecuritySetting {
   // One-to-one with Organization
   organizationId   String   @unique
   organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+// ============================================
+// Access Control Enhancements (US-262)
+// ============================================
+
+// Status of an access request
+enum AccessRequestStatus {
+  PENDING
+  APPROVED
+  DENIED
+  EXPIRED
+  CANCELLED
+}
+
+// Type of permission being requested
+enum PermissionType {
+  PATIENT_ACCESS      // Access to patient records
+  PHI_ACCESS          // Access to Protected Health Information
+  BILLING_ACCESS      // Access to billing/financial data
+  ADMIN_ACCESS        // Administrative access
+  LOCATION_ACCESS     // Access to a specific location
+  REPORT_ACCESS       // Access to reports/analytics
+  ROLE_ELEVATION      // Request for role change
+  EMERGENCY_ACCESS    // Break glass emergency access
+}
+
+// Access request workflow - for requesting elevated permissions
+model AccessRequest {
+  id              String              @id @default(cuid())
+
+  // Request details
+  requestedBy     String              // User ID requesting access
+  requestedByUser User                @relation("AccessRequestRequester", fields: [requestedBy], references: [id], onDelete: Cascade)
+  permissionType  PermissionType
+  justification   String              // Required reason for access
+  targetResource  String?             // Specific resource (patient ID, location ID, etc.)
+  targetRole      Role?               // If requesting role elevation
+
+  // Time-bounded access
+  requestedDuration Int?              // Duration in minutes (null = permanent)
+  validFrom       DateTime?           // When access should start
+  validUntil      DateTime?           // When access expires
+
+  // Workflow
+  status          AccessRequestStatus @default(PENDING)
+  reviewedBy      String?             // User ID who reviewed
+  reviewedByUser  User?               @relation("AccessRequestReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  reviewedAt      DateTime?
+  reviewNotes     String?             // Reviewer's notes/comments
+
+  // Audit
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  // Multi-tenant relation
+  organizationId  String
+  organization    Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([requestedBy])
+  @@index([status])
+  @@index([permissionType])
+}
+
+// Emergency access (break glass) log
+model EmergencyAccessLog {
+  id              String    @id @default(cuid())
+
+  // Who used emergency access
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Access details
+  reason          String    // Required justification
+  resourceAccessed String?  // What was accessed
+  ipAddress       String?
+  userAgent       String?
+
+  // Notification tracking
+  notificationsSent Boolean   @default(false)
+  notifiedEmails    String[]
+
+  // Time tracking
+  accessedAt      DateTime  @default(now())
+  expiresAt       DateTime? // When emergency access expires
+  revokedAt       DateTime? // If manually revoked early
+  revokedBy       String?   // Who revoked it
+
+  // Multi-tenant relation
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([accessedAt])
+}
+
+// Granular permission grants (beyond role-based)
+model PermissionGrant {
+  id              String    @id @default(cuid())
+
+  // Who has the permission
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // What permission
+  permissionType  PermissionType
+  resourceType    String?   // e.g., "Patient", "Location", "Report"
+  resourceId      String?   // Specific resource ID (null = all of type)
+
+  // Time bounds
+  validFrom       DateTime  @default(now())
+  validUntil      DateTime? // null = permanent
+
+  // Who granted it
+  grantedBy       String
+  grantedByUser   User      @relation("PermissionGranter", fields: [grantedBy], references: [id], onDelete: Cascade)
+  grantedAt       DateTime  @default(now())
+  reason          String?   // Why permission was granted
+
+  // Revocation
+  revokedAt       DateTime?
+  revokedBy       String?
+  revokedByUser   User?     @relation("PermissionRevoker", fields: [revokedBy], references: [id], onDelete: SetNull)
+  revokeReason    String?
+
+  // Audit
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Multi-tenant relation
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([permissionType])
+  @@index([validUntil])
+}
+
+// Role inheritance configuration
+model RoleInheritance {
+  id              String    @id @default(cuid())
+
+  // Parent role inherits from child role
+  parentRole      Role      // The role that gains permissions
+  childRole       Role      // The role whose permissions are inherited
+
+  // Configuration
+  isActive        Boolean   @default(true)
+
+  // Audit
+  createdBy       String
+  createdByUser   User      @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Multi-tenant relation (organization-specific inheritance)
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([parentRole, childRole, organizationId])
+  @@index([organizationId])
+  @@index([parentRole])
 }

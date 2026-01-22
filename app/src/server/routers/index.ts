@@ -86,6 +86,7 @@ import { interLocationInventoryRouter } from './interLocationInventory';
 // Advanced Security & Compliance (Epic 26)
 import { securityRouter } from './security';
 import { baaRouter } from './baa';
+import { accessControlRouter } from './accessControl';
 
 export const appRouter = router({
   auth: authRouter,
@@ -175,6 +176,7 @@ export const appRouter = router({
   // Advanced Security & Compliance (Epic 26)
   security: securityRouter,
   baa: baaRouter,
+  accessControl: accessControlRouter,
 });
 
 

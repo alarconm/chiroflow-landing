@@ -299,7 +299,85 @@
 
 ---
 
-## Next Story: US-262 (Access control enhancements)
+### US-262: Access control enhancements
+- Status: COMPLETE
+- Date: 2026-01-22
+
+#### What was implemented:
+
+1. **New Prisma Schema Models**
+   - `AccessRequest` - Access request workflow model with justification, time bounds, approval tracking
+   - `EmergencyAccessLog` - Break glass emergency access tracking with notifications
+   - `PermissionGrant` - Granular permission grants beyond role-based access
+   - `RoleInheritance` - Custom role inheritance rules per organization
+
+2. **New Enums**
+   - `AccessRequestStatus` (PENDING, APPROVED, DENIED, EXPIRED, CANCELLED)
+   - `PermissionType` (PATIENT_ACCESS, PHI_ACCESS, BILLING_ACCESS, ADMIN_ACCESS, LOCATION_ACCESS, REPORT_ACCESS, ROLE_ELEVATION, EMERGENCY_ACCESS)
+
+3. **Access Control Router** (`app/src/server/routers/accessControl.ts`) with procedures:
+
+   **IP Whitelist/Blacklist:**
+   - `accessControl.getIpSettings` - Get current IP restriction settings
+   - `accessControl.updateIpSettings` - Configure whitelist/blacklist (supports CIDR notation, wildcards)
+   - `accessControl.checkIpAccess` - Check if an IP is allowed
+
+   **Time-Based Access Restrictions:**
+   - `accessControl.getTimeAccessSettings` - Get current time restriction settings
+   - `accessControl.updateTimeAccessSettings` - Configure access hours, timezone, days of week
+   - `accessControl.checkTimeAccess` - Check if current time allows access
+
+   **Emergency Access (Break Glass):**
+   - `accessControl.getEmergencyAccessSettings` - Get emergency access configuration
+   - `accessControl.configureEmergencyAccess` - Set up emergency code and notification emails
+   - `accessControl.useEmergencyAccess` - Activate emergency access with justification
+   - `accessControl.listEmergencyAccessLogs` - View emergency access history
+   - `accessControl.revokeEmergencyAccess` - Revoke active emergency access
+
+   **Granular Permission Management:**
+   - `accessControl.grantPermission` - Grant specific permission to user with time bounds
+   - `accessControl.revokePermission` - Revoke a permission grant
+   - `accessControl.listUserPermissions` - List permissions for a user
+   - `accessControl.checkPermission` - Check if user has specific permission
+
+   **Role Inheritance:**
+   - `accessControl.getRoleInheritance` - Get inheritance configuration
+   - `accessControl.createRoleInheritance` - Create custom inheritance rule
+   - `accessControl.deleteRoleInheritance` - Remove inheritance rule
+   - `accessControl.toggleRoleInheritance` - Enable/disable inheritance rule
+   - `accessControl.getEffectiveRolesForUser` - Get all effective roles including inherited
+
+   **Permission Audit Report:**
+   - `accessControl.getPermissionAuditReport` - Comprehensive audit with grants, events, role changes, stats
+
+   **Access Request Workflow:**
+   - `accessControl.createAccessRequest` - Submit access request with justification
+   - `accessControl.listAccessRequests` - List requests (admins see all, users see own)
+   - `accessControl.reviewAccessRequest` - Approve/deny requests (admin)
+   - `accessControl.cancelAccessRequest` - Cancel own pending request
+   - `accessControl.getPendingRequestCount` - Get count for admin dashboard
+
+4. **Helper Functions**
+   - `isIpInRange()` - Check IP against whitelist/blacklist (supports exact, CIDR /8/16/24, wildcards)
+   - `isWithinAccessHours()` - Check if current time is within allowed access hours
+   - `getEffectiveRoles()` - Get all roles including inherited (custom + default hierarchy)
+
+5. **Security Features**
+   - Emergency access code is hashed before storage
+   - Circular inheritance prevention
+   - Role-based permission checks (admins can view all, users view own)
+   - Comprehensive audit logging for all operations
+   - Security event logging for access control changes
+   - Time-bounded permissions with automatic expiration
+
+#### Verification:
+- Prisma db push successful
+- TypeScript compiles without errors
+- Router integrated into app router index
+
+---
+
+## Next Story: US-263 (Security dashboard UI)
 --- Iteration 1 completed at 2026-01-22 06:26:20 ---
 Story: US-256 - Security schema
 
@@ -328,5 +406,8 @@ Story: US-260 - Security event logging
 Story: US-260 - Security event logging
 
 --- Iteration 6 completed at 2026-01-22 ---
+Story: US-261 - BAA management
+
+--- Iteration 6 completed at 2026-01-22 06:58:42 ---
 Story: US-261 - BAA management
 
