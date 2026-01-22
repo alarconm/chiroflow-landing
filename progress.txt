@@ -144,3 +144,71 @@ All acceptance criteria met:
 --- Iteration 3 completed at 2026-01-22 ---
 Story: US-266 - Provider mobile app - schedule
 
+--- Iteration 3 completed at 2026-01-22 07:49:58 ---
+Story: US-266 - Provider mobile app - schedule
+
+2026-01-22: US-267 - Provider mobile app - charting
+---------------------------------------------------
+Implemented mobile charting functionality for Epic 27 (Mobile Applications).
+
+Files Created:
+- app/src/server/routers/mobileCharting.ts - tRPC router for mobile charting
+- app/src/components/mobile-charting/MobileChartingView.tsx - Main charting view with tabs
+- app/src/components/mobile-charting/MobileSOAPEntry.tsx - SOAP note entry component
+- app/src/components/mobile-charting/MobileBodyDiagram.tsx - Touch-based body diagram
+- app/src/components/mobile-charting/MobileQuickCodes.tsx - Quick diagnosis/procedure entry
+- app/src/components/mobile-charting/index.ts - Component exports
+
+Files Modified:
+- app/prisma/schema.prisma (added MobileChartingDraft, CommonDiagnosis, CommonProcedure models)
+- app/src/server/routers/index.ts (added mobileChartingRouter)
+
+Prisma Models Added:
+- MobileChartingDraft - Offline draft saving with sync status tracking
+- CommonDiagnosis - Provider's frequently used ICD-10 diagnosis codes
+- CommonProcedure - Provider's frequently used CPT procedure codes
+
+Key Features:
+1. saveQuickSOAP - Save SOAP note with auto-save support
+2. getSOAPNote - Get existing SOAP note for encounter
+3. processVoiceTranscript - AI-powered voice to SOAP section parsing
+4. attachPhoto - Attach photos to documentation
+5. saveBodyDiagram - Save touch-based body diagram markings
+6. getBodyDiagrams - Get all body diagrams for encounter
+7. getCommonDiagnoses - Get provider's frequently used diagnoses
+8. addQuickDiagnosis - Quick add diagnosis with code search
+9. getDiagnoses - Get encounter diagnoses
+10. getCommonProcedures - Get provider's frequently used procedures
+11. addQuickProcedure - Quick add procedure with code search
+12. getProcedures - Get encounter procedures
+13. saveDraft - Save offline draft with device tracking
+14. getDrafts - Get all pending drafts for device
+15. deleteDraft - Delete synced draft
+16. getEncounterSummary - Get encounter overview
+17. startEncounter - Start encounter from appointment
+
+Mobile-Optimized Components:
+- MobileChartingView: Tab-based UI (Overview, SOAP, Diagram, Codes)
+- MobileSOAPEntry: Collapsible SOAP sections with voice recording support
+- MobileBodyDiagram: Touch-based marking with multiple diagram types and colors
+- MobileQuickCodes: Search and quick-add for diagnoses and procedures
+
+Body Diagram Features:
+- Multiple diagram types (body_front, body_back, spine, cervical, thoracic, lumbar)
+- Marking types with colors (pain, tenderness, subluxation, restriction, trigger_point, note)
+- Touch interaction for adding marks
+- Undo and clear functionality
+- Draft saving support
+
+All acceptance criteria met:
+✓ mobileCharting.saveQuickSOAP - SOAP note entry
+✓ mobileCharting.processVoiceTranscript - Voice dictation parsing
+✓ mobileCharting.attachPhoto - Photo attachment to documentation
+✓ mobileCharting.saveBodyDiagram - Touch-based body diagram
+✓ mobileCharting.addQuickDiagnosis - Quick code entry (ICD-10)
+✓ mobileCharting.addQuickProcedure - Quick code entry (CPT)
+✓ Offline draft saving with auto-save
+✓ Mobile-optimized charting components
+--- Iteration 4 completed at 2026-01-22 ---
+Story: US-267 - Provider mobile app - charting
+

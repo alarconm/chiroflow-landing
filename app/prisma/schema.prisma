@@ -10327,3 +10327,128 @@ model NotificationLog {
   @@index([notificationType])
   @@index([createdAt])
 }
+
+// Mobile charting draft for offline documentation (US-267)
+model MobileChartingDraft {
+  id              String          @id @default(cuid())
+
+  // Draft identification
+  draftType       String          // "soap", "diagnosis", "procedure", "body_diagram"
+
+  // Associated encounter (may be null if creating new)
+  encounterId     String?
+  appointmentId   String?         // Can create draft before encounter exists
+  patientId       String
+
+  // Draft content
+  content         Json            // The draft data
+
+  // Voice-to-text transcript (if used)
+  voiceTranscript String?         @db.Text
+
+  // Photo attachments
+  photoUrls       String[]        // URLs to uploaded photos
+
+  // Body diagram markings (for quick access)
+  bodyDiagramType String?
+  bodyMarkings    Json?
+
+  // Sync status
+  status          SyncStatus      @default(PENDING)
+  lastSyncedAt    DateTime?
+  syncError       String?
+
+  // Device tracking
+  deviceId        String
+
+  // Auto-save timestamp
+  lastAutoSaveAt  DateTime        @default(now())
+
+  // Timestamps
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Provider relation
+  providerId      String
+
+  // Multi-tenant relation
+  organizationId  String
+
+  @@unique([deviceId, encounterId, draftType, organizationId])
+  @@index([organizationId])
+  @@index([providerId])
+  @@index([patientId])
+  @@index([encounterId])
+  @@index([status])
+  @@index([deviceId])
+}
+
+// Common diagnosis codes for quick select (US-267)
+model CommonDiagnosis {
+  id              String          @id @default(cuid())
+
+  icd10Code       String
+  description     String
+  shortName       String?         // Quick display name
+  category        String?         // "cervical", "lumbar", "thoracic", etc.
+
+  // Usage tracking
+  usageCount      Int             @default(0)
+  lastUsedAt      DateTime?
+
+  // Provider-specific favorites
+  providerId      String?         // null = org-wide
+
+  // Sort order
+  sortOrder       Int             @default(0)
+
+  // Timestamps
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Multi-tenant relation
+  organizationId  String
+
+  @@unique([icd10Code, providerId, organizationId])
+  @@index([organizationId])
+  @@index([providerId])
+  @@index([category])
+  @@index([usageCount])
+}
+
+// Common procedure codes for quick entry (US-267)
+model CommonProcedure {
+  id              String          @id @default(cuid())
+
+  cptCode         String
+  description     String
+  shortName       String?         // Quick display name
+  category        String?         // "adjustment", "exam", "therapy", etc.
+
+  // Default values for quick entry
+  defaultUnits    Int             @default(1)
+  defaultModifiers String[]
+
+  // Usage tracking
+  usageCount      Int             @default(0)
+  lastUsedAt      DateTime?
+
+  // Provider-specific favorites
+  providerId      String?         // null = org-wide
+
+  // Sort order
+  sortOrder       Int             @default(0)
+
+  // Timestamps
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Multi-tenant relation
+  organizationId  String
+
+  @@unique([cptCode, providerId, organizationId])
+  @@index([organizationId])
+  @@index([providerId])
+  @@index([category])
+  @@index([usageCount])
+}

@@ -91,6 +91,7 @@ import { accessControlRouter } from './accessControl';
 import { mobileRouter } from './mobile';
 import { notificationsRouter } from './notifications';
 import { mobileScheduleRouter } from './mobileSchedule';
+import { mobileChartingRouter } from './mobileCharting';
 
 export const appRouter = router({
   auth: authRouter,
@@ -185,6 +186,7 @@ export const appRouter = router({
   mobile: mobileRouter,
   notifications: notificationsRouter,
   mobileSchedule: mobileScheduleRouter,
+  mobileCharting: mobileChartingRouter,
 });
 
 
