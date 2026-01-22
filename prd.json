@@ -1,139 +1,137 @@
 {
-  "branch": "feature/security",
-  "title": "Epic 26: Advanced Security & Compliance",
-  "description": "Enterprise-grade security features including MFA, encryption at rest, session management, audit compliance, BAA management, and security monitoring. Essential for HIPAA compliance.",
-  "epic": "26-security",
-  "dependencies": ["01-platform-foundation"],
+  "branch": "feature/mobile",
+  "title": "Epic 27: Mobile Applications",
+  "description": "Native mobile applications for providers and patients with offline capabilities, push notifications, and mobile-optimized workflows. Enables on-the-go practice management.",
+  "epic": "27-mobile",
+  "dependencies": ["14-patient-portal"],
   "userStories": [
     {
-      "id": "US-256",
-      "title": "Security schema",
-      "description": "Create database models for security features.",
+      "id": "US-264",
+      "title": "Mobile API layer",
+      "description": "Create mobile-optimized API endpoints.",
       "acceptanceCriteria": [
-        "MFAConfiguration model with userId, method, secret, verified",
-        "SecurityEvent model with userId, eventType, ipAddress, userAgent, timestamp",
-        "Session model with enhanced tracking fields",
-        "BAADocument model with vendorId, signedDate, expirationDate, documentUrl",
-        "EncryptionKey model for key rotation tracking",
-        "SecuritySetting model for organization security policies",
-        "Prisma migrations run successfully"
+        "REST API wrapper over tRPC for mobile",
+        "JWT authentication for mobile",
+        "Refresh token flow",
+        "API versioning",
+        "Rate limiting for mobile",
+        "Offline-first data sync endpoints",
+        "Push notification registration endpoint"
       ],
       "priority": 1,
       "passes": true
     },
     {
-      "id": "US-257",
-      "title": "Multi-factor authentication",
-      "description": "Implement MFA for enhanced account security.",
+      "id": "US-265",
+      "title": "Push notification system",
+      "description": "Implement push notifications for mobile apps.",
       "acceptanceCriteria": [
-        "security.setupMFA - Configure MFA for user",
-        "TOTP authenticator app support (Google Authenticator)",
-        "SMS verification code option",
-        "MFA verification at login",
-        "Backup codes generation",
-        "MFA requirement policy (all users, admins only)",
-        "Recovery flow for lost MFA device",
-        "Remember device option"
+        "notifications.register - Register device token",
+        "notifications.send - Send push notification",
+        "Firebase Cloud Messaging integration",
+        "Apple Push Notification Service integration",
+        "Notification preferences per user",
+        "Notification types (appointment, message, alert)",
+        "Notification history"
       ],
       "priority": 2,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-258",
-      "title": "Field-level encryption",
-      "description": "Encrypt sensitive data at rest in database.",
+      "id": "US-266",
+      "title": "Provider mobile app - schedule",
+      "description": "Mobile schedule view and management for providers.",
       "acceptanceCriteria": [
-        "Encrypt SSN fields",
-        "Encrypt payment credentials",
-        "Encrypt API keys and secrets",
-        "Encryption key management",
-        "Key rotation capability",
-        "Decrypt on read with access control",
-        "Audit access to encrypted fields"
+        "Today's schedule view",
+        "Week/day calendar view",
+        "Quick patient check-in",
+        "View patient summary",
+        "Appointment notes",
+        "Schedule changes push notifications",
+        "Pull-to-refresh"
       ],
       "priority": 3,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-259",
-      "title": "Session security",
-      "description": "Enhanced session management and security.",
+      "id": "US-267",
+      "title": "Provider mobile app - charting",
+      "description": "Mobile-optimized encounter documentation.",
       "acceptanceCriteria": [
-        "Configurable session timeout",
-        "Idle timeout with warning",
-        "Concurrent session limit",
-        "Force logout from all devices",
-        "Session activity logging",
-        "IP-based session validation",
-        "Device fingerprinting"
+        "Quick SOAP note entry",
+        "Voice-to-text for notes",
+        "Photo capture for documentation",
+        "Body diagram marking",
+        "Common diagnosis quick select",
+        "Procedure quick entry",
+        "Offline draft saving"
       ],
       "priority": 4,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-260",
-      "title": "Security event logging",
-      "description": "Comprehensive security event logging and monitoring.",
+      "id": "US-268",
+      "title": "Patient mobile app - appointments",
+      "description": "Patient mobile app for appointment management.",
       "acceptanceCriteria": [
-        "Log all authentication events",
-        "Log permission changes",
-        "Log PHI access events",
-        "Log configuration changes",
-        "Failed login attempt tracking",
-        "Suspicious activity detection",
-        "Security event dashboard"
+        "View upcoming appointments",
+        "Book new appointment",
+        "Cancel/reschedule appointment",
+        "Appointment reminders",
+        "Add to phone calendar",
+        "Directions to clinic",
+        "Check-in on arrival"
       ],
       "priority": 5,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-261",
-      "title": "BAA management",
-      "description": "Manage Business Associate Agreements for compliance.",
+      "id": "US-269",
+      "title": "Patient mobile app - health",
+      "description": "Patient mobile app for health tracking and education.",
       "acceptanceCriteria": [
-        "baa.create - Record BAA with vendor",
-        "baa.list - List all BAAs",
-        "BAA expiration tracking",
-        "Renewal reminders",
-        "Document storage",
-        "Vendor risk assessment",
-        "BAA compliance dashboard"
+        "Exercise video library",
+        "Exercise logging",
+        "Pain diary entry",
+        "Progress photos",
+        "Health metrics dashboard",
+        "Educational content",
+        "Symptom tracking"
       ],
       "priority": 6,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-262",
-      "title": "Access control enhancements",
-      "description": "Enhanced role-based access control features.",
+      "id": "US-270",
+      "title": "Offline mode",
+      "description": "Enable offline functionality with sync.",
       "acceptanceCriteria": [
-        "IP whitelist/blacklist",
-        "Time-based access restrictions",
-        "Emergency access override (break glass)",
-        "Granular permission management",
-        "Role inheritance",
-        "Permission audit report",
-        "Access request workflow"
+        "Cache recent patient data",
+        "Offline appointment viewing",
+        "Offline note drafting",
+        "Queue actions for sync",
+        "Conflict resolution",
+        "Sync status indicator",
+        "Manual sync trigger"
       ],
       "priority": 7,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-263",
-      "title": "Security dashboard UI",
-      "description": "Security administration dashboard.",
+      "id": "US-271",
+      "title": "Mobile app deployment",
+      "description": "Prepare mobile apps for app store deployment.",
       "acceptanceCriteria": [
-        "Security dashboard at /admin/security",
-        "MFA management interface",
-        "Active sessions view",
-        "Security event log viewer",
-        "BAA management interface",
-        "Security policy configuration",
-        "Compliance status indicators",
-        "Security reports"
+        "React Native or Flutter implementation",
+        "iOS App Store preparation",
+        "Google Play Store preparation",
+        "App signing and certificates",
+        "Beta testing via TestFlight/Firebase",
+        "App store listing content",
+        "Privacy policy and terms"
       ],
       "priority": 8,
-      "passes": true
+      "passes": false
     }
   ]
 }

@@ -216,6 +216,13 @@ model Organization {
   permissionGrants     PermissionGrant[]
   roleInheritances     RoleInheritance[]
 
+  // Mobile Applications relations (Epic 27)
+  mobileDevices        MobileDevice[]
+  mobileRefreshTokens  MobileRefreshToken[]
+  mobileRateLimits     MobileRateLimit[]
+  offlineSyncQueues    OfflineSyncQueue[]
+  pushNotifications    PushNotification[]
+
   @@index([subdomain])
 }
 
@@ -277,6 +284,11 @@ model User {
   permissionsGranted       PermissionGrant[]      @relation("PermissionGranter")
   permissionsRevoked       PermissionGrant[]      @relation("PermissionRevoker")
   roleInheritancesCreated  RoleInheritance[]
+
+  // Mobile Applications relations (Epic 27)
+  mobileDevices            MobileDevice[]
+  mobileRefreshTokens      MobileRefreshToken[]
+  pushNotifications        PushNotification[]
 
   @@unique([email, organizationId])
   @@index([organizationId])
@@ -9953,4 +9965,265 @@ model RoleInheritance {
   @@unique([parentRole, childRole, organizationId])
   @@index([organizationId])
   @@index([parentRole])
+}
+
+// ============================================================================
+// Mobile Applications (Epic 27)
+// ============================================================================
+
+// Device platform types
+enum DevicePlatform {
+  IOS
+  ANDROID
+  WEB
+}
+
+// Sync operation types
+enum SyncOperationType {
+  CREATE
+  UPDATE
+  DELETE
+}
+
+// Sync status
+enum SyncStatus {
+  PENDING
+  SYNCING
+  COMPLETED
+  FAILED
+  CONFLICT
+}
+
+// Notification types
+enum NotificationType {
+  APPOINTMENT_REMINDER
+  APPOINTMENT_CONFIRMATION
+  APPOINTMENT_CANCELLATION
+  MESSAGE_RECEIVED
+  FORM_ASSIGNED
+  TREATMENT_REMINDER
+  ALERT
+  GENERAL
+}
+
+// Notification delivery status
+enum NotificationDeliveryStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+  READ
+}
+
+// Mobile device registration for authentication
+model MobileDevice {
+  id              String          @id @default(cuid())
+
+  // Device identification
+  deviceId        String          // Unique device identifier
+  deviceName      String?         // User-friendly device name
+  platform        DevicePlatform
+  osVersion       String?
+  appVersion      String?
+
+  // Push notification tokens
+  fcmToken        String?         // Firebase Cloud Messaging token
+  apnsToken       String?         // Apple Push Notification Service token
+
+  // Security
+  deviceFingerprint String?       // For fraud detection
+  isActive        Boolean         @default(true)
+  isTrusted       Boolean         @default(false) // Has passed additional verification
+
+  // Session tracking
+  lastActiveAt    DateTime        @default(now())
+  lastIpAddress   String?
+
+  // Timestamps
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // User relation
+  userId          String
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Multi-tenant relation
+  organizationId  String
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Refresh tokens for this device
+  refreshTokens   MobileRefreshToken[]
+
+  @@unique([deviceId, userId, organizationId])
+  @@index([userId])
+  @@index([organizationId])
+  @@index([deviceId])
+  @@index([fcmToken])
+  @@index([apnsToken])
+}
+
+// Refresh tokens for JWT authentication
+model MobileRefreshToken {
+  id              String    @id @default(cuid())
+
+  // Token data
+  tokenHash       String    @unique // Hashed refresh token
+  family          String    // Token family for rotation detection
+  generation      Int       @default(0) // Increments with each rotation
+
+  // Validity
+  isRevoked       Boolean   @default(false)
+  revokedAt       DateTime?
+  revokedReason   String?
+  expiresAt       DateTime
+
+  // Security metadata
+  issuedIp        String?
+  lastUsedIp      String?
+  lastUsedAt      DateTime?
+
+  // Timestamps
+  createdAt       DateTime  @default(now())
+
+  // User relation
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Device relation (optional, token may outlive device registration)
+  mobileDeviceId  String?
+  mobileDevice    MobileDevice? @relation(fields: [mobileDeviceId], references: [id], onDelete: SetNull)
+
+  // Multi-tenant relation
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([family])
+  @@index([expiresAt])
+  @@index([isRevoked])
+}
+
+// Rate limiting for mobile API endpoints
+model MobileRateLimit {
+  id              String    @id @default(cuid())
+
+  // Rate limit key (can be user ID, device ID, or IP)
+  keyType         String    // "user", "device", "ip"
+  keyValue        String    // The actual key value
+  endpoint        String    // API endpoint being rate limited
+
+  // Counters
+  requestCount    Int       @default(0)
+  windowStart     DateTime  @default(now())
+  windowDurationMs Int      @default(60000) // 1 minute default
+
+  // Blocking
+  isBlocked       Boolean   @default(false)
+  blockedUntil    DateTime?
+  blockReason     String?
+
+  // Multi-tenant relation (optional for IP-based limits)
+  organizationId  String?
+  organization    Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([keyType, keyValue, endpoint, organizationId])
+  @@index([keyType, keyValue])
+  @@index([windowStart])
+  @@index([isBlocked])
+}
+
+// Offline sync queue for mobile apps
+model OfflineSyncQueue {
+  id              String          @id @default(cuid())
+
+  // Operation details
+  operationType   SyncOperationType
+  entityType      String          // "appointment", "encounter", "note", etc.
+  entityId        String?         // ID of existing entity (for UPDATE/DELETE)
+  payload         Json            // The data to sync
+
+  // Sync status
+  status          SyncStatus      @default(PENDING)
+  attempts        Int             @default(0)
+  lastAttemptAt   DateTime?
+  errorMessage    String?
+
+  // Conflict resolution
+  conflictData    Json?           // Server version if conflict detected
+  resolvedAt      DateTime?
+  resolvedBy      String?         // "client", "server", "manual"
+
+  // Client tracking
+  clientId        String          // Client-generated ID for deduplication
+  deviceId        String?         // Which device created this
+  queuedAt        DateTime        @default(now())
+  syncedAt        DateTime?
+
+  // API version for compatibility
+  apiVersion      String          @default("v1")
+
+  // Timestamps
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Multi-tenant relation
+  organizationId  String
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, organizationId])
+  @@index([organizationId])
+  @@index([status])
+  @@index([entityType])
+  @@index([queuedAt])
+}
+
+// Push notifications
+model PushNotification {
+  id              String                    @id @default(cuid())
+
+  // Notification content
+  type            NotificationType
+  title           String
+  body            String
+  data            Json?                     // Additional payload
+
+  // Delivery tracking
+  deliveryStatus  NotificationDeliveryStatus @default(PENDING)
+  sentAt          DateTime?
+  deliveredAt     DateTime?
+  readAt          DateTime?
+  failedAt        DateTime?
+  failureReason   String?
+
+  // Targeting
+  platform        DevicePlatform?           // null = all platforms
+  fcmMessageId    String?                   // Firebase message ID
+  apnsMessageId   String?                   // APNS message ID
+
+  // Related entities
+  relatedEntityType String?                 // "appointment", "message", etc.
+  relatedEntityId   String?
+
+  // Scheduling
+  scheduledFor    DateTime?                 // For scheduled notifications
+  expiresAt       DateTime?                 // Don't deliver after this time
+
+  // Timestamps
+  createdAt       DateTime                  @default(now())
+
+  // User relation
+  userId          String
+  user            User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Multi-tenant relation
+  organizationId  String
+  organization    Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([deliveryStatus])
+  @@index([type])
+  @@index([scheduledFor])
+  @@index([createdAt])
 }

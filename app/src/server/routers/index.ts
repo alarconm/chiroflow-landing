@@ -87,6 +87,8 @@ import { interLocationInventoryRouter } from './interLocationInventory';
 import { securityRouter } from './security';
 import { baaRouter } from './baa';
 import { accessControlRouter } from './accessControl';
+// Mobile Applications (Epic 27)
+import { mobileRouter } from './mobile';
 
 export const appRouter = router({
   auth: authRouter,
@@ -177,6 +179,8 @@ export const appRouter = router({
   security: securityRouter,
   baa: baaRouter,
   accessControl: accessControlRouter,
+  // Mobile Applications (Epic 27)
+  mobile: mobileRouter,
 });
 
 
