@@ -1,140 +1,141 @@
 {
-  "branch": "feature/ai-revenue-optimizer",
-  "title": "Epic 35: AI Revenue Optimizer Agent",
-  "description": "AI agent that continuously analyzes practice financials to identify revenue opportunities, reduce leakage, optimize fee schedules, and provide actionable recommendations to maximize profitability.",
-  "epic": "35-ai-revenue-optimizer",
-  "dependencies": ["07-billing-claims", "15-reporting"],
+  "branch": "feature/ai-quality-assurance",
+  "title": "Epic 36: AI Quality Assurance Agent",
+  "description": "AI agent that continuously audits documentation, coding, compliance, and clinical quality. Identifies risks before they become problems and ensures consistent quality standards.",
+  "epic": "36-ai-quality-assurance",
+  "dependencies": ["05-ehr-soap-notes", "07-billing-claims"],
   "userStories": [
     {
-      "id": "US-339",
-      "title": "AI revenue optimizer schema",
-      "description": "Create database models for revenue optimization.",
+      "id": "US-347",
+      "title": "AI QA agent schema",
+      "description": "Create database models for quality assurance activities.",
       "acceptanceCriteria": [
-        "RevenueOpportunity model with type, amount, description, status",
-        "RevenueLeakage model with type, amount, source, recommendation",
-        "FeeScheduleAnalysis model with cptCode, currentFee, recommendedFee, reasoning",
-        "RevenueGoal model with period, target, actual, variance",
-        "OptimizationAction model with opportunityId, action, result",
+        "QAAudit model with auditType, targetId, findings, score, date",
+        "QAFinding model with auditId, findingType, severity, description, recommendation",
+        "QAMetric model with metricType, period, score, benchmark",
+        "ComplianceAlert model with type, severity, description, status, resolvedBy",
+        "QARule model for configurable audit criteria",
         "Prisma migrations run successfully"
       ],
       "priority": 1,
       "passes": true
     },
     {
-      "id": "US-340",
-      "title": "Revenue leakage detection",
-      "description": "AI identifies sources of revenue leakage.",
+      "id": "US-348",
+      "title": "Documentation quality audit",
+      "description": "AI audits clinical documentation quality.",
       "acceptanceCriteria": [
-        "aiRevenue.detectLeakage - Find revenue leaks",
-        "Unbilled services detection",
-        "Undercoding identification",
-        "Missed modifier opportunities",
-        "Unbilled supplies",
-        "Write-off pattern analysis",
-        "Collection rate issues",
-        "Quantify leakage by category"
+        "aiQA.auditDocumentation - Review note quality",
+        "Completeness assessment",
+        "Medical necessity documentation",
+        "Diagnosis-procedure linkage",
+        "Progress note adequacy",
+        "Treatment plan documentation",
+        "Generate improvement recommendations",
+        "Track quality scores over time"
       ],
       "priority": 2,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-341",
-      "title": "Fee schedule optimization",
-      "description": "AI recommends optimal fee schedule pricing.",
+      "id": "US-349",
+      "title": "Coding accuracy audit",
+      "description": "AI audits coding accuracy and appropriateness.",
       "acceptanceCriteria": [
-        "aiRevenue.analyzeFees - Analyze fee schedule",
-        "Compare to Medicare rates",
-        "Compare to regional benchmarks",
-        "Analyze payer reimbursement patterns",
-        "Identify underpriced services",
-        "Model revenue impact of changes",
-        "Generate fee update recommendations",
-        "Track fee change effectiveness"
+        "aiQA.auditCoding - Review coding accuracy",
+        "Code-to-documentation match",
+        "Modifier appropriateness",
+        "Upcoding/downcoding detection",
+        "Bundling compliance",
+        "LCD/NCD compliance",
+        "Provider-level accuracy rates",
+        "Targeted education recommendations"
       ],
       "priority": 3,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-342",
-      "title": "Service mix optimization",
-      "description": "AI recommends optimal service mix for profitability.",
+      "id": "US-350",
+      "title": "Compliance monitoring",
+      "description": "Continuous monitoring for compliance issues.",
       "acceptanceCriteria": [
-        "aiRevenue.analyzeServiceMix - Evaluate services",
-        "Profitability by service type",
-        "Identify high-margin services",
-        "Recommend service expansion",
-        "Identify unprofitable services",
-        "Payer mix optimization",
-        "Time vs revenue analysis",
-        "Capacity utilization recommendations"
+        "aiQA.monitorCompliance - Ongoing compliance watch",
+        "HIPAA compliance checks",
+        "Billing compliance monitoring",
+        "Consent documentation verification",
+        "Audit trail completeness",
+        "Unusual pattern detection",
+        "Real-time compliance alerts",
+        "Compliance score trending"
       ],
       "priority": 4,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-343",
-      "title": "Coding optimization",
-      "description": "AI identifies coding improvement opportunities.",
+      "id": "US-351",
+      "title": "Clinical quality measures",
+      "description": "Track and report clinical quality metrics.",
       "acceptanceCriteria": [
-        "aiRevenue.optimizeCoding - Review coding patterns",
-        "E&M level optimization",
-        "Modifier usage analysis",
-        "Bundling/unbundling review",
-        "Provider coding comparison",
-        "Documentation improvement suggestions",
-        "Compliant revenue increase opportunities"
+        "aiQA.trackQuality - Monitor clinical quality",
+        "Outcome measure tracking",
+        "Treatment effectiveness metrics",
+        "Patient satisfaction correlation",
+        "Care gap closure rates",
+        "Benchmark comparison",
+        "Quality improvement recommendations",
+        "Provider performance comparison"
       ],
       "priority": 5,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-344",
-      "title": "Contract analysis",
-      "description": "AI analyzes payer contracts for optimization.",
+      "id": "US-352",
+      "title": "Risk identification",
+      "description": "AI identifies compliance and audit risks.",
       "acceptanceCriteria": [
-        "aiRevenue.analyzeContracts - Review payer contracts",
-        "Reimbursement rate analysis",
-        "Compare to market rates",
-        "Identify renegotiation opportunities",
-        "Model contract change impact",
-        "Track contract performance",
-        "Generate negotiation talking points"
+        "aiQA.identifyRisks - Find potential risks",
+        "Audit target risk scoring",
+        "Pattern-based risk detection",
+        "Provider outlier identification",
+        "Payer audit risk assessment",
+        "Proactive remediation suggestions",
+        "Risk mitigation tracking"
       ],
       "priority": 6,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-345",
-      "title": "Revenue forecasting",
-      "description": "AI forecasts future revenue with recommendations.",
+      "id": "US-353",
+      "title": "Audit preparation",
+      "description": "AI assists with audit preparation and response.",
       "acceptanceCriteria": [
-        "aiRevenue.forecast - Predict revenue",
-        "Historical trend analysis",
-        "Seasonality adjustment",
-        "Pipeline-based forecasting",
-        "Scenario modeling",
-        "Goal vs forecast variance",
-        "Action recommendations to close gaps"
+        "aiQA.prepareForAudit - Audit readiness report",
+        "Documentation gap identification",
+        "Sample chart review",
+        "Compliance checklist generation",
+        "Supporting documentation gathering",
+        "Response template generation",
+        "Mock audit simulation"
       ],
       "priority": 7,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-346",
-      "title": "Revenue optimizer dashboard",
-      "description": "Dashboard for revenue optimization insights.",
+      "id": "US-354",
+      "title": "QA agent dashboard",
+      "description": "Dashboard for quality assurance activities.",
       "acceptanceCriteria": [
-        "Revenue opportunity summary",
-        "Leakage identification list",
-        "Fee schedule recommendations",
-        "Coding improvement suggestions",
-        "Contract performance overview",
-        "Revenue forecast vs actual",
+        "Overall quality score",
+        "Audit findings summary",
+        "Compliance alert queue",
+        "Provider quality comparison",
+        "Risk indicators",
+        "Quality trend charts",
         "Action item tracking",
-        "ROI from optimizations"
+        "Audit schedule and history"
       ],
       "priority": 8,
-      "passes": true
+      "passes": false
     }
   ]
 }

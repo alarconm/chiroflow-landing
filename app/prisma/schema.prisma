@@ -271,6 +271,13 @@ model Organization {
   careJourneys            CareJourney[]
   careCoordinatorActions  CareCoordinatorAction[]
 
+  // AI Quality Assurance Agent relations (Epic 36)
+  qaAudits         QAAudit[]
+  qaFindings       QAFinding[]
+  qaMetrics        QAMetric[]
+  complianceAlerts ComplianceAlert[]
+  qaRules          QARule[]
+
   @@index([subdomain])
 }
 
@@ -12553,4 +12560,412 @@ model CareCoordinatorAction {
   @@index([careJourneyId])
   @@index([createdAt])
   @@index([aiInitiated])
+}
+
+// ============================================
+// EPIC 36: AI QUALITY ASSURANCE AGENT
+// ============================================
+
+// Audit type categories
+enum QAAuditType {
+  DOCUMENTATION // Clinical documentation quality
+  CODING        // Coding accuracy and appropriateness
+  COMPLIANCE    // Regulatory and billing compliance
+  CLINICAL      // Clinical quality measures
+  WORKFLOW      // Workflow efficiency
+  FINANCIAL     // Financial accuracy
+}
+
+// Finding severity levels
+enum QAFindingSeverity {
+  CRITICAL // Must address immediately
+  HIGH     // Significant risk or issue
+  MEDIUM   // Moderate concern
+  LOW      // Minor improvement opportunity
+  INFO     // Informational only
+}
+
+// Finding status
+enum QAFindingStatus {
+  OPEN       // Not yet addressed
+  IN_REVIEW  // Being reviewed
+  IN_PROGRESS // Being worked on
+  RESOLVED   // Fixed
+  DISMISSED  // Determined to be not applicable
+  DEFERRED   // Postponed for later
+}
+
+// Metric types for quality tracking
+enum QAMetricType {
+  DOCUMENTATION_COMPLETENESS
+  DOCUMENTATION_ACCURACY
+  CODING_ACCURACY
+  CODING_COMPLIANCE
+  MODIFIER_ACCURACY
+  MEDICAL_NECESSITY
+  HIPAA_COMPLIANCE
+  BILLING_COMPLIANCE
+  CONSENT_COMPLIANCE
+  OUTCOME_TRACKING
+  TREATMENT_EFFECTIVENESS
+  PATIENT_SATISFACTION
+  DENIAL_RATE
+  AUDIT_RISK_SCORE
+}
+
+// Compliance alert types
+enum ComplianceAlertType {
+  HIPAA_VIOLATION
+  BILLING_IRREGULARITY
+  DOCUMENTATION_GAP
+  CONSENT_MISSING
+  AUDIT_TRAIL_GAP
+  UNUSUAL_PATTERN
+  POLICY_VIOLATION
+  CREDENTIAL_EXPIRING
+  TRAINING_DUE
+}
+
+// Compliance alert status
+enum ComplianceAlertStatus {
+  NEW
+  ACKNOWLEDGED
+  IN_PROGRESS
+  RESOLVED
+  DISMISSED
+  ESCALATED
+}
+
+// QA rule trigger types
+enum QARuleTrigger {
+  ENCOUNTER_CREATED
+  ENCOUNTER_COMPLETED
+  CLAIM_SUBMITTED
+  CLAIM_DENIED
+  PAYMENT_POSTED
+  DAILY_BATCH
+  WEEKLY_BATCH
+  MONTHLY_BATCH
+  MANUAL
+}
+
+// QA audit record
+model QAAudit {
+  id        String      @id @default(cuid())
+  auditType QAAuditType
+  auditDate DateTime    @default(now())
+
+  // Audit scope
+  targetType String? // Encounter, Provider, Claim, Note, etc.
+  targetId   String? // ID of specific entity being audited
+  providerId String? // Provider being audited (if applicable)
+  dateFrom   DateTime? // Audit period start
+  dateTo     DateTime? // Audit period end
+
+  // Scoring
+  score         Int?     @default(0) // Overall score 0-100
+  maxScore      Int?     @default(100)
+  scoreCategory String?  // excellent, good, needs_improvement, poor
+  passFail      Boolean? // For pass/fail type audits
+
+  // Summary
+  findingsCount Int @default(0)
+  criticalCount Int @default(0)
+  highCount     Int @default(0)
+  mediumCount   Int @default(0)
+  lowCount      Int @default(0)
+
+  // Audit details
+  summary            String?  @db.Text // Executive summary
+  methodology        String? // How audit was conducted
+  sampleSize         Int? // Number of items sampled
+  populationSize     Int? // Total population
+  confidenceLevel    Float? // Statistical confidence
+  recommendations    Json? // Array of high-level recommendations
+  previousAuditId    String? // Link to previous audit for comparison
+  scoreChangePercent Float? // Change from previous audit
+
+  // AI metadata
+  aiGenerated    Boolean @default(true)
+  modelVersion   String?
+  processingTime Int? // milliseconds
+
+  // Status
+  status      String    @default("completed") // in_progress, completed, failed
+  completedAt DateTime?
+  reviewedBy  String? // User who reviewed
+  reviewedAt  DateTime?
+  reviewNotes String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  findings QAFinding[]
+
+  @@index([organizationId])
+  @@index([auditType])
+  @@index([auditDate])
+  @@index([providerId])
+  @@index([targetType, targetId])
+  @@index([score])
+}
+
+// Individual finding from an audit
+model QAFinding {
+  id          String            @id @default(cuid())
+  findingType String // Specific type of finding
+  severity    QAFindingSeverity
+  status      QAFindingStatus   @default(OPEN)
+
+  // Finding details
+  title       String // Short description
+  description String  @db.Text // Detailed explanation
+  evidence    String? @db.Text // Supporting evidence
+  impact      String? @db.Text // Potential impact if not addressed
+
+  // Location/context
+  entityType String? // Note, Claim, Encounter, etc.
+  entityId   String? // ID of affected entity
+  fieldName  String? // Specific field with issue
+  providerId String? // Provider associated with finding
+  patientId  String? // Patient associated with finding (if applicable)
+
+  // Recommendations
+  recommendation String? @db.Text // What to do about it
+  correctiveAction String? @db.Text // Specific corrective action
+  preventiveAction String? @db.Text // How to prevent recurrence
+
+  // Risk assessment
+  riskScore       Int? // 0-100 risk score
+  complianceImpact Boolean @default(false) // Affects compliance
+  financialImpact Decimal? @db.Decimal(10, 2) // Estimated financial impact
+  auditRiskFactor Float?  // Contribution to audit risk
+
+  // Resolution tracking
+  resolvedAt     DateTime?
+  resolvedBy     String?
+  resolutionNote String?   @db.Text
+  dueDate        DateTime? // Target resolution date
+  reminderSent   Boolean   @default(false)
+
+  // AI metadata
+  confidence     Float? // AI confidence in finding
+  relatedCodes   Json?  // Related CPT, ICD codes
+  citedGuidelines Json? // Payer guidelines, LCD/NCDs cited
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  auditId String
+  audit   QAAudit @relation(fields: [auditId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([auditId])
+  @@index([severity])
+  @@index([status])
+  @@index([findingType])
+  @@index([providerId])
+  @@index([dueDate])
+  @@index([createdAt])
+}
+
+// Quality metrics tracking over time
+model QAMetric {
+  id         String       @id @default(cuid())
+  metricType QAMetricType
+  period     String // monthly, quarterly, yearly
+  periodStart DateTime
+  periodEnd   DateTime
+
+  // Metric values
+  score      Decimal @db.Decimal(6, 2) // Actual score/value
+  maxScore   Decimal @db.Decimal(6, 2) // Maximum possible
+  percentage Decimal @db.Decimal(5, 2) // Score as percentage
+  benchmark  Decimal? @db.Decimal(5, 2) // Industry/internal benchmark
+  target     Decimal? @db.Decimal(5, 2) // Target for this period
+
+  // Performance assessment
+  meetsTarget    Boolean? // Whether target is met
+  meetsBenchmark Boolean? // Whether benchmark is met
+  trend          String?  // improving, stable, declining
+  trendPercent   Float?   // Percentage change from prior period
+
+  // Breakdown
+  sampleSize    Int? // Number of items measured
+  passCount     Int? // Items that passed
+  failCount     Int? // Items that failed
+  breakdown     Json? // Detailed breakdown by subcategory
+  topIssues     Json? // Most common issues
+
+  // Provider-level metrics
+  providerId     String?
+  providerName   String?
+  providerScore  Decimal? @db.Decimal(5, 2)
+  providerRank   Int? // Rank among providers
+
+  // Calculation metadata
+  calculatedAt   DateTime @default(now())
+  calculationMethod String? // How metric was calculated
+  dataSourceIds  Json?    // IDs of records used in calculation
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, metricType, period, periodStart, providerId])
+  @@index([organizationId])
+  @@index([metricType])
+  @@index([periodStart])
+  @@index([providerId])
+  @@index([meetsTarget])
+}
+
+// Real-time compliance alerts
+model ComplianceAlert {
+  id       String              @id @default(cuid())
+  type     ComplianceAlertType
+  severity QAFindingSeverity
+  status   ComplianceAlertStatus @default(NEW)
+
+  // Alert details
+  title       String
+  description String  @db.Text
+  evidence    String? @db.Text
+
+  // Context
+  entityType String? // What triggered the alert
+  entityId   String?
+  providerId String?
+  patientId  String?
+  userId     String? // User involved (if applicable)
+
+  // Detection info
+  detectedAt DateTime @default(now())
+  detectedBy String   @default("AI") // AI or rule name
+  ruleId     String?  // QA rule that triggered (if applicable)
+
+  // Risk assessment
+  riskLevel     String? // low, medium, high, critical
+  riskScore     Int? // 0-100
+  complianceRisk Boolean @default(true)
+  financialRisk  Boolean @default(false)
+  reputationRisk Boolean @default(false)
+
+  // Required actions
+  requiredAction String? @db.Text
+  actionDueDate  DateTime?
+  escalationDate DateTime? // When to escalate if not resolved
+
+  // Resolution tracking
+  acknowledgedAt   DateTime?
+  acknowledgedBy   String?
+  resolvedAt       DateTime?
+  resolvedBy       String?
+  resolutionNote   String?   @db.Text
+  escalatedAt      DateTime?
+  escalatedTo      String?
+  escalationReason String?
+
+  // Related alerts
+  parentAlertId String? // If this is part of a pattern
+  relatedAlerts Json?   // IDs of related alerts
+
+  // Notification tracking
+  notificationsSent Json? // Array of notification records
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  rule QARule? @relation(fields: [ruleId], references: [id])
+
+  @@index([organizationId])
+  @@index([type])
+  @@index([severity])
+  @@index([status])
+  @@index([detectedAt])
+  @@index([providerId])
+  @@index([ruleId])
+  @@index([actionDueDate])
+}
+
+// Configurable QA rules
+model QARule {
+  id          String        @id @default(cuid())
+  name        String
+  description String        @db.Text
+  category    QAAuditType
+  trigger     QARuleTrigger
+
+  // Rule configuration
+  isActive    Boolean @default(true)
+  priority    Int     @default(50) // 1-100, higher = more important
+  severity    QAFindingSeverity @default(MEDIUM)
+
+  // Rule logic
+  conditions  Json // Array of condition objects
+  thresholds  Json? // Threshold values for triggering
+  checkType   String // compliance_check, threshold_check, pattern_check, etc.
+
+  // Actions when triggered
+  actions        Json   // What to do when triggered
+  createsFinding Boolean @default(true)
+  createsAlert   Boolean @default(false)
+  alertType      ComplianceAlertType?
+
+  // Notification settings
+  notifyRoles   Json? // Roles to notify
+  notifyUsers   Json? // Specific users to notify
+  escalationPath Json? // Escalation configuration
+
+  // Performance tracking
+  lastTriggeredAt DateTime?
+  triggerCount    Int       @default(0)
+  falsePositives  Int       @default(0)
+  effectiveness   Float? // Success rate
+
+  // Metadata
+  source          String? // Where rule came from (built-in, custom, payer)
+  payerId         String? // If payer-specific rule
+  effectiveDate   DateTime? // When rule becomes active
+  expirationDate  DateTime? // When rule expires
+  version         Int       @default(1)
+  previousVersion String?   // ID of previous version
+
+  // Documentation
+  rationale   String? @db.Text // Why this rule exists
+  references  Json?   // Links to guidelines, policies
+  examples    Json?   // Example findings
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  // Relations
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  triggeredAlerts ComplianceAlert[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@index([category])
+  @@index([trigger])
+  @@index([isActive])
+  @@index([priority])
 }
