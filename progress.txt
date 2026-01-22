@@ -19,8 +19,19 @@
   - LowStockAlert model for inventory alerts
 - **Verification**: Prisma generate succeeds, TypeScript compiles without errors
 
+#### US-110 - Product catalog management ✅
+- **Completed**: 2026-01-21
+- **Summary**: Verified and enhanced product catalog CRUD operations
+- **Procedures Implemented**:
+  - inventory.createProduct - Add new product with full details
+  - inventory.updateProduct - Edit product information
+  - inventory.listProducts - List with filtering by search, category, status, vendor, lowStock
+  - inventory.getProduct - Get product details with relations
+  - inventory.deactivateProduct - NEW: Soft delete product (sets status to INACTIVE)
+  - Category management: listCategories, createCategory, updateCategory, deleteCategory
+- **Enhancement**: Added dedicated deactivateProduct procedure for soft delete
+
 ### Remaining Stories
-- US-110: Product catalog management (priority 2)
 - US-111: Inventory tracking (priority 3)
 - US-112: Purchase order management (priority 4)
 - US-113: Point of sale transaction (priority 5)

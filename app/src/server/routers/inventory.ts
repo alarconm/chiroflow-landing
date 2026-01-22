@@ -337,6 +337,28 @@ export const inventoryRouter = router({
       return { success: true };
     }),
 
+  deactivateProduct: adminProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      // Update product status to INACTIVE (soft delete)
+      await ctx.prisma.product.update({
+        where: {
+          id: input.id,
+          organizationId: ctx.user.organizationId,
+        },
+        data: { status: 'INACTIVE' },
+      });
+
+      await auditLog(INVENTORY_AUDIT_ACTIONS.PRODUCT_DELETE, 'Product', {
+        entityId: input.id,
+        changes: { status: 'INACTIVE', action: 'deactivate' },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { success: true };
+    }),
+
   generateSku: protectedProcedure
     .input(z.object({ prefix: z.string().min(1).max(10) }))
     .query(async ({ ctx, input }) => {
