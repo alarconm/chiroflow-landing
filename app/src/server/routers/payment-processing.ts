@@ -1301,6 +1301,633 @@ This is an automated notification. Please do not reply to this email.`,
       return { success: true };
     }),
 
+  /**
+   * Get payment plan status with detailed progress
+   *
+   * US-089: View plan progress and remaining balance
+   */
+  getPlanStatus: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const plan = await ctx.prisma.paymentPlan.findFirst({
+        where: {
+          id: input.id,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          patient: {
+            include: { demographics: true },
+          },
+          installments: {
+            orderBy: { installmentNumber: 'asc' },
+            include: {
+              transaction: true,
+            },
+          },
+        },
+      });
+
+      if (!plan) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Payment plan not found',
+        });
+      }
+
+      // Calculate detailed progress
+      const paidInstallments = plan.installments.filter(
+        (i) => i.status === InstallmentStatus.PAID
+      );
+      const failedInstallments = plan.installments.filter(
+        (i) => i.status === InstallmentStatus.FAILED
+      );
+      const scheduledInstallments = plan.installments.filter(
+        (i) => i.status === InstallmentStatus.SCHEDULED
+      );
+      const pendingInstallments = plan.installments.filter(
+        (i) => i.status === InstallmentStatus.PENDING
+      );
+
+      // Find overdue installments (scheduled but past due date)
+      const now = new Date();
+      const overdueInstallments = scheduledInstallments.filter(
+        (i) => i.dueDate < now
+      );
+
+      // Calculate amounts
+      const totalPaid = paidInstallments.reduce(
+        (sum, i) => sum + Number(i.paidAmount ?? i.amount),
+        0
+      );
+      const totalRemaining = Number(plan.totalAmount) + Number(plan.setupFee ?? 0) - totalPaid;
+      const nextInstallment = scheduledInstallments.find(
+        (i) => i.dueDate >= now
+      ) ?? pendingInstallments[0];
+
+      // Calculate progress percentage
+      const progressPercentage = Math.round(
+        (paidInstallments.length / plan.numberOfInstallments) * 100
+      );
+
+      // Determine if plan is on track
+      const isOnTrack = overdueInstallments.length === 0 && failedInstallments.length === 0;
+
+      return {
+        plan: {
+          id: plan.id,
+          name: plan.name,
+          status: plan.status,
+          totalAmount: Number(plan.totalAmount),
+          downPayment: Number(plan.downPayment),
+          numberOfInstallments: plan.numberOfInstallments,
+          installmentAmount: Number(plan.installmentAmount),
+          frequency: plan.frequency,
+          interestRate: plan.interestRate ? Number(plan.interestRate) : null,
+          setupFee: plan.setupFee ? Number(plan.setupFee) : null,
+          startDate: plan.startDate,
+          endDate: plan.endDate,
+          createdAt: plan.createdAt,
+        },
+        patient: {
+          id: plan.patient.id,
+          name: plan.patient.demographics
+            ? `${plan.patient.demographics.firstName} ${plan.patient.demographics.lastName}`
+            : 'Unknown Patient',
+        },
+        progress: {
+          installmentsPaid: paidInstallments.length,
+          installmentsRemaining: scheduledInstallments.length + pendingInstallments.length,
+          totalInstallments: plan.numberOfInstallments,
+          progressPercentage,
+          amountPaid: totalPaid,
+          amountRemaining: Math.max(0, totalRemaining),
+          isOnTrack,
+        },
+        nextPayment: nextInstallment
+          ? {
+              installmentNumber: nextInstallment.installmentNumber,
+              amount: Number(nextInstallment.amount),
+              dueDate: nextInstallment.dueDate,
+              status: nextInstallment.status,
+            }
+          : null,
+        issues: {
+          overdueCount: overdueInstallments.length,
+          failedCount: failedInstallments.length,
+          overdueInstallments: overdueInstallments.map((i) => ({
+            installmentNumber: i.installmentNumber,
+            amount: Number(i.amount),
+            dueDate: i.dueDate,
+            daysPastDue: Math.floor(
+              (now.getTime() - i.dueDate.getTime()) / (1000 * 60 * 60 * 24)
+            ),
+          })),
+          failedInstallments: failedInstallments.map((i) => ({
+            installmentNumber: i.installmentNumber,
+            amount: Number(i.amount),
+            dueDate: i.dueDate,
+            attemptCount: i.attemptCount,
+            lastAttemptAt: i.lastAttemptAt,
+          })),
+        },
+        installments: plan.installments.map((i) => ({
+          id: i.id,
+          installmentNumber: i.installmentNumber,
+          amount: Number(i.amount),
+          dueDate: i.dueDate,
+          status: i.status,
+          paidAt: i.paidAt,
+          paidAmount: i.paidAmount ? Number(i.paidAmount) : null,
+          attemptCount: i.attemptCount,
+          hasTransaction: !!i.transaction,
+        })),
+      };
+    }),
+
+  /**
+   * Modify a payment plan
+   *
+   * US-089: Adjust plan terms
+   * - Can adjust frequency, extend dates, or restructure remaining installments
+   */
+  modifyPlan: billerProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        // Optional modifications
+        frequency: z.nativeEnum(AutoPayFrequency).optional(),
+        extendByInstallments: z.number().int().min(1).max(12).optional(),
+        pauseUntil: z.date().optional(),
+        resume: z.boolean().optional(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, frequency, extendByInstallments, pauseUntil, resume, notes } = input;
+
+      const plan = await ctx.prisma.paymentPlan.findFirst({
+        where: {
+          id,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          installments: {
+            orderBy: { installmentNumber: 'asc' },
+          },
+        },
+      });
+
+      if (!plan) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Payment plan not found',
+        });
+      }
+
+      // Can only modify active or paused plans
+      if (plan.status !== PaymentPlanStatus.ACTIVE && plan.status !== PaymentPlanStatus.PAUSED) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Can only modify active or paused payment plans',
+        });
+      }
+
+      const changes: Record<string, unknown> = {};
+      const updateData: Record<string, unknown> = {};
+
+      // Handle pause
+      if (pauseUntil) {
+        if (plan.status === PaymentPlanStatus.PAUSED) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Plan is already paused',
+          });
+        }
+        updateData.status = PaymentPlanStatus.PAUSED;
+        changes.paused = true;
+        changes.pauseUntil = pauseUntil;
+      }
+
+      // Handle resume
+      if (resume) {
+        if (plan.status !== PaymentPlanStatus.PAUSED) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Plan is not paused',
+          });
+        }
+        updateData.status = PaymentPlanStatus.ACTIVE;
+        changes.resumed = true;
+      }
+
+      // Handle frequency change
+      if (frequency && frequency !== plan.frequency) {
+        updateData.frequency = frequency;
+        changes.frequencyChanged = { from: plan.frequency, to: frequency };
+
+        // Recalculate remaining installment dates
+        const scheduledInstallments = plan.installments.filter(
+          (i) => i.status === InstallmentStatus.SCHEDULED
+        );
+
+        if (scheduledInstallments.length > 0) {
+          // Update dates for scheduled installments
+          let currentDate = new Date();
+          for (let i = 0; i < scheduledInstallments.length; i++) {
+            const installment = scheduledInstallments[i];
+
+            // Calculate next date based on new frequency
+            if (i > 0) {
+              switch (frequency) {
+                case AutoPayFrequency.WEEKLY:
+                  currentDate.setDate(currentDate.getDate() + 7);
+                  break;
+                case AutoPayFrequency.BI_WEEKLY:
+                  currentDate.setDate(currentDate.getDate() + 14);
+                  break;
+                case AutoPayFrequency.MONTHLY:
+                  currentDate.setMonth(currentDate.getMonth() + 1);
+                  break;
+                default:
+                  currentDate.setMonth(currentDate.getMonth() + 1);
+              }
+            } else {
+              // First scheduled installment - set to today or next appropriate day
+              switch (frequency) {
+                case AutoPayFrequency.WEEKLY:
+                  currentDate.setDate(currentDate.getDate() + 7);
+                  break;
+                case AutoPayFrequency.BI_WEEKLY:
+                  currentDate.setDate(currentDate.getDate() + 14);
+                  break;
+                case AutoPayFrequency.MONTHLY:
+                  currentDate.setMonth(currentDate.getMonth() + 1);
+                  break;
+                default:
+                  currentDate.setMonth(currentDate.getMonth() + 1);
+              }
+            }
+
+            await ctx.prisma.paymentPlanInstallment.update({
+              where: { id: installment.id },
+              data: { dueDate: new Date(currentDate) },
+            });
+          }
+
+          // Update next due date on plan
+          updateData.nextDueDate = scheduledInstallments[0]
+            ? new Date(scheduledInstallments[0].dueDate)
+            : null;
+        }
+      }
+
+      // Handle extending the plan
+      if (extendByInstallments) {
+        const lastInstallment = plan.installments[plan.installments.length - 1];
+        const lastNumber = lastInstallment?.installmentNumber ?? 0;
+        const lastDate = lastInstallment?.dueDate ?? new Date();
+
+        // Calculate new installment amount by redistributing remaining amount
+        const paidInstallments = plan.installments.filter(
+          (i) => i.status === InstallmentStatus.PAID
+        );
+        const totalPaid = paidInstallments.reduce(
+          (sum, i) => sum + Number(i.paidAmount ?? i.amount),
+          0
+        );
+        const remaining = Number(plan.totalAmount) + Number(plan.setupFee ?? 0) - totalPaid;
+        const scheduledCount = plan.installments.filter(
+          (i) => i.status === InstallmentStatus.SCHEDULED
+        ).length;
+        const newTotalRemaining = scheduledCount + extendByInstallments;
+        const newInstallmentAmount = Math.ceil(remaining / newTotalRemaining * 100) / 100;
+
+        // Update existing scheduled installments with new amount
+        await ctx.prisma.paymentPlanInstallment.updateMany({
+          where: {
+            paymentPlanId: id,
+            status: InstallmentStatus.SCHEDULED,
+          },
+          data: {
+            amount: newInstallmentAmount,
+          },
+        });
+
+        // Create new installments
+        let currentDate = new Date(lastDate);
+        const freq = frequency ?? plan.frequency;
+
+        for (let i = 0; i < extendByInstallments; i++) {
+          switch (freq) {
+            case AutoPayFrequency.WEEKLY:
+              currentDate.setDate(currentDate.getDate() + 7);
+              break;
+            case AutoPayFrequency.BI_WEEKLY:
+              currentDate.setDate(currentDate.getDate() + 14);
+              break;
+            case AutoPayFrequency.MONTHLY:
+              currentDate.setMonth(currentDate.getMonth() + 1);
+              break;
+            default:
+              currentDate.setMonth(currentDate.getMonth() + 1);
+          }
+
+          await ctx.prisma.paymentPlanInstallment.create({
+            data: {
+              paymentPlanId: id,
+              installmentNumber: lastNumber + i + 1,
+              amount: newInstallmentAmount,
+              dueDate: new Date(currentDate),
+              status: InstallmentStatus.SCHEDULED,
+            },
+          });
+        }
+
+        updateData.numberOfInstallments = plan.numberOfInstallments + extendByInstallments;
+        updateData.installmentAmount = newInstallmentAmount;
+        changes.extended = {
+          addedInstallments: extendByInstallments,
+          newInstallmentAmount,
+        };
+      }
+
+      // Update notes
+      if (notes) {
+        const existingNotes = plan.notes ?? '';
+        const timestamp = new Date().toISOString().split('T')[0];
+        updateData.notes = `${existingNotes}\n[${timestamp}] Modified: ${notes}`.trim();
+        changes.notesAdded = notes;
+      }
+
+      // Apply updates
+      if (Object.keys(updateData).length > 0) {
+        await ctx.prisma.paymentPlan.update({
+          where: { id },
+          data: updateData,
+        });
+      }
+
+      await auditLog(PAYMENT_AUDIT_ACTIONS.PAYMENT_PLAN_UPDATE, 'PaymentPlan', {
+        entityId: id,
+        changes,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        success: true,
+        changes,
+      };
+    }),
+
+  /**
+   * Get missed/failed payments across all plans
+   *
+   * US-089: Track missed payments
+   */
+  getMissedPayments: billerProcedure
+    .input(
+      z.object({
+        patientId: z.string().optional(),
+        includeResolved: z.boolean().default(false),
+        page: z.number().min(1).default(1),
+        limit: z.number().min(1).max(100).default(20),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { patientId, includeResolved, page, limit } = input;
+
+      // Find all overdue or failed installments
+      const now = new Date();
+      const whereConditions: Record<string, unknown> = {
+        paymentPlan: {
+          organizationId: ctx.user.organizationId,
+          status: PaymentPlanStatus.ACTIVE,
+          ...(patientId ? { patientId } : {}),
+        },
+      };
+
+      if (includeResolved) {
+        // Include failed, pending (past due), and paid (late payments)
+        whereConditions.OR = [
+          { status: InstallmentStatus.FAILED },
+          {
+            status: InstallmentStatus.SCHEDULED,
+            dueDate: { lt: now },
+          },
+        ];
+      } else {
+        // Only active issues
+        whereConditions.OR = [
+          { status: InstallmentStatus.FAILED },
+          {
+            status: InstallmentStatus.SCHEDULED,
+            dueDate: { lt: now },
+          },
+        ];
+      }
+
+      const [installments, total] = await Promise.all([
+        ctx.prisma.paymentPlanInstallment.findMany({
+          where: whereConditions,
+          include: {
+            paymentPlan: {
+              include: {
+                patient: {
+                  include: { demographics: true },
+                },
+              },
+            },
+            transaction: true,
+          },
+          orderBy: { dueDate: 'asc' },
+          skip: (page - 1) * limit,
+          take: limit,
+        }),
+        ctx.prisma.paymentPlanInstallment.count({ where: whereConditions }),
+      ]);
+
+      // Calculate summary stats
+      const totalOverdueAmount = installments
+        .filter((i) => i.status === InstallmentStatus.SCHEDULED && i.dueDate < now)
+        .reduce((sum, i) => sum + Number(i.amount), 0);
+      const totalFailedAmount = installments
+        .filter((i) => i.status === InstallmentStatus.FAILED)
+        .reduce((sum, i) => sum + Number(i.amount), 0);
+
+      return {
+        missedPayments: installments.map((i) => {
+          const daysPastDue = Math.floor(
+            (now.getTime() - i.dueDate.getTime()) / (1000 * 60 * 60 * 24)
+          );
+
+          return {
+            installmentId: i.id,
+            planId: i.paymentPlanId,
+            planName: i.paymentPlan.name,
+            patientId: i.paymentPlan.patientId,
+            patientName: i.paymentPlan.patient.demographics
+              ? `${i.paymentPlan.patient.demographics.firstName} ${i.paymentPlan.patient.demographics.lastName}`
+              : 'Unknown Patient',
+            installmentNumber: i.installmentNumber,
+            amount: Number(i.amount),
+            dueDate: i.dueDate,
+            status: i.status === InstallmentStatus.FAILED ? 'failed' : 'overdue',
+            daysPastDue: Math.max(0, daysPastDue),
+            attemptCount: i.attemptCount,
+            lastAttemptAt: i.lastAttemptAt,
+            nextRetryAt: i.nextRetryAt,
+          };
+        }),
+        summary: {
+          totalOverdue: installments.filter(
+            (i) => i.status === InstallmentStatus.SCHEDULED && i.dueDate < now
+          ).length,
+          totalFailed: installments.filter((i) => i.status === InstallmentStatus.FAILED).length,
+          totalOverdueAmount,
+          totalFailedAmount,
+          totalAtRisk: totalOverdueAmount + totalFailedAmount,
+        },
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      };
+    }),
+
+  /**
+   * Mark a missed payment as manually resolved
+   */
+  resolveInstallment: billerProcedure
+    .input(
+      z.object({
+        installmentId: z.string(),
+        resolution: z.enum(['paid_outside_system', 'waived', 'rescheduled']),
+        notes: z.string().min(1, 'Resolution notes are required'),
+        newDueDate: z.date().optional(), // For rescheduled
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { installmentId, resolution, notes, newDueDate } = input;
+
+      const installment = await ctx.prisma.paymentPlanInstallment.findFirst({
+        where: {
+          id: installmentId,
+          paymentPlan: {
+            organizationId: ctx.user.organizationId,
+          },
+        },
+        include: {
+          paymentPlan: true,
+        },
+      });
+
+      if (!installment) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Installment not found',
+        });
+      }
+
+      if (installment.status === InstallmentStatus.PAID) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Installment is already paid',
+        });
+      }
+
+      const updateData: Record<string, unknown> = {};
+      const planUpdateData: Record<string, unknown> = {};
+
+      switch (resolution) {
+        case 'paid_outside_system':
+          updateData.status = InstallmentStatus.PAID;
+          updateData.paidAt = new Date();
+          updateData.paidAmount = installment.amount;
+
+          // Update plan progress
+          planUpdateData.installmentsPaid = installment.paymentPlan.installmentsPaid + 1;
+          planUpdateData.amountPaid =
+            Number(installment.paymentPlan.amountPaid) + Number(installment.amount);
+          planUpdateData.amountRemaining =
+            Number(installment.paymentPlan.amountRemaining) - Number(installment.amount);
+          break;
+
+        case 'waived':
+          updateData.status = InstallmentStatus.SKIPPED;
+          // Reduce the total amount remaining without marking as paid
+          planUpdateData.amountRemaining =
+            Number(installment.paymentPlan.amountRemaining) - Number(installment.amount);
+          break;
+
+        case 'rescheduled':
+          if (!newDueDate) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'New due date is required for rescheduled installments',
+            });
+          }
+          updateData.dueDate = newDueDate;
+          updateData.status = InstallmentStatus.SCHEDULED;
+          updateData.attemptCount = 0;
+          updateData.lastAttemptAt = null;
+          updateData.nextRetryAt = null;
+          break;
+      }
+
+      await ctx.prisma.$transaction(async (tx) => {
+        await tx.paymentPlanInstallment.update({
+          where: { id: installmentId },
+          data: updateData,
+        });
+
+        if (Object.keys(planUpdateData).length > 0) {
+          // Check if plan is complete
+          const remainingInstallments = await tx.paymentPlanInstallment.count({
+            where: {
+              paymentPlanId: installment.paymentPlanId,
+              status: { in: [InstallmentStatus.SCHEDULED, InstallmentStatus.PENDING] },
+            },
+          });
+
+          if (remainingInstallments === 0) {
+            planUpdateData.status = PaymentPlanStatus.COMPLETED;
+            planUpdateData.endDate = new Date();
+          }
+
+          // Update next due date
+          const nextScheduled = await tx.paymentPlanInstallment.findFirst({
+            where: {
+              paymentPlanId: installment.paymentPlanId,
+              status: InstallmentStatus.SCHEDULED,
+            },
+            orderBy: { dueDate: 'asc' },
+          });
+          planUpdateData.nextDueDate = nextScheduled?.dueDate ?? null;
+
+          await tx.paymentPlan.update({
+            where: { id: installment.paymentPlanId },
+            data: planUpdateData,
+          });
+        }
+      });
+
+      await auditLog(PAYMENT_AUDIT_ACTIONS.PAYMENT_PLAN_UPDATE, 'PaymentPlanInstallment', {
+        entityId: installmentId,
+        changes: {
+          resolution,
+          notes,
+          newDueDate,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { success: true, resolution };
+    }),
+
   // ============================================
   // Auto-Pay Enrollment
   // ============================================

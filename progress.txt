@@ -269,3 +269,103 @@ Now includes comprehensive audit logging:
 --- Iteration 4 completed at 2026-01-21 ---
 Story: US-088 - Refund processing
 
+--- Iteration 4 completed at 2026-01-21 21:20:03 ---
+Story: US-088 - Refund processing
+
+## 2026-01-21: US-089 - Payment plans creation and management
+
+**Status:** COMPLETE
+
+### What was done:
+
+Implemented the complete payment plan management system. The core `createPaymentPlan`, `listPaymentPlans`, `getPaymentPlan`, and `cancelPaymentPlan` procedures already existed. Added the missing procedures to complete all acceptance criteria.
+
+#### 1. payment.createPlan (Already existed - `payment-processing.ts:1043`)
+- Creates payment plan with installments
+- Supports configurable number of installments (2-48)
+- Calculates installment amounts automatically using `calculatePaymentPlanSchedule`
+- Supports down payment, interest rate, and setup fee
+
+#### 2. Support weekly, bi-weekly, monthly frequencies (Already existed)
+- Uses `AutoPayFrequency` enum: WEEKLY, BI_WEEKLY, MONTHLY, ON_STATEMENT
+- Frequency determines installment due date calculations
+
+#### 3. Calculate installment amounts automatically (Already existed - `lib/payment/index.ts:122`)
+- `calculatePaymentPlanSchedule()` function handles:
+  - Total amount with interest calculation
+  - Down payment deduction
+  - Installment amount distribution
+  - Last installment adjustment to avoid rounding issues
+
+#### 4. payment.getPlanStatus (NEW - `payment-processing.ts`)
+Returns comprehensive plan status including:
+- Plan details (name, status, amounts, frequency, dates)
+- Patient information
+- Progress metrics:
+  - Installments paid vs remaining
+  - Progress percentage
+  - Amount paid vs remaining
+  - isOnTrack indicator
+- Next payment due info
+- Issues tracking:
+  - Overdue count and details (with days past due)
+  - Failed count and details (with attempt count)
+- Full installment history with status
+
+#### 5. payment.modifyPlan (NEW - `payment-processing.ts`)
+Allows adjusting plan terms:
+- Change frequency (recalculates all remaining installment dates)
+- Extend by adding installments (redistributes remaining amount)
+- Pause plan (sets status to PAUSED)
+- Resume paused plan
+- Add notes with timestamp
+- Full audit logging of all changes
+
+#### 6. Track missed payments (NEW - `payment-processing.ts`)
+Two new procedures:
+
+**getMissedPayments:**
+- Finds all overdue or failed installments across all active plans
+- Optional patient filter
+- Returns detailed list with:
+  - Plan and patient info
+  - Installment details
+  - Days past due
+  - Attempt count and retry info
+- Summary stats:
+  - Total overdue/failed counts
+  - Total at-risk amount
+
+**resolveInstallment:**
+- Manually resolve missed/failed installments
+- Resolution options:
+  - `paid_outside_system` - Mark as paid, update plan progress
+  - `waived` - Skip the installment, reduce remaining balance
+  - `rescheduled` - Set new due date, reset retry counters
+- Auto-completes plan if all installments resolved
+- Full audit trail
+
+### Files Modified:
+- `app/src/server/routers/payment-processing.ts`
+  - Added `getPlanStatus` procedure (lines 1309-1426)
+  - Added `modifyPlan` procedure (lines 1428-1603)
+  - Added `getMissedPayments` procedure (lines 1605-1704)
+  - Added `resolveInstallment` procedure (lines 1706-1825)
+
+### Acceptance Criteria Met:
+✅ payment.createPlan - Create payment plan with installments
+✅ Support weekly, bi-weekly, monthly frequencies
+✅ Calculate installment amounts automatically
+✅ payment.getPlanStatus - View plan progress and remaining balance
+✅ payment.modifyPlan - Adjust plan terms
+✅ Track missed payments
+
+### Validation:
+- TypeScript compiles without errors
+- All procedures follow existing patterns
+- Proper organization scoping
+- Full audit logging
+
+--- Iteration 5 completed at 2026-01-21 ---
+Story: US-089 - Payment plans creation and management
+
