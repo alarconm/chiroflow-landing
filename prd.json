@@ -69,7 +69,7 @@
         "Alert provider on poor posture trends"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-244",

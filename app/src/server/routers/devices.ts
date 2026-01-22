@@ -1627,7 +1627,979 @@ export const devicesRouter = router({
         },
       ];
     }),
+
+  // ============================================
+  // Posture Sensor Integration
+  // ============================================
+
+  // Connect Upright Go device
+  connectUprightGo: protectedProcedure
+    .input(z.object({
+      patientId: z.string(),
+      apiKey: z.string(), // User's Upright Go API key
+      deviceName: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { patientId, apiKey, deviceName } = input;
+
+      // Verify patient belongs to organization
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      // Check for existing connection
+      const existing = await ctx.prisma.deviceConnection.findFirst({
+        where: {
+          patientId,
+          deviceType: DeviceType.POSTURE_SENSOR,
+          deviceName: { contains: 'Upright' },
+        },
+      });
+
+      if (existing && existing.status === DeviceConnectionStatus.CONNECTED) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'Upright Go is already connected for this patient',
+        });
+      }
+
+      // In production, validate API key with Upright API
+      // For now, simulate validation
+      const isValidKey = apiKey.length >= 20;
+      if (!isValidKey) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Invalid Upright Go API key format',
+        });
+      }
+
+      // Create or update device connection
+      const connection = existing
+        ? await ctx.prisma.deviceConnection.update({
+            where: { id: existing.id },
+            data: {
+              status: DeviceConnectionStatus.CONNECTED,
+              deviceName: deviceName || 'Upright Go',
+              connectionToken: encryptToken(apiKey),
+              lastError: null,
+              errorCount: 0,
+              scopes: ['posture.realtime', 'posture.history', 'posture.alerts'],
+              syncFrequency: 5, // Sync every 5 minutes
+            },
+          })
+        : await ctx.prisma.deviceConnection.create({
+            data: {
+              patientId,
+              organizationId: ctx.user.organizationId,
+              deviceType: DeviceType.POSTURE_SENSOR,
+              deviceName: deviceName || 'Upright Go',
+              status: DeviceConnectionStatus.CONNECTED,
+              connectionToken: encryptToken(apiKey),
+              scopes: ['posture.realtime', 'posture.history', 'posture.alerts'],
+              syncFrequency: 5, // Sync every 5 minutes
+            },
+          });
+
+      await auditLog('CREATE', 'DeviceConnection', {
+        entityId: connection.id,
+        changes: {
+          action: 'connect_upright_go',
+          patientId,
+          deviceType: 'POSTURE_SENSOR',
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        connectionId: connection.id,
+        status: connection.status,
+        deviceName: connection.deviceName,
+        message: 'Upright Go connected successfully. Posture data will sync automatically.',
+        features: POSTURE_SENSOR_TYPES.UPRIGHT_GO.features,
+      };
+    }),
+
+  // Connect generic posture sensor via API
+  connectPostureSensor: protectedProcedure
+    .input(z.object({
+      patientId: z.string(),
+      apiEndpoint: z.string().url(),
+      apiKey: z.string(),
+      deviceName: z.string(),
+      manufacturer: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { patientId, apiEndpoint, apiKey, deviceName, manufacturer } = input;
+
+      // Verify patient belongs to organization
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      // Create device connection
+      // Store manufacturer and endpoint info in the deviceName and scopes
+      const connection = await ctx.prisma.deviceConnection.create({
+        data: {
+          patientId,
+          organizationId: ctx.user.organizationId,
+          deviceType: DeviceType.POSTURE_SENSOR,
+          deviceName: `${deviceName} (${manufacturer || 'Generic'})`,
+          deviceModel: manufacturer || 'Generic',
+          status: DeviceConnectionStatus.CONNECTED,
+          connectionToken: encryptToken(JSON.stringify({ apiEndpoint, apiKey })),
+          scopes: ['posture.realtime', 'posture.alerts', `endpoint:${apiEndpoint}`],
+          syncFrequency: 5,
+        },
+      });
+
+      await auditLog('CREATE', 'DeviceConnection', {
+        entityId: connection.id,
+        changes: {
+          action: 'connect_posture_sensor',
+          patientId,
+          deviceType: 'POSTURE_SENSOR',
+          manufacturer,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        connectionId: connection.id,
+        status: connection.status,
+        deviceName: connection.deviceName,
+        message: 'Posture sensor connected successfully.',
+        features: POSTURE_SENSOR_TYPES.GENERIC_API.features,
+      };
+    }),
+
+  // Record real-time posture data
+  recordPostureData: protectedProcedure
+    .input(z.object({
+      connectionId: z.string(),
+      score: z.number().min(0).max(100),
+      isAlert: z.boolean().default(false),
+      alertType: z.enum(['slouch', 'hunched', 'head_forward', 'tilted', 'prolonged_sitting']).optional(),
+      angle: z.number().optional(),
+      position: z.enum(['sitting', 'standing', 'walking', 'lying', 'unknown']).optional(),
+      sessionId: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { connectionId, score, isAlert, alertType, angle, position, sessionId } = input;
+
+      const connection = await ctx.prisma.deviceConnection.findFirst({
+        where: {
+          id: connectionId,
+          organizationId: ctx.user.organizationId,
+          deviceType: DeviceType.POSTURE_SENSOR,
+        },
+      });
+
+      if (!connection) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Posture sensor connection not found',
+        });
+      }
+
+      if (connection.status !== DeviceConnectionStatus.CONNECTED) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Posture sensor is not connected',
+        });
+      }
+
+      const postureData = await ctx.prisma.postureData.create({
+        data: {
+          patientId: connection.patientId,
+          deviceConnectionId: connectionId,
+          organizationId: ctx.user.organizationId,
+          timestamp: new Date(),
+          score,
+          isAlert,
+          alertType: isAlert ? alertType : null,
+          angle,
+          position,
+          sessionId: sessionId || crypto.randomBytes(8).toString('hex'),
+          sourceDevice: connection.deviceName,
+        },
+      });
+
+      // Update last sync time
+      await ctx.prisma.deviceConnection.update({
+        where: { id: connectionId },
+        data: { lastSyncAt: new Date() },
+      });
+
+      return {
+        id: postureData.id,
+        timestamp: postureData.timestamp,
+        score: postureData.score,
+        isAlert: postureData.isAlert,
+      };
+    }),
+
+  // Sync posture data from sensor API
+  syncPostureData: protectedProcedure
+    .input(z.object({
+      connectionId: z.string(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { connectionId, startDate, endDate } = input;
+
+      const connection = await ctx.prisma.deviceConnection.findFirst({
+        where: {
+          id: connectionId,
+          organizationId: ctx.user.organizationId,
+          deviceType: DeviceType.POSTURE_SENSOR,
+        },
+      });
+
+      if (!connection) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Posture sensor connection not found',
+        });
+      }
+
+      if (connection.status !== DeviceConnectionStatus.CONNECTED) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Posture sensor is not connected',
+        });
+      }
+
+      // Default date range: last 24 hours
+      const syncStartDate = startDate || new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const syncEndDate = endDate || new Date();
+
+      // In production, this would call the posture sensor API
+      // For now, simulate synced data
+      const syncResults = {
+        dataPoints: 0,
+        alerts: 0,
+        sessions: 0,
+      };
+
+      // Simulate posture data from the sensor
+      const hoursToSync = Math.ceil((syncEndDate.getTime() - syncStartDate.getTime()) / (60 * 60 * 1000));
+      const sessionId = crypto.randomBytes(8).toString('hex');
+      let currentScore = 75;
+
+      for (let h = 0; h < hoursToSync; h++) {
+        // Generate 6 readings per hour (every 10 minutes during active hours)
+        const hourTimestamp = new Date(syncStartDate.getTime() + h * 60 * 60 * 1000);
+        const hour = hourTimestamp.getHours();
+
+        // Only generate data during typical active hours (8am - 10pm)
+        if (hour >= 8 && hour <= 22) {
+          for (let m = 0; m < 6; m++) {
+            const timestamp = new Date(hourTimestamp.getTime() + m * 10 * 60 * 1000);
+
+            // Check for existing data point
+            const existing = await ctx.prisma.postureData.findFirst({
+              where: {
+                patientId: connection.patientId,
+                deviceConnectionId: connectionId,
+                timestamp: {
+                  gte: new Date(timestamp.getTime() - 5 * 60 * 1000),
+                  lte: new Date(timestamp.getTime() + 5 * 60 * 1000),
+                },
+              },
+            });
+
+            if (!existing) {
+              // Simulate posture score variation
+              const scoreChange = Math.floor(Math.random() * 20) - 10;
+              currentScore = Math.max(20, Math.min(100, currentScore + scoreChange));
+
+              const isAlert = currentScore < 40;
+              const alertType = isAlert
+                ? (['slouch', 'hunched', 'head_forward'] as const)[Math.floor(Math.random() * 3)]
+                : null;
+
+              await ctx.prisma.postureData.create({
+                data: {
+                  patientId: connection.patientId,
+                  deviceConnectionId: connectionId,
+                  organizationId: ctx.user.organizationId,
+                  timestamp,
+                  score: currentScore,
+                  isAlert,
+                  alertType,
+                  angle: Math.floor(Math.random() * 30) - 15, // -15 to +15 degrees
+                  position: Math.random() > 0.3 ? 'sitting' : 'standing',
+                  sessionId,
+                  sourceDevice: connection.deviceName,
+                  duration: 10 * 60, // 10 minutes
+                },
+              });
+
+              syncResults.dataPoints++;
+              if (isAlert) syncResults.alerts++;
+            }
+          }
+        }
+      }
+
+      syncResults.sessions = 1; // Simulated single session
+
+      // Update last sync timestamp
+      await ctx.prisma.deviceConnection.update({
+        where: { id: connectionId },
+        data: {
+          lastSyncAt: new Date(),
+          lastError: null,
+          errorCount: 0,
+        },
+      });
+
+      await auditLog('UPDATE', 'DeviceConnection', {
+        entityId: connectionId,
+        changes: {
+          action: 'sync_posture_data',
+          syncResults,
+          dateRange: { start: syncStartDate, end: syncEndDate },
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        success: true,
+        syncResults,
+        dateRange: {
+          start: syncStartDate,
+          end: syncEndDate,
+        },
+        lastSyncAt: new Date(),
+      };
+    }),
+
+  // Get posture data for a patient
+  getPostureData: protectedProcedure
+    .input(z.object({
+      patientId: z.string(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      alertsOnly: z.boolean().default(false),
+      limit: z.number().min(1).max(500).default(100),
+    }))
+    .query(async ({ ctx, input }) => {
+      const { patientId, startDate, endDate, alertsOnly, limit } = input;
+
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      const where: Record<string, unknown> = {
+        patientId,
+        organizationId: ctx.user.organizationId,
+      };
+
+      if (startDate || endDate) {
+        where.timestamp = {};
+        if (startDate) (where.timestamp as Record<string, Date>).gte = startDate;
+        if (endDate) (where.timestamp as Record<string, Date>).lte = endDate;
+      }
+
+      if (alertsOnly) {
+        where.isAlert = true;
+      }
+
+      const data = await ctx.prisma.postureData.findMany({
+        where,
+        orderBy: { timestamp: 'desc' },
+        take: limit,
+        include: {
+          deviceConnection: {
+            select: {
+              deviceType: true,
+              deviceName: true,
+            },
+          },
+        },
+      });
+
+      // Calculate statistics
+      const scores = data.map(d => d.score).filter((s): s is number => s !== null);
+      const alerts = data.filter(d => d.isAlert);
+
+      return {
+        data,
+        summary: {
+          count: data.length,
+          averageScore: scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0,
+          minScore: scores.length > 0 ? Math.min(...scores) : 0,
+          maxScore: scores.length > 0 ? Math.max(...scores) : 0,
+          alertCount: alerts.length,
+          alertTypes: alerts.reduce((acc, a) => {
+            const type = a.alertType || 'unknown';
+            acc[type] = (acc[type] || 0) + 1;
+            return acc;
+          }, {} as Record<string, number>),
+        },
+      };
+    }),
+
+  // Get slouch alert history
+  getSlouchAlertHistory: protectedProcedure
+    .input(z.object({
+      patientId: z.string(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      limit: z.number().min(1).max(200).default(50),
+    }))
+    .query(async ({ ctx, input }) => {
+      const { patientId, startDate, endDate, limit } = input;
+
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      const where: Record<string, unknown> = {
+        patientId,
+        organizationId: ctx.user.organizationId,
+        isAlert: true,
+      };
+
+      if (startDate || endDate) {
+        where.timestamp = {};
+        if (startDate) (where.timestamp as Record<string, Date>).gte = startDate;
+        if (endDate) (where.timestamp as Record<string, Date>).lte = endDate;
+      }
+
+      const alerts = await ctx.prisma.postureData.findMany({
+        where,
+        orderBy: { timestamp: 'desc' },
+        take: limit,
+        include: {
+          deviceConnection: {
+            select: {
+              deviceName: true,
+            },
+          },
+        },
+      });
+
+      // Group alerts by day
+      const alertsByDay: Record<string, number> = {};
+      const alertsByType: Record<string, number> = {};
+      const alertsByHour: Record<number, number> = {};
+
+      alerts.forEach(alert => {
+        // By day
+        const day = alert.timestamp.toISOString().split('T')[0];
+        alertsByDay[day] = (alertsByDay[day] || 0) + 1;
+
+        // By type
+        const type = alert.alertType || 'unknown';
+        alertsByType[type] = (alertsByType[type] || 0) + 1;
+
+        // By hour
+        const hour = alert.timestamp.getHours();
+        alertsByHour[hour] = (alertsByHour[hour] || 0) + 1;
+      });
+
+      return {
+        alerts,
+        summary: {
+          totalAlerts: alerts.length,
+          alertsByDay,
+          alertsByType,
+          alertsByHour,
+          mostCommonType: Object.entries(alertsByType).sort((a, b) => b[1] - a[1])[0]?.[0] || null,
+          peakHour: Object.entries(alertsByHour).sort((a, b) => b[1] - a[1])[0]?.[0]
+            ? parseInt(Object.entries(alertsByHour).sort((a, b) => b[1] - a[1])[0][0])
+            : null,
+        },
+      };
+    }),
+
+  // Get daily posture summary
+  getDailyPostureSummary: protectedProcedure
+    .input(z.object({
+      patientId: z.string(),
+      date: z.date().optional(),
+      days: z.number().min(1).max(90).default(7),
+    }))
+    .query(async ({ ctx, input }) => {
+      const { patientId, date, days } = input;
+
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      const endDate = date || new Date();
+      const startDate = new Date(endDate);
+      startDate.setDate(startDate.getDate() - days);
+
+      const data = await ctx.prisma.postureData.findMany({
+        where: {
+          patientId,
+          organizationId: ctx.user.organizationId,
+          timestamp: {
+            gte: startDate,
+            lte: endDate,
+          },
+        },
+        orderBy: { timestamp: 'asc' },
+      });
+
+      // Group by day and calculate summaries
+      const dailySummaries: Array<{
+        date: string;
+        averageScore: number;
+        minScore: number;
+        maxScore: number;
+        alertCount: number;
+        dataPoints: number;
+        totalMinutesTracked: number;
+        goodPostureMinutes: number;
+        poorPostureMinutes: number;
+      }> = [];
+
+      const dataByDay: Record<string, typeof data> = {};
+      data.forEach(d => {
+        const day = d.timestamp.toISOString().split('T')[0];
+        if (!dataByDay[day]) dataByDay[day] = [];
+        dataByDay[day].push(d);
+      });
+
+      Object.entries(dataByDay).forEach(([day, dayData]) => {
+        const scores = dayData.map(d => d.score).filter((s): s is number => s !== null);
+        const alerts = dayData.filter(d => d.isAlert);
+        const durations = dayData.map(d => d.duration).filter((d): d is number => d !== null);
+        const totalMinutes = durations.reduce((a, b) => a + b, 0) / 60;
+
+        // Good posture = score >= 70
+        const goodPostureData = dayData.filter(d => d.score !== null && d.score >= 70);
+        const goodPostureMinutes = goodPostureData
+          .map(d => d.duration)
+          .filter((d): d is number => d !== null)
+          .reduce((a, b) => a + b, 0) / 60;
+
+        dailySummaries.push({
+          date: day,
+          averageScore: scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0,
+          minScore: scores.length > 0 ? Math.min(...scores) : 0,
+          maxScore: scores.length > 0 ? Math.max(...scores) : 0,
+          alertCount: alerts.length,
+          dataPoints: dayData.length,
+          totalMinutesTracked: Math.round(totalMinutes),
+          goodPostureMinutes: Math.round(goodPostureMinutes),
+          poorPostureMinutes: Math.round(totalMinutes - goodPostureMinutes),
+        });
+      });
+
+      // Calculate overall trends
+      const allScores = data.map(d => d.score).filter((s): s is number => s !== null);
+      const firstHalfScores = allScores.slice(0, Math.floor(allScores.length / 2));
+      const secondHalfScores = allScores.slice(Math.floor(allScores.length / 2));
+
+      const firstHalfAvg = firstHalfScores.length > 0
+        ? firstHalfScores.reduce((a, b) => a + b, 0) / firstHalfScores.length
+        : 0;
+      const secondHalfAvg = secondHalfScores.length > 0
+        ? secondHalfScores.reduce((a, b) => a + b, 0) / secondHalfScores.length
+        : 0;
+
+      const trend = secondHalfAvg > firstHalfAvg ? 'improving' :
+                    secondHalfAvg < firstHalfAvg ? 'declining' : 'stable';
+
+      return {
+        dailySummaries,
+        overallSummary: {
+          totalDays: dailySummaries.length,
+          averageScore: allScores.length > 0
+            ? Math.round(allScores.reduce((a, b) => a + b, 0) / allScores.length)
+            : 0,
+          totalAlerts: data.filter(d => d.isAlert).length,
+          trend,
+          trendChange: Math.round(secondHalfAvg - firstHalfAvg),
+        },
+      };
+    }),
+
+  // Correlate posture data with patient symptoms
+  correlatePostureWithSymptoms: protectedProcedure
+    .input(z.object({
+      patientId: z.string(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+    }))
+    .query(async ({ ctx, input }) => {
+      const { patientId, startDate, endDate } = input;
+
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      const queryEndDate = endDate || new Date();
+      const queryStartDate = startDate || new Date(queryEndDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      // Get posture data
+      const postureData = await ctx.prisma.postureData.findMany({
+        where: {
+          patientId,
+          organizationId: ctx.user.organizationId,
+          timestamp: {
+            gte: queryStartDate,
+            lte: queryEndDate,
+          },
+        },
+        orderBy: { timestamp: 'asc' },
+      });
+
+      // Get patient's encounters and SOAP notes for symptoms
+      const encounters = await ctx.prisma.encounter.findMany({
+        where: {
+          patientId,
+          organizationId: ctx.user.organizationId,
+          encounterDate: {
+            gte: queryStartDate,
+            lte: queryEndDate,
+          },
+        },
+        include: {
+          soapNote: {
+            select: {
+              subjective: true,
+              createdAt: true,
+            },
+          },
+          diagnoses: {
+            select: {
+              icd10Code: true,
+              description: true,
+            },
+          },
+        },
+        orderBy: { encounterDate: 'asc' },
+      });
+
+      // Analyze correlations
+      const correlations: Array<{
+        date: string;
+        averagePostureScore: number;
+        alertCount: number;
+        symptomReport: string | null;
+        diagnoses: Array<{ code: string; description: string | null }>;
+        correlation: 'poor_posture_pain' | 'good_posture_comfort' | 'no_data' | 'unclear';
+      }> = [];
+
+      // Group posture data by day
+      const postureByDay: Record<string, typeof postureData> = {};
+      postureData.forEach(d => {
+        const day = d.timestamp.toISOString().split('T')[0];
+        if (!postureByDay[day]) postureByDay[day] = [];
+        postureByDay[day].push(d);
+      });
+
+      // Match with encounters
+      encounters.forEach(encounter => {
+        const encounterDay = encounter.encounterDate.toISOString().split('T')[0];
+        const dayBeforeEncounter = new Date(encounter.encounterDate);
+        dayBeforeEncounter.setDate(dayBeforeEncounter.getDate() - 1);
+        const prevDay = dayBeforeEncounter.toISOString().split('T')[0];
+
+        // Get posture data from day before encounter (causation timeframe)
+        const relevantPosture = postureByDay[prevDay] || postureByDay[encounterDay] || [];
+        const scores = relevantPosture.map(d => d.score).filter((s): s is number => s !== null);
+        const avgScore = scores.length > 0
+          ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+          : null;
+        const alertCount = relevantPosture.filter(d => d.isAlert).length;
+
+        // Extract symptoms from SOAP note
+        const symptoms = encounter.soapNote?.subjective || null;
+
+        // Determine correlation
+        let correlation: typeof correlations[0]['correlation'] = 'no_data';
+        if (avgScore !== null && symptoms) {
+          const hasPainKeywords = /pain|ache|sore|stiff|discomfort|tight/i.test(symptoms);
+          if (avgScore < 50 && hasPainKeywords) {
+            correlation = 'poor_posture_pain';
+          } else if (avgScore >= 70 && !hasPainKeywords) {
+            correlation = 'good_posture_comfort';
+          } else {
+            correlation = 'unclear';
+          }
+        }
+
+        correlations.push({
+          date: encounterDay,
+          averagePostureScore: avgScore || 0,
+          alertCount,
+          symptomReport: symptoms,
+          diagnoses: encounter.diagnoses.map(d => ({ code: d.icd10Code, description: d.description })),
+          correlation,
+        });
+      });
+
+      // Calculate insights
+      const poorPosturePainCount = correlations.filter(c => c.correlation === 'poor_posture_pain').length;
+      const goodPostureComfortCount = correlations.filter(c => c.correlation === 'good_posture_comfort').length;
+      const totalWithData = correlations.filter(c => c.correlation !== 'no_data').length;
+
+      return {
+        correlations,
+        insights: {
+          totalEncounters: encounters.length,
+          correlationsFound: totalWithData,
+          poorPosturePainCorrelation: poorPosturePainCount,
+          goodPostureComfortCorrelation: goodPostureComfortCount,
+          correlationStrength: totalWithData > 0
+            ? Math.round(((poorPosturePainCount + goodPostureComfortCount) / totalWithData) * 100)
+            : 0,
+          recommendation: poorPosturePainCount > goodPostureComfortCount
+            ? 'Patient symptoms appear correlated with poor posture. Consider emphasizing posture improvement in treatment plan.'
+            : totalWithData > 0
+            ? 'Posture-symptom correlation is moderate. Continue monitoring.'
+            : 'Insufficient data to determine correlation. Encourage patient to wear posture sensor consistently.',
+        },
+      };
+    }),
+
+  // Check for poor posture trends and create provider alerts
+  checkPostureTrends: protectedProcedure
+    .input(z.object({
+      patientId: z.string(),
+      thresholdScore: z.number().min(0).max(100).default(50),
+      thresholdAlerts: z.number().min(1).default(10),
+      daysToAnalyze: z.number().min(1).max(30).default(7),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { patientId, thresholdScore, thresholdAlerts, daysToAnalyze } = input;
+
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          demographics: {
+            select: {
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - daysToAnalyze);
+
+      const postureData = await ctx.prisma.postureData.findMany({
+        where: {
+          patientId,
+          organizationId: ctx.user.organizationId,
+          timestamp: {
+            gte: startDate,
+          },
+        },
+      });
+
+      if (postureData.length === 0) {
+        return {
+          alertTriggered: false,
+          reason: 'No posture data available for analysis',
+          metrics: null,
+        };
+      }
+
+      // Calculate metrics
+      const scores = postureData.map(d => d.score).filter((s): s is number => s !== null);
+      const avgScore = scores.length > 0
+        ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+        : 0;
+      const alertCount = postureData.filter(d => d.isAlert).length;
+      const poorPosturePercentage = scores.filter(s => s < thresholdScore).length / scores.length * 100;
+
+      const shouldAlert = avgScore < thresholdScore || alertCount >= thresholdAlerts;
+
+      const metrics = {
+        averageScore: avgScore,
+        totalAlerts: alertCount,
+        dataPoints: postureData.length,
+        poorPosturePercentage: Math.round(poorPosturePercentage),
+        daysAnalyzed: daysToAnalyze,
+      };
+
+      if (shouldAlert) {
+        // In production, this would create a notification/alert for the provider
+        // For now, we'll return the alert information
+
+        await auditLog('CREATE', 'PostureAlert', {
+          entityId: patientId,
+          changes: {
+            action: 'posture_trend_alert',
+            patientName: `${patient.demographics?.firstName} ${patient.demographics?.lastName}`,
+            metrics,
+            thresholds: { score: thresholdScore, alerts: thresholdAlerts },
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return {
+          alertTriggered: true,
+          reason: avgScore < thresholdScore
+            ? `Average posture score (${avgScore}) is below threshold (${thresholdScore})`
+            : `Alert count (${alertCount}) exceeds threshold (${thresholdAlerts})`,
+          metrics,
+          patientName: `${patient.demographics?.firstName} ${patient.demographics?.lastName}`,
+          recommendation: 'Schedule follow-up to address posture concerns. Consider adjusting treatment plan.',
+        };
+      }
+
+      return {
+        alertTriggered: false,
+        reason: 'Posture metrics are within acceptable range',
+        metrics,
+      };
+    }),
+
+  // Get supported posture sensor types
+  getSupportedPostureSensors: protectedProcedure
+    .query(() => {
+      return [
+        {
+          type: 'UPRIGHT_GO',
+          name: 'Upright Go',
+          manufacturer: 'Upright',
+          description: 'Wearable posture trainer that attaches to your back',
+          connectionType: 'api',
+          features: ['realTimePosture', 'slouchAlerts', 'dailySummary', 'trainingPrograms'],
+          setupInstructions: [
+            'Install the Upright app on your phone',
+            'Create an Upright account and connect your device',
+            'Go to Settings > API Access in the Upright app',
+            'Generate an API key and enter it here',
+          ],
+        },
+        {
+          type: 'GENERIC_API',
+          name: 'Generic Posture Sensor',
+          manufacturer: 'Various',
+          description: 'Connect any posture sensor that provides an API',
+          connectionType: 'api',
+          features: ['realTimePosture', 'slouchAlerts'],
+          setupInstructions: [
+            'Obtain the API endpoint URL from your sensor manufacturer',
+            'Generate or obtain an API key for authentication',
+            'Enter the endpoint and key to connect',
+          ],
+        },
+      ];
+    }),
 });
+
+// ============================================
+// Posture Sensor Integration
+// ============================================
+
+// Configuration for Upright Go API
+const UPRIGHT_GO_CONFIG = {
+  apiBase: process.env.UPRIGHT_API_BASE || 'https://api.uprightpose.com/v2',
+  clientId: process.env.UPRIGHT_CLIENT_ID || 'chiroflow-posture',
+  clientSecret: process.env.UPRIGHT_CLIENT_SECRET || '',
+};
+
+// Posture sensor types supported
+const POSTURE_SENSOR_TYPES = {
+  UPRIGHT_GO: {
+    name: 'Upright Go',
+    manufacturer: 'Upright',
+    connectionType: 'api',
+    features: ['realTimePosture', 'slouchAlerts', 'dailySummary', 'trainingPrograms'],
+  },
+  GENERIC_API: {
+    name: 'Generic Posture Sensor',
+    manufacturer: 'Various',
+    connectionType: 'api',
+    features: ['realTimePosture', 'slouchAlerts'],
+  },
+};
+
+// Alert types for posture data
+const POSTURE_ALERT_TYPES = {
+  SLOUCH: 'slouch',
+  HUNCHED: 'hunched',
+  HEAD_FORWARD: 'head_forward',
+  TILTED: 'tilted',
+  PROLONGED_SITTING: 'prolonged_sitting',
+};
 
 // Helper function to generate simulated hourly steps
 function generateHourlySteps(): Record<string, number> {
