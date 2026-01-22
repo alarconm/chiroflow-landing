@@ -91,7 +91,7 @@
         "Charge status: PENDING, BILLED, PAID, ADJUSTED, VOID"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-062",

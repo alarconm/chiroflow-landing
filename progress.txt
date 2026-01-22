@@ -683,3 +683,51 @@ Date: 2026-01-21T21:00:00Z
 - Composite unique constraint on feeScheduleId_cptCode for upsert operations
 - isDefault flag with safe deletion check (must set another default first)
 
+--- Iteration 3 completed at 2026-01-21 19:54:52 ---
+Story: US-060 - Fee schedule management
+
+--- Iteration 4 completed at 2026-01-21 21:30:00 ---
+Story: US-061 - Charge capture from encounters
+
+## Story: US-061 - Charge capture from encounters
+Date: 2026-01-21T21:30:00Z
+
+### What I Did
+- Verified charge tRPC router already exists with all required CRUD operations
+- Confirmed all 9 acceptance criteria are met by existing implementation
+- Build compiles successfully
+
+### Router Procedures (Already Implemented)
+- charge.createFromEncounter - Generate charges from encounter procedures with automatic fee lookup
+- charge.create - Manual charge entry with full validation
+- charge.update - Modify charge details (units, fee, modifiers) with balance recalculation
+- charge.list - List charges by patient, date range, status with pagination
+- charge.get - Get charge with linked encounter/procedure, payment allocations, claim lines
+- charge.void - Void a charge with reason (blocks if payments applied or active claims exist)
+- charge.getUnbilled - Get unbilled charges grouped by patient for billing dashboard
+- charge.adjust - Apply adjustment to charge with audit trail
+
+### Key Features
+- Auto-calculate fee from fee schedule (gets default schedule if none specified)
+- Support for modifiers (-25, -59, etc.) via modifiers array
+- Charge status: PENDING, BILLED, PAID, ADJUSTED, VOID (ChargeStatus enum)
+- Balance tracking with automatic recalculation on fee changes
+- Diagnosis pointers for linking procedures to ICD-10 codes
+- Place of service codes (PlaceOfService enum)
+- Protection against voiding charges with payments or active claims
+- Biller role requirement for mutations
+
+### Files Present (No Changes Needed)
+- app/src/server/routers/charge.ts (548 lines - complete implementation)
+- app/src/server/routers/index.ts (charge router registered)
+
+### Build Status
+- ✓ Build compiles successfully
+- ✓ TypeScript checks pass
+
+### Learnings
+- Charge router was already implemented comprehensively
+- Uses billerProcedure for mutations (requires BILLER or ADMIN role)
+- Balance is recalculated automatically when fee or units change
+- Internal notes field used for adjustment history tracking
+
