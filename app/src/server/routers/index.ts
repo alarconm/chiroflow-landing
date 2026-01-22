@@ -78,6 +78,7 @@ import { portalEducationRouter } from './portalEducation';
 import { devicesRouter } from './devices';
 // Multi-Location Enterprise (Epic 25)
 import { locationRouter } from './location';
+import { locationStaffRouter } from './locationStaff';
 
 export const appRouter = router({
   auth: authRouter,
@@ -159,6 +160,7 @@ export const appRouter = router({
   devices: devicesRouter,
   // Multi-Location Enterprise (Epic 25)
   location: locationRouter,
+  locationStaff: locationStaffRouter,
 });
 
 

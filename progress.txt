@@ -157,3 +157,92 @@ Date: 2026-01-22
 - [x] Location-specific branding options
 - [x] Address validation
 
+--- Iteration 2 completed at 2026-01-22 05:38:24 ---
+Story: US-249 - Location management
+
+--- Iteration 2 completed at 2026-01-22 05:38:35 ---
+Story: US-249 - Location management
+
+## US-250: Staff location assignment - COMPLETED
+Date: 2026-01-22
+
+### Changes Made:
+
+1. **Created locationStaff router** (`app/src/server/routers/locationStaff.ts`)
+   - Full CRUD operations for staff location assignments
+   - Zod schemas for input validation
+   - Organization-scoped access control
+
+2. **Implemented locationStaff.assign**
+   - Assigns user to location with options for:
+     - isPrimary designation
+     - roleOverride (location-specific role)
+     - canViewSchedule, canManageSchedule permissions
+   - Validates user and location belong to organization
+   - Handles reactivation of previously removed assignments
+   - Automatically unsets existing primary when setting new one
+
+3. **Implemented locationStaff.remove**
+   - Soft delete by setting isActive to false
+   - Supports removal by id or by userId+locationId combination
+   - Maintains audit trail
+
+4. **Implemented locationStaff.list**
+   - Lists all staff at a specific location
+   - Includes user details, provider info, and schedule permissions
+   - Optional includeInactive filter
+   - Ordered by isPrimary (desc), lastName (asc)
+
+5. **Implemented locationStaff.listByUser**
+   - Lists all locations for a specific user
+   - Shows primary location designation
+   - Optional includeInactive filter
+
+6. **Support for multi-location assignment (floating staff)**
+   - locationStaff.bulkAssign - Assign user to multiple locations at once
+   - Sets primary location from the provided list
+   - Deactivates assignments not in the new list
+   - Atomic transaction for consistency
+
+7. **Location-specific role overrides**
+   - getEffectiveRole - Returns user's effective role at a location
+   - Supports roleOverride per assignment (OWNER, ADMIN, PROVIDER, STAFF, BILLER)
+   - Falls back to base user role if no override
+
+8. **Primary location designation**
+   - locationStaff.setPrimary - Set primary work location
+   - locationStaff.getPrimary - Get user's primary location
+   - Falls back to first active assignment if no primary set
+   - Ensures only one primary per user
+
+9. **Schedule visibility by assigned locations**
+   - locationStaff.getScheduleViewableLocations - Locations user can view schedules for
+   - locationStaff.getScheduleManageableLocations - Locations user can manage schedules for
+   - Admins/Owners can see/manage all locations
+   - Other roles limited by canViewSchedule/canManageSchedule flags
+
+10. **Staff overview utilities**
+    - locationStaff.update - Update assignment permissions
+    - locationStaff.listAllStaff - All staff with location counts
+
+11. **Registered router** (`app/src/server/routers/index.ts`)
+    - Added locationStaffRouter import and registration
+
+### Files Created:
+- app/src/server/routers/locationStaff.ts
+
+### Files Modified:
+- app/src/server/routers/index.ts
+
+### Acceptance Criteria Status:
+- [x] locationStaff.assign - Assign user to location
+- [x] locationStaff.remove - Remove user from location
+- [x] locationStaff.list - List staff at location
+- [x] Support multi-location assignment for floating staff
+- [x] Location-specific role overrides
+- [x] Primary location designation
+- [x] Schedule visibility by assigned locations
+
+--- Iteration 3 completed at 2026-01-22 ---
+Story: US-250 - Staff location assignment
+
