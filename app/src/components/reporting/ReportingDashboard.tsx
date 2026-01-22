@@ -48,6 +48,7 @@ import {
   CreditCard,
   FileBarChart,
   RefreshCw,
+  Library,
 } from 'lucide-react';
 import { DashboardOverview } from './DashboardOverview';
 import { WidgetConfigurator } from './WidgetConfigurator';
@@ -58,6 +59,7 @@ import { KPIDashboard } from './KPIDashboard';
 import { CustomReportBuilder } from './CustomReportBuilder';
 import { ReportScheduler } from './ReportScheduler';
 import { AnalyticsDashboard } from './AnalyticsDashboard';
+import { ReportsPage } from './ReportsPage';
 import { trpc } from '@/trpc/client';
 import { toast } from 'sonner';
 
@@ -299,10 +301,14 @@ export function ReportingDashboard() {
 
       {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5 lg:grid-cols-9 bg-stone-100">
+        <TabsList className="grid w-full grid-cols-5 lg:grid-cols-10 bg-stone-100">
           <TabsTrigger value="analytics" className="flex items-center gap-2 data-[state=active]:bg-blue-100 data-[state=active]:text-blue-900">
             <BarChart3 className="h-4 w-4" />
             <span className="hidden sm:inline">Analytics</span>
+          </TabsTrigger>
+          <TabsTrigger value="reports" className="flex items-center gap-2 data-[state=active]:bg-blue-100 data-[state=active]:text-blue-900">
+            <Library className="h-4 w-4" />
+            <span className="hidden sm:inline">Reports</span>
           </TabsTrigger>
           <TabsTrigger value="overview" className="flex items-center gap-2 data-[state=active]:bg-blue-100 data-[state=active]:text-blue-900">
             <LayoutDashboard className="h-4 w-4" />
@@ -341,6 +347,11 @@ export function ReportingDashboard() {
         {/* Analytics Tab (US-107) */}
         <TabsContent value="analytics" className="space-y-6 mt-6">
           <AnalyticsDashboard />
+        </TabsContent>
+
+        {/* Reports Tab (US-108) */}
+        <TabsContent value="reports" className="space-y-6 mt-6">
+          <ReportsPage />
         </TabsContent>
 
         {/* Overview Tab */}

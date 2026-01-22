@@ -10,3 +10,4 @@ export { CustomReportBuilder } from './CustomReportBuilder';
 export { ReportScheduler } from './ReportScheduler';
 export { ReportingDashboard } from './ReportingDashboard';
 export { AnalyticsDashboard } from './AnalyticsDashboard';
+export { ReportsPage } from './ReportsPage';

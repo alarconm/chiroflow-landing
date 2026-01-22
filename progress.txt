@@ -617,3 +617,88 @@ All acceptance criteria met. TypeScript compiles without errors.
 --- Iteration 7 completed at 2026-01-22 ---
 Story: US-107 - Analytics dashboard
 
+--- Iteration 7 completed at 2026-01-21 23:40:41 ---
+Story: US-107 - Analytics dashboard
+
+### US-108: Reporting UI - COMPLETED
+Date: 2026-01-22
+Status: PASSED
+
+Implementation:
+1. Created ReportsPage.tsx component with comprehensive reporting UI:
+
+   a. Reports page at /reporting with report categories:
+      - 4 report categories: Financial, Clinical, Operational, Claims & Insurance
+      - Each category with icon, color coding, and description
+      - Category filter buttons for quick navigation
+      - Search functionality across all reports
+      - 23 total report definitions covering all report types
+
+   b. Report parameter form with date range and filters:
+      - ReportParameterForm component with date range picker
+      - Support for dateRange and asOfDate parameter types
+      - GroupBy selector for appointment volume reports
+      - Clean form layout with labels and descriptions
+
+   c. Report preview before export:
+      - ReportPreviewSheet component using Sheet from shadcn/ui
+      - Summary section displaying key metrics
+      - Data table with first 20 rows
+      - Column headers auto-generated from data
+      - Fallback raw JSON display for unknown formats
+      - Generation timestamp display
+
+   d. Export buttons for PDF, CSV, Excel:
+      - TooltipProvider with export buttons
+      - PDF export with FileText icon
+      - CSV export with FileSpreadsheet icon
+      - Excel export with FileSpreadsheet icon
+      - Disabled state during report generation
+      - Uses existing exportReport tRPC mutation
+
+   e. Saved report list with re-run capability:
+      - SavedReportsTab component with table display
+      - Report name, type, last modified, visibility columns
+      - Re-run button (Play icon) to regenerate report
+      - Download button for quick CSV export
+      - Delete button with confirmation dialog
+      - Empty state with helpful message
+
+   f. Report scheduling interface:
+      - ScheduledReportsTab component with schedule management
+      - Schedule name, report, frequency, next run columns
+      - Toggle button to pause/activate schedules
+      - Delete button with confirmation
+      - Status badges (Active/Paused)
+      - Frequency labels with day and time display
+
+2. Integrated into ReportingDashboard:
+   - Added new "Reports" tab (2nd tab after Analytics)
+   - Imported Library icon from lucide-react
+   - Updated TabsList to 10 columns
+   - Added ReportsPage import and TabsContent
+
+3. Report Categories Configuration:
+   - REPORT_CATEGORIES array with 4 categories
+   - REPORT_DEFINITIONS array with 23 reports
+   - Each report has: id, name, description, category, reportType, icon, color, procedure, parameters
+
+4. UI/UX Features:
+   - Responsive grid layouts
+   - ChevronRight indicator on report cards
+   - Back button navigation
+   - Loading skeletons for saved/scheduled tabs
+   - Toast notifications for actions
+   - Consistent styling with brand colors (#053e67)
+
+Files Created:
+- app/src/components/reporting/ReportsPage.tsx (new - 900+ lines)
+
+Files Modified:
+- app/src/components/reporting/index.ts (added ReportsPage export)
+- app/src/components/reporting/ReportingDashboard.tsx (added Reports tab, Library icon, ReportsPage import)
+
+All acceptance criteria met. TypeScript compiles without errors.
+--- Iteration 8 completed at 2026-01-22 ---
+Story: US-108 - Reporting UI
+
