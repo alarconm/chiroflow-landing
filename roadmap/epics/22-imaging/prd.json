@@ -19,7 +19,7 @@
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-225",
@@ -35,7 +35,7 @@
         "Bulk upload for multi-image studies"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-226",
@@ -51,7 +51,7 @@
         "Use Cornerstone.js or similar library"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-227",
@@ -67,7 +67,7 @@
         "Save annotation layer separately from image"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-228",
@@ -83,7 +83,7 @@
         "Auto-calculate deviation from normal"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-229",
@@ -99,7 +99,7 @@
         "Link findings to treatment plan"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-230",
@@ -116,7 +116,7 @@
         "Provider review and approval required"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-231",
@@ -133,7 +133,7 @@
         "Print/export with annotations"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }
