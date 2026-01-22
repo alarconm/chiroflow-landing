@@ -1,220 +1,224 @@
 {
-  "branch": "feature/digital-intake",
-  "title": "Epic 04: Digital Intake System",
-  "description": "Paperless patient onboarding with a form builder, pre-built chiropractic templates, e-signature capture, auto-populate patient records, kiosk mode for in-office, and email/SMS form delivery.",
-  "epic": "04-digital-intake",
+  "branch": "feature/billing-claims",
+  "title": "Epic 07: Billing & Claims Core",
+  "description": "Revenue cycle management foundation for ChiroFlow - superbill generation, charge capture, fee schedules, patient ledgers, insurance management, and claim generation. This epic enables the financial backbone of the practice.",
+  "epic": "07-billing-claims",
+  "dependencies": ["02-patient-management", "05-ehr-soap-notes"],
   "userStories": [
     {
-      "id": "US-033",
-      "title": "Intake form database schema",
-      "description": "Extend Prisma schema with models for form templates, form fields, form submissions, and e-signatures.",
+      "id": "US-057",
+      "title": "Billing database schema",
+      "description": "Extend Prisma schema with models for billing, charges, payments, insurance, fee schedules, and claims.",
       "acceptanceCriteria": [
-        "FormTemplate model with name, description, version, isActive, organizationId",
-        "FormField model with templateId, fieldType enum (TEXT, TEXTAREA, SELECT, CHECKBOX, DATE, SIGNATURE, etc.)",
-        "FormField properties: label, placeholder, required, order, options (for select/radio), validation rules",
-        "FormSection model for grouping fields (Personal Info, Medical History, Consent)",
-        "FormSubmission model linking patient, template, submittedAt, status",
-        "FormResponse model for individual field values (submissionId, fieldId, value)",
-        "ESignature model with submissionId, signatureData (base64), signedAt, ipAddress",
-        "FormDelivery model for tracking sent forms (patientId, templateId, deliveryMethod, sentAt, completedAt)",
-        "Proper indexes for querying submissions by patient and template",
-        "Migrations run successfully"
+        "InsurancePolicy model with id, patientId, payerId, memberId, groupNumber, subscriberInfo, copay, deductible, effectiveDate, terminationDate",
+        "InsurancePayer model with id, name, payerId, address, phone, electronicPayerId, claimSubmissionMethod",
+        "FeeSchedule model with id, organizationId, name, isDefault, effectiveDate",
+        "FeeScheduleItem model with id, feeScheduleId, cptCode, fee, allowedAmount",
+        "Charge model with id, encounterId, patientId, cptCode, icd10Codes, units, fee, adjustments, status",
+        "Payment model with id, patientId, amount, paymentMethod, referenceNumber, appliedTo, postedDate",
+        "PatientLedger view combining charges, payments, adjustments",
+        "Claim model with id, patientId, encounterId, insurancePolicyId, status, claimNumber, submittedDate, paidDate",
+        "ClaimLine model with id, claimId, chargeId, lineNumber, serviceDateFrom, serviceDateTo",
+        "Prisma migrations run successfully"
       ],
       "priority": 1,
       "passes": true
     },
     {
-      "id": "US-034",
-      "title": "Form template CRUD",
-      "description": "Create tRPC routes for managing form templates with versioning support.",
+      "id": "US-058",
+      "title": "Insurance payer management",
+      "description": "Create API for managing insurance payers (the companies) and their submission requirements.",
       "acceptanceCriteria": [
-        "formTemplate.create mutation with fields and sections",
-        "formTemplate.get query returns template with all fields and sections",
-        "formTemplate.update mutation preserves version history",
-        "formTemplate.list query with active/inactive filter",
-        "formTemplate.duplicate to create copy of existing template",
-        "formTemplate.archive for soft delete (keeps submissions)",
-        "formTemplate.publish to make template active",
-        "All operations create audit log entries"
+        "payer.create - Add new insurance payer with electronic IDs",
+        "payer.update - Modify payer details",
+        "payer.list - List all payers with search/filter",
+        "payer.get - Get payer details with submission requirements",
+        "payer.delete - Soft delete payer",
+        "Seed common payers (Medicare, Medicaid, major insurers)",
+        "Support for primary/secondary/tertiary payer order"
       ],
       "priority": 2,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-035",
-      "title": "Form field types and validation",
-      "description": "Implement all field types with proper validation rules.",
+      "id": "US-059",
+      "title": "Patient insurance policy management",
+      "description": "Create API for managing patient insurance policies and eligibility information.",
       "acceptanceCriteria": [
-        "TEXT field with min/max length, pattern validation",
-        "TEXTAREA field with max length",
-        "SELECT and RADIO with options array",
-        "CHECKBOX for single boolean or multi-select",
-        "DATE field with min/max date constraints",
-        "PHONE field with format validation",
-        "EMAIL field with email validation",
-        "SSN field with masking (last 4 visible)",
-        "SIGNATURE field for e-signature capture",
-        "FILE field for document uploads",
-        "HEADING and PARAGRAPH for display-only content",
-        "Conditional visibility (show field B only if field A = X)"
+        "insurancePolicy.create - Add insurance policy to patient",
+        "insurancePolicy.update - Modify policy details",
+        "insurancePolicy.list - List patient's insurance policies",
+        "insurancePolicy.get - Get policy with payer details",
+        "insurancePolicy.delete - Remove policy from patient",
+        "insurancePolicy.setPrimary - Set primary/secondary order",
+        "Support for subscriber vs dependent relationships",
+        "Store copay, deductible, coinsurance amounts"
       ],
       "priority": 3,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-036",
-      "title": "Pre-built chiropractic templates",
-      "description": "Create seed data with common chiropractic intake forms.",
+      "id": "US-060",
+      "title": "Fee schedule management",
+      "description": "Create API for managing fee schedules that define pricing for CPT codes.",
       "acceptanceCriteria": [
-        "New Patient Health History form with demographics, medical history, current conditions",
-        "Pain Assessment form with body diagram reference, pain scale, symptoms",
-        "HIPAA Authorization form with required consent checkboxes",
-        "Financial Policy form with payment terms acknowledgment",
-        "Informed Consent for Treatment form",
-        "Patient demographics form (auto-populates patient record)",
-        "Templates marked as system templates (non-deletable)",
-        "Seed script creates templates on first run"
+        "feeSchedule.create - Create new fee schedule",
+        "feeSchedule.update - Modify fee schedule details",
+        "feeSchedule.list - List organization fee schedules",
+        "feeSchedule.get - Get fee schedule with all items",
+        "feeSchedule.delete - Delete fee schedule",
+        "feeSchedule.setDefault - Set as organization default",
+        "feeScheduleItem.upsert - Add/update fee for CPT code",
+        "feeScheduleItem.bulkImport - Import fees from CSV",
+        "Support multiple fee schedules (Cash, Insurance A, Insurance B)"
       ],
       "priority": 4,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-037",
-      "title": "Form builder UI",
-      "description": "Create drag-and-drop form builder interface for staff to customize templates.",
+      "id": "US-061",
+      "title": "Charge capture from encounters",
+      "description": "Create API for capturing charges from clinical encounters. Link procedures to billable charges.",
       "acceptanceCriteria": [
-        "Form builder page at /settings/forms route",
-        "Left sidebar with available field types",
-        "Drag fields from sidebar to form canvas",
-        "Reorder fields via drag-and-drop",
-        "Click field to edit properties (label, required, validation)",
-        "Add/edit/delete sections",
-        "Preview mode to see form as patient will see it",
-        "Save draft and publish workflow",
-        "Duplicate existing template to create new"
+        "charge.createFromEncounter - Generate charges from encounter procedures",
+        "charge.create - Manual charge entry",
+        "charge.update - Modify charge details (units, fee, modifiers)",
+        "charge.list - List charges by patient, date range, status",
+        "charge.get - Get charge with linked encounter/procedure",
+        "charge.void - Void a charge with reason",
+        "Auto-calculate fee from fee schedule",
+        "Support for modifiers (-25, -59, etc.)",
+        "Charge status: PENDING, BILLED, PAID, ADJUSTED, VOID"
       ],
       "priority": 5,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-038",
-      "title": "Form submission and responses",
-      "description": "Handle patient form submissions with validation and storage.",
+      "id": "US-062",
+      "title": "Superbill generation",
+      "description": "Generate superbills (encounter forms) for patient checkout and billing reference.",
       "acceptanceCriteria": [
-        "formSubmission.create mutation validates all required fields",
-        "formSubmission.get returns submission with all responses",
-        "formSubmission.list by patient or by template",
-        "formSubmission.updateStatus for workflow (PENDING, COMPLETED, REVIEWED)",
-        "Store responses as JSON for flexibility",
-        "Handle file uploads with secure storage",
-        "Validate field values against field rules",
-        "Track submission source (kiosk, email, portal)"
+        "superbill.generate - Create superbill from encounter",
+        "superbill.get - Get superbill with all details",
+        "superbill.list - List superbills by date range",
+        "Include patient demographics",
+        "Include diagnoses (ICD-10) with order",
+        "Include procedures (CPT) with fees",
+        "Include provider information and NPI",
+        "Include insurance information",
+        "PDF generation for printing",
+        "Support for walkout statement (patient portion)"
       ],
       "priority": 6,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-039",
-      "title": "E-signature capture",
-      "description": "Implement electronic signature capture with legal compliance.",
+      "id": "US-063",
+      "title": "Payment posting",
+      "description": "Create API for posting patient and insurance payments to charges.",
       "acceptanceCriteria": [
-        "Signature pad component with touch/mouse support",
-        "Clear and redo signature functionality",
-        "Save signature as base64 image",
-        "Record timestamp, IP address, and user agent",
-        "Display signed consent text above signature field",
-        "Signature required validation",
-        "View captured signature in submission review",
-        "Export signature as image for records"
+        "payment.create - Post new payment",
+        "payment.update - Modify payment details",
+        "payment.list - List payments by patient, date range",
+        "payment.get - Get payment with allocations",
+        "payment.void - Void payment with reason",
+        "payment.apply - Apply payment to specific charges",
+        "payment.unapply - Remove payment from charges",
+        "Support payment methods: Cash, Check, Credit Card, Insurance",
+        "Auto-allocation option (oldest first)",
+        "Overpayment handling (credit balance)"
       ],
       "priority": 7,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-040",
-      "title": "Auto-populate patient record",
-      "description": "Map form responses to patient demographics and create/update patient records.",
+      "id": "US-064",
+      "title": "Patient ledger and statements",
+      "description": "Create patient financial ledger view and statement generation.",
       "acceptanceCriteria": [
-        "Define field-to-patient mapping in template config",
-        "On submission, extract mapped values",
-        "Create new patient if form is for new patient",
-        "Update existing patient demographics if linked",
-        "Handle contact info mapping (phone, email, address)",
-        "Handle insurance info mapping",
-        "Handle emergency contact mapping",
-        "Show confirmation of what will be updated before saving"
+        "ledger.getByPatient - Get complete patient ledger",
+        "ledger.getBalance - Get current patient balance",
+        "ledger.getTransactions - Get transactions with pagination",
+        "statement.generate - Generate patient statement PDF",
+        "statement.list - List generated statements",
+        "Include running balance calculation",
+        "Show charges, payments, adjustments chronologically",
+        "Support date range filtering",
+        "Statement includes payment instructions and aging"
       ],
       "priority": 8,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-041",
-      "title": "Patient form filling UI",
-      "description": "Create the patient-facing form interface for completing intake forms.",
+      "id": "US-065",
+      "title": "Claim creation and management",
+      "description": "Create API for generating and managing insurance claims.",
       "acceptanceCriteria": [
-        "Public form page at /forms/[token] route",
-        "Token-based access (no login required)",
-        "Mobile-responsive form layout",
-        "Progress indicator for multi-section forms",
-        "Save progress and resume later",
-        "Field validation with inline error messages",
-        "Submit confirmation page",
-        "Accessible design (WCAG 2.1 AA)",
-        "Form expires after configurable time"
+        "claim.create - Create claim from charges",
+        "claim.update - Modify claim details",
+        "claim.list - List claims by status, payer, date",
+        "claim.get - Get claim with all lines and history",
+        "claim.submit - Mark claim as submitted",
+        "claim.addNote - Add note to claim",
+        "claim.void - Void claim with reason",
+        "Claim status: DRAFT, READY, SUBMITTED, ACCEPTED, REJECTED, PAID, DENIED",
+        "Support primary and secondary claims",
+        "Claim validation before submission"
       ],
       "priority": 9,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-042",
-      "title": "Kiosk mode",
-      "description": "Create a tablet-friendly kiosk mode for in-office form completion.",
+      "id": "US-066",
+      "title": "CMS-1500 claim form generation",
+      "description": "Generate CMS-1500 (HCFA) claim forms for paper and electronic submission.",
       "acceptanceCriteria": [
-        "Kiosk page at /kiosk route",
-        "Full-screen mode without browser chrome",
-        "Large touch-friendly UI elements",
-        "Patient lookup by name/DOB or scan QR code",
-        "Show pending forms for the patient",
-        "Auto-logout after form submission",
-        "Session timeout with inactivity warning",
-        "PIN protection to exit kiosk mode"
+        "claim.generateCMS1500 - Generate CMS-1500 data structure",
+        "claim.getCMS1500PDF - Generate printable CMS-1500 PDF",
+        "All 33 boxes populated correctly",
+        "Support for primary and secondary payer",
+        "Include provider NPI and taxonomy",
+        "Include facility information",
+        "Diagnosis pointer mapping",
+        "Modifier handling",
+        "Place of service codes"
       ],
       "priority": 10,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-043",
-      "title": "Form delivery via email/SMS",
-      "description": "Send forms to patients via email or SMS before their appointment.",
+      "id": "US-067",
+      "title": "Billing dashboard and reports",
+      "description": "Create billing dashboard UI with key metrics and reports.",
       "acceptanceCriteria": [
-        "formDelivery.send mutation with patientId, templateIds, method",
-        "Generate unique secure token for form access",
-        "Email template with form link and instructions",
-        "SMS with short link to form",
-        "Track delivery status (sent, opened, completed)",
-        "Reminder if form not completed",
-        "Bulk send forms to multiple patients",
-        "Schedule send for future date/time"
+        "Dashboard at /billing with summary metrics",
+        "Today's charges and collections",
+        "Unbilled encounters list",
+        "Claims pending submission",
+        "AR aging summary (0-30, 31-60, 61-90, 90+)",
+        "Recent payments list",
+        "Quick actions: Post Payment, Create Claim, Generate Statement",
+        "Filter by date range and provider"
       ],
       "priority": 11,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-044",
-      "title": "Form submission review UI",
-      "description": "Create interface for staff to review and process completed forms.",
+      "id": "US-068",
+      "title": "Patient billing UI",
+      "description": "Create patient-level billing interface for managing charges and payments.",
       "acceptanceCriteria": [
-        "Submissions list page at /settings/forms/submissions",
-        "Filter by status, template, date range",
-        "View individual submission with all responses",
-        "Side-by-side view of form and patient record",
-        "Mark submission as reviewed",
-        "Add staff notes to submission",
-        "Print submission as PDF",
-        "Link submission to appointment if applicable"
+        "Patient billing tab at /patients/[id]?tab=billing",
+        "Insurance policies section with add/edit",
+        "Charges list with status indicators",
+        "Payments list with allocation details",
+        "Current balance prominently displayed",
+        "Quick actions: Add Charge, Post Payment, Generate Statement",
+        "Claims associated with patient",
+        "Ledger transaction history"
       ],
       "priority": 12,
-      "passes": true
+      "passes": false
     }
   ]
 }

@@ -95,3 +95,435 @@ Date: 2026-01-20T13:00:00Z
 
 === EPIC 04: DIGITAL INTAKE SYSTEM - COMPLETE ===
 All 12 user stories (US-033 through US-044) have been implemented.
+
+---
+
+## Story: US-045 - Clinical documentation database schema
+Date: 2026-01-20T18:00:00Z
+
+### What I Did
+- Added comprehensive EHR/clinical models to Prisma schema
+- Created 18 new models for clinical documentation
+- Added 8 new enums for encounter/clinical statuses
+- Created seed data for SOAP note templates (6 templates)
+- Created seed data for outcome assessments (ODI, NDI, VAS, NPRS)
+- Created seed data for common ICD-10 codes (15 codes)
+- Created seed data for common CPT codes (19 codes)
+
+### Models Added
+- Encounter - Clinical visit container (links patient, provider, appointment)
+- SOAPNote - SOAP documentation (S, O, A, P sections)
+- NoteAddendum - Addendums for locked notes
+- NoteTemplate - Reusable SOAP note templates
+- Diagnosis - ICD-10 diagnoses on encounters
+- Procedure - CPT procedures on encounters
+- TreatmentPlan - Multi-visit treatment plans
+- TreatmentGoal - Goals within treatment plans
+- OutcomeAssessment - Standardized questionnaires (PROMs)
+- AssessmentTemplate - Templates for outcome measures
+- BodyDiagram - Pain/subluxation markings
+- ICD10Code - Reference lookup table
+- CPTCode - Reference lookup table
+- CodeFavorite - Organization favorites
+
+### Enums Added
+- EncounterStatus: SCHEDULED, IN_PROGRESS, COMPLETED, SIGNED, AMENDED
+- EncounterType: INITIAL_EVAL, FOLLOW_UP, RE_EVALUATION, DISCHARGE, MAINTENANCE, ACUTE, WORKERS_COMP, PERSONAL_INJURY
+- DiagnosisStatus: ACTIVE, RESOLVED, CHRONIC, RECURRENT
+- TreatmentPlanStatus: DRAFT, ACTIVE, COMPLETED, DISCONTINUED, EXPIRED
+- GoalStatus: NOT_STARTED, IN_PROGRESS, ACHIEVED, PARTIALLY_ACHIEVED, NOT_ACHIEVED
+- AssessmentType: ODI, NDI, VAS_PAIN, NPRS, FABQ, DASH, SF36, CUSTOM
+
+### Files Changed
+- app/prisma/schema.prisma (added ~400 lines of clinical models)
+- app/prisma/seed.ts (added SOAP templates, assessment templates, common codes)
+- roadmap/epics/05-ehr-soap-notes/prd.json (created Epic 05 PRD)
+- prd.json (updated to Epic 05)
+- roadmap/ROADMAP.md (updated epic status)
+
+### Seed Data Created
+- 6 SOAP note templates: Initial Eval, Follow-up, Re-eval, Discharge, Workers Comp, PI
+- 4 outcome assessment templates: ODI, NDI, VAS, NPRS with full questions
+- 15 common chiropractic ICD-10 codes
+- 19 common chiropractic CPT codes
+
+### Learnings
+- Encounter is the central container linking SOAP notes, diagnoses, and procedures
+- SOAP note templates use JSON structure for flexibility
+- Outcome assessments need scoring interpretation ranges
+- ICD-10 and CPT codes are reference tables (not org-specific)
+
+---
+
+## Story: US-046 - Encounter management API
+Date: 2026-01-20T18:30:00Z
+
+### What I Did
+- Created comprehensive encounter tRPC router with all CRUD operations
+- Implemented multi-tenant scoping on all queries
+- Added automatic audit logging for all operations
+- Protected all routes with authentication requirements
+- Added provider role requirement for create/update/sign operations
+
+### Procedures Implemented
+- encounter.create - Create encounter from appointment or standalone
+- encounter.get - Get encounter with all related data (SOAP note, diagnoses, procedures, assessments, body diagrams)
+- encounter.update - Update encounter status and details (with signed note protection)
+- encounter.list - List encounters with filters (patient, provider, date range, status, type)
+- encounter.getByAppointment - Get encounter linked to specific appointment
+- encounter.sign - Sign and lock an encounter (with SOAP note locking)
+- encounter.getUnsigned - Get unsigned encounters for provider workqueue
+- encounter.getStats - Get encounter statistics for dashboards
+- encounter.delete - Admin-only delete (unsigned only)
+
+### Files Changed
+- app/src/server/routers/encounter.ts (created - ~890 lines)
+- app/src/server/routers/index.ts (added encounter router)
+- app/src/lib/audit.ts (added clinical audit actions)
+
+### Key Features
+- Encounters link to patients, providers, appointments, and treatment plans
+- Visit number tracking within treatment plans
+- Status workflow: SCHEDULED → IN_PROGRESS → COMPLETED → SIGNED → AMENDED
+- Signed encounters are locked, require addendum for changes
+- Provider name comes from User relation (Provider links to User)
+- Treatment plan visit counts auto-increment
+
+### Learnings
+- Provider model doesn't have firstName/lastName directly - it links to User
+- Provider has title, specialty, npiNumber fields
+- SOAPNote model is PascalCase in Prisma (ctx.prisma.sOAPNote)
+
+---
+
+## Story: US-047 - SOAP note API with templates
+Date: 2026-01-20T19:00:00Z
+
+### What I Did
+- Created comprehensive SOAP note tRPC router
+- Implemented template variable substitution (patient name, date, etc.)
+- Added version tracking for SOAP note changes
+- Added addendum support for locked notes
+- Added version history via audit logs
+
+### Procedures Implemented
+- soapNote.create - Create SOAP note linked to encounter
+- soapNote.get - Get SOAP note by ID
+- soapNote.getByEncounter - Get SOAP note by encounter ID
+- soapNote.update - Update any SOAP section (increments version)
+- soapNote.getTemplates - List available templates (system + organization)
+- soapNote.applyTemplate - Apply template with variable substitution
+- soapNote.lock - Lock note from editing
+- soapNote.addAddendum - Add addendum to locked notes
+- soapNote.getAddendums - List addendums for an encounter
+- soapNote.signAddendum - Sign an addendum
+- soapNote.getVersionHistory - Get audit trail of changes
+
+### Files Changed
+- app/src/server/routers/soapNote.ts (created - ~530 lines)
+- app/src/server/routers/index.ts (added soapNote router)
+
+### Key Features
+- Supports both free-text and structured JSON content
+- Template variables: {{patient.firstName}}, {{patient.fullName}}, {{date}}, etc.
+- Overwrite mode option when applying templates
+- Addendums update encounter status to AMENDED
+- Version number increments on every update
+- Only provider or admin can lock notes
+
+### Learnings
+- z.record() in Zod requires key schema: z.record(z.string(), z.unknown())
+- Template content can be string or JSON, handled dynamically
+
+---
+
+## Story: US-048 - Note template builder
+Date: 2026-01-20T19:30:00Z
+
+### What I Did
+- Created comprehensive note template tRPC router
+- Defined template variables for dynamic content substitution
+- Added structured section schema for form-based templates
+- Implemented template preview with sample patient data
+- Added template usage statistics for analytics
+
+### Procedures Implemented
+- noteTemplate.create - Create new template with JSON structure
+- noteTemplate.get - Get single template by ID
+- noteTemplate.list - List templates by category with grouping
+- noteTemplate.update - Modify template content and settings
+- noteTemplate.delete - Soft delete (deactivate) template
+- noteTemplate.duplicate - Clone existing template (including system templates)
+- noteTemplate.getVariables - Get list of available template variables
+- noteTemplate.preview - Preview template with variable substitution
+- noteTemplate.reorder - Bulk update sort orders
+- noteTemplate.getUsageStats - Get template usage statistics
+
+### Files Changed
+- app/src/server/routers/noteTemplate.ts (created - ~480 lines)
+- app/src/server/routers/index.ts (added noteTemplate router)
+
+### Key Features
+- Template variables: {{patient.firstName}}, {{date}}, {{provider.name}}, etc.
+- Structured sections schema for form-based content
+- Support for text, textarea, checkbox, select, multiselect, number field types
+- System templates cannot be modified (must duplicate first)
+- Template usage tracking shows which SOAP notes used each template
+- Preview endpoint for testing templates with sample data
+
+### Template Variables Supported
+- Patient: firstName, lastName, fullName, mrn, dob, age
+- Encounter: date, encounterDate, visitNumber
+- Provider: name, credentials
+
+---
+
+## Story: US-049 - Diagnosis and procedure management
+Date: 2026-01-20T20:00:00Z
+
+### What I Did
+- Created diagnosis tRPC router for ICD-10 code management
+- Created procedure tRPC router for CPT code management
+- Implemented code favorites functionality for organizations
+- Added multi-tenant scoping on all queries
+- Added automatic audit logging for all operations
+
+### Diagnosis Router Procedures
+- diagnosis.add - Add diagnosis to encounter with ICD-10 code
+- diagnosis.update - Update diagnosis details (code, status, onset date, etc.)
+- diagnosis.remove - Remove diagnosis from encounter
+- diagnosis.listByEncounter - List diagnoses for an encounter (ordered by primary, then sequence)
+- diagnosis.searchCodes - Search ICD-10 codes with fuzzy matching
+- diagnosis.getPatientHistory - Get patient's diagnosis history with frequency summary
+- diagnosis.reorder - Change diagnosis sequence numbers
+- diagnosis.copyFromEncounter - Copy diagnoses from previous encounter
+
+### Procedure Router Procedures
+- procedure.add - Add procedure to encounter with CPT code
+- procedure.update - Update procedure (units, modifiers, charges, etc.)
+- procedure.remove - Remove procedure from encounter
+- procedure.listByEncounter - List procedures for an encounter
+- procedure.searchCodes - Search CPT codes with category/chiro filters
+- procedure.getFavorites - Get organization's favorite codes (ICD-10 or CPT)
+- procedure.addFavorite - Add code to organization favorites
+- procedure.removeFavorite - Remove code from favorites
+- procedure.reorderFavorites - Reorder favorite codes
+- procedure.getEncounterSummary - Get billing summary with total charges
+- procedure.copyFromEncounter - Copy procedures from previous encounter
+- procedure.getCommonProcedures - Get frequently used procedures for org
+
+### Files Changed
+- app/src/server/routers/diagnosis.ts (created - ~500 lines)
+- app/src/server/routers/procedure.ts (created - ~550 lines)
+- app/src/server/routers/index.ts (added diagnosis and procedure routers)
+
+### Key Features
+- Signed encounters are protected from modifications
+- Primary diagnosis flag with automatic toggle
+- Diagnosis pointers for linking procedures to diagnoses
+- Procedure modifiers (up to 4) for billing
+- Charge/allowed amounts for billing preview
+- Organization-specific code favorites with custom ordering
+- ICD-10 and CPT code search with fuzzy matching
+
+### Learnings
+- ICD10Code model doesn't have shortDescription or isActive fields
+- CPTCode model doesn't have isActive field
+- Prisma nullable JSON fields should be omitted (undefined) rather than set to null
+- Spread operator pattern `...(value ? { field: value } : {})` works well for optional fields
+
+---
+
+## Story: US-050 - Treatment plan management
+Date: 2026-01-20T20:30:00Z
+
+### What I Did
+- Created comprehensive treatment plan tRPC router
+- Implemented goal management with measurable criteria
+- Added plan lifecycle (draft → active → completed/discontinued)
+- Added progress tracking for visits and goals
+
+### Procedures Implemented
+- treatmentPlan.create - Create treatment plan for patient
+- treatmentPlan.get - Get treatment plan with goals and encounters
+- treatmentPlan.update - Modify plan details
+- treatmentPlan.list - List plans with filters (patient, provider, status)
+- treatmentPlan.getByPatient - Get patient's treatment plans
+- treatmentPlan.activate - Start a draft plan (sets approvedAt/approvedBy)
+- treatmentPlan.complete - Mark plan as completed
+- treatmentPlan.discontinue - Discontinue plan with reason
+- treatmentPlan.addGoal - Add goal with measurable criteria
+- treatmentPlan.updateGoal - Update goal progress (status, currentValue, progress %)
+- treatmentPlan.removeGoal - Remove a goal
+- treatmentPlan.incrementVisit - Increment completed visits count
+- treatmentPlan.getProgress - Get progress summary (goal stats, visit stats, days remaining)
+- treatmentPlan.getActivePlans - Get active plans for provider dashboard
+- treatmentPlan.delete - Delete draft plans only
+
+### Files Changed
+- app/src/server/routers/treatmentPlan.ts (created - ~770 lines)
+- app/src/server/routers/index.ts (added treatmentPlan router)
+
+### Key Features
+- Treatment plan status workflow: DRAFT → ACTIVE → COMPLETED/DISCONTINUED/EXPIRED
+- Goal status: NOT_STARTED → IN_PROGRESS → ACHIEVED/PARTIALLY_ACHIEVED/NOT_ACHIEVED
+- Measurable goals with metric, baseline, target, current value, and units
+- Progress percentage tracking (0-100)
+- Automatic achievedAt timestamp when goal marked as ACHIEVED
+- Visit tracking with planned vs completed counts
+- Auto-complete when planned visits reached
+- Provider approval tracking (approvedAt, approvedBy)
+- Dashboard endpoint with progress calculations
+
+### Learnings
+- Patient model doesn't have firstName/lastName directly - use demographics relation
+- Pattern: `demographics: { select: { firstName: true, lastName: true } }`
+- Similar to Provider which uses User relation for name fields
+
+---
+
+## Story: US-051 - Outcome assessment tools
+Date: 2026-01-20T21:00:00Z
+
+### What I Did
+- Created comprehensive outcome assessment tRPC router
+- Implemented standardized PROMs (Patient-Reported Outcome Measures)
+- Added custom assessment template builder
+- Added score comparison and trend analysis
+
+### Procedures Implemented
+- assessment.getAvailable - List available assessment types and templates
+- assessment.administer - Start assessment for patient (creates OutcomeAssessment record)
+- assessment.submit - Submit completed assessment with automatic scoring
+- assessment.get - Get a single assessment by ID
+- assessment.getHistory - Get assessment history for patient with grouping by type
+- assessment.compare - Compare scores over time (for charting/trends)
+- assessment.listByEncounter - Get assessments for an encounter
+- assessment.cancel - Delete/cancel incomplete assessment
+- assessment.createTemplate - Create custom assessment template
+- assessment.getTemplate - Get single template
+- assessment.listTemplates - List templates (system + organization)
+- assessment.updateTemplate - Update organization templates
+- assessment.deleteTemplate - Soft delete template
+- assessment.duplicateTemplate - Clone template (including system templates)
+
+### Files Changed
+- app/src/server/routers/assessment.ts (created - ~770 lines)
+- app/src/server/routers/index.ts (added assessment router)
+
+### Key Features
+- Pre-built assessments: ODI, NDI, VAS Pain Scale, NPRS, FABQ, DASH, SF-36
+- Custom assessment builder with structured questions
+- Question types: scale, multiple_choice, yes_no, text, number
+- Scoring methods: sum, average, weighted
+- Interpretation ranges with automatic labeling
+- Previous score tracking for comparison
+- Change score calculation (improvement/decline tracking)
+- Trend analysis endpoint for charting
+- System templates (read-only) vs organization templates (editable)
+
+### Scoring Interpretations
+- ODI/NDI: 0-20% minimal, 21-40% moderate, 41-60% severe, 61-80% crippling, 81-100% extreme
+- VAS/NPRS: 0-30% mild, 31-60% moderate, 61-100% severe
+
+### Learnings
+- OutcomeAssessment model requires organizationId field
+- Nullable JSON fields in Prisma need careful handling - use spread operator pattern
+- Pattern: `...(value ? { field: value } : {})` for optional JSON fields
+
+---
+
+## Story: US-052 - Body diagram and spine chart components
+Date: 2026-01-20T21:30:00Z
+
+### What I Did
+- Created bodyDiagram tRPC router for CRUD operations
+- Created interactive React component for body diagrams
+- Created specialized SpineDiagram component with vertebrae labels
+- Added support for different marking types (pain, subluxation, etc.)
+
+### Router Procedures Implemented
+- bodyDiagram.save - Create or update diagram for encounter
+- bodyDiagram.get - Get specific diagram by type
+- bodyDiagram.listByEncounter - Get all diagrams for encounter
+- bodyDiagram.getPreviousMarkings - Get previous visit markings
+- bodyDiagram.copyFromEncounter - Copy markings from previous encounter
+- bodyDiagram.delete - Delete a diagram
+- bodyDiagram.getDiagramTypes - Get available diagram types with metadata
+- bodyDiagram.getMarkingTypes - Get marking types with colors
+
+### React Components Created
+- BodyDiagram - Interactive canvas with click-to-mark, drag support
+- SpineDiagram - Specialized spine diagram with vertebrae labels and tabs
+- types.ts - TypeScript types and constants for diagrams
+
+### Files Changed
+- app/src/server/routers/bodyDiagram.ts (created - ~380 lines)
+- app/src/server/routers/index.ts (added bodyDiagram router)
+- app/src/components/clinical/body-diagram/types.ts (types and constants)
+- app/src/components/clinical/body-diagram/BodyDiagram.tsx (~270 lines)
+- app/src/components/clinical/body-diagram/SpineDiagram.tsx (~210 lines)
+- app/src/components/clinical/body-diagram/index.ts (exports)
+- app/src/components/clinical/index.ts (clinical components export)
+
+### Key Features
+- Diagram types: body_front, body_back, spine, cervical, thoracic, lumbar, hands, feet
+- Marking types: pain, tenderness, subluxation, adjustment, inflammation, spasm, numbness, radiculopathy
+- Percentage-based coordinates (0-100) for responsive scaling
+- Previous visit markings shown as ghost markers
+- Draggable markers with intensity and notes
+- Color-coded markers with legend
+- SpineDiagram shows vertebrae labels (C1-S1)
+- Tabbed view for cervical/thoracic/lumbar segments
+- Protected signed encounters from modification
+
+### Learnings
+- Use percentage coordinates (0-100) for responsive diagrams
+- JsonValue type in Prisma needs casting to object for updates
+- Tabs component useful for segmented spine views
+
+---
+
+## Story: US-057 - Billing database schema
+Date: 2026-01-21T10:00:00Z
+
+### What I Did
+- Verified all billing models already exist in Prisma schema from previous epic work
+- Confirmed database is in sync with schema (`prisma db push` shows "already in sync")
+- Fixed type errors in portal components that were blocking build
+
+### Models Verified (Already Present)
+- **PatientInsurance** (serves as InsurancePolicy) - id, patientId, insurancePayerId, policyNumber, groupNumber, subscriber fields, copay, deductible, effectiveDate, terminationDate
+- **InsurancePayer** - id, name, payerId, address, phone, electronicPayerId, claimSubmissionMethod
+- **FeeSchedule** - id, organizationId, name, isDefault, effectiveDate
+- **FeeScheduleItem** - id, feeScheduleId, cptCode, fee, allowedAmount
+- **Charge** - id, encounterId, patientId, cptCode, icd10Codes, units, fee, adjustments, status
+- **Payment** - id, patientId, amount, paymentMethod, referenceNumber, postedDate
+- **PaymentAllocation** - links payments to charges (serves as appliedTo)
+- **Claim** - id, patientId, encounterId, insurancePolicyId, status, claimNumber, submittedDate, paidDate
+- **ClaimLine** - id, claimId, chargeId, lineNumber, serviceDateFrom, serviceDateTo
+
+### Additional Models Present
+- **ClaimNote** - for claim activity history
+- **ChargeStatus** enum - PENDING, BILLED, PAID, ADJUSTED, VOID
+- **ClaimStatus** enum - DRAFT, READY, SUBMITTED, ACCEPTED, REJECTED, PAID, DENIED
+- **PaymentMethod** enum - CASH, CHECK, CREDIT_CARD, DEBIT_CARD, ACH, INSURANCE, STORE_CREDIT, OTHER
+- **PlaceOfService** enum - OFFICE, HOME, TELEHEALTH, INPATIENT, OUTPATIENT, EMERGENCY, OTHER
+
+### Type Fixes Applied
+- app/src/components/portal/AppointmentsList.tsx - Made AppointmentType flexible for Date/string
+- app/src/components/portal/FormsList.tsx - Made FormType flexible for Date/string/null
+- app/src/components/portal/SecureMessages.tsx - Added null filter for replies array
+
+### Build Status
+- ✓ Build compiles successfully
+- ✓ TypeScript checks pass
+- ✓ Database schema in sync
+
+### Learnings
+- PatientInsurance model serves the role of "InsurancePolicy" with comprehensive fields
+- PaymentAllocation model provides the "appliedTo" functionality for payments
+- PatientLedger can be computed from Charge + Payment + PaymentAllocation relations
+- Portal components needed type updates to handle API vs demo data type differences
+
+---
