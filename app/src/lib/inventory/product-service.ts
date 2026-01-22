@@ -77,12 +77,12 @@ export async function createProduct(
     },
   });
 
-  // Create default inventory item at main location
+  // Create default inventory item at main storage area
   if (data.trackInventory !== false) {
     await client.inventoryItem.create({
       data: {
         productId: product.id,
-        location: 'main',
+        storageArea: 'main',
         quantity: 0,
         reservedQty: 0,
         availableQty: 0,

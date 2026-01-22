@@ -38,7 +38,7 @@ export async function getProductStockLevels(
     productId: item.productId,
     productName: item.product.name,
     productSku: item.product.sku,
-    location: item.location,
+    location: item.storageArea,
     quantity: item.quantity,
     reservedQty: item.reservedQty,
     availableQty: item.availableQty,
@@ -58,7 +58,7 @@ export async function getStockAtLocation(
   organizationId: string
 ): Promise<InventoryStockLevel | null> {
   const item = await prisma.inventoryItem.findFirst({
-    where: { productId, location, organizationId },
+    where: { productId, storageArea: location, organizationId },
     include: {
       product: {
         select: { name: true, sku: true, retailPrice: true },
@@ -72,7 +72,7 @@ export async function getStockAtLocation(
     productId: item.productId,
     productName: item.product.name,
     productSku: item.product.sku,
-    location: item.location,
+    location: item.storageArea,
     quantity: item.quantity,
     reservedQty: item.reservedQty,
     availableQty: item.availableQty,
@@ -98,7 +98,7 @@ export async function getAllStockLevels(
   const where: Prisma.InventoryItemWhereInput = { organizationId };
 
   if (filters.location) {
-    where.location = filters.location;
+    where.storageArea = filters.location;
   }
 
   if (filters.search) {
@@ -128,7 +128,7 @@ export async function getAllStockLevels(
     productId: item.productId,
     productName: item.product.name,
     productSku: item.product.sku,
-    location: item.location,
+    location: item.storageArea,
     quantity: item.quantity,
     reservedQty: item.reservedQty,
     availableQty: item.availableQty,
@@ -169,7 +169,7 @@ export async function adjustStock(
   let inventoryItem = await client.inventoryItem.findFirst({
     where: {
       productId: input.productId,
-      location: input.location,
+      storageArea: input.location,
       organizationId,
     },
   });
@@ -178,7 +178,7 @@ export async function adjustStock(
     inventoryItem = await client.inventoryItem.create({
       data: {
         productId: input.productId,
-        location: input.location,
+        storageArea: input.location,
         quantity: 0,
         reservedQty: 0,
         availableQty: 0,
@@ -217,7 +217,7 @@ export async function adjustStock(
       notes: `${input.reason}${input.notes ? ': ' + input.notes : ''}`,
       createdBy: userId,
       organizationId,
-      toLocation: input.location,
+      toStorageArea: input.location,
     },
   });
 
@@ -250,7 +250,7 @@ export async function transferStock(
   const sourceItem = await client.inventoryItem.findFirst({
     where: {
       productId: input.productId,
-      location: input.fromLocation,
+      storageArea: input.fromLocation,
       organizationId,
     },
   });
@@ -267,7 +267,7 @@ export async function transferStock(
   let destItem = await client.inventoryItem.findFirst({
     where: {
       productId: input.productId,
-      location: input.toLocation,
+      storageArea: input.toLocation,
       organizationId,
     },
   });
@@ -276,7 +276,7 @@ export async function transferStock(
     destItem = await client.inventoryItem.create({
       data: {
         productId: input.productId,
-        location: input.toLocation,
+        storageArea: input.toLocation,
         quantity: 0,
         reservedQty: 0,
         availableQty: 0,
@@ -311,8 +311,8 @@ export async function transferStock(
       productId: input.productId,
       movementType: 'TRANSFER_OUT',
       quantity: -input.quantity,
-      fromLocation: input.fromLocation,
-      toLocation: input.toLocation,
+      fromStorageArea: input.fromLocation,
+      toStorageArea: input.toLocation,
       referenceType: 'transfer',
       notes: input.notes,
       createdBy: userId,
@@ -325,8 +325,8 @@ export async function transferStock(
       productId: input.productId,
       movementType: 'TRANSFER_IN',
       quantity: input.quantity,
-      fromLocation: input.fromLocation,
-      toLocation: input.toLocation,
+      fromStorageArea: input.fromLocation,
+      toStorageArea: input.toLocation,
       referenceType: 'transfer',
       notes: input.notes,
       createdBy: userId,
@@ -356,14 +356,14 @@ export async function recordPurchase(
 ): Promise<void> {
   // Get or create inventory item
   let inventoryItem = await tx.inventoryItem.findFirst({
-    where: { productId, location, organizationId },
+    where: { productId, storageArea: location, organizationId },
   });
 
   if (!inventoryItem) {
     inventoryItem = await tx.inventoryItem.create({
       data: {
         productId,
-        location,
+        storageArea: location,
         quantity: 0,
         reservedQty: 0,
         availableQty: 0,
@@ -399,7 +399,7 @@ export async function recordPurchase(
       quantity,
       unitCost,
       totalCost: quantity * unitCost,
-      toLocation: location,
+      toStorageArea: location,
       referenceType: 'purchase_order',
       referenceId,
       createdBy: userId,
@@ -424,7 +424,7 @@ export async function recordSale(
   tx: Prisma.TransactionClient
 ): Promise<number> {
   const inventoryItem = await tx.inventoryItem.findFirst({
-    where: { productId, location, organizationId },
+    where: { productId, storageArea: location, organizationId },
   });
 
   if (!inventoryItem) {
@@ -456,7 +456,7 @@ export async function recordSale(
       quantity: -quantity,
       unitCost,
       totalCost: quantity * unitCost,
-      fromLocation: location,
+      fromStorageArea: location,
       referenceType: 'sale',
       referenceId,
       createdBy: userId,
@@ -483,7 +483,7 @@ export async function reverseSale(
   tx: Prisma.TransactionClient
 ): Promise<void> {
   const inventoryItem = await tx.inventoryItem.findFirst({
-    where: { productId, location, organizationId },
+    where: { productId, storageArea: location, organizationId },
   });
 
   if (!inventoryItem) {
@@ -510,7 +510,7 @@ export async function reverseSale(
       quantity,
       unitCost: Number(inventoryItem.averageCost),
       totalCost: quantity * Number(inventoryItem.averageCost),
-      toLocation: location,
+      toStorageArea: location,
       referenceType: 'sale_void',
       referenceId,
       createdBy: userId,
@@ -558,8 +558,8 @@ export async function getMovementHistory(
       quantity: m.quantity,
       unitCost: m.unitCost,
       totalCost: m.totalCost,
-      fromLocation: m.fromLocation,
-      toLocation: m.toLocation,
+      fromLocation: m.fromStorageArea,
+      toLocation: m.toStorageArea,
       referenceType: m.referenceType,
       referenceId: m.referenceId,
       notes: m.notes,

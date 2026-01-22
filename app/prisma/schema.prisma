@@ -19,11 +19,24 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Enterprise/Parent Company fields (Epic 25)
+  isEnterprise         Boolean  @default(false) // Is this a multi-location enterprise?
+  parentOrganizationId String?  // For sub-organizations (future use)
+  enterpriseSettings   Json     @default("{}") // Enterprise-level configuration
+
+  // Primary contact
+  primaryContactName   String?
+  primaryContactEmail  String?
+  primaryContactPhone  String?
+
   // Relations
   users      User[]
   auditLogs  AuditLog[]
   patients   Patient[]
   households Household[]
+
+  // Multi-location relations (Epic 25)
+  locations  Location[]
 
   // Scheduling relations
   providers        Provider[]
@@ -221,6 +234,9 @@ model User {
 
   // Wearable & Device Integration relations (Epic 24)
   createdActivityGoals ActivityGoal[]
+
+  // Multi-location relations (Epic 25)
+  locationAssignments LocationStaff[]
 
   @@unique([email, organizationId])
   @@index([organizationId])
@@ -990,6 +1006,10 @@ model Appointment {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  // Multi-location relation (Epic 25)
+  locationId String?
+  location   Location? @relation(fields: [locationId], references: [id])
+
   // Relations
   resources AppointmentResource[]
 
@@ -1014,9 +1034,11 @@ model Appointment {
   @@index([roomId])
   @@index([appointmentTypeId])
   @@index([recurringSeriesId])
+  @@index([locationId])
   // Composite index for calendar queries
   @@index([organizationId, startTime, endTime])
   @@index([providerId, startTime, endTime])
+  @@index([locationId, startTime, endTime])
 }
 
 // Join table for appointment resources
@@ -1205,6 +1227,10 @@ model Encounter {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  // Multi-location relation (Epic 25)
+  locationId String?
+  location_  Location? @relation(fields: [locationId], references: [id])
+
   // Relations
   soapNote     SOAPNote?
   diagnoses    Diagnosis[]
@@ -1247,6 +1273,7 @@ model Encounter {
   @@index([status])
   @@index([appointmentId])
   @@index([treatmentPlanId])
+  @@index([locationId])
 }
 
 // SOAP Note (1:1 with Encounter)
@@ -5268,9 +5295,9 @@ model InventoryItem {
   reservedQty  Int    @default(0) // Reserved for orders
   availableQty Int    @default(0) // quantity - reservedQty
 
-  // Location (if multiple storage areas)
-  location  String  @default("main") // "main", "backroom", "display"
-  binNumber String? // Shelf/bin location
+  // Storage location within the practice location
+  storageArea String  @default("main") // "main", "backroom", "display"
+  binNumber   String? // Shelf/bin location
 
   // Valuation
   averageCost Decimal @default(0) @db.Decimal(10, 2)
@@ -5291,10 +5318,15 @@ model InventoryItem {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  @@unique([productId, location, organizationId])
+  // Multi-location relation (Epic 25)
+  locationId String?
+  location   Location? @relation(fields: [locationId], references: [id])
+
+  @@unique([productId, storageArea, organizationId, locationId])
   @@index([organizationId])
   @@index([productId])
-  @@index([location])
+  @@index([storageArea])
+  @@index([locationId])
 }
 
 // Inventory movement (stock changes)
@@ -5311,9 +5343,9 @@ model InventoryMovement {
   unitCost  Decimal @default(0) @db.Decimal(10, 2)
   totalCost Decimal @default(0) @db.Decimal(10, 2)
 
-  // Location tracking
-  fromLocation String?
-  toLocation   String?
+  // Storage area tracking (within a location)
+  fromStorageArea String?
+  toStorageArea   String?
 
   notes     String?
   createdBy String // User ID
@@ -5327,11 +5359,20 @@ model InventoryMovement {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  // Multi-location relation (Epic 25)
+  locationId     String?
+  location       Location? @relation(fields: [locationId], references: [id])
+  fromLocationId String?   // For inter-location transfers
+  toLocationId   String?   // For inter-location transfers
+
   @@index([organizationId])
   @@index([productId])
   @@index([movementType])
   @@index([referenceType, referenceId])
   @@index([createdAt])
+  @@index([locationId])
+  @@index([fromLocationId])
+  @@index([toLocationId])
 }
 
 // Vendor/Supplier
@@ -8918,4 +8959,161 @@ model ActivityGoal {
   @@index([goalType])
   @@index([isActive])
   @@index([organizationId])
+}
+
+// ============================================
+// EPIC 25: MULTI-LOCATION ENTERPRISE
+// ============================================
+
+// Practice location within an organization
+model Location {
+  id        String   @id @default(cuid())
+  name      String   // Display name (e.g., "Downtown Clinic")
+  code      String   // Short code (e.g., "DT")
+  isActive  Boolean  @default(true)
+  isPrimary Boolean  @default(false) // Primary/headquarters location
+
+  // Address
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  state        String
+  zipCode      String
+  country      String @default("US")
+
+  // Contact
+  phone     String
+  fax       String?
+  email     String?
+
+  // Timezone for scheduling
+  timezone  String @default("America/New_York")
+
+  // Branding (optional location-specific)
+  logoUrl       String?
+  primaryColor  String?
+  accentColor   String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  locationStaff      LocationStaff[]
+  locationHours      LocationHours[]
+  locationSettings   LocationSettings?
+  appointments       Appointment[]
+  encounters         Encounter[]
+  inventoryItems     InventoryItem[]
+  inventoryMovements InventoryMovement[]
+
+  @@unique([code, organizationId])
+  @@index([organizationId])
+  @@index([isActive])
+}
+
+// Staff assignment to location with role
+model LocationStaff {
+  id        String   @id @default(cuid())
+  isPrimary Boolean  @default(false) // Primary work location for this user
+  isActive  Boolean  @default(true)
+
+  // Role override at this location (optional)
+  roleOverride Role?
+
+  // Schedule visibility - can this staff member see this location's schedule?
+  canViewSchedule   Boolean @default(true)
+  canManageSchedule Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, locationId])
+  @@index([userId])
+  @@index([locationId])
+  @@index([isActive])
+}
+
+// Operating hours for a location
+model LocationHours {
+  id        String   @id @default(cuid())
+  dayOfWeek Int      // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  isOpen    Boolean  @default(true)
+
+  // Regular hours
+  openTime  String?  // "09:00" in 24hr format
+  closeTime String?  // "17:00" in 24hr format
+
+  // Break time (optional)
+  breakStart String?
+  breakEnd   String?
+
+  // Override for specific dates
+  isHoliday     Boolean  @default(false)
+  holidayName   String?
+  effectiveDate DateTime? // For specific date overrides
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([locationId, dayOfWeek, effectiveDate])
+  @@index([locationId])
+  @@index([dayOfWeek])
+}
+
+// Location-specific settings
+model LocationSettings {
+  id        String @id @default(cuid())
+
+  // Appointment settings
+  defaultAppointmentDuration Int @default(30)      // minutes
+  slotInterval               Int @default(15)      // minutes
+  bufferTime                 Int @default(0)       // minutes between appointments
+  allowOnlineBooking         Boolean @default(true)
+  allowWalkIns               Boolean @default(true)
+
+  // Scheduling constraints
+  maxAdvanceBookingDays      Int @default(90)
+  minAdvanceBookingHours     Int @default(24)
+
+  // Patient settings
+  allowCrossLocationAccess   Boolean @default(true)
+  sharePatientRecords        Boolean @default(true)
+
+  // Inventory settings
+  trackInventory             Boolean @default(true)
+  lowStockAlertEnabled       Boolean @default(true)
+
+  // Billing settings
+  billingSeparate            Boolean @default(false) // Separate billing per location
+  defaultFeeScheduleId       String?
+
+  // Communication settings
+  appointmentReminderEnabled Boolean @default(true)
+  reminderHoursBeforeAppt    Int     @default(24)
+
+  // Custom settings JSON for extensibility
+  customSettings             Json    @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  locationId String   @unique
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
 }

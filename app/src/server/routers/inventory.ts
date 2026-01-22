@@ -507,7 +507,7 @@ export const inventoryRouter = router({
         let inventoryItem = await tx.inventoryItem.findFirst({
           where: {
             productId: input.productId,
-            location: input.location,
+            storageArea: input.location,
             organizationId: ctx.user.organizationId,
           },
         });
@@ -516,7 +516,7 @@ export const inventoryRouter = router({
           inventoryItem = await tx.inventoryItem.create({
             data: {
               productId: input.productId,
-              location: input.location,
+              storageArea: input.location,
               quantity: 0,
               reservedQty: 0,
               availableQty: 0,
@@ -552,7 +552,7 @@ export const inventoryRouter = router({
             quantity: input.quantity,
             unitCost: input.unitCost,
             totalCost: input.quantity * input.unitCost,
-            toLocation: input.location,
+            toStorageArea: input.location,
             referenceType: 'manual_receipt',
             notes: input.notes,
             createdBy: ctx.user.id,

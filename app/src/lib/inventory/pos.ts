@@ -62,7 +62,7 @@ export async function createSale(
         where: { id: item.productId, organizationId },
         include: {
           inventoryItems: {
-            where: { location: 'main' },
+            where: { storageArea: 'main' },
           },
         },
       });
@@ -396,7 +396,7 @@ export async function buildCart(
       where: { id: item.productId, organizationId },
       include: {
         inventoryItems: {
-          where: { location: 'main' },
+          where: { storageArea: 'main' },
         },
       },
     });

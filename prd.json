@@ -1,139 +1,137 @@
 {
-  "branch": "feature/wearables",
-  "title": "Epic 24: Wearable & Device Integration",
-  "description": "Integration with wearable devices and health platforms to collect activity data, posture monitoring, sleep quality, and other health metrics for comprehensive patient monitoring.",
-  "epic": "24-wearables",
-  "dependencies": ["02-patient-management"],
+  "branch": "feature/multi-location",
+  "title": "Epic 25: Multi-Location Enterprise",
+  "description": "Enterprise features for multi-location chiropractic practices including centralized management, cross-location visibility, consolidated reporting, and inter-location workflows.",
+  "epic": "25-multi-location",
+  "dependencies": ["01-platform-foundation"],
   "userStories": [
     {
-      "id": "US-240",
-      "title": "Device integration schema",
-      "description": "Create database models for device data and connections.",
+      "id": "US-248",
+      "title": "Multi-location schema",
+      "description": "Extend schema for multi-location support.",
       "acceptanceCriteria": [
-        "DeviceConnection model with patientId, deviceType, connectionToken, status",
-        "ActivityData model with patientId, date, steps, activeMinutes, calories",
-        "SleepData model with patientId, date, duration, quality, stages",
-        "PostureData model with patientId, timestamp, score, alerts",
-        "HeartRateData model with patientId, timestamp, bpm, type",
-        "DeviceType enum (AppleHealth, GoogleFit, Fitbit, Whoop, PostureSensor)",
+        "Location model with organizationId, name, address, phone, timezone",
+        "Add locationId to Appointment, Encounter, Inventory models",
+        "LocationStaff model linking users to locations with roles",
+        "LocationHours model for per-location operating hours",
+        "LocationSettings model for location-specific configuration",
+        "Organization model enhanced for parent company",
         "Prisma migrations run successfully"
       ],
       "priority": 1,
       "passes": true
     },
     {
-      "id": "US-241",
-      "title": "Apple Health integration",
-      "description": "Connect and sync data from Apple Health.",
+      "id": "US-249",
+      "title": "Location management",
+      "description": "CRUD operations for managing practice locations.",
       "acceptanceCriteria": [
-        "devices.connectAppleHealth - Initiate Apple Health connection",
-        "OAuth flow for authorization",
-        "Sync activity data (steps, distance, calories)",
-        "Sync sleep data",
-        "Sync workout sessions",
-        "devices.syncAppleHealth - Manual sync trigger",
-        "Background sync scheduling",
-        "Data mapping to internal models"
+        "location.create - Add new location",
+        "location.update - Modify location details",
+        "location.list - List all organization locations",
+        "location.get - Get location with settings",
+        "location.deactivate - Soft delete location",
+        "Location-specific branding options",
+        "Address validation"
       ],
       "priority": 2,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-242",
-      "title": "Google Fit integration",
-      "description": "Connect and sync data from Google Fit.",
+      "id": "US-250",
+      "title": "Staff location assignment",
+      "description": "Assign staff members to locations with specific roles.",
       "acceptanceCriteria": [
-        "devices.connectGoogleFit - Initiate Google Fit connection",
-        "OAuth2 flow for authorization",
-        "Sync activity data",
-        "Sync sleep data",
-        "Sync heart rate data",
-        "devices.syncGoogleFit - Manual sync trigger",
-        "Real-time data subscription",
-        "Handle token refresh"
+        "locationStaff.assign - Assign user to location",
+        "locationStaff.remove - Remove user from location",
+        "locationStaff.list - List staff at location",
+        "Support multi-location assignment for floating staff",
+        "Location-specific role overrides",
+        "Primary location designation",
+        "Schedule visibility by assigned locations"
       ],
       "priority": 3,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-243",
-      "title": "Posture sensor integration",
-      "description": "Integrate with posture monitoring devices.",
+      "id": "US-251",
+      "title": "Cross-location patient access",
+      "description": "Enable patient records to be accessible across locations.",
       "acceptanceCriteria": [
-        "Support Upright Go device",
-        "Support generic posture sensors via API",
-        "Real-time posture score tracking",
-        "Slouch alert history",
-        "Daily posture summary",
-        "Correlate posture data with symptoms",
-        "Alert provider on poor posture trends"
+        "Patient records visible at all locations",
+        "Location of service recorded on encounters",
+        "Patient home location designation",
+        "Visit history shows location",
+        "Balance tracking by location option",
+        "Consent for cross-location sharing",
+        "Audit trail for cross-location access"
       ],
       "priority": 4,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-244",
-      "title": "Activity correlation analysis",
-      "description": "Correlate activity data with patient symptoms and outcomes.",
+      "id": "US-252",
+      "title": "Cross-location scheduling",
+      "description": "Schedule appointments across any location.",
       "acceptanceCriteria": [
-        "devices.analyzeCorrelation - Analyze activity vs symptoms",
-        "Identify activity patterns before pain flares",
-        "Sleep quality vs pain correlation",
-        "Activity level vs recovery correlation",
-        "Generate insights for provider",
-        "Patient-facing activity recommendations",
-        "Trend visualization"
+        "Location selector in appointment booking",
+        "Provider availability by location",
+        "Resource availability by location",
+        "Patient can book at any location",
+        "Transfer appointment between locations",
+        "Multi-location availability view",
+        "Location-specific appointment types"
       ],
       "priority": 5,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-245",
-      "title": "Activity goals and alerts",
-      "description": "Set activity goals and alerts for patients.",
+      "id": "US-253",
+      "title": "Consolidated reporting",
+      "description": "Enterprise reporting across all locations.",
       "acceptanceCriteria": [
-        "devices.setGoal - Set daily activity goals",
-        "Step count goals",
-        "Active minutes goals",
-        "Sleep duration goals",
-        "Alert on goal achievement",
-        "Alert on significant decrease in activity",
-        "Weekly progress reports"
+        "reports.getEnterprise - All-location aggregated reports",
+        "Filter reports by location",
+        "Compare locations side-by-side",
+        "Roll-up financial reports",
+        "Multi-location AR aging",
+        "Provider productivity by location",
+        "Patient volume by location",
+        "Export enterprise reports"
       ],
       "priority": 6,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-246",
-      "title": "Device data dashboard",
-      "description": "Dashboard for viewing connected device data.",
+      "id": "US-254",
+      "title": "Inter-location inventory",
+      "description": "Manage inventory transfers between locations.",
       "acceptanceCriteria": [
-        "Patient wearable data tab",
-        "Activity trend charts",
-        "Sleep quality visualization",
-        "Posture score history",
-        "Device connection management",
-        "Data sync status",
-        "Integration in patient summary"
+        "inventory.transfer - Transfer stock between locations",
+        "Transfer request and approval workflow",
+        "Track inventory by location",
+        "Low stock alerts per location",
+        "Consolidated inventory value report",
+        "Inter-location transfer history"
       ],
       "priority": 7,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-247",
-      "title": "Device connection portal",
-      "description": "Patient portal interface for connecting devices.",
+      "id": "US-255",
+      "title": "Enterprise dashboard UI",
+      "description": "Dashboard for enterprise-wide visibility.",
       "acceptanceCriteria": [
-        "Connect Devices page in portal",
-        "Step-by-step connection guides",
-        "Authorization flow handling",
-        "Connection status display",
-        "Disconnect option",
-        "Data sharing preferences",
-        "Privacy explanation"
+        "Enterprise dashboard at /enterprise",
+        "Location switcher in navigation",
+        "All-locations overview metrics",
+        "Location comparison charts",
+        "Quick access to location dashboards",
+        "Enterprise settings management",
+        "Location health status indicators"
       ],
       "priority": 8,
-      "passes": true
+      "passes": false
     }
   ]
 }
