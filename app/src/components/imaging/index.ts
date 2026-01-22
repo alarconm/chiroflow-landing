@@ -1,0 +1,36 @@
+/**
+ * Imaging Components
+ * Epic 22: Imaging & X-Ray Integration
+ *
+ * Export all imaging components for use throughout the application
+ */
+
+export { DICOMViewer, type DICOMViewerProps } from './DICOMViewer';
+
+export {
+  type ViewportState,
+  type ViewerTool,
+  type ViewerImage,
+  type ViewerSeries,
+  type Point,
+  type Measurement,
+  type RulerMeasurement,
+  type AngleMeasurement,
+  type CobbAngleMeasurement,
+  type EllipseMeasurement,
+  type RectangleMeasurement,
+  type TextAnnotation,
+  type ToolConfig,
+  type WindowPreset,
+  DEFAULT_VIEWPORT_STATE,
+  VIEWER_TOOLS,
+  WINDOW_PRESETS,
+  MEASUREMENT_COLORS,
+  calculateDistance,
+  calculateAngle,
+  calculateCobbAngle,
+  calculateEllipseArea,
+  calculateRectangleArea,
+  pixelsToMm,
+  generateMeasurementId,
+} from './types';

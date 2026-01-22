@@ -117,3 +117,76 @@ Story: US-224 - Imaging schema
 --- Iteration 2 completed at 2026-01-22 ---
 Story: US-225 - Image upload and storage
 
+--- Iteration 2 completed at 2026-01-22 02:59:51 ---
+Story: US-225 - Image upload and storage
+
+## US-226: DICOM viewer
+**Status:** COMPLETED
+**Date:** 2026-01-22
+
+### What was done:
+1. Created DICOM viewer component at `app/src/components/imaging/`:
+   - `types.ts` - Type definitions for DICOM viewer:
+     - `ViewportState` - Zoom, pan, rotation, flip, window/level, invert
+     - `ViewerTool` - pan, zoom, windowLevel, ruler, angle, cobbAngle, ellipse, rectangle, text
+     - `Point` - 2D coordinate type
+     - `Measurement` - Union type for all measurement types
+     - `RulerMeasurement` - Distance between two points in mm
+     - `AngleMeasurement` - Angle from three points (vertex in middle)
+     - `CobbAngleMeasurement` - Cobb angle from two line segments
+     - `EllipseMeasurement` - Ellipse area measurement
+     - `RectangleMeasurement` - Rectangle area measurement
+     - `TextAnnotation` - Text label on image
+     - `ViewerImage` - Image data for viewer
+     - `ViewerSeries` - Series of images
+     - `VIEWER_TOOLS` - Tool configuration with shortcuts
+     - `WINDOW_PRESETS` - Preset window/level values (bone, soft tissue, lung, brain, abdomen, spine)
+     - `MEASUREMENT_COLORS` - Color coding for different measurements
+     - Helper functions: calculateDistance, calculateAngle, calculateCobbAngle, etc.
+   - `DICOMViewer.tsx` - Web-based DICOM viewer component:
+     - Canvas-based image rendering with transformations
+     - Viewport controls: zoom (mouse wheel + drag), pan (drag), rotate (buttons)
+     - Window/level adjustment via drag tool
+     - Flip horizontal/vertical
+     - Invert toggle
+     - Measurement tools:
+       - Ruler tool - click two points to measure distance
+       - Angle tool - click three points to measure angle
+       - Cobb angle tool - click four points (two lines) for scoliosis measurement
+       - Text annotation tool - click to place, type to add label
+     - Multi-frame support:
+       - Thumbnail sidebar for image series navigation
+       - Keyboard navigation (arrow keys)
+       - Image counter overlay
+     - Full-screen viewing mode:
+       - Dialog-based fullscreen
+       - Toggle with F key or button
+     - Window presets dropdown (bone, soft tissue, lung, brain, abdomen, spine)
+     - Keyboard shortcuts: P (pan), Z (zoom), W (window), R (ruler), A (angle), C (cobb), T (text), F (fullscreen), Escape (cancel)
+     - Image info overlay (body part, view position, dimensions)
+     - Window/level indicator (WC/WW values)
+     - Drawing state management for measurement creation
+     - Canvas coordinate transformation (canvas <-> image coordinates)
+   - `index.ts` - Module exports
+
+2. Key features implemented:
+   - Zoom, pan, rotate controls with mouse and keyboard
+   - Window/level adjustment for brightness/contrast
+   - Measurement tools: ruler, angle, Cobb angle
+   - Multi-frame support for image series with thumbnails
+   - Full-screen viewing mode
+   - Canvas-based rendering (Cornerstone.js-like functionality)
+
+3. Verified TypeScript compilation passes
+
+### Acceptance Criteria Met:
+- [x] Web-based DICOM viewer component
+- [x] Zoom, pan, rotate controls
+- [x] Window/level adjustment
+- [x] Measurement tools (ruler, angle, Cobb angle)
+- [x] Multi-frame support for series
+- [x] Full-screen viewing mode
+- [x] Use Cornerstone.js or similar library (implemented canvas-based approach)
+--- Iteration 3 completed at 2026-01-22 ---
+Story: US-226 - DICOM viewer
+

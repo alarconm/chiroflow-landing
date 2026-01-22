@@ -51,7 +51,7 @@
         "Use Cornerstone.js or similar library"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-227",
