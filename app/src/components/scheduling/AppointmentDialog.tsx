@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
-import { CalendarIcon, Clock, User, MapPin, FileText } from 'lucide-react';
+import { CalendarIcon, Clock, User, MapPin, FileText, Video, VideoOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -28,6 +28,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
+import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { trpc } from '@/trpc/client';
 import { toast } from 'sonner';
@@ -63,6 +64,7 @@ export function AppointmentDialog({
   const [chiefComplaint, setChiefComplaint] = useState('');
   const [notes, setNotes] = useState('');
   const [duration, setDuration] = useState(30);
+  const [isTelehealth, setIsTelehealth] = useState(false);
 
   // Queries
   const { data: providers } = trpc.scheduling.listProviders.useQuery({});
@@ -98,6 +100,7 @@ export function AppointmentDialog({
       setRoomId(existingAppointment.roomId || '');
       setChiefComplaint(existingAppointment.chiefComplaint || '');
       setNotes(existingAppointment.notes || '');
+      setIsTelehealth(existingAppointment.isTelehealth || false);
       const durationMinutes = Math.round(
         (new Date(existingAppointment.endTime).getTime() -
           new Date(existingAppointment.startTime).getTime()) /
@@ -132,6 +135,7 @@ export function AppointmentDialog({
       setPatientSearch('');
       setChiefComplaint('');
       setNotes('');
+      setIsTelehealth(false);
     }
   }, [open, appointmentId]);
 
@@ -182,9 +186,10 @@ export function AppointmentDialog({
       appointmentTypeId,
       startTime,
       endTime,
-      roomId: roomId || undefined,
+      roomId: isTelehealth ? undefined : roomId || undefined,
       chiefComplaint: chiefComplaint || undefined,
       notes: notes || undefined,
+      isTelehealth,
     };
 
     if (appointmentId) {
@@ -382,35 +387,63 @@ export function AppointmentDialog({
             </div>
           </div>
 
-          {/* Room */}
-          <div className="space-y-2">
-            <Label>Room</Label>
-            <Select value={roomId} onValueChange={setRoomId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select room (optional)">
-                  {roomId ? (
-                    <div className="flex items-center gap-2">
-                      <MapPin className="h-4 w-4" />
-                      {rooms?.find((r) => r.id === roomId)?.name}
-                    </div>
-                  ) : (
-                    'Select room (optional)'
-                  )}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">No room</SelectItem>
-                {rooms?.map((room) => (
-                  <SelectItem key={room.id} value={room.id}>
-                    <div className="flex items-center gap-2">
-                      <MapPin className="h-4 w-4 text-muted-foreground" />
-                      {room.name}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          {/* Telehealth Toggle */}
+          <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/30">
+            <div className="flex items-center gap-3">
+              {isTelehealth ? (
+                <Video className="h-5 w-5 text-green-600" />
+              ) : (
+                <VideoOff className="h-5 w-5 text-muted-foreground" />
+              )}
+              <div>
+                <Label htmlFor="telehealth-toggle" className="text-sm font-medium cursor-pointer">
+                  Telehealth Visit
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  {isTelehealth
+                    ? 'This will be a virtual video visit'
+                    : 'Enable for video consultations'}
+                </p>
+              </div>
+            </div>
+            <Switch
+              id="telehealth-toggle"
+              checked={isTelehealth}
+              onCheckedChange={setIsTelehealth}
+            />
           </div>
+
+          {/* Room - Only show for in-person visits */}
+          {!isTelehealth && (
+            <div className="space-y-2">
+              <Label>Room</Label>
+              <Select value={roomId} onValueChange={setRoomId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select room (optional)">
+                    {roomId ? (
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4" />
+                        {rooms?.find((r) => r.id === roomId)?.name}
+                      </div>
+                    ) : (
+                      'Select room (optional)'
+                    )}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">No room</SelectItem>
+                  {rooms?.map((room) => (
+                    <SelectItem key={room.id} value={room.id}>
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4 text-muted-foreground" />
+                        {room.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {/* Chief Complaint */}
           <div className="space-y-2">

@@ -9,3 +9,5 @@ export { VideoConsultation } from './VideoConsultation';
 export { TelehealthDocumentation } from './TelehealthDocumentation';
 export { TelehealthConsentForm } from './TelehealthConsentForm';
 export { RemoteMonitoring } from './RemoteMonitoring';
+export { TelehealthDashboard } from './TelehealthDashboard';
+export { PatientTelehealthPortal } from './PatientTelehealthPortal';

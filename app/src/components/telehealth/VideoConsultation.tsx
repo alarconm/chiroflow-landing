@@ -551,10 +551,11 @@ export function VideoConsultation({
           )}
         </div>
 
-        {/* Self View (Picture-in-Picture Style) */}
+        {/* Self View (Picture-in-Picture Style) - Mobile responsive */}
         <div
           className={cn(
-            'absolute bottom-24 right-4 w-48 h-36 rounded-lg overflow-hidden',
+            'absolute bottom-24 right-4 rounded-lg overflow-hidden',
+            'w-32 h-24 sm:w-48 sm:h-36', // Smaller on mobile
             'bg-gray-800 shadow-lg border-2 border-gray-700',
             'transition-all duration-300 hover:scale-105 cursor-move',
             isPipActive && 'opacity-0'
@@ -664,14 +665,14 @@ export function VideoConsultation({
             showControls ? 'opacity-100' : 'opacity-0'
           )}
         >
-          <div className="flex items-center justify-center gap-2">
+          <div className="flex items-center justify-center gap-1 sm:gap-2 flex-wrap">
             {/* Mute/Unmute Audio */}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   variant={isAudioEnabled ? 'secondary' : 'destructive'}
                   size="lg"
-                  className="rounded-full h-12 w-12"
+                  className="rounded-full h-10 w-10 sm:h-12 sm:w-12"
                   onClick={toggleAudio}
                 >
                   {isAudioEnabled ? (
@@ -692,7 +693,7 @@ export function VideoConsultation({
                 <Button
                   variant={isVideoEnabled ? 'secondary' : 'destructive'}
                   size="lg"
-                  className="rounded-full h-12 w-12"
+                  className="rounded-full h-10 w-10 sm:h-12 sm:w-12"
                   onClick={toggleVideo}
                 >
                   {isVideoEnabled ? (
@@ -713,7 +714,7 @@ export function VideoConsultation({
                 <Button
                   variant={isScreenSharing ? 'default' : 'secondary'}
                   size="lg"
-                  className="rounded-full h-12 w-12"
+                  className="rounded-full h-10 w-10 sm:h-12 sm:w-12 hidden sm:flex"
                   onClick={toggleScreenShare}
                 >
                   {isScreenSharing ? (
@@ -734,7 +735,7 @@ export function VideoConsultation({
                 <Button
                   variant={isChatOpen ? 'default' : 'secondary'}
                   size="lg"
-                  className="rounded-full h-12 w-12 relative"
+                  className="rounded-full h-10 w-10 sm:h-12 sm:w-12 relative"
                   onClick={() => setIsChatOpen(!isChatOpen)}
                 >
                   <MessageSquare className="h-5 w-5" />
@@ -750,13 +751,13 @@ export function VideoConsultation({
               </TooltipContent>
             </Tooltip>
 
-            {/* Fullscreen Toggle */}
+            {/* Fullscreen Toggle - hidden on mobile as it's automatic */}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   variant="secondary"
                   size="lg"
-                  className="rounded-full h-12 w-12"
+                  className="rounded-full h-10 w-10 sm:h-12 sm:w-12 hidden sm:flex"
                   onClick={toggleFullscreen}
                 >
                   {isFullscreen ? (
@@ -777,7 +778,7 @@ export function VideoConsultation({
                 <Button
                   variant="destructive"
                   size="lg"
-                  className="rounded-full h-12 w-12"
+                  className="rounded-full h-10 w-10 sm:h-12 sm:w-12"
                   onClick={() => setShowEndDialog(true)}
                 >
                   <PhoneOff className="h-5 w-5" />
@@ -790,12 +791,13 @@ export function VideoConsultation({
           </div>
         </div>
 
-        {/* Chat Sidebar */}
+        {/* Chat Sidebar - Mobile responsive (full width on small screens) */}
         <div
           className={cn(
-            'absolute top-0 right-0 h-full w-80 bg-white dark:bg-gray-900',
+            'absolute top-0 right-0 h-full bg-white dark:bg-gray-900',
+            'w-full sm:w-80', // Full width on mobile
             'transform transition-transform duration-300 ease-in-out',
-            'flex flex-col shadow-lg',
+            'flex flex-col shadow-lg z-20',
             isChatOpen ? 'translate-x-0' : 'translate-x-full'
           )}
         >

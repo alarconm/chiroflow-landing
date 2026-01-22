@@ -132,7 +132,7 @@
         "Mobile-friendly video interface"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }

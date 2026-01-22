@@ -676,3 +676,86 @@ Story: US-221 - Telehealth consent management
 --- Iteration 7 completed at 2026-01-22 ---
 Story: US-222 - Remote monitoring integration
 
+--- Iteration 7 completed at 2026-01-22 02:40:03 ---
+Story: US-222 - Remote monitoring integration
+
+## US-223: Telehealth dashboard and scheduling
+**Status:** COMPLETED
+**Date:** 2026-01-22
+
+### What was implemented:
+
+1. **TelehealthDashboard component** (`app/src/components/telehealth/TelehealthDashboard.tsx`):
+   - Full-featured provider dashboard for managing telehealth sessions
+   - Tabbed interface: Overview, Waiting Room, History, Metrics
+   - Quick stats cards (Upcoming, Completed, Avg Duration, Quality Rate)
+   - Upcoming sessions list with join/start functionality
+   - Quick-start telehealth visit dialog with patient search
+   - Integration with ProviderWaitingRoomDashboard component
+
+2. **Telehealth appointment type in scheduler**:
+   - Added `isTelehealth` toggle to AppointmentDialog
+   - Video/VideoOff icon indicates telehealth status
+   - Room selection hidden for telehealth appointments
+   - Telehealth flag saved with appointment data
+
+3. **Virtual waiting room dashboard for providers**:
+   - Integrated existing ProviderWaitingRoomDashboard into main dashboard
+   - Admit patient functionality from dashboard
+
+4. **Telehealth visit history**:
+   - Filterable history (All, Completed, Cancelled)
+   - Scrollable list with session details
+   - Quality indicators (connection, audio, video)
+   - Click to view session details
+
+5. **Session quality metrics tab**:
+   - Session quality overview with good/fair/poor breakdown
+   - Progress bar visualization
+   - Session statistics (completed, no-shows, technical issues, cancelled)
+   - Completion rate calculation
+   - Average session duration with trend indicator
+
+6. **PatientTelehealthPortal component** (`app/src/components/telehealth/PatientTelehealthPortal.tsx`):
+   - Patient-facing portal for telehealth access
+   - Next appointment card with prominent display
+   - Join waiting room functionality (enabled 15 minutes before appointment)
+   - Equipment test dialog (camera, microphone, connection check)
+   - Upcoming and past visits tabs
+   - Info cards (Secure & Private, Easy to Use, Support Available)
+   - Responsive design for mobile devices
+
+7. **Mobile-friendly video interface enhancements**:
+   - Responsive self-view (smaller on mobile: 32x24 vs 48x36)
+   - Chat sidebar full width on mobile
+   - Smaller control buttons on mobile (40px vs 48px)
+   - Screen share and fullscreen hidden on mobile (less useful on phones)
+   - Flexible control bar with wrapping
+
+### Files created:
+- `app/src/components/telehealth/TelehealthDashboard.tsx` - Provider dashboard
+- `app/src/components/telehealth/PatientTelehealthPortal.tsx` - Patient portal
+
+### Files modified:
+- `app/src/components/scheduling/AppointmentDialog.tsx` - Added telehealth toggle
+- `app/src/components/telehealth/VideoConsultation.tsx` - Mobile responsiveness improvements
+- `app/src/components/telehealth/index.ts` - Added new component exports
+
+### Acceptance criteria met:
+- [x] Telehealth appointment type in scheduler (toggle in AppointmentDialog)
+- [x] Virtual waiting room dashboard for providers (integrated in TelehealthDashboard)
+- [x] Quick-start telehealth visit (dialog with patient search)
+- [x] Telehealth visit history (History tab with filters)
+- [x] Session quality metrics (Metrics tab with charts)
+- [x] Patient portal telehealth access (PatientTelehealthPortal component)
+- [x] Mobile-friendly video interface (responsive CSS adjustments)
+
+### Validation:
+- TypeScript compilation passes
+- All tRPC procedures follow existing patterns
+- UI components use shadcn/ui
+- Responsive design for mobile devices
+
+--- Iteration 8 completed at 2026-01-22 ---
+Story: US-223 - Telehealth dashboard and scheduling
+
