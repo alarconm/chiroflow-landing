@@ -134,7 +134,7 @@
         "Integration with SOAP note workflow"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }

@@ -458,3 +458,88 @@ Updated exports:
 
 TypeScript compilation passes
 
+--- Iteration 12 completed at 2026-01-22 00:39:32 ---
+Story: US-206 - Spinal analysis tools
+
+--- Iteration 13 completed at 2026-01-22 ---
+Story: US-207 - Chiropractic clinical dashboard
+
+Implemented:
+
+Backend (chiropracticDashboard router):
+- chiropracticDashboard.getPatientSpineOverview - Patient spine with current subluxations
+  - Returns all active subluxations with severity info
+  - Includes vertebral listings from latest encounter
+  - Groups subluxations by spinal region
+  - Statistics: total count, by severity, by region, average severity, most affected region
+
+- chiropracticDashboard.getAdjustmentTimeline - Adjustment history with timeline view
+  - Groups adjustments by date/encounter
+  - Provider attribution
+  - Response information per adjustment
+  - Pagination support with date filtering
+  - Links to technique and subluxation data
+
+- chiropracticDashboard.getTreatmentResponseTrends - Response trends over time
+  - Response distribution by month (excellent/good/fair/guarded/poor)
+  - Severity changes tracked over time
+  - Overall trend calculation (improving/declining/stable)
+  - Average pain reduction calculation
+  - Configurable time period (3/6/12 months)
+
+- chiropracticDashboard.getSubluxationProgress - Subluxation progress visualization
+  - Per-vertebra progress tracking
+  - First severity vs current severity comparison
+  - Resolved/improved/worsened/unchanged counts
+  - Average severity trend over time
+  - Full history per subluxation with change tracking
+
+- chiropracticDashboard.getTechniqueUsageStats - Technique usage statistics
+  - Usage count by technique with success rate
+  - Grouped by category (Manual, Instrument, Table-Assisted, Low-Force)
+  - Response distribution per technique
+  - Region distribution per technique
+  - Optional filtering by patient, provider, date range
+
+- chiropracticDashboard.getQuickEntryData - Quick adjustment entry interface
+  - Active subluxations with "already adjusted" indicator
+  - Provider's favorite techniques
+  - Frequently used techniques for this patient
+  - Current encounter status
+
+- chiropracticDashboard.getSoapNoteIntegration - SOAP note integration
+  - Encounter details with subluxations and adjustments
+  - Chiropractic exam data
+  - Auto-generated SOAP sections:
+    - Objective: Findings grouped by region
+    - Assessment: Subluxation summary with severity breakdown
+    - Plan: Adjustments by technique with success rate
+
+Frontend Component (ChiropracticDashboard.tsx):
+- Five-tab dashboard interface:
+  1. Spine Overview - Interactive spine diagram with active subluxations list
+  2. Adjustment History - Timeline view of all adjustments
+  3. Response Trends - Monthly response distribution with overall trend
+  4. Subluxation Progress - Progress tracking per vertebra
+  5. Technique Stats - Usage statistics with success rates
+
+- Summary cards showing:
+  - Total active subluxations
+  - Count by region (Cervical, Thoracic, Lumbar, Sacral)
+
+- Quick Adjustment Entry dialog:
+  - Shows unadjusted subluxations for current visit
+  - Provider's favorite techniques
+  - Frequently used techniques
+
+- Integration with InteractiveSpineDiagram component
+- Color-coded severity (green to red scale)
+- Response visualization (excellent to poor)
+
+Component exports:
+- New chiropractic/ directory with ChiropracticDashboard
+- Index file for clean imports
+
+Router registered in routers/index.ts
+TypeScript compilation passes ✓
+

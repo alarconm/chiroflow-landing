@@ -58,6 +58,7 @@ import { adjustmentRouter } from './adjustment';
 import { vertebralListingRouter } from './vertebralListing';
 import { chiropracticExamRouter } from './chiropracticExam';
 import { spinalAnalysisRouter } from './spinalAnalysis';
+import { chiropracticDashboardRouter } from './chiropracticDashboard';
 
 export const appRouter = router({
   auth: authRouter,
@@ -119,6 +120,7 @@ export const appRouter = router({
   vertebralListing: vertebralListingRouter,
   chiropracticExam: chiropracticExamRouter,
   spinalAnalysis: spinalAnalysisRouter,
+  chiropracticDashboard: chiropracticDashboardRouter,
 });
 
 
