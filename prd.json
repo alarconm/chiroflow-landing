@@ -1,128 +1,128 @@
 {
-  "branch": "feature/clearinghouse",
-  "title": "Epic 08: Clearinghouse Integration",
-  "description": "EDI/API integration with clearinghouses for electronic claim submission, eligibility verification, and remittance processing. Enables automated claim workflow.",
-  "epic": "08-clearinghouse",
+  "branch": "feature/payment-processing",
+  "title": "Epic 10: Payment Processing",
+  "description": "Integrated payment processing with Stripe/Square for card payments, payment plans, and automated billing. Supports multiple payment methods and reconciliation.",
+  "epic": "10-payment-processing",
   "dependencies": ["07-billing-claims"],
   "userStories": [
     {
-      "id": "US-069",
-      "title": "Clearinghouse configuration schema",
-      "description": "Create database models for clearinghouse connections and submission tracking.",
+      "id": "US-085",
+      "title": "Payment processor configuration schema",
+      "description": "Create database models for payment processor connections and transaction tracking.",
       "acceptanceCriteria": [
-        "ClearinghouseConfig model with name, type, apiEndpoint, credentials (encrypted)",
-        "ClaimSubmission model with claimId, clearinghouseId, submissionDate, status, response",
-        "EligibilityCheck model with patientId, payerId, checkDate, status, response",
-        "Remittance model (ERA/835) with payerId, checkNumber, amount, receivedDate",
-        "RemittanceLine model linking payments to claims",
+        "PaymentProcessor model with name, type (stripe/square), apiKey (encrypted), webhookSecret",
+        "PaymentTransaction model with patientId, amount, processorId, status, transactionId",
+        "PaymentMethod model with patientId, type (card/bank), last4, expiryDate, isDefault",
+        "PaymentPlan model with patientId, totalAmount, installments, frequency, startDate",
+        "PaymentPlanPayment model linking payments to plans",
         "Prisma migrations run successfully"
       ],
       "priority": 1,
       "passes": true
     },
     {
-      "id": "US-070",
-      "title": "Clearinghouse provider abstraction",
-      "description": "Create provider interface for different clearinghouse integrations.",
+      "id": "US-086",
+      "title": "Payment processor abstraction layer",
+      "description": "Create provider interface for different payment processor integrations.",
       "acceptanceCriteria": [
-        "ClearinghouseProvider interface with submitClaim, checkEligibility, getRemittance methods",
-        "MockClearinghouseProvider for development and testing",
+        "PaymentProvider interface with charge, refund, createCustomer, savePaymentMethod",
+        "StripeProvider implementing the interface",
+        "MockPaymentProvider for development and testing",
         "Environment-based provider selection",
-        "Credential encryption/decryption utilities",
-        "Error handling and retry logic"
+        "Secure credential handling with encryption"
       ],
       "priority": 2,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-071",
-      "title": "EDI 837 claim file generation",
-      "description": "Generate ANSI X12 837P (Professional) claim files from internal claim data.",
+      "id": "US-087",
+      "title": "Card payment processing",
+      "description": "Process credit/debit card payments through integrated payment processor.",
       "acceptanceCriteria": [
-        "claim.generate837 - Create 837P file structure",
-        "ISA/GS envelope segments with proper control numbers",
-        "ST/SE transaction set segments",
-        "2000A/2000B/2300/2400 loops for billing provider, subscriber, claim, service",
-        "Proper segment terminators and element separators",
-        "Validation before generation"
+        "payment.processCard - Charge a card for patient balance",
+        "Secure card entry using Stripe Elements or equivalent",
+        "Store payment method for future use (with patient consent)",
+        "Handle declined cards gracefully with clear error messages",
+        "Create ledger entry and receipt on successful payment",
+        "Email receipt to patient automatically"
       ],
       "priority": 3,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-072",
-      "title": "Electronic claim submission",
-      "description": "Submit claims electronically through clearinghouse API.",
+      "id": "US-088",
+      "title": "Refund processing",
+      "description": "Process refunds through payment processor with proper accounting.",
       "acceptanceCriteria": [
-        "clearinghouse.submitClaim - Submit single claim",
-        "clearinghouse.submitBatch - Submit multiple claims",
-        "Track submission status and response",
-        "Store clearinghouse claim ID for tracking",
-        "Handle submission errors and rejections",
-        "Update claim status based on response"
+        "payment.processRefund - Refund full or partial amount",
+        "Require reason for refund",
+        "Create reversing ledger entry",
+        "Update patient balance",
+        "Email refund confirmation to patient",
+        "Audit trail for all refunds"
       ],
       "priority": 4,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-073",
-      "title": "Real-time eligibility verification",
-      "description": "Check patient insurance eligibility in real-time via clearinghouse.",
+      "id": "US-089",
+      "title": "Payment plans creation and management",
+      "description": "Create and manage payment plans for patients with outstanding balances.",
       "acceptanceCriteria": [
-        "clearinghouse.checkEligibility - Verify patient coverage",
-        "Return coverage status, copay, deductible, coinsurance",
-        "Store eligibility response for reference",
-        "Display eligibility in patient record",
-        "Support primary and secondary insurance",
-        "Cache eligibility for configurable period"
+        "payment.createPlan - Create payment plan with installments",
+        "Support weekly, bi-weekly, monthly frequencies",
+        "Calculate installment amounts automatically",
+        "payment.getPlanStatus - View plan progress and remaining balance",
+        "payment.modifyPlan - Adjust plan terms",
+        "Track missed payments"
       ],
       "priority": 5,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-074",
-      "title": "EDI 835 remittance processing",
-      "description": "Parse and process ERA/835 remittance files for auto-posting.",
+      "id": "US-090",
+      "title": "Automated payment plan billing",
+      "description": "Automatically charge payment plan installments on schedule.",
       "acceptanceCriteria": [
-        "clearinghouse.parseERA - Parse 835 file structure",
-        "Extract payment amounts, adjustments, denials",
-        "Match remittance lines to claims",
-        "clearinghouse.autoPost - Auto-post payments from ERA",
-        "Handle adjustment reason codes",
-        "Generate posting report"
+        "Scheduled job to process due installments",
+        "Retry failed payments with configurable attempts",
+        "Send payment reminder before due date",
+        "Send confirmation on successful payment",
+        "Alert staff on failed payments",
+        "Handle plan completion"
       ],
       "priority": 6,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-083",
-      "title": "Claim status tracking",
-      "description": "Track and display claim status from submission through payment.",
+      "id": "US-091",
+      "title": "Payment webhook handling",
+      "description": "Handle webhooks from payment processor for real-time updates.",
       "acceptanceCriteria": [
-        "clearinghouse.getClaimStatus - Check claim status via API",
-        "Status timeline with dates and notes",
-        "Automatic status polling (configurable interval)",
-        "Status change notifications",
-        "Denial reason code display"
+        "Webhook endpoint for payment processor events",
+        "Handle payment.succeeded, payment.failed events",
+        "Handle refund events",
+        "Handle dispute/chargeback events",
+        "Webhook signature verification for security",
+        "Idempotent webhook processing"
       ],
       "priority": 7,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-084",
-      "title": "Clearinghouse dashboard UI",
-      "description": "Create UI for managing clearinghouse submissions and status.",
+      "id": "US-092",
+      "title": "Payment dashboard UI",
+      "description": "Create UI for processing payments and managing payment settings.",
       "acceptanceCriteria": [
-        "Dashboard at /clearinghouse with submission queue",
-        "Claims ready for submission list",
-        "Submission history with status",
-        "Eligibility check interface",
-        "ERA/remittance inbox",
-        "Clearinghouse configuration settings",
-        "Error and rejection management"
+        "Payment terminal component for taking payments",
+        "Saved payment methods display and management",
+        "Payment plan creation wizard",
+        "Payment history with filtering and export",
+        "Refund interface with reason selection",
+        "Payment processor configuration in settings"
       ],
       "priority": 8,
-      "passes": true
+      "passes": false
     }
   ]
 }
