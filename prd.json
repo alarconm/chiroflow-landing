@@ -1,224 +1,128 @@
 {
-  "branch": "feature/billing-claims",
-  "title": "Epic 07: Billing & Claims Core",
-  "description": "Revenue cycle management foundation for ChiroFlow - superbill generation, charge capture, fee schedules, patient ledgers, insurance management, and claim generation. This epic enables the financial backbone of the practice.",
-  "epic": "07-billing-claims",
-  "dependencies": ["02-patient-management", "05-ehr-soap-notes"],
+  "branch": "feature/clearinghouse",
+  "title": "Epic 08: Clearinghouse Integration",
+  "description": "EDI/API integration with clearinghouses for electronic claim submission, eligibility verification, and remittance processing. Enables automated claim workflow.",
+  "epic": "08-clearinghouse",
+  "dependencies": ["07-billing-claims"],
   "userStories": [
     {
-      "id": "US-057",
-      "title": "Billing database schema",
-      "description": "Extend Prisma schema with models for billing, charges, payments, insurance, fee schedules, and claims.",
+      "id": "US-069",
+      "title": "Clearinghouse configuration schema",
+      "description": "Create database models for clearinghouse connections and submission tracking.",
       "acceptanceCriteria": [
-        "InsurancePolicy model with id, patientId, payerId, memberId, groupNumber, subscriberInfo, copay, deductible, effectiveDate, terminationDate",
-        "InsurancePayer model with id, name, payerId, address, phone, electronicPayerId, claimSubmissionMethod",
-        "FeeSchedule model with id, organizationId, name, isDefault, effectiveDate",
-        "FeeScheduleItem model with id, feeScheduleId, cptCode, fee, allowedAmount",
-        "Charge model with id, encounterId, patientId, cptCode, icd10Codes, units, fee, adjustments, status",
-        "Payment model with id, patientId, amount, paymentMethod, referenceNumber, appliedTo, postedDate",
-        "PatientLedger view combining charges, payments, adjustments",
-        "Claim model with id, patientId, encounterId, insurancePolicyId, status, claimNumber, submittedDate, paidDate",
-        "ClaimLine model with id, claimId, chargeId, lineNumber, serviceDateFrom, serviceDateTo",
+        "ClearinghouseConfig model with name, type, apiEndpoint, credentials (encrypted)",
+        "ClaimSubmission model with claimId, clearinghouseId, submissionDate, status, response",
+        "EligibilityCheck model with patientId, payerId, checkDate, status, response",
+        "Remittance model (ERA/835) with payerId, checkNumber, amount, receivedDate",
+        "RemittanceLine model linking payments to claims",
         "Prisma migrations run successfully"
       ],
       "priority": 1,
       "passes": true
     },
     {
-      "id": "US-058",
-      "title": "Insurance payer management",
-      "description": "Create API for managing insurance payers (the companies) and their submission requirements.",
+      "id": "US-070",
+      "title": "Clearinghouse provider abstraction",
+      "description": "Create provider interface for different clearinghouse integrations.",
       "acceptanceCriteria": [
-        "payer.create - Add new insurance payer with electronic IDs",
-        "payer.update - Modify payer details",
-        "payer.list - List all payers with search/filter",
-        "payer.get - Get payer details with submission requirements",
-        "payer.delete - Soft delete payer",
-        "Seed common payers (Medicare, Medicaid, major insurers)",
-        "Support for primary/secondary/tertiary payer order"
+        "ClearinghouseProvider interface with submitClaim, checkEligibility, getRemittance methods",
+        "MockClearinghouseProvider for development and testing",
+        "Environment-based provider selection",
+        "Credential encryption/decryption utilities",
+        "Error handling and retry logic"
       ],
       "priority": 2,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-059",
-      "title": "Patient insurance policy management",
-      "description": "Create API for managing patient insurance policies and eligibility information.",
+      "id": "US-071",
+      "title": "EDI 837 claim file generation",
+      "description": "Generate ANSI X12 837P (Professional) claim files from internal claim data.",
       "acceptanceCriteria": [
-        "insurancePolicy.create - Add insurance policy to patient",
-        "insurancePolicy.update - Modify policy details",
-        "insurancePolicy.list - List patient's insurance policies",
-        "insurancePolicy.get - Get policy with payer details",
-        "insurancePolicy.delete - Remove policy from patient",
-        "insurancePolicy.setPrimary - Set primary/secondary order",
-        "Support for subscriber vs dependent relationships",
-        "Store copay, deductible, coinsurance amounts"
+        "claim.generate837 - Create 837P file structure",
+        "ISA/GS envelope segments with proper control numbers",
+        "ST/SE transaction set segments",
+        "2000A/2000B/2300/2400 loops for billing provider, subscriber, claim, service",
+        "Proper segment terminators and element separators",
+        "Validation before generation"
       ],
       "priority": 3,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-060",
-      "title": "Fee schedule management",
-      "description": "Create API for managing fee schedules that define pricing for CPT codes.",
+      "id": "US-072",
+      "title": "Electronic claim submission",
+      "description": "Submit claims electronically through clearinghouse API.",
       "acceptanceCriteria": [
-        "feeSchedule.create - Create new fee schedule",
-        "feeSchedule.update - Modify fee schedule details",
-        "feeSchedule.list - List organization fee schedules",
-        "feeSchedule.get - Get fee schedule with all items",
-        "feeSchedule.delete - Delete fee schedule",
-        "feeSchedule.setDefault - Set as organization default",
-        "feeScheduleItem.upsert - Add/update fee for CPT code",
-        "feeScheduleItem.bulkImport - Import fees from CSV",
-        "Support multiple fee schedules (Cash, Insurance A, Insurance B)"
+        "clearinghouse.submitClaim - Submit single claim",
+        "clearinghouse.submitBatch - Submit multiple claims",
+        "Track submission status and response",
+        "Store clearinghouse claim ID for tracking",
+        "Handle submission errors and rejections",
+        "Update claim status based on response"
       ],
       "priority": 4,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-061",
-      "title": "Charge capture from encounters",
-      "description": "Create API for capturing charges from clinical encounters. Link procedures to billable charges.",
+      "id": "US-073",
+      "title": "Real-time eligibility verification",
+      "description": "Check patient insurance eligibility in real-time via clearinghouse.",
       "acceptanceCriteria": [
-        "charge.createFromEncounter - Generate charges from encounter procedures",
-        "charge.create - Manual charge entry",
-        "charge.update - Modify charge details (units, fee, modifiers)",
-        "charge.list - List charges by patient, date range, status",
-        "charge.get - Get charge with linked encounter/procedure",
-        "charge.void - Void a charge with reason",
-        "Auto-calculate fee from fee schedule",
-        "Support for modifiers (-25, -59, etc.)",
-        "Charge status: PENDING, BILLED, PAID, ADJUSTED, VOID"
+        "clearinghouse.checkEligibility - Verify patient coverage",
+        "Return coverage status, copay, deductible, coinsurance",
+        "Store eligibility response for reference",
+        "Display eligibility in patient record",
+        "Support primary and secondary insurance",
+        "Cache eligibility for configurable period"
       ],
       "priority": 5,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-062",
-      "title": "Superbill generation",
-      "description": "Generate superbills (encounter forms) for patient checkout and billing reference.",
+      "id": "US-074",
+      "title": "EDI 835 remittance processing",
+      "description": "Parse and process ERA/835 remittance files for auto-posting.",
       "acceptanceCriteria": [
-        "superbill.generate - Create superbill from encounter",
-        "superbill.get - Get superbill with all details",
-        "superbill.list - List superbills by date range",
-        "Include patient demographics",
-        "Include diagnoses (ICD-10) with order",
-        "Include procedures (CPT) with fees",
-        "Include provider information and NPI",
-        "Include insurance information",
-        "PDF generation for printing",
-        "Support for walkout statement (patient portion)"
+        "clearinghouse.parseERA - Parse 835 file structure",
+        "Extract payment amounts, adjustments, denials",
+        "Match remittance lines to claims",
+        "clearinghouse.autoPost - Auto-post payments from ERA",
+        "Handle adjustment reason codes",
+        "Generate posting report"
       ],
       "priority": 6,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-063",
-      "title": "Payment posting",
-      "description": "Create API for posting patient and insurance payments to charges.",
+      "id": "US-083",
+      "title": "Claim status tracking",
+      "description": "Track and display claim status from submission through payment.",
       "acceptanceCriteria": [
-        "payment.create - Post new payment",
-        "payment.update - Modify payment details",
-        "payment.list - List payments by patient, date range",
-        "payment.get - Get payment with allocations",
-        "payment.void - Void payment with reason",
-        "payment.apply - Apply payment to specific charges",
-        "payment.unapply - Remove payment from charges",
-        "Support payment methods: Cash, Check, Credit Card, Insurance",
-        "Auto-allocation option (oldest first)",
-        "Overpayment handling (credit balance)"
+        "clearinghouse.getClaimStatus - Check claim status via API",
+        "Status timeline with dates and notes",
+        "Automatic status polling (configurable interval)",
+        "Status change notifications",
+        "Denial reason code display"
       ],
       "priority": 7,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-064",
-      "title": "Patient ledger and statements",
-      "description": "Create patient financial ledger view and statement generation.",
+      "id": "US-084",
+      "title": "Clearinghouse dashboard UI",
+      "description": "Create UI for managing clearinghouse submissions and status.",
       "acceptanceCriteria": [
-        "ledger.getByPatient - Get complete patient ledger",
-        "ledger.getBalance - Get current patient balance",
-        "ledger.getTransactions - Get transactions with pagination",
-        "statement.generate - Generate patient statement PDF",
-        "statement.list - List generated statements",
-        "Include running balance calculation",
-        "Show charges, payments, adjustments chronologically",
-        "Support date range filtering",
-        "Statement includes payment instructions and aging"
+        "Dashboard at /clearinghouse with submission queue",
+        "Claims ready for submission list",
+        "Submission history with status",
+        "Eligibility check interface",
+        "ERA/remittance inbox",
+        "Clearinghouse configuration settings",
+        "Error and rejection management"
       ],
       "priority": 8,
-      "passes": true
-    },
-    {
-      "id": "US-065",
-      "title": "Claim creation and management",
-      "description": "Create API for generating and managing insurance claims.",
-      "acceptanceCriteria": [
-        "claim.create - Create claim from charges",
-        "claim.update - Modify claim details",
-        "claim.list - List claims by status, payer, date",
-        "claim.get - Get claim with all lines and history",
-        "claim.submit - Mark claim as submitted",
-        "claim.addNote - Add note to claim",
-        "claim.void - Void claim with reason",
-        "Claim status: DRAFT, READY, SUBMITTED, ACCEPTED, REJECTED, PAID, DENIED",
-        "Support primary and secondary claims",
-        "Claim validation before submission"
-      ],
-      "priority": 9,
-      "passes": true
-    },
-    {
-      "id": "US-066",
-      "title": "CMS-1500 claim form generation",
-      "description": "Generate CMS-1500 (HCFA) claim forms for paper and electronic submission.",
-      "acceptanceCriteria": [
-        "claim.generateCMS1500 - Generate CMS-1500 data structure",
-        "claim.getCMS1500PDF - Generate printable CMS-1500 PDF",
-        "All 33 boxes populated correctly",
-        "Support for primary and secondary payer",
-        "Include provider NPI and taxonomy",
-        "Include facility information",
-        "Diagnosis pointer mapping",
-        "Modifier handling",
-        "Place of service codes"
-      ],
-      "priority": 10,
-      "passes": true
-    },
-    {
-      "id": "US-067",
-      "title": "Billing dashboard and reports",
-      "description": "Create billing dashboard UI with key metrics and reports.",
-      "acceptanceCriteria": [
-        "Dashboard at /billing with summary metrics",
-        "Today's charges and collections",
-        "Unbilled encounters list",
-        "Claims pending submission",
-        "AR aging summary (0-30, 31-60, 61-90, 90+)",
-        "Recent payments list",
-        "Quick actions: Post Payment, Create Claim, Generate Statement",
-        "Filter by date range and provider"
-      ],
-      "priority": 11,
-      "passes": true
-    },
-    {
-      "id": "US-068",
-      "title": "Patient billing UI",
-      "description": "Create patient-level billing interface for managing charges and payments.",
-      "acceptanceCriteria": [
-        "Patient billing tab at /patients/[id]?tab=billing",
-        "Insurance policies section with add/edit",
-        "Charges list with status indicators",
-        "Payments list with allocation details",
-        "Current balance prominently displayed",
-        "Quick actions: Add Charge, Post Payment, Generate Statement",
-        "Claims associated with patient",
-        "Ledger transaction history"
-      ],
-      "priority": 12,
-      "passes": true
+      "passes": false
     }
   ]
 }
