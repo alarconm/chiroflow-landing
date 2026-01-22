@@ -225,8 +225,58 @@
   ✅ Handle family members calling
   ✅ Privacy-compliant identification
 
+#### US-305: Smart escalation (COMPLETED)
+- Created comprehensive EscalationAgent class in `app/src/lib/ai-receptionist/escalation-agent.ts`:
+  - Frustration detection with pattern matching (multiple indicators)
+  - Urgency detection for medical emergencies and urgent situations
+  - Clinical question detection requiring provider input
+  - Billing dispute detection
+  - Human request detection (explicit requests to speak with a person)
+  - Repeated failure detection (AI unable to help)
+  - Low confidence detection
+- Main escalation methods:
+  - analyzeForEscalation - Analyze conversation for escalation triggers
+  - escalate - Transfer conversation to human staff with context handoff
+  - checkAndEscalate - Auto-check and escalate if needed
+- Detection patterns:
+  - 10+ frustration patterns (caps, punctuation, keywords)
+  - 8+ urgency patterns (emergency keywords, pain levels, medical terms)
+  - 8+ clinical patterns (medication, diagnosis, test results)
+  - 6+ billing patterns (disputes, insurance, refunds)
+  - 7+ human request patterns ("speak to a human", "real person")
+- Context handoff for human staff:
+  - Patient info, conversation summary, topics discussed
+  - Sentiment analysis (positive/neutral/negative/frustrated)
+  - Pending requests and suggested actions
+  - Last 10 transcript entries for context
+- Escalation metrics tracking:
+  - Total escalations by reason
+  - Average urgency and resolution time
+  - Escalation rate percentage
+  - Top reasons analysis
+- Added tRPC endpoints in ai-receptionist.ts:
+  - aiReceptionist.escalate - Manual escalation with context
+  - aiReceptionist.analyzeForEscalation - Analyze call for triggers
+  - aiReceptionist.checkAndEscalate - Auto-check and escalate
+  - aiReceptionist.detectFrustration - Frustration analysis endpoint
+  - aiReceptionist.detectUrgency - Urgency analysis endpoint
+  - aiReceptionist.detectClinicalQuestion - Clinical question detection
+  - aiReceptionist.detectBillingDispute - Billing dispute detection
+  - aiReceptionist.detectHumanRequest - Human request detection
+  - aiReceptionist.getEscalationMetrics - Metrics for date range
+  - aiReceptionist.recordEscalationFeedback - Record if escalation was appropriate
+  - aiReceptionist.getEscalationContext - Get full context for escalation
+- Updated exports in ai-receptionist/index.ts
+- All acceptance criteria met:
+  ✅ aiReceptionist.escalate - Transfer to human with context
+  ✅ Detect frustration or urgency via pattern matching
+  ✅ Clinical questions trigger escalation
+  ✅ Billing disputes trigger escalation
+  ✅ Patient request for human triggers immediate transfer
+  ✅ Context handoff to human staff (summary, topics, transcript)
+  ✅ Escalation metrics tracking (rate, reasons, resolution time)
+
 ### Pending Stories
-- US-305: Smart escalation
 - US-306: Multi-channel support
 - US-307: AI receptionist dashboard
 
@@ -258,3 +308,9 @@ Story: US-303 - FAQ and information agent
 --- Iteration 5 completed at 2026-01-22 ---
 Story: US-304 - Patient identification
 
+--- Iteration 5 completed at 2026-01-22 09:35:40 ---
+Story: US-304 - Patient identification
+
+
+--- Iteration 6 completed at 2026-01-22 09:41:52 ---
+Story: US-305 - Smart escalation

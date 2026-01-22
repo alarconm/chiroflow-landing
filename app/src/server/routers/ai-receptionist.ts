@@ -15,6 +15,7 @@ import {
   createSchedulingAgent,
   createFAQAgent,
   createPatientIdentificationAgent,
+  createEscalationAgent,
   type VoiceServiceConfig,
   type BusinessHours,
   type EscalationRule,
@@ -22,6 +23,7 @@ import {
   type FAQRequest,
   type PatientIdentificationRequest,
   type NewPatientInfo,
+  type EscalationRequest,
 } from '@/lib/ai-receptionist';
 import type { Prisma, AIConversationStatus, ConversationChannel } from '@prisma/client';
 
@@ -2137,5 +2139,545 @@ export const aiReceptionistRouter = router({
       });
 
       return { success: true };
+    }),
+
+  // ==================== Smart Escalation Agent (US-305) ====================
+
+  /**
+   * Escalate conversation to human staff
+   * US-305: Smart escalation
+   */
+  escalate: protectedProcedure
+    .input(
+      z.object({
+        conversationId: z.string().optional(),
+        reason: escalationReasonSchema,
+        contextSummary: z.string(),
+        suggestedActions: z.array(z.string()).optional(),
+        urgencyLevel: z.number().min(1).max(10).optional(),
+        targetUserId: z.string().optional(),
+        callSid: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const escalationAgent = createEscalationAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const request: EscalationRequest = {
+        conversationId: input.conversationId,
+        reason: input.reason,
+        contextSummary: input.contextSummary,
+        suggestedActions: input.suggestedActions,
+        urgencyLevel: input.urgencyLevel,
+        targetUserId: input.targetUserId,
+        callSid: input.callSid,
+      };
+
+      const result = await escalationAgent.escalate(request);
+
+      await auditLog('CREATE', 'AIReceptionistEscalation', {
+        entityId: result.escalationId || 'unknown',
+        changes: {
+          reason: input.reason,
+          urgencyLevel: result.urgencyLevel,
+          conversationId: input.conversationId,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return result;
+    }),
+
+  /**
+   * Analyze conversation for escalation triggers
+   * US-305: Smart escalation
+   */
+  analyzeForEscalation: protectedProcedure
+    .input(
+      z.object({
+        callSid: z.string(),
+        latestInput: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const voiceConfig = await getVoiceConfig(ctx.prisma, ctx.user.organizationId);
+
+      if (!voiceConfig) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Voice configuration not found',
+        });
+      }
+
+      const voiceService = createVoiceService(ctx.prisma, voiceConfig);
+      const callState = voiceService.getCallState(input.callSid);
+
+      if (!callState) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Call not found',
+        });
+      }
+
+      const escalationAgent = createEscalationAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const analysis = await escalationAgent.analyzeForEscalation(callState, input.latestInput);
+
+      return analysis;
+    }),
+
+  /**
+   * Check and auto-escalate if needed
+   * US-305: Smart escalation
+   */
+  checkAndEscalate: protectedProcedure
+    .input(
+      z.object({
+        callSid: z.string(),
+        latestInput: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const voiceConfig = await getVoiceConfig(ctx.prisma, ctx.user.organizationId);
+
+      if (!voiceConfig) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Voice configuration not found',
+        });
+      }
+
+      const voiceService = createVoiceService(ctx.prisma, voiceConfig);
+      const callState = voiceService.getCallState(input.callSid);
+
+      if (!callState) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Call not found',
+        });
+      }
+
+      const escalationAgent = createEscalationAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+        escalationPhone: voiceConfig.escalationPhone || undefined,
+      });
+
+      const result = await escalationAgent.checkAndEscalate(callState, input.latestInput);
+
+      if (result.shouldEscalate) {
+        await auditLog('CREATE', 'AIReceptionistEscalation', {
+          entityId: result.escalationId || 'auto',
+          changes: {
+            reason: result.reason,
+            urgencyLevel: result.urgencyLevel,
+            callSid: input.callSid,
+            autoDetected: true,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+      }
+
+      return result;
+    }),
+
+  /**
+   * Detect frustration level from input
+   * US-305: Smart escalation
+   */
+  detectFrustration: protectedProcedure
+    .input(
+      z.object({
+        callSid: z.string().optional(),
+        userInput: z.string(),
+        transcriptHistory: z
+          .array(
+            z.object({
+              role: z.enum(['user', 'assistant', 'system']),
+              content: z.string(),
+              timestamp: z.coerce.date(),
+              confidence: z.number().optional(),
+            })
+          )
+          .optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const escalationAgent = createEscalationAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      // Build minimal call state for analysis
+      const callState = {
+        callSid: input.callSid || `API-${Date.now()}`,
+        organizationId: ctx.user.organizationId,
+        phoneNumber: '',
+        status: 'in-progress' as const,
+        direction: 'inbound' as const,
+        startedAt: new Date(),
+        recordingConsent: false,
+        transcript: input.transcriptHistory || [],
+        context: {
+          patientIdentified: false,
+          intents: [] as ('BOOK_APPOINTMENT' | 'RESCHEDULE_APPOINTMENT' | 'CANCEL_APPOINTMENT' | 'ANSWER_QUESTION' | 'IDENTIFY_PATIENT' | 'CREATE_PATIENT' | 'VERIFY_INSURANCE' | 'SEND_CONFIRMATION' | 'TRANSFER_CALL' | 'TAKE_MESSAGE' | 'COLLECT_INFO')[],
+          turnCount: (input.transcriptHistory?.length || 0) + 1,
+          frustrationLevel: 0,
+          silenceCount: 0,
+          retryCount: 0,
+        },
+      };
+
+      const analysis = await escalationAgent.analyzeForEscalation(callState, input.userInput);
+
+      // Extract frustration-specific data
+      const frustrationIndicator = analysis.indicators.find(i => i.type === 'frustration');
+
+      return {
+        frustrationDetected: frustrationIndicator?.detected || false,
+        frustrationScore: frustrationIndicator?.score || 0,
+        evidence: frustrationIndicator?.evidence,
+        shouldEscalate: analysis.shouldEscalate && analysis.reason === 'FRUSTRATION_DETECTED',
+        overallAnalysis: analysis,
+      };
+    }),
+
+  /**
+   * Detect urgency level from input
+   * US-305: Smart escalation
+   */
+  detectUrgency: protectedProcedure
+    .input(
+      z.object({
+        userInput: z.string(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const escalationAgent = createEscalationAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      // Build minimal call state
+      const callState = {
+        callSid: `API-${Date.now()}`,
+        organizationId: ctx.user.organizationId,
+        phoneNumber: '',
+        status: 'in-progress' as const,
+        direction: 'inbound' as const,
+        startedAt: new Date(),
+        recordingConsent: false,
+        transcript: [],
+        context: {
+          patientIdentified: false,
+          intents: [] as ('BOOK_APPOINTMENT' | 'RESCHEDULE_APPOINTMENT' | 'CANCEL_APPOINTMENT' | 'ANSWER_QUESTION' | 'IDENTIFY_PATIENT' | 'CREATE_PATIENT' | 'VERIFY_INSURANCE' | 'SEND_CONFIRMATION' | 'TRANSFER_CALL' | 'TAKE_MESSAGE' | 'COLLECT_INFO')[],
+          turnCount: 1,
+          frustrationLevel: 0,
+          silenceCount: 0,
+          retryCount: 0,
+        },
+      };
+
+      const analysis = await escalationAgent.analyzeForEscalation(callState, input.userInput);
+
+      // Extract urgency-specific data
+      const urgencyIndicator = analysis.indicators.find(i => i.type === 'urgency');
+
+      return {
+        urgencyDetected: urgencyIndicator?.detected || false,
+        urgencyScore: urgencyIndicator?.score || 0,
+        evidence: urgencyIndicator?.evidence,
+        urgencyLevel: analysis.urgencyLevel,
+        shouldEscalate: analysis.shouldEscalate && analysis.reason === 'URGENCY_DETECTED',
+      };
+    }),
+
+  /**
+   * Detect if input contains clinical questions
+   * US-305: Smart escalation
+   */
+  detectClinicalQuestion: protectedProcedure
+    .input(
+      z.object({
+        userInput: z.string(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const escalationAgent = createEscalationAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      // Build minimal call state
+      const callState = {
+        callSid: `API-${Date.now()}`,
+        organizationId: ctx.user.organizationId,
+        phoneNumber: '',
+        status: 'in-progress' as const,
+        direction: 'inbound' as const,
+        startedAt: new Date(),
+        recordingConsent: false,
+        transcript: [],
+        context: {
+          patientIdentified: false,
+          intents: [] as ('BOOK_APPOINTMENT' | 'RESCHEDULE_APPOINTMENT' | 'CANCEL_APPOINTMENT' | 'ANSWER_QUESTION' | 'IDENTIFY_PATIENT' | 'CREATE_PATIENT' | 'VERIFY_INSURANCE' | 'SEND_CONFIRMATION' | 'TRANSFER_CALL' | 'TAKE_MESSAGE' | 'COLLECT_INFO')[],
+          turnCount: 1,
+          frustrationLevel: 0,
+          silenceCount: 0,
+          retryCount: 0,
+        },
+      };
+
+      const analysis = await escalationAgent.analyzeForEscalation(callState, input.userInput);
+
+      // Extract clinical question indicator
+      const clinicalIndicator = analysis.indicators.find(i => i.type === 'clinical');
+
+      return {
+        isClinicalQuestion: clinicalIndicator?.detected || false,
+        confidence: clinicalIndicator?.score || 0,
+        evidence: clinicalIndicator?.evidence,
+        shouldEscalate: analysis.shouldEscalate && analysis.reason === 'CLINICAL_QUESTION',
+      };
+    }),
+
+  /**
+   * Detect if input contains billing disputes
+   * US-305: Smart escalation
+   */
+  detectBillingDispute: protectedProcedure
+    .input(
+      z.object({
+        userInput: z.string(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const escalationAgent = createEscalationAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      // Build minimal call state
+      const callState = {
+        callSid: `API-${Date.now()}`,
+        organizationId: ctx.user.organizationId,
+        phoneNumber: '',
+        status: 'in-progress' as const,
+        direction: 'inbound' as const,
+        startedAt: new Date(),
+        recordingConsent: false,
+        transcript: [],
+        context: {
+          patientIdentified: false,
+          intents: [] as ('BOOK_APPOINTMENT' | 'RESCHEDULE_APPOINTMENT' | 'CANCEL_APPOINTMENT' | 'ANSWER_QUESTION' | 'IDENTIFY_PATIENT' | 'CREATE_PATIENT' | 'VERIFY_INSURANCE' | 'SEND_CONFIRMATION' | 'TRANSFER_CALL' | 'TAKE_MESSAGE' | 'COLLECT_INFO')[],
+          turnCount: 1,
+          frustrationLevel: 0,
+          silenceCount: 0,
+          retryCount: 0,
+        },
+      };
+
+      const analysis = await escalationAgent.analyzeForEscalation(callState, input.userInput);
+
+      // Extract billing indicator
+      const billingIndicator = analysis.indicators.find(i => i.type === 'billing');
+
+      return {
+        isBillingDispute: billingIndicator?.detected || false,
+        confidence: billingIndicator?.score || 0,
+        evidence: billingIndicator?.evidence,
+        shouldEscalate: analysis.shouldEscalate && analysis.reason === 'BILLING_DISPUTE',
+      };
+    }),
+
+  /**
+   * Detect if user is requesting to speak with a human
+   * US-305: Smart escalation
+   */
+  detectHumanRequest: protectedProcedure
+    .input(
+      z.object({
+        userInput: z.string(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const escalationAgent = createEscalationAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      // Build minimal call state
+      const callState = {
+        callSid: `API-${Date.now()}`,
+        organizationId: ctx.user.organizationId,
+        phoneNumber: '',
+        status: 'in-progress' as const,
+        direction: 'inbound' as const,
+        startedAt: new Date(),
+        recordingConsent: false,
+        transcript: [],
+        context: {
+          patientIdentified: false,
+          intents: [] as ('BOOK_APPOINTMENT' | 'RESCHEDULE_APPOINTMENT' | 'CANCEL_APPOINTMENT' | 'ANSWER_QUESTION' | 'IDENTIFY_PATIENT' | 'CREATE_PATIENT' | 'VERIFY_INSURANCE' | 'SEND_CONFIRMATION' | 'TRANSFER_CALL' | 'TAKE_MESSAGE' | 'COLLECT_INFO')[],
+          turnCount: 1,
+          frustrationLevel: 0,
+          silenceCount: 0,
+          retryCount: 0,
+        },
+      };
+
+      const analysis = await escalationAgent.analyzeForEscalation(callState, input.userInput);
+
+      // Extract human request indicator
+      const requestIndicator = analysis.indicators.find(i => i.type === 'request');
+
+      return {
+        humanRequested: requestIndicator?.detected || false,
+        evidence: requestIndicator?.evidence,
+        shouldEscalate: analysis.shouldEscalate && analysis.reason === 'PATIENT_REQUEST',
+      };
+    }),
+
+  /**
+   * Get escalation metrics
+   * US-305: Smart escalation
+   */
+  getEscalationMetrics: protectedProcedure
+    .input(
+      z.object({
+        startDate: z.coerce.date(),
+        endDate: z.coerce.date(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const escalationAgent = createEscalationAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      return escalationAgent.getMetrics(input.startDate, input.endDate);
+    }),
+
+  /**
+   * Record feedback on an escalation (was it appropriate?)
+   * US-305: Smart escalation
+   */
+  recordEscalationFeedback: protectedProcedure
+    .input(
+      z.object({
+        escalationId: z.string(),
+        wasAppropriate: z.boolean(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const escalation = await ctx.prisma.aIReceptionistEscalation.findFirst({
+        where: {
+          id: input.escalationId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!escalation) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Escalation not found',
+        });
+      }
+
+      const escalationAgent = createEscalationAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      await escalationAgent.recordEscalationFeedback(
+        input.escalationId,
+        input.wasAppropriate,
+        input.notes
+      );
+
+      await auditLog('UPDATE', 'AIReceptionistEscalation', {
+        entityId: input.escalationId,
+        changes: {
+          feedbackProvided: true,
+          wasAppropriate: input.wasAppropriate,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { success: true };
+    }),
+
+  /**
+   * Get context handoff for an escalation
+   * US-305: Smart escalation
+   */
+  getEscalationContext: protectedProcedure
+    .input(
+      z.object({
+        escalationId: z.string(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const escalation = await ctx.prisma.aIReceptionistEscalation.findFirst({
+        where: {
+          id: input.escalationId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          conversation: {
+            include: {
+              patient: {
+                include: {
+                  demographics: {
+                    select: {
+                      firstName: true,
+                      lastName: true,
+                    },
+                  },
+                },
+              },
+              actions: {
+                orderBy: { executedAt: 'asc' },
+              },
+            },
+          },
+        },
+      });
+
+      if (!escalation) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Escalation not found',
+        });
+      }
+
+      // Build context handoff from escalation data
+      const conversation = escalation.conversation;
+      const patient = conversation?.patient;
+      const demographics = patient?.demographics;
+
+      const patientName = demographics
+        ? `${demographics.firstName} ${demographics.lastName}`
+        : undefined;
+
+      // Extract topics from actions
+      const topics = conversation?.actions?.map(a => a.actionType) || [];
+      const uniqueTopics = [...new Set(topics)];
+
+      return {
+        escalationId: escalation.id,
+        conversationId: escalation.conversationId,
+        patientId: patient?.id,
+        patientName,
+        reason: escalation.reason,
+        urgencyLevel: escalation.urgencyLevel,
+        contextSummary: escalation.contextSummary,
+        suggestedActions: escalation.suggestedActions as string[],
+        topicsDiscussed: uniqueTopics,
+        transcript: conversation?.transcript || [],
+        createdAt: escalation.createdAt,
+        assignedTo: escalation.assignedToUserId,
+        resolved: !!escalation.resolvedAt,
+        resolutionNotes: escalation.resolutionNotes,
+      };
     }),
 });

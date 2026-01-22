@@ -47,3 +47,16 @@ export {
   type NewPatientInfo,
   type PatientIdentificationConfig,
 } from './patient-identification-agent';
+
+// Escalation Agent (US-305)
+export {
+  EscalationAgent,
+  createEscalationAgent,
+  type EscalationRequest,
+  type EscalationResponse,
+  type ContextHandoff,
+  type EscalationAnalysis,
+  type EscalationIndicator,
+  type EscalationMetrics,
+  type EscalationAgentConfig,
+} from './escalation-agent';
