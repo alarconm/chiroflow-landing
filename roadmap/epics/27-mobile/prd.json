@@ -19,7 +19,7 @@
         "Push notification registration endpoint"
       ],
       "priority": 1,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-265",
@@ -35,7 +35,7 @@
         "Notification history"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-266",
@@ -51,7 +51,7 @@
         "Pull-to-refresh"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-267",
@@ -67,7 +67,7 @@
         "Offline draft saving"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-268",
@@ -83,7 +83,7 @@
         "Check-in on arrival"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-269",
@@ -99,7 +99,7 @@
         "Symptom tracking"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-270",
@@ -115,7 +115,7 @@
         "Manual sync trigger"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-271",
@@ -131,7 +131,7 @@
         "Privacy policy and terms"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }
