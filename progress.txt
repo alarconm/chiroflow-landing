@@ -80,3 +80,53 @@ Added audit action types for technique operations
 Router registered in index.ts
 TypeScript compilation passes ✓
 
+--- Iteration 7 completed at 2026-01-22 00:09:35 ---
+Story: US-201 - Technique library management
+
+--- Iteration 8 completed at 2026-01-22 ---
+Story: US-202 - Subluxation documentation
+
+Implemented:
+- subluxation.create - Document subluxation finding with vertebra, listing, severity
+  - Auto-detects spinal region from vertebra (C1-C7=Cervical, T1-T12=Thoracic, etc.)
+  - Creates initial history entry for tracking
+  - Prevents duplicates at same vertebra in same encounter
+- subluxation.update - Update subluxation status with history tracking
+  - Records changes in SubluxationHistory with changeReason
+  - Supports marking as resolved with resolvedNotes
+- subluxation.list - List patient subluxations by region
+  - Filter by region, encounter, include/exclude resolved
+  - Groups results by SpinalRegion
+  - Includes severity info with color coding
+- subluxation.get - Get full subluxation details with history and adjustments
+- subluxation.getHistory - Get subluxation timeline
+  - Shows all changes over time with who documented and when
+  - Includes severity change direction (improved/worsened)
+- subluxation.compare - Compare subluxations between visits
+  - Identifies new, resolved, improved, worsened, unchanged
+  - Calculates overall treatment trend
+  - Summary statistics for progress tracking
+- subluxation.delete - Delete subluxation (only if unsigned and no adjustments)
+- subluxation.getSeverityScale - Returns severity scale info (1-5 with colors)
+- subluxation.getListingNotations - Returns Gonstead and Palmer listing codes
+- subluxation.getPatientOverview - Complete spine overview with all active subluxations
+
+Standard listing notation support:
+- Gonstead: PLS, PRS, PLI, PRI, AS, PI, IN, EX, AS-IN, AS-EX, PI-IN, PI-EX
+- Palmer: PL, PR, P, A, L, R, I, S, RL, RR, PS, AS
+- Full descriptions for each listing code
+
+Severity scale (1-5) with visual indicators:
+- 1 MINIMAL (#22c55e green) - Minimal dysfunction
+- 2 MILD (#84cc16 lime) - Mild dysfunction
+- 3 MODERATE (#f59e0b amber) - Moderate dysfunction
+- 4 SEVERE (#f97316 orange) - Severe dysfunction
+- 5 EXTREME (#ef4444 red) - Extreme dysfunction
+
+Body diagram integration via bodyDiagramId foreign key
+Comparison view shows side-by-side visit comparison with change tracking
+
+Added audit action types: SUBLUXATION_CREATE, SUBLUXATION_UPDATE, SUBLUXATION_DELETE, SUBLUXATION_RESOLVE
+Router registered in index.ts
+TypeScript compilation passes ✓
+

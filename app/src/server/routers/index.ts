@@ -53,6 +53,7 @@ import { aiBillingRouter } from './aiBilling';
 import { marketingRouter } from './marketing';
 // Chiropractic Clinical Intelligence (Epic 19)
 import { techniqueRouter } from './technique';
+import { subluxationRouter } from './subluxation';
 
 export const appRouter = router({
   auth: authRouter,
@@ -109,6 +110,7 @@ export const appRouter = router({
   marketing: marketingRouter,
   // Chiropractic Clinical Intelligence (Epic 19)
   technique: techniqueRouter,
+  subluxation: subluxationRouter,
 });
 
 export type AppRouter = typeof appRouter;
