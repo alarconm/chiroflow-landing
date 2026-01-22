@@ -165,6 +165,10 @@ model Organization {
   remoteMonitoringSubmissions RemoteMonitoringSubmission[]
   remoteMonitoringAlerts      RemoteMonitoringAlert[]
 
+  // Imaging & X-Ray Integration relations (Epic 22)
+  imagingStudies  ImagingStudy[]
+  imagingReports  ImagingReport[]
+
   @@index([subdomain])
 }
 
@@ -402,6 +406,9 @@ model Patient {
   // Remote Monitoring relations (US-222)
   remoteMonitoringSubmissions RemoteMonitoringSubmission[]
   remoteMonitoringAlerts      RemoteMonitoringAlert[]
+
+  // Imaging & X-Ray Integration relations (Epic 22)
+  imagingStudies ImagingStudy[]
 
   @@unique([mrn, organizationId])
   @@index([organizationId])
@@ -750,6 +757,10 @@ model Provider {
 
   // Remote Monitoring relations (US-222)
   remoteMonitoringAlerts RemoteMonitoringAlert[]
+
+  // Imaging & X-Ray Integration relations (Epic 22)
+  orderedImagingStudies ImagingStudy[] @relation("OrderingProvider")
+  imagingReports        ImagingReport[]
 
   @@index([organizationId])
   @@index([isActive])
@@ -1185,6 +1196,9 @@ model Encounter {
   // Remote Monitoring relations (US-222)
   remoteMonitoringSubmissions RemoteMonitoringSubmission[]
 
+  // Imaging & X-Ray Integration relations (Epic 22)
+  imagingStudies ImagingStudy[]
+
   @@index([organizationId])
   @@index([patientId])
   @@index([providerId])
@@ -1389,6 +1403,9 @@ model TreatmentPlan {
   // Relations
   goals      TreatmentGoal[]
   encounters Encounter[]
+
+  // Imaging & X-Ray Integration relations (Epic 22)
+  imagingReports ImagingReport[]
 
   @@index([organizationId])
   @@index([patientId])
@@ -7931,4 +7948,283 @@ model RemoteMonitoringAlert {
   @@index([isRead])
   @@index([priority])
   @@index([createdAt])
+}
+
+// ============================================
+// EPIC 22: IMAGING & X-RAY INTEGRATION
+// ============================================
+
+// Imaging modality types
+enum ImagingModality {
+  XRAY        // Standard X-ray
+  MRI         // Magnetic Resonance Imaging
+  CT          // Computed Tomography
+  ULTRASOUND  // Ultrasound/Sonography
+}
+
+// Imaging study status
+enum ImagingStudyStatus {
+  SCHEDULED   // Study scheduled but not performed
+  IN_PROGRESS // Study being performed
+  COMPLETED   // Study completed, images available
+  REPORTED    // Final report issued
+  CANCELLED   // Study cancelled
+}
+
+// Annotation type for image markup
+enum ImagingAnnotationType {
+  ARROW       // Arrow pointing to area of interest
+  LINE        // Measurement line
+  TEXT        // Text label
+  CIRCLE      // Circle/ellipse highlight
+  RECTANGLE   // Rectangle highlight
+  ANGLE       // Angle measurement
+  COBB_ANGLE  // Cobb angle for scoliosis
+  FREEHAND    // Freeform drawing
+}
+
+// Measurement type for imaging
+enum ImagingMeasurementType {
+  LINEAR        // Linear distance measurement
+  ANGLE         // Angle measurement
+  COBB_ANGLE    // Cobb angle for scoliosis
+  CERVICAL_LORDOSIS   // Cervical lordosis angle
+  LUMBAR_LORDOSIS     // Lumbar lordosis angle
+  DISC_HEIGHT         // Disc space height
+  VERTEBRAL_HEIGHT    // Vertebral body height
+  ATLAS_PLANE         // Atlas plane line
+  AREA                // Area measurement
+}
+
+// Report status for imaging reports
+enum ImagingReportStatus {
+  DRAFT       // Report in progress
+  PENDING_REVIEW  // Awaiting review
+  FINAL       // Final report
+  AMENDED     // Report has been amended
+  ADDENDUM    // Addendum added
+}
+
+// Imaging study - represents a collection of images from one session
+model ImagingStudy {
+  id           String             @id @default(cuid())
+  studyDate    DateTime           // When the study was performed
+  modality     ImagingModality    // Type of imaging
+  bodyPart     String             // Body region imaged (e.g., "Cervical Spine", "Lumbar Spine")
+  status       ImagingStudyStatus @default(SCHEDULED)
+
+  // Study identification
+  accessionNumber String?         // Unique study identifier
+  studyInstanceUid String?        // DICOM Study Instance UID
+  description     String?         // Study description
+
+  // Clinical context
+  indication      String?         // Reason for study
+  clinicalHistory String?         @db.Text
+
+  // Technical info
+  equipment       String?         // Equipment/machine used
+  technician      String?         // Technician who performed study
+
+  // Metadata
+  numberOfImages  Int             @default(0)
+
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  // Relations
+  patientId    String
+  patient      Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  orderingProviderId String?      // Provider who ordered the study
+  orderingProvider   Provider?    @relation("OrderingProvider", fields: [orderingProviderId], references: [id], onDelete: SetNull)
+
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Related records
+  images       ImagingImage[]
+  reports      ImagingReport[]
+
+  // Link to encounter if applicable
+  encounterId  String?
+  encounter    Encounter?         @relation(fields: [encounterId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([studyDate])
+  @@index([modality])
+  @@index([status])
+  @@index([accessionNumber])
+}
+
+// Individual image within a study
+model ImagingImage {
+  id              String   @id @default(cuid())
+
+  // Image identification
+  imageUrl        String            // URL to stored image (HIPAA-compliant storage)
+  thumbnailUrl    String?           // Compressed thumbnail for gallery view
+  originalUrl     String?           // Original uncompressed file URL
+
+  // DICOM-specific fields
+  seriesNumber    Int?              // Series number within study
+  instanceNumber  Int?              // Instance number within series
+  seriesInstanceUid String?         // DICOM Series Instance UID
+  sopInstanceUid    String?         // DICOM SOP Instance UID
+
+  // Image metadata
+  fileName        String?           // Original file name
+  fileSize        Int?              // File size in bytes
+  mimeType        String            @default("application/dicom") // image/jpeg, image/png, application/dicom
+  width           Int?              // Image width in pixels
+  height          Int?              // Image height in pixels
+
+  // DICOM window/level defaults
+  windowCenter    Float?            // Window center (DICOM)
+  windowWidth     Float?            // Window width (DICOM)
+
+  // View information
+  viewPosition    String?           // AP, PA, LAT, OBL, etc.
+  bodyPartExamined String?          // Specific body part
+  laterality      String?           // L, R, or bilateral
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  studyId         String
+  study           ImagingStudy     @relation(fields: [studyId], references: [id], onDelete: Cascade)
+
+  // Annotations and measurements on this image
+  annotations     ImagingAnnotation[]
+  measurements    ImagingMeasurement[]
+
+  @@index([studyId])
+  @@index([seriesNumber, instanceNumber])
+}
+
+// Annotation on an image (arrows, circles, text labels)
+model ImagingAnnotation {
+  id          String               @id @default(cuid())
+  type        ImagingAnnotationType // Type of annotation
+
+  // Position and shape (stored as JSON for flexibility)
+  coordinates Json                 // Start/end points, dimensions, etc.
+
+  // Text content
+  text        String?              // Label text
+
+  // Style properties
+  color       String?              @default("#FF0000") // Annotation color
+  lineWidth   Int?                 @default(2)
+  fontSize    Int?                 @default(14)
+
+  // Visibility
+  isVisible   Boolean              @default(true)
+  layer       Int                  @default(0) // Stacking order
+
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  // Relations
+  imageId     String
+  image       ImagingImage         @relation(fields: [imageId], references: [id], onDelete: Cascade)
+
+  createdById String               // User who created the annotation
+
+  @@index([imageId])
+  @@index([type])
+}
+
+// Measurement on an image (angles, distances, Cobb angles)
+model ImagingMeasurement {
+  id          String                   @id @default(cuid())
+  type        ImagingMeasurementType   // Type of measurement
+
+  // Measurement value
+  value       Float                    // Measured value
+  unit        String                   // Unit (degrees, mm, cm, etc.)
+
+  // Position (stored as JSON for flexibility)
+  coordinates Json                     // Points used for measurement
+
+  // Reference values for comparison
+  normalMin   Float?                   // Normal range minimum
+  normalMax   Float?                   // Normal range maximum
+  deviation   Float?                   // Deviation from normal (auto-calculated)
+
+  // Labeling
+  label       String?                  // Custom label
+  description String?                  // Description of finding
+
+  // Style
+  color       String?                  @default("#00FF00")
+
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+
+  // Relations
+  imageId     String
+  image       ImagingImage             @relation(fields: [imageId], references: [id], onDelete: Cascade)
+
+  createdById String                   // User who created the measurement
+
+  @@index([imageId])
+  @@index([type])
+}
+
+// Imaging report - clinical interpretation of study
+model ImagingReport {
+  id          String              @id @default(cuid())
+  status      ImagingReportStatus @default(DRAFT)
+
+  // Report content
+  findings    String              @db.Text   // Detailed findings
+  impression  String?             @db.Text   // Summary/conclusion
+
+  // Structured findings (optional, JSON for flexibility)
+  structuredFindings Json?        // Structured finding data
+
+  // Comparison
+  comparisonStudyId String?       // Prior study for comparison
+  comparisonNotes   String?       @db.Text
+
+  // Recommendations
+  recommendations   String?       @db.Text
+
+  // Clinical correlation
+  clinicalCorrelation String?     @db.Text
+
+  // Workflow
+  dictatedAt        DateTime?     // When report was dictated
+  transcribedAt     DateTime?     // When report was transcribed
+  signedAt          DateTime?     // When report was signed
+  amendedAt         DateTime?     // When report was amended
+
+  // Electronic signature
+  signatureData     String?       // Base64 signature image or hash
+
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  // Relations
+  studyId     String
+  study       ImagingStudy        @relation(fields: [studyId], references: [id], onDelete: Cascade)
+
+  reportedById String             // Provider who created the report
+  reportedBy   Provider           @relation(fields: [reportedById], references: [id], onDelete: Restrict)
+
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Link to treatment plan for recommendations
+  treatmentPlanId String?
+  treatmentPlan   TreatmentPlan?  @relation(fields: [treatmentPlanId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([studyId])
+  @@index([status])
+  @@index([reportedById])
+  @@index([signedAt])
 }
