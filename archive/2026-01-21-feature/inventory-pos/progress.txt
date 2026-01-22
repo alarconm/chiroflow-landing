@@ -1,0 +1,112 @@
+# ChiroFlow Ralph Progress
+
+## Current Epic: 17 - Inventory & Point of Sale
+
+### Completed Stories
+
+#### US-109 - Inventory schema ✅
+- **Completed**: 2026-01-21
+- **Summary**: Verified all database models for product inventory management are in place
+- **Models Implemented**:
+  - ProductCategory model with name, description, slug, sortOrder, hierarchical parent/child
+  - Product model with name, sku, categoryId, description, retailPrice, costPrice, isTaxable, barcode, weight, dimensions, inventory settings
+  - InventoryItem model with productId, quantity, location, reservedQty, availableQty, averageCost
+  - InventoryMovement model for tracking quantity changes (serves as InventoryAdjustment)
+  - Vendor model with name, contactName, email, phone, address, paymentTerms
+  - PurchaseOrder model with vendorId, items, status, totals, shipping info
+  - VendorProduct model for vendor-specific product info
+  - Sale and SaleItem models for POS transactions
+  - LowStockAlert model for inventory alerts
+- **Verification**: Prisma generate succeeds, TypeScript compiles without errors
+
+#### US-110 - Product catalog management ✅
+- **Completed**: 2026-01-21
+- **Summary**: Verified and enhanced product catalog CRUD operations
+- **Procedures Implemented**:
+  - inventory.createProduct - Add new product with full details
+  - inventory.updateProduct - Edit product information
+  - inventory.listProducts - List with filtering by search, category, status, vendor, lowStock
+  - inventory.getProduct - Get product details with relations
+  - inventory.deactivateProduct - NEW: Soft delete product (sets status to INACTIVE)
+  - Category management: listCategories, createCategory, updateCategory, deleteCategory
+- **Enhancement**: Added dedicated deactivateProduct procedure for soft delete
+
+### Remaining Stories
+- US-111: Inventory tracking (priority 3)
+- US-112: Purchase order management (priority 4)
+- US-113: Point of sale transaction (priority 5)
+- US-114: POS payment integration (priority 6)
+- US-115: Inventory reports (priority 7)
+- US-116: Inventory and POS UI (priority 8)
+--- Iteration 1 completed at 2026-01-21 23:51:46 ---
+Story: US-109 - Inventory schema
+
+--- Iteration 2 completed at 2026-01-21 23:51:55 ---
+Story: US-111 - Inventory tracking
+
+--- Iteration 3 completed at 2026-01-21 23:52:04 ---
+Story: US-111 - Inventory tracking
+
+--- Iteration 4 completed at 2026-01-21 23:52:13 ---
+Story: US-111 - Inventory tracking
+
+--- Iteration 5 completed at 2026-01-21 23:52:22 ---
+Story: US-111 - Inventory tracking
+
+--- Iteration 6 completed at 2026-01-21 23:52:32 ---
+Story: US-111 - Inventory tracking
+
+--- Iteration 7 completed at 2026-01-21 23:52:41 ---
+Story: US-111 - Inventory tracking
+
+--- Iteration 8 completed at 2026-01-21 23:52:50 ---
+Story: US-111 - Inventory tracking
+
+--- Iteration 9 completed at 2026-01-21 23:52:59 ---
+Story: US-111 - Inventory tracking
+
+--- Iteration 10 completed at 2026-01-21 23:53:08 ---
+Story: US-111 - Inventory tracking
+
+--- Iteration 11 completed at 2026-01-21 23:53:20 ---
+Story: US-111 - Inventory tracking
+
+--- Iteration 12 completed at 2026-01-21 23:53:30 ---
+Story: US-111 - Inventory tracking
+
+--- Iteration 13 completed at 2026-01-21 23:53:39 ---
+Story: US-111 - Inventory tracking
+
+--- Iteration 14 completed at 2026-01-21 23:53:49 ---
+Story: US-111 - Inventory tracking
+
+--- Iteration 15 completed at 2026-01-21 23:53:58 ---
+Story: US-111 - Inventory tracking
+
+--- Iteration 16 completed at 2026-01-21 23:54:07 ---
+Story: US-111 - Inventory tracking
+
+--- Iteration 17 completed at 2026-01-21 23:54:16 ---
+Story: US-111 - Inventory tracking
+
+--- Iteration 18 completed at 2026-01-21 23:54:26 ---
+Story: US-111 - Inventory tracking
+
+--- Iteration 19 completed at 2026-01-21 23:54:35 ---
+Story: US-111 - Inventory tracking
+
+--- Iteration 20 completed at 2026-01-21 23:54:45 ---
+Story: US-111 - Inventory tracking
+
+--- Iteration 21 completed at 2026-01-21 23:54:54 ---
+Story: US-111 - Inventory tracking
+
+--- Iteration 22 completed at 2026-01-21 23:55:04 ---
+Story: US-111 - Inventory tracking
+
+--- Iteration 23 completed at 2026-01-21 23:55:13 ---
+Story: US-111 - Inventory tracking
+
+--- Iteration 24 completed at 2026-01-21 23:55:22 ---
+Story: US-111 - Inventory tracking
+

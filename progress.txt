@@ -206,3 +206,75 @@ Helper endpoints:
 Router registered in index.ts
 TypeScript compilation passes ✓
 
+--- Iteration 9 completed at 2026-01-22 00:19:44 ---
+Story: US-203 - Adjustment documentation
+
+--- Iteration 10 completed at 2026-01-22 ---
+Story: US-204 - Vertebral listing system
+
+Implemented:
+- vertebralListing.create - Document listing for segment
+  - Supports both Gonstead and Palmer notation
+  - Auto-detects spinal region from segment
+  - Parses listing notation to extract laterality and rotation
+  - Records additional findings: fixation, hypermobility, edema, tenderness, muscleSpasm
+  - Validates encounter is not signed
+  - Prevents duplicate listings at same segment in same encounter
+- vertebralListing.update - Update listing findings
+  - Updates all positional and additional finding fields
+  - Maintains audit trail of changes
+- vertebralListing.list - List patient listings by region/encounter
+  - Groups by spinal region
+  - Includes listing info with notation description
+- vertebralListing.get - Get single listing with full details
+  - Includes patient and encounter info
+  - Returns related segments for suggestions
+- vertebralListing.compare - Compare listings across visits
+  - Side-by-side comparison of two encounters
+  - Identifies new, resolved, changed, unchanged segments
+  - Tracks specific changes (listing, fixation, tenderness, etc.)
+  - Summary statistics for progress tracking
+- vertebralListing.delete - Remove listing (only from unsigned encounters)
+- vertebralListing.bulkCreate - Quick entry for multiple listings
+
+Listing notation support:
+- Gonstead: PLS, PRS, PLI, PRI, AS, PI, IN, EX, AS-IN, AS-EX, PI-IN, PI-EX, PLS-m, PRS-m
+  - Full descriptions (e.g., "Posterior-Left-Superior (body rotated left, superior)")
+  - Extracts laterality (L/R) and rotation (S/I)
+- Palmer: PL, PR, P, A, L, R, I, S, RL, RR, PS, AI
+  - Full descriptions
+  - Custom notation support as fallback
+
+Reference endpoints:
+- vertebralListing.getGonsteadNotations - Complete Gonstead notation reference
+- vertebralListing.getPalmerNotations - Complete Palmer notation reference
+- vertebralListing.getSpinalSegments - All 35 spinal segments with metadata
+
+Visual spine diagram:
+- vertebralListing.getSpineDiagramData - Returns data for spine visualization
+  - Supports sagittal (side) and coronal (front) views
+  - Position indicators based on laterality (L/R deviation)
+  - Severity color coding based on findings (green/lime/amber/red)
+  - Groups segments by region (Cervical, Thoracic, Lumbar, Sacral, Pelvis)
+  - Each segment includes: name, region, index, hasListing, position, severityColor
+
+Auto-suggest related segments:
+- vertebralListing.getSuggestedSegments - Biomechanics-based suggestions
+  - Compensatory segments (adjacent, directly affected)
+  - Functional segments (biomechanically related)
+  - Example: C1 → compensatory: C2, Occiput; functional: C5, C6, T4
+  - Includes reason for relationship
+  - If patientId provided, indicates which suggested segments already have findings
+
+Biomechanical relationships defined for:
+- C1, C2, C5, C7 (cervical)
+- T4, T12 (thoracic)
+- L4, L5 (lumbar)
+- Sacrum, Left Ilium, Right Ilium (pelvic)
+
+Router registered in index.ts
+TypeScript compilation passes ✓
+
+--- Iteration 10 completed at 2026-01-22 00:25:00 ---
+Story: US-204 - Vertebral listing system
+

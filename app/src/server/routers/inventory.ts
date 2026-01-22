@@ -492,6 +492,139 @@ export const inventoryRouter = router({
       return getMovementHistory(productId, ctx.user.organizationId, { page, pageSize });
     }),
 
+  receiveStock: adminProcedure
+    .input(z.object({
+      productId: z.string(),
+      quantity: z.number().int().min(1),
+      unitCost: z.number().min(0),
+      location: z.string().default('main'),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Direct stock receipt without purchase order
+      const result = await ctx.prisma.$transaction(async (tx) => {
+        // Get or create inventory item
+        let inventoryItem = await tx.inventoryItem.findFirst({
+          where: {
+            productId: input.productId,
+            location: input.location,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+
+        if (!inventoryItem) {
+          inventoryItem = await tx.inventoryItem.create({
+            data: {
+              productId: input.productId,
+              location: input.location,
+              quantity: 0,
+              reservedQty: 0,
+              availableQty: 0,
+              averageCost: input.unitCost,
+              lastCost: input.unitCost,
+              organizationId: ctx.user.organizationId,
+            },
+          });
+        }
+
+        // Calculate weighted average cost
+        const totalOldValue = inventoryItem.quantity * Number(inventoryItem.averageCost);
+        const totalNewValue = input.quantity * input.unitCost;
+        const newQuantity = inventoryItem.quantity + input.quantity;
+        const newAverageCost = newQuantity > 0 ? (totalOldValue + totalNewValue) / newQuantity : input.unitCost;
+
+        // Update inventory
+        await tx.inventoryItem.update({
+          where: { id: inventoryItem.id },
+          data: {
+            quantity: newQuantity,
+            availableQty: newQuantity - inventoryItem.reservedQty,
+            averageCost: newAverageCost,
+            lastCost: input.unitCost,
+          },
+        });
+
+        // Create movement record
+        const movement = await tx.inventoryMovement.create({
+          data: {
+            productId: input.productId,
+            movementType: 'PURCHASE',
+            quantity: input.quantity,
+            unitCost: input.unitCost,
+            totalCost: input.quantity * input.unitCost,
+            toLocation: input.location,
+            referenceType: 'manual_receipt',
+            notes: input.notes,
+            createdBy: ctx.user.id,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+
+        return { movementId: movement.id, newQuantity };
+      });
+
+      await auditLog(INVENTORY_AUDIT_ACTIONS.STOCK_ADJUST, 'InventoryMovement', {
+        entityId: result.movementId,
+        changes: {
+          productId: input.productId,
+          quantity: input.quantity,
+          unitCost: input.unitCost,
+          action: 'receive_stock',
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return result;
+    }),
+
+  getInventoryValue: protectedProcedure
+    .input(z.object({
+      categoryId: z.string().optional(),
+      location: z.string().optional(),
+    }))
+    .query(async ({ ctx, input }) => {
+      const where: Record<string, unknown> = {
+        organizationId: ctx.user.organizationId,
+      };
+
+      if (input.location) {
+        where.location = input.location;
+      }
+
+      if (input.categoryId) {
+        where.product = { categoryId: input.categoryId };
+      }
+
+      const items = await ctx.prisma.inventoryItem.findMany({
+        where,
+        include: {
+          product: {
+            select: { name: true, sku: true, retailPrice: true, categoryId: true },
+          },
+        },
+      });
+
+      // Calculate totals
+      let totalCostValue = 0;
+      let totalRetailValue = 0;
+      let totalUnits = 0;
+
+      for (const item of items) {
+        totalCostValue += item.quantity * Number(item.averageCost);
+        totalRetailValue += item.quantity * Number(item.product.retailPrice);
+        totalUnits += item.quantity;
+      }
+
+      return {
+        totalCostValue,
+        totalRetailValue,
+        totalUnits,
+        potentialProfit: totalRetailValue - totalCostValue,
+        itemCount: items.length,
+      };
+    }),
+
   // ============================================
   // Barcode Procedures
   // ============================================

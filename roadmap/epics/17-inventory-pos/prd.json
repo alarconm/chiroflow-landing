@@ -19,7 +19,7 @@
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-110",
@@ -34,7 +34,7 @@
         "Category management for organizing products"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-111",

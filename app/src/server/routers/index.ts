@@ -55,6 +55,7 @@ import { marketingRouter } from './marketing';
 import { techniqueRouter } from './technique';
 import { subluxationRouter } from './subluxation';
 import { adjustmentRouter } from './adjustment';
+import { vertebralListingRouter } from './vertebralListing';
 
 export const appRouter = router({
   auth: authRouter,
@@ -113,6 +114,7 @@ export const appRouter = router({
   technique: techniqueRouter,
   subluxation: subluxationRouter,
   adjustment: adjustmentRouter,
+  vertebralListing: vertebralListingRouter,
 });
 
 

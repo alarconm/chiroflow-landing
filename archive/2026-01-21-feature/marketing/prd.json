@@ -20,7 +20,7 @@
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-201",
@@ -36,7 +36,7 @@
         "Provider favorites for quick access"
       ],
       "priority": 2,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-202",
@@ -53,7 +53,7 @@
         "Comparison view between visits"
       ],
       "priority": 3,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-203",
@@ -69,7 +69,7 @@
         "Quick entry templates for common adjustment patterns"
       ],
       "priority": 4,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-204",
@@ -85,7 +85,7 @@
         "Auto-suggest related segments based on biomechanics"
       ],
       "priority": 5,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-205",
