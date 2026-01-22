@@ -225,6 +225,11 @@ model Organization {
   notificationPreferences NotificationPreference[]
   notificationLogs     NotificationLog[]
 
+  // Mobile Patient Health relations (Epic 27 - US-269)
+  painDiaryEntries     PainDiaryEntry[]
+  progressPhotos       ProgressPhoto[]
+  patientGoals         PatientGoal[]
+
   @@index([subdomain])
 }
 
@@ -512,6 +517,11 @@ model Patient {
   postureData       PostureData[]
   heartRateData     HeartRateData[]
   activityGoals     ActivityGoal[]
+
+  // Mobile Patient Health relations (Epic 27 - US-269)
+  painDiaryEntries  PainDiaryEntry[]
+  progressPhotos    ProgressPhoto[]
+  patientGoals      PatientGoal[]
 
   // Multi-Location Enterprise relations (Epic 25)
   homeLocationId                 String?   // Patient's home/primary location
@@ -10451,4 +10461,216 @@ model CommonProcedure {
   @@index([providerId])
   @@index([category])
   @@index([usageCount])
+}
+
+// =============================================================================
+// Epic 27: Mobile Patient Health Features (US-269)
+// =============================================================================
+
+// Body location enum for pain diary
+enum BodyLocation {
+  HEAD
+  NECK
+  UPPER_BACK
+  MID_BACK
+  LOWER_BACK
+  LEFT_SHOULDER
+  RIGHT_SHOULDER
+  LEFT_ARM
+  RIGHT_ARM
+  LEFT_WRIST_HAND
+  RIGHT_WRIST_HAND
+  CHEST
+  ABDOMEN
+  LEFT_HIP
+  RIGHT_HIP
+  LEFT_LEG
+  RIGHT_LEG
+  LEFT_KNEE
+  RIGHT_KNEE
+  LEFT_ANKLE_FOOT
+  RIGHT_ANKLE_FOOT
+  OTHER
+}
+
+// Pain quality descriptors
+enum PainQuality {
+  SHARP
+  DULL
+  ACHING
+  BURNING
+  THROBBING
+  STABBING
+  SHOOTING
+  TINGLING
+  NUMBNESS
+  CRAMPING
+  OTHER
+}
+
+// Patient health goal status (distinct from activity GoalStatus)
+enum PatientHealthGoalStatus {
+  ACTIVE
+  COMPLETED
+  PAUSED
+  CANCELLED
+}
+
+// Patient health goal type categories (distinct from activity GoalType)
+enum PatientHealthGoalType {
+  PAIN_REDUCTION
+  MOBILITY
+  EXERCISE
+  ACTIVITY
+  WELLNESS
+  CUSTOM
+}
+
+// Pain diary entry for daily symptom tracking
+model PainDiaryEntry {
+  id          String       @id @default(cuid())
+  entryDate   DateTime     @default(now()) // Date/time of entry
+
+  // Pain details
+  painLevel      Int          // 0-10 scale
+  bodyLocation   BodyLocation
+  bodyLocationOther String?   // If OTHER selected
+  painQuality    PainQuality[]
+  painQualityOther String?   // If OTHER included
+
+  // Triggers and factors
+  triggers       String[]     // What triggered/worsened pain
+  relievingFactors String[]   // What helped reduce pain
+
+  // Impact on daily life
+  affectsWork     Boolean     @default(false)
+  affectsSleep    Boolean     @default(false)
+  affectsActivity Boolean     @default(false)
+  affectsMood     Boolean     @default(false)
+
+  // Additional context
+  duration       String?      // "constant", "intermittent", "brief"
+  medicationTaken String?     // Any medication taken
+  notes          String?      @db.Text
+
+  // Timestamps
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  // Relations
+  patientId      String
+  patient        Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@index([entryDate])
+  @@index([organizationId])
+  @@index([bodyLocation])
+}
+
+// Progress photo type
+enum PhotoType {
+  POSTURE_FRONT
+  POSTURE_SIDE
+  POSTURE_BACK
+  RANGE_OF_MOTION
+  INJURY_DOCUMENTATION
+  PROGRESS_COMPARISON
+  OTHER
+}
+
+// Progress photos for visual tracking
+model ProgressPhoto {
+  id          String       @id @default(cuid())
+
+  // Photo details
+  photoUrl    String       // URL to stored photo
+  thumbnailUrl String?     // Smaller thumbnail version
+  photoType   PhotoType
+  caption     String?
+
+  // Metadata
+  takenAt     DateTime     @default(now()) // When photo was taken
+  angle       String?      // "front", "left-side", "right-side", "back"
+  bodyArea    BodyLocation?
+
+  // Comparison tracking
+  isBaseline  Boolean      @default(false) // Is this a baseline photo?
+  comparisonGroupId String? // Group photos for side-by-side comparison
+
+  // Notes
+  notes       String?      @db.Text
+
+  // Provider review
+  reviewedAt  DateTime?
+  reviewedBy  String?      // Provider ID who reviewed
+  providerNotes String?    @db.Text
+
+  // Timestamps
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Relations
+  patientId   String
+  patient     Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@index([takenAt])
+  @@index([photoType])
+  @@index([organizationId])
+  @@index([comparisonGroupId])
+}
+
+// Patient health goals
+model PatientGoal {
+  id          String       @id @default(cuid())
+
+  // Goal details
+  title       String
+  description String?      @db.Text
+  goalType    PatientHealthGoalType
+  status      PatientHealthGoalStatus   @default(ACTIVE)
+
+  // Target and progress
+  targetValue   Float?     // Numeric target (e.g., pain level of 3)
+  targetUnit    String?    // Unit for target (e.g., "pain level", "days/week")
+  currentValue  Float?     // Current progress value
+  startValue    Float?     // Starting value for comparison
+
+  // Timeline
+  startDate   DateTime     @default(now())
+  targetDate  DateTime?    // Goal completion target
+  completedAt DateTime?
+
+  // Progress tracking
+  progressNotes Json?      // Array of progress updates [{date, value, note}]
+  lastProgressUpdate DateTime?
+
+  // Milestones
+  milestones  Json?        // Array of milestones [{target, reached, date}]
+
+  // Provider-assigned vs patient-created
+  isProviderAssigned Boolean @default(false)
+  assignedBy  String?      // Provider ID if assigned
+
+  // Timestamps
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Relations
+  patientId   String
+  patient     Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@index([status])
+  @@index([goalType])
+  @@index([organizationId])
 }
