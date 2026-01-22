@@ -18,7 +18,7 @@
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-086",
@@ -32,7 +32,7 @@
         "Secure credential handling with encryption"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-087",
@@ -47,7 +47,7 @@
         "Email receipt to patient automatically"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-088",
@@ -62,7 +62,7 @@
         "Audit trail for all refunds"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-089",
@@ -77,7 +77,7 @@
         "Track missed payments"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-090",
@@ -92,7 +92,7 @@
         "Handle plan completion"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-091",
@@ -107,7 +107,7 @@
         "Idempotent webhook processing"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-092",
@@ -122,7 +122,7 @@
         "Payment processor configuration in settings"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }
