@@ -4,6 +4,26 @@
 // Types
 export * from './types';
 
+// Report Service (core infrastructure)
+export {
+  generateReport,
+  getReport,
+  listReports,
+  deleteReport,
+  markReportStale,
+  cleanupExpiredReports,
+  invalidateReportCache,
+  getAvailableReportTypes,
+  getDateRangePresets,
+} from './report-service';
+
+export type {
+  GenerateReportOptions,
+  ReportParameters,
+  GeneratedReport,
+  ReportMetadata,
+} from './report-service';
+
 // Dashboard metrics
 export {
   getDashboardMetrics,

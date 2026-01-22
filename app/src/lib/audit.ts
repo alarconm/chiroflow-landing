@@ -138,7 +138,7 @@ export type AuditAction =
   | 'DENIAL_APPEAL'
   | 'DENIAL_RESOLVE'
   | 'EDI_837_GENERATE'
-  // Reporting actions (Epic 11)
+  // Reporting actions (Epic 11/15)
   | 'SAVED_REPORT_CREATE'
   | 'SAVED_REPORT_UPDATE'
   | 'SAVED_REPORT_DELETE'
@@ -147,6 +147,11 @@ export type AuditAction =
   | 'REPORT_SCHEDULE_TOGGLE'
   | 'REPORT_SCHEDULE_DELETE'
   | 'REPORT_EXPORT_REQUEST'
+  // Report Service actions (Epic 15)
+  | 'REPORT_GENERATE'
+  | 'REPORT_DELETE'
+  | 'REPORT_CACHE_INVALIDATE'
+  | 'REPORT_CLEANUP'
   // Generic CRUD
   | 'CREATE'
   | 'UPDATE'

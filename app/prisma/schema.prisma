@@ -76,6 +76,7 @@ model Organization {
   reportSchedules     ReportSchedule[]
   kpiSnapshots        KPISnapshot[]
   reportExports       ReportExport[]
+  reports             Report[]
 
   // AI Scheduling relations (Epic 13)
   overbookingRecommendations OverbookingRecommendation[]
@@ -3265,6 +3266,41 @@ model ReportExport {
   @@index([userId])
   @@index([status])
   @@index([requestedAt])
+}
+
+// Generated Report with caching
+model Report {
+  id            String       @id @default(cuid())
+  name          String
+  reportType    ReportType
+
+  // Report parameters
+  parameters    Json         // Input parameters (date range, filters, etc.)
+
+  // Generated data
+  data          Json         // The actual report data/results
+  metadata      Json?        // Additional metadata (row count, execution time, etc.)
+
+  // Cache control
+  generatedAt   DateTime     @default(now())
+  expiresAt     DateTime?    // When the cache expires
+  isStale       Boolean      @default(false) // Mark as needing regeneration
+
+  // Source reference
+  savedReportId String?      // If generated from a saved report config
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // User who generated
+  userId        String
+
+  @@index([organizationId])
+  @@index([reportType])
+  @@index([generatedAt])
+  @@index([savedReportId])
+  @@index([expiresAt])
 }
 
 // ============================================

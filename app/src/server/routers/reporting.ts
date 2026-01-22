@@ -33,12 +33,24 @@ import {
   requestExport,
   getExportStatus,
   listExports,
+  // Report Service (new infrastructure)
+  generateReport,
+  getReport,
+  listReports,
+  deleteReport,
+  markReportStale,
+  cleanupExpiredReports,
+  invalidateReportCache,
+  getAvailableReportTypes,
+  getDateRangePresets,
 } from '@/lib/reporting';
 
 import type {
   WidgetDataSource,
   CustomReportConfig,
   ReportScheduleConfig,
+  GenerateReportOptions,
+  ReportParameters,
 } from '@/lib/reporting';
 
 // Zod schemas for input validation
@@ -668,6 +680,151 @@ export const reportingRouter = router({
 
       return { success: true };
     }),
+
+  // ============================================
+  // REPORT SERVICE (Core Infrastructure)
+  // ============================================
+
+  // Generate a report with caching
+  generateReport: protectedProcedure
+    .input(
+      z.object({
+        reportType: z.nativeEnum(ReportType),
+        name: z.string().min(1),
+        parameters: z.object({
+          dateRange: z.object({
+            start: z.date(),
+            end: z.date(),
+            preset: z.string().optional(),
+          }).optional(),
+          asOfDate: z.date().optional(),
+          providerId: z.string().optional(),
+          customConfig: customReportConfigSchema.optional(),
+          filters: z.record(z.string(), z.unknown()).optional(),
+        }),
+        cacheDuration: z.number().optional(),
+        forceRefresh: z.boolean().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const result = await generateReport(
+        ctx.user.organizationId,
+        ctx.user.id,
+        {
+          reportType: input.reportType,
+          name: input.name,
+          parameters: input.parameters as ReportParameters,
+          cacheDuration: input.cacheDuration,
+          forceRefresh: input.forceRefresh,
+        }
+      );
+
+      await auditLog('REPORT_GENERATE', 'Report', {
+        entityId: result.id,
+        changes: { reportType: input.reportType, fromCache: result.fromCache },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return result;
+    }),
+
+  // Get a specific report by ID
+  getReport: protectedProcedure
+    .input(z.object({ reportId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const report = await getReport(ctx.user.organizationId, input.reportId);
+
+      if (!report) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Report not found' });
+      }
+
+      return report;
+    }),
+
+  // List reports with filtering
+  listReports: protectedProcedure
+    .input(
+      z.object({
+        reportType: z.nativeEnum(ReportType).optional(),
+        userId: z.string().optional(),
+        includeStale: z.boolean().optional(),
+        limit: z.number().min(1).max(100).optional(),
+        offset: z.number().min(0).optional(),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      return listReports(ctx.user.organizationId, input);
+    }),
+
+  // Delete a report
+  deleteReportById: protectedProcedure
+    .input(z.object({ reportId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      await deleteReport(ctx.user.organizationId, input.reportId);
+
+      await auditLog('REPORT_DELETE', 'Report', {
+        entityId: input.reportId,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { success: true };
+    }),
+
+  // Mark a report as stale
+  markReportStale: protectedProcedure
+    .input(z.object({ reportId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      await markReportStale(ctx.user.organizationId, input.reportId);
+      return { success: true };
+    }),
+
+  // Invalidate report cache (admin only)
+  invalidateCache: adminProcedure
+    .input(
+      z.object({
+        reportType: z.nativeEnum(ReportType).optional(),
+      }).optional()
+    )
+    .mutation(async ({ ctx, input }) => {
+      const count = await invalidateReportCache(
+        ctx.user.organizationId,
+        input?.reportType
+      );
+
+      await auditLog('REPORT_CACHE_INVALIDATE', 'Report', {
+        changes: { reportType: input?.reportType || 'all', count },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { invalidatedCount: count };
+    }),
+
+  // Clean up expired reports (admin only)
+  cleanupExpiredReports: adminProcedure.mutation(async ({ ctx }) => {
+    const count = await cleanupExpiredReports();
+
+    await auditLog('REPORT_CLEANUP', 'Report', {
+      changes: { deletedCount: count },
+      userId: ctx.user.id,
+      organizationId: ctx.user.organizationId,
+    });
+
+    return { deletedCount: count };
+  }),
+
+  // Get available report types
+  getAvailableReportTypes: protectedProcedure.query(async () => {
+    return getAvailableReportTypes();
+  }),
+
+  // Get date range presets
+  getDateRangePresets: protectedProcedure.query(async () => {
+    // Return presets without the function (can't serialize functions)
+    return getDateRangePresets().map(({ value, label }) => ({ value, label }));
+  }),
 
   // ============================================
   // EXPORT
