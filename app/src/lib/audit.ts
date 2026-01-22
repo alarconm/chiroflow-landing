@@ -153,6 +153,13 @@ export type AuditAction =
   | 'REPORT_DELETE'
   | 'REPORT_CACHE_INVALIDATE'
   | 'REPORT_CLEANUP'
+  // Chiropractic Clinical actions (Epic 19)
+  | 'TECHNIQUE_CREATE'
+  | 'TECHNIQUE_UPDATE'
+  | 'TECHNIQUE_DELETE'
+  | 'TECHNIQUE_SEED'
+  | 'TECHNIQUE_FAVORITE_ADD'
+  | 'TECHNIQUE_FAVORITE_REMOVE'
   // Generic CRUD
   | 'CREATE'
   | 'UPDATE'

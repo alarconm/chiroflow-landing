@@ -36,7 +36,7 @@
         "Provider favorites for quick access"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-202",

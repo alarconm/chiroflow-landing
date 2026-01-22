@@ -51,6 +51,8 @@ import { aiInsightsRouter } from './aiInsights';
 import { aiBillingRouter } from './aiBilling';
 // Marketing & Referrals (Epic 18)
 import { marketingRouter } from './marketing';
+// Chiropractic Clinical Intelligence (Epic 19)
+import { techniqueRouter } from './technique';
 
 export const appRouter = router({
   auth: authRouter,
@@ -105,6 +107,8 @@ export const appRouter = router({
   aiBilling: aiBillingRouter,
   // Marketing & Referrals (Epic 18)
   marketing: marketingRouter,
+  // Chiropractic Clinical Intelligence (Epic 19)
+  technique: techniqueRouter,
 });
 
 export type AppRouter = typeof appRouter;

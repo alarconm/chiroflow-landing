@@ -42,3 +42,41 @@ Prisma client generated successfully ✓
 TypeScript compilation passes ✓
 Note: Run `npx prisma migrate dev --name chiropractic_clinical_schema` to apply migration
 
+--- Iteration 6 completed at 2026-01-22 00:05:11 ---
+Story: US-200 - Chiropractic clinical schema
+
+--- Iteration 7 completed at 2026-01-22 ---
+Story: US-201 - Technique library management
+
+Implemented:
+- technique.list - Lists all techniques with category filtering, search, pagination
+  - Groups techniques by category (MANUAL, INSTRUMENT, TABLE_ASSISTED, LOW_FORCE)
+  - Shows both system techniques and organization-specific techniques
+- technique.get - Gets technique details including contraindications and usage counts
+- technique.create - Adds custom technique (admin only)
+- technique.update - Updates org-specific techniques (admin only)
+- technique.delete - Deletes unused org-specific techniques (admin only)
+- technique.getCategories - Lists categories with technique counts
+- technique.favorites.list - Gets provider's favorite techniques
+- technique.favorites.add - Adds technique to provider favorites
+- technique.favorites.remove - Removes technique from favorites
+- technique.favorites.reorder - Reorders favorite techniques
+- technique.seedStandard - Seeds standard chiropractic techniques (admin, idempotent)
+
+Standard techniques seeded:
+- Manual: Diversified, Gonstead, Toggle Recoil
+- Instrument-assisted: Activator Methods, Impulse Adjusting
+- Table-assisted: Thompson Drop, Cox Flexion-Distraction
+- Low-force: Sacro-Occipital Technique (SOT), Craniosacral Therapy, Network Spinal Analysis
+
+Each technique includes:
+- Name and category
+- Detailed description
+- Indications (conditions where technique is indicated)
+- Contraindications (when NOT to use)
+- Instructions for performing
+
+Added audit action types for technique operations
+Router registered in index.ts
+TypeScript compilation passes ✓
+
