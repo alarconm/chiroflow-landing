@@ -18,7 +18,7 @@
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-070",
@@ -32,7 +32,7 @@
         "Error handling and retry logic"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-071",
@@ -47,7 +47,7 @@
         "Validation before generation"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-072",
@@ -62,7 +62,7 @@
         "Update claim status based on response"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-073",
@@ -77,7 +77,7 @@
         "Cache eligibility for configurable period"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-074",
@@ -92,7 +92,7 @@
         "Generate posting report"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-083",
@@ -106,7 +106,7 @@
         "Denial reason code display"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-084",
@@ -122,7 +122,7 @@
         "Error and rejection management"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }
