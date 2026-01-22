@@ -92,6 +92,7 @@ import { mobileRouter } from './mobile';
 import { notificationsRouter } from './notifications';
 import { mobileScheduleRouter } from './mobileSchedule';
 import { mobileChartingRouter } from './mobileCharting';
+import { mobilePatientAppointmentsRouter } from './mobilePatientAppointments';
 
 export const appRouter = router({
   auth: authRouter,
@@ -187,6 +188,7 @@ export const appRouter = router({
   notifications: notificationsRouter,
   mobileSchedule: mobileScheduleRouter,
   mobileCharting: mobileChartingRouter,
+  mobilePatientAppointments: mobilePatientAppointmentsRouter,
 });
 
 

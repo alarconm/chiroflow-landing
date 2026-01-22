@@ -212,3 +212,65 @@ All acceptance criteria met:
 --- Iteration 4 completed at 2026-01-22 ---
 Story: US-267 - Provider mobile app - charting
 
+--- Iteration 4 completed at 2026-01-22 08:02:23 ---
+Story: US-267 - Provider mobile app - charting
+
+2026-01-22: US-268 - Patient mobile app - appointments
+------------------------------------------------------
+Implemented patient mobile appointment management for Epic 27 (Mobile Applications).
+
+Files Created:
+- app/src/server/routers/mobilePatientAppointments.ts - tRPC router for patient appointments
+- app/src/components/mobile-patient/MobileAppointmentList.tsx - Upcoming appointments view
+- app/src/components/mobile-patient/MobileBookAppointment.tsx - Multi-step booking flow
+- app/src/components/mobile-patient/MobileCheckIn.tsx - Patient self check-in component
+- app/src/components/mobile-patient/MobileDirections.tsx - Clinic directions with map apps
+- app/src/components/mobile-patient/index.ts - Component exports
+
+Files Modified:
+- app/src/server/routers/index.ts (added mobilePatientAppointmentsRouter)
+
+tRPC Procedures:
+- mobilePatientAppointments.getUpcoming - View upcoming appointments with status
+- mobilePatientAppointments.getHistory - View past appointments
+- mobilePatientAppointments.getAppointmentTypes - Get bookable appointment types
+- mobilePatientAppointments.getProviders - Get available providers
+- mobilePatientAppointments.getAvailableSlots - Get available time slots grouped by date
+- mobilePatientAppointments.bookAppointment - Book new appointment with calendar event data
+- mobilePatientAppointments.cancelAppointment - Cancel with 24h policy
+- mobilePatientAppointments.rescheduleAppointment - Reschedule to new time
+- mobilePatientAppointments.getReminderPreferences - Get notification settings
+- mobilePatientAppointments.updateReminderPreferences - Update notification settings
+- mobilePatientAppointments.getCalendarEvent - Get calendar data (Google, Apple, Outlook, ICS)
+- mobilePatientAppointments.getDirections - Get directions URLs for map apps
+- mobilePatientAppointments.checkIn - Patient self check-in with time window
+- mobilePatientAppointments.getCheckInStatus - Check if can check in
+- mobilePatientAppointments.getLocations - Get clinic locations
+
+Key Features:
+1. View upcoming appointments with quick actions
+2. Multi-step booking flow (type → provider → time → details → confirm)
+3. Cancel/reschedule with 24-hour policy enforcement
+4. Appointment reminders configuration
+5. Add to calendar (Google Calendar, Apple Calendar, Outlook, ICS download)
+6. Directions to clinic (Google Maps, Apple Maps, Waze)
+7. Patient self check-in (1 hour before to 15 min after)
+8. Location-aware check-in (optional GPS verification)
+
+Mobile-Optimized Components:
+- MobileAppointmentList: Card-based appointment list with status badges, quick actions
+- MobileBookAppointment: Step-by-step booking wizard with slot picker
+- MobileCheckIn: Check-in flow with countdown timer and confirmation
+- MobileDirections: Map app selector with address copy
+
+All acceptance criteria met:
+✓ View upcoming appointments
+✓ Book new appointment
+✓ Cancel/reschedule appointment
+✓ Appointment reminders
+✓ Add to phone calendar
+✓ Directions to clinic
+✓ Check-in on arrival
+--- Iteration 5 completed at 2026-01-22 ---
+Story: US-268 - Patient mobile app - appointments
+
