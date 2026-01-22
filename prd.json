@@ -117,7 +117,7 @@
         "Action recommendations to close gaps"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-346",
@@ -134,7 +134,7 @@
         "ROI from optimizations"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }

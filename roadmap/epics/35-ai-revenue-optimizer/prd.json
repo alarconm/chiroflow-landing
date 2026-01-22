@@ -18,7 +18,7 @@
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-340",
@@ -35,7 +35,7 @@
         "Quantify leakage by category"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-341",
@@ -52,7 +52,7 @@
         "Track fee change effectiveness"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-342",
@@ -69,7 +69,7 @@
         "Capacity utilization recommendations"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-343",
@@ -85,7 +85,7 @@
         "Compliant revenue increase opportunities"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-344",
@@ -101,7 +101,7 @@
         "Generate negotiation talking points"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-345",
@@ -117,7 +117,7 @@
         "Action recommendations to close gaps"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-346",
@@ -134,7 +134,7 @@
         "ROI from optimizations"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }
