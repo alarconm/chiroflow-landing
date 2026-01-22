@@ -330,3 +330,97 @@ Date: 2026-01-22
 --- Iteration 5 completed at 2026-01-22 ---
 Story: US-212 - Range of motion tracking
 
+--- Iteration 5 completed at 2026-01-22 01:21:36 ---
+Story: US-212 - Range of motion tracking
+
+## US-213: Functional movement screen - COMPLETED
+Date: 2026-01-22
+
+### Changes Made:
+1. Created FMS analysis service at `app/src/lib/services/fmsAnalysis.ts`:
+   - Comprehensive FMS test definitions for all 7 standard tests:
+     - Deep Squat (DS) - movement pattern
+     - Hurdle Step (HS) - movement pattern, bilateral
+     - Inline Lunge (IL) - movement pattern, bilateral
+     - Shoulder Mobility (SM) - mobility, bilateral, has clearing test
+     - Active Straight Leg Raise (ASLR) - mobility, bilateral
+     - Trunk Stability Push-Up (TSPU) - stability, has clearing test
+     - Rotary Stability (RS) - stability, bilateral, has clearing test
+   - Complete scoring criteria for each score (0-3)
+   - Common compensations and limiting factors per test
+   - Exercise recommendations (mobility, stability, corrective) per test
+   - Asymmetry detection and flagging
+   - FMS summary calculation with category breakdown
+   - Comparison between assessments
+   - Score interpretation (optimal, acceptable, at_risk, high_risk)
+   - Movement category grouping (mobility, stability, movement_pattern)
+
+2. Created FMS tRPC router at `app/src/server/routers/fms.ts`:
+   - fms.create: Record a single FMS test result
+   - fms.createFullAssessment: Record complete assessment (all 7 tests)
+   - fms.list: List FMS tests with filtering (test, date, asymmetric, pain)
+   - fms.listByDate: Get FMS assessments grouped by date with summaries
+   - fms.get: Get single FMS test by ID
+   - fms.compare: Compare assessments between two dates
+   - fms.getTrend: Get progress trend for specific test over time
+   - fms.getTestDefinitions: Get all test definitions
+   - fms.getTestDefinition: Get single test definition
+   - fms.getTestsByCategory: Get tests grouped by category
+   - fms.getExerciseRecommendations: Get exercise recommendations for a test
+   - fms.getPatientSummary: Get patient FMS summary for dashboard
+   - fms.update: Update FMS test result
+   - fms.delete: Delete FMS test result
+   - fms.deleteByDate: Delete all tests for a specific date
+
+3. Created FMS UI components at `app/src/components/fms/`:
+   - FMSScoring: Main scoring interface component
+     - Score buttons (0-3) with color coding and descriptions
+     - Bilateral scoring support (left/right)
+     - Pain tracking with location
+     - Expandable details per test showing:
+       - Scoring criteria with indicators
+       - Compensations checkboxes
+       - Limiting factors checkboxes
+       - Movement quality notes
+       - Additional notes
+       - Clearing test warnings
+     - Real-time summary calculation
+   - FMSSummaryDisplay: Summary card component
+     - Total score with percentage
+     - Category breakdown (mobility, stability, movement pattern)
+     - Priority areas with exercise recommendations
+     - Strengths and deficits lists
+   - FMSComparisonView: Progress comparison component
+     - Side-by-side score comparison
+     - Improvement indicators (up/down/stable)
+     - Asymmetry resolution tracking
+
+4. Created Collapsible UI component at `app/src/components/ui/collapsible.tsx`:
+   - Radix UI based collapsible for expandable sections
+
+5. Registered fms router in index.ts
+
+6. TypeScript compilation passes
+
+### Files Created:
+- app/src/lib/services/fmsAnalysis.ts
+- app/src/server/routers/fms.ts
+- app/src/components/fms/FMSScoring.tsx
+- app/src/components/fms/index.ts
+- app/src/components/ui/collapsible.tsx
+
+### Files Modified:
+- app/src/server/routers/index.ts (added fms router)
+
+### Acceptance Criteria Met:
+- [x] fms.create - Record FMS assessment
+- [x] Support standard FMS tests (deep squat, hurdle step, lunge, etc.)
+- [x] Scoring system (0-3 per test)
+- [x] Asymmetry flagging
+- [x] Movement pattern analysis (via compensations and limiting factors)
+- [x] Exercise recommendations based on deficits
+- [x] Progress tracking over time (compare, getTrend, listByDate)
+
+--- Iteration 6 completed at 2026-01-22 ---
+Story: US-213 - Functional movement screen
+

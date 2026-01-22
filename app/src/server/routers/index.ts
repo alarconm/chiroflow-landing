@@ -62,6 +62,7 @@ import { chiropracticDashboardRouter } from './chiropracticDashboard';
 // AI Posture & Movement Analysis (Epic 20)
 import { postureRouter } from './posture';
 import { romRouter } from './rom';
+import { fmsRouter } from './fms';
 
 export const appRouter = router({
   auth: authRouter,
@@ -127,6 +128,7 @@ export const appRouter = router({
   // AI Posture & Movement Analysis (Epic 20)
   posture: postureRouter,
   rom: romRouter,
+  fms: fmsRouter,
 });
 
 
