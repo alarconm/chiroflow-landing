@@ -6,6 +6,8 @@
  */
 
 export { DICOMViewer, type DICOMViewerProps } from './DICOMViewer';
+export { AnnotationToolbar, type AnnotationToolbarProps } from './AnnotationToolbar';
+export { AnnotationCanvas, drawAnnotations, type AnnotationCanvasProps } from './AnnotationCanvas';
 
 export {
   type ViewportState,
@@ -20,6 +22,12 @@ export {
   type EllipseMeasurement,
   type RectangleMeasurement,
   type TextAnnotation,
+  type ArrowAnnotation,
+  type LineAnnotation,
+  type CircleAnnotation,
+  type FreehandAnnotation,
+  type TextWithLeaderAnnotation,
+  type GeorgesLineAnnotation,
   type ToolConfig,
   type WindowPreset,
   DEFAULT_VIEWPORT_STATE,

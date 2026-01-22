@@ -41,7 +41,12 @@ export type ViewerTool =
   | 'cobbAngle'
   | 'ellipse'
   | 'rectangle'
-  | 'text';
+  | 'text'
+  | 'arrow'
+  | 'line'
+  | 'circle'
+  | 'freehand'
+  | 'georgesLine';
 
 // Measurement point
 export interface Point {
@@ -109,6 +114,59 @@ export interface TextAnnotation extends BaseMeasurement {
   fontSize: number;
 }
 
+// Arrow annotation (pointing to area of interest)
+export interface ArrowAnnotation extends BaseMeasurement {
+  type: 'arrow';
+  startPoint: Point;
+  endPoint: Point;
+  arrowHeadSize: number;
+  label?: string;
+}
+
+// Line annotation (simple line without measurement)
+export interface LineAnnotation extends BaseMeasurement {
+  type: 'line';
+  startPoint: Point;
+  endPoint: Point;
+  label?: string;
+}
+
+// Circle/Ellipse highlight (region of interest)
+export interface CircleAnnotation extends BaseMeasurement {
+  type: 'circle';
+  center: Point;
+  radius: number;
+  fillOpacity?: number;
+  label?: string;
+}
+
+// Freehand annotation
+export interface FreehandAnnotation extends BaseMeasurement {
+  type: 'freehand';
+  points: Point[];
+  isClosed: boolean;
+}
+
+// Text with leader line (for labeling areas)
+export interface TextWithLeaderAnnotation extends BaseMeasurement {
+  type: 'textWithLeader';
+  anchorPoint: Point; // Where the leader points to
+  textPosition: Point; // Where the text is displayed
+  text: string;
+  fontSize: number;
+}
+
+// George's Line annotation (cervical spine assessment)
+export interface GeorgesLineAnnotation extends BaseMeasurement {
+  type: 'georgesLine';
+  vertebralLevels: {
+    level: string; // e.g., "C2", "C3"
+    point: Point;
+    deviation?: number;
+  }[];
+  overallFinding?: string;
+}
+
 // Union of all measurement types
 export type Measurement =
   | RulerMeasurement
@@ -116,7 +174,13 @@ export type Measurement =
   | CobbAngleMeasurement
   | EllipseMeasurement
   | RectangleMeasurement
-  | TextAnnotation;
+  | TextAnnotation
+  | ArrowAnnotation
+  | LineAnnotation
+  | CircleAnnotation
+  | FreehandAnnotation
+  | TextWithLeaderAnnotation
+  | GeorgesLineAnnotation;
 
 // Image data for the viewer
 export interface ViewerImage {
@@ -175,6 +239,11 @@ export const VIEWER_TOOLS: ToolConfig[] = [
   { id: 'ellipse', name: 'Ellipse', icon: 'Circle', shortcut: 'E', description: 'Measure ellipse area' },
   { id: 'rectangle', name: 'Rectangle', icon: 'Square', shortcut: 'Q', description: 'Measure rectangle area' },
   { id: 'text', name: 'Text', icon: 'Type', shortcut: 'T', description: 'Add text annotation' },
+  { id: 'arrow', name: 'Arrow', icon: 'ArrowUpRight', shortcut: 'I', description: 'Draw arrow pointing to area' },
+  { id: 'line', name: 'Line', icon: 'Minus', shortcut: 'L', description: 'Draw line' },
+  { id: 'circle', name: 'Circle', icon: 'CircleDot', shortcut: 'O', description: 'Highlight circular region' },
+  { id: 'freehand', name: 'Freehand', icon: 'Pencil', shortcut: 'F', description: 'Freehand drawing' },
+  { id: 'georgesLine', name: "George's Line", icon: 'Spline', shortcut: 'G', description: "Assess George's line for cervical spine" },
 ];
 
 // Preset window/level values for different imaging types
@@ -198,6 +267,12 @@ export const MEASUREMENT_COLORS = {
   ellipse: '#ffff00',
   rectangle: '#ff8800',
   text: '#ffffff',
+  arrow: '#ff4444',
+  line: '#44ff44',
+  circle: '#4444ff',
+  freehand: '#ff44ff',
+  textWithLeader: '#ffffff',
+  georgesLine: '#00ffff',
 } as const;
 
 // Calculate distance between two points in pixels

@@ -2,11 +2,13 @@
  * Imaging Router
  * Epic 22: Imaging & X-Ray Integration
  *
- * API routes for imaging upload and storage:
+ * API routes for imaging upload, storage, and annotation:
  * - Study creation and management
  * - Image upload (single and bulk)
  * - DICOM and standard image format support
  * - HIPAA-compliant storage
+ * - Annotation tools (arrows, lines, text, circles, measurements)
+ * - George's line assessment for cervical spine
  */
 
 import { z } from 'zod';
@@ -16,6 +18,8 @@ import { createAuditLog } from '@/lib/audit';
 import {
   ImagingModality,
   ImagingStudyStatus,
+  ImagingAnnotationType,
+  ImagingMeasurementType,
   Prisma,
 } from '@prisma/client';
 import {
@@ -863,6 +867,839 @@ export const imagingRouter = router({
       });
 
       return studies;
+    }),
+
+  // ============================================
+  // ANNOTATION TOOLS (US-227)
+  // ============================================
+
+  /**
+   * Add annotation to an image
+   * Supports: arrows, lines, text, circles, rectangles, angles, Cobb angles, freehand
+   */
+  addAnnotation: providerProcedure
+    .input(
+      z.object({
+        imageId: z.string(),
+        type: z.enum(['ARROW', 'LINE', 'TEXT', 'CIRCLE', 'RECTANGLE', 'ANGLE', 'COBB_ANGLE', 'FREEHAND']),
+        coordinates: z.record(z.string(), z.unknown()), // JSON object for flexible coordinate storage
+        text: z.string().optional(),
+        color: z.string().optional().default('#FF0000'),
+        lineWidth: z.number().optional().default(2),
+        fontSize: z.number().optional().default(14),
+        layer: z.number().optional().default(0),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { imageId, type, coordinates, text, color, lineWidth, fontSize, layer } = input;
+
+      // Verify image exists and belongs to organization
+      const image = await ctx.prisma.imagingImage.findFirst({
+        where: {
+          id: imageId,
+        },
+        include: {
+          study: {
+            select: {
+              organizationId: true,
+              id: true,
+            },
+          },
+        },
+      });
+
+      if (!image || image.study.organizationId !== ctx.user.organizationId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Image not found',
+        });
+      }
+
+      // Create annotation
+      const annotation = await ctx.prisma.imagingAnnotation.create({
+        data: {
+          imageId,
+          type,
+          coordinates: coordinates as Prisma.InputJsonValue,
+          text,
+          color,
+          lineWidth,
+          fontSize,
+          layer,
+          createdById: ctx.user.id,
+        },
+      });
+
+      // Audit log
+      await createAuditLog({
+        action: 'CREATE',
+        entityType: 'ImagingAnnotation',
+        entityId: annotation.id,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          imageId,
+          type,
+          text: text || null,
+        },
+      });
+
+      return annotation;
+    }),
+
+  /**
+   * Bulk add annotations to an image
+   * For saving entire annotation layer at once
+   */
+  addAnnotations: providerProcedure
+    .input(
+      z.object({
+        imageId: z.string(),
+        annotations: z.array(
+          z.object({
+            type: z.enum(['ARROW', 'LINE', 'TEXT', 'CIRCLE', 'RECTANGLE', 'ANGLE', 'COBB_ANGLE', 'FREEHAND']),
+            coordinates: z.record(z.string(), z.unknown()),
+            text: z.string().optional(),
+            color: z.string().optional().default('#FF0000'),
+            lineWidth: z.number().optional().default(2),
+            fontSize: z.number().optional().default(14),
+            layer: z.number().optional().default(0),
+          })
+        ),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { imageId, annotations } = input;
+
+      // Verify image exists and belongs to organization
+      const image = await ctx.prisma.imagingImage.findFirst({
+        where: {
+          id: imageId,
+        },
+        include: {
+          study: {
+            select: {
+              organizationId: true,
+              id: true,
+            },
+          },
+        },
+      });
+
+      if (!image || image.study.organizationId !== ctx.user.organizationId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Image not found',
+        });
+      }
+
+      // Create all annotations
+      const createdAnnotations = await ctx.prisma.imagingAnnotation.createMany({
+        data: annotations.map((ann, index) => ({
+          imageId,
+          type: ann.type,
+          coordinates: ann.coordinates as Prisma.InputJsonValue,
+          text: ann.text,
+          color: ann.color,
+          lineWidth: ann.lineWidth,
+          fontSize: ann.fontSize,
+          layer: ann.layer ?? index,
+          createdById: ctx.user.id,
+        })),
+      });
+
+      // Audit log
+      await createAuditLog({
+        action: 'CREATE',
+        entityType: 'ImagingAnnotation',
+        entityId: imageId,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          imageId,
+          annotationCount: createdAnnotations.count,
+          types: [...new Set(annotations.map((a) => a.type))],
+        },
+      });
+
+      // Return all annotations for the image
+      return ctx.prisma.imagingAnnotation.findMany({
+        where: { imageId },
+        orderBy: { layer: 'asc' },
+      });
+    }),
+
+  /**
+   * Get annotations for an image
+   */
+  getAnnotations: protectedProcedure
+    .input(z.object({ imageId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const image = await ctx.prisma.imagingImage.findFirst({
+        where: {
+          id: input.imageId,
+        },
+        include: {
+          study: {
+            select: {
+              organizationId: true,
+            },
+          },
+        },
+      });
+
+      if (!image || image.study.organizationId !== ctx.user.organizationId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Image not found',
+        });
+      }
+
+      return ctx.prisma.imagingAnnotation.findMany({
+        where: { imageId: input.imageId },
+        orderBy: { layer: 'asc' },
+      });
+    }),
+
+  /**
+   * Update an annotation
+   */
+  updateAnnotation: providerProcedure
+    .input(
+      z.object({
+        annotationId: z.string(),
+        coordinates: z.record(z.string(), z.unknown()).optional(),
+        text: z.string().optional(),
+        color: z.string().optional(),
+        lineWidth: z.number().optional(),
+        fontSize: z.number().optional(),
+        isVisible: z.boolean().optional(),
+        layer: z.number().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { annotationId, ...updateData } = input;
+
+      // Verify annotation exists and user has access
+      const annotation = await ctx.prisma.imagingAnnotation.findFirst({
+        where: { id: annotationId },
+        include: {
+          image: {
+            include: {
+              study: {
+                select: { organizationId: true },
+              },
+            },
+          },
+        },
+      });
+
+      if (!annotation || annotation.image.study.organizationId !== ctx.user.organizationId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Annotation not found',
+        });
+      }
+
+      const { coordinates, ...restUpdateData } = updateData;
+
+      const updated = await ctx.prisma.imagingAnnotation.update({
+        where: { id: annotationId },
+        data: {
+          ...restUpdateData,
+          ...(coordinates !== undefined && { coordinates: coordinates as Prisma.InputJsonValue }),
+        },
+      });
+
+      await createAuditLog({
+        action: 'UPDATE',
+        entityType: 'ImagingAnnotation',
+        entityId: annotationId,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: updateData,
+      });
+
+      return updated;
+    }),
+
+  /**
+   * Delete an annotation
+   */
+  deleteAnnotation: providerProcedure
+    .input(z.object({ annotationId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const annotation = await ctx.prisma.imagingAnnotation.findFirst({
+        where: { id: input.annotationId },
+        include: {
+          image: {
+            include: {
+              study: {
+                select: { organizationId: true },
+              },
+            },
+          },
+        },
+      });
+
+      if (!annotation || annotation.image.study.organizationId !== ctx.user.organizationId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Annotation not found',
+        });
+      }
+
+      await ctx.prisma.imagingAnnotation.delete({
+        where: { id: input.annotationId },
+      });
+
+      await createAuditLog({
+        action: 'DELETE',
+        entityType: 'ImagingAnnotation',
+        entityId: input.annotationId,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          type: annotation.type,
+          imageId: annotation.imageId,
+        },
+      });
+
+      return { success: true };
+    }),
+
+  /**
+   * Clear all annotations for an image
+   */
+  clearAnnotations: providerProcedure
+    .input(z.object({ imageId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const image = await ctx.prisma.imagingImage.findFirst({
+        where: { id: input.imageId },
+        include: {
+          study: {
+            select: { organizationId: true },
+          },
+        },
+      });
+
+      if (!image || image.study.organizationId !== ctx.user.organizationId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Image not found',
+        });
+      }
+
+      const result = await ctx.prisma.imagingAnnotation.deleteMany({
+        where: { imageId: input.imageId },
+      });
+
+      await createAuditLog({
+        action: 'DELETE',
+        entityType: 'ImagingAnnotation',
+        entityId: input.imageId,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          deletedCount: result.count,
+          operation: 'clearAll',
+        },
+      });
+
+      return { deletedCount: result.count };
+    }),
+
+  /**
+   * Save annotation layer as a snapshot
+   * Creates a JSON export of all annotations for an image
+   */
+  saveAnnotationLayer: providerProcedure
+    .input(
+      z.object({
+        imageId: z.string(),
+        layerName: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const image = await ctx.prisma.imagingImage.findFirst({
+        where: { id: input.imageId },
+        include: {
+          study: {
+            select: { organizationId: true, id: true },
+          },
+          annotations: {
+            orderBy: { layer: 'asc' },
+          },
+          measurements: true,
+        },
+      });
+
+      if (!image || image.study.organizationId !== ctx.user.organizationId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Image not found',
+        });
+      }
+
+      // Create a snapshot of the annotation layer
+      const snapshot = {
+        imageId: input.imageId,
+        studyId: image.study.id,
+        layerName: input.layerName || `Annotations-${new Date().toISOString()}`,
+        savedAt: new Date().toISOString(),
+        savedBy: ctx.user.id,
+        annotations: image.annotations.map((ann) => ({
+          type: ann.type,
+          coordinates: ann.coordinates,
+          text: ann.text,
+          color: ann.color,
+          lineWidth: ann.lineWidth,
+          fontSize: ann.fontSize,
+          layer: ann.layer,
+        })),
+        measurements: image.measurements.map((meas) => ({
+          type: meas.type,
+          value: meas.value,
+          unit: meas.unit,
+          coordinates: meas.coordinates,
+          label: meas.label,
+          description: meas.description,
+          normalMin: meas.normalMin,
+          normalMax: meas.normalMax,
+          deviation: meas.deviation,
+        })),
+      };
+
+      return snapshot;
+    }),
+
+  /**
+   * Load annotation layer from a snapshot
+   */
+  loadAnnotationLayer: providerProcedure
+    .input(
+      z.object({
+        imageId: z.string(),
+        snapshot: z.object({
+          annotations: z.array(
+            z.object({
+              type: z.enum(['ARROW', 'LINE', 'TEXT', 'CIRCLE', 'RECTANGLE', 'ANGLE', 'COBB_ANGLE', 'FREEHAND']),
+              coordinates: z.record(z.string(), z.unknown()),
+              text: z.string().nullable().optional(),
+              color: z.string().nullable().optional(),
+              lineWidth: z.number().nullable().optional(),
+              fontSize: z.number().nullable().optional(),
+              layer: z.number().optional(),
+            })
+          ),
+        }),
+        clearExisting: z.boolean().default(true),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { imageId, snapshot, clearExisting } = input;
+
+      const image = await ctx.prisma.imagingImage.findFirst({
+        where: { id: imageId },
+        include: {
+          study: {
+            select: { organizationId: true },
+          },
+        },
+      });
+
+      if (!image || image.study.organizationId !== ctx.user.organizationId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Image not found',
+        });
+      }
+
+      // Clear existing annotations if requested
+      if (clearExisting) {
+        await ctx.prisma.imagingAnnotation.deleteMany({
+          where: { imageId },
+        });
+      }
+
+      // Create annotations from snapshot
+      await ctx.prisma.imagingAnnotation.createMany({
+        data: snapshot.annotations.map((ann, index) => ({
+          imageId,
+          type: ann.type,
+          coordinates: ann.coordinates as Prisma.InputJsonValue,
+          text: ann.text || null,
+          color: ann.color || '#FF0000',
+          lineWidth: ann.lineWidth || 2,
+          fontSize: ann.fontSize || 14,
+          layer: ann.layer ?? index,
+          createdById: ctx.user.id,
+        })),
+      });
+
+      await createAuditLog({
+        action: 'CREATE',
+        entityType: 'ImagingAnnotation',
+        entityId: imageId,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          operation: 'loadSnapshot',
+          annotationCount: snapshot.annotations.length,
+          clearedExisting: clearExisting,
+        },
+      });
+
+      return ctx.prisma.imagingAnnotation.findMany({
+        where: { imageId },
+        orderBy: { layer: 'asc' },
+      });
+    }),
+
+  // ============================================
+  // MEASUREMENT TOOLS (US-227)
+  // ============================================
+
+  /**
+   * Add measurement to an image (for spinal analysis)
+   */
+  addMeasurement: providerProcedure
+    .input(
+      z.object({
+        imageId: z.string(),
+        type: z.enum([
+          'LINEAR',
+          'ANGLE',
+          'COBB_ANGLE',
+          'CERVICAL_LORDOSIS',
+          'LUMBAR_LORDOSIS',
+          'DISC_HEIGHT',
+          'VERTEBRAL_HEIGHT',
+          'ATLAS_PLANE',
+          'GEORGES_LINE',
+          'AREA',
+        ]),
+        value: z.number(),
+        unit: z.string(),
+        coordinates: z.record(z.string(), z.unknown()),
+        label: z.string().optional(),
+        description: z.string().optional(),
+        normalMin: z.number().optional(),
+        normalMax: z.number().optional(),
+        color: z.string().optional().default('#00FF00'),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { imageId, type, value, unit, coordinates, label, description, normalMin, normalMax, color } = input;
+
+      // Verify image exists and belongs to organization
+      const image = await ctx.prisma.imagingImage.findFirst({
+        where: { id: imageId },
+        include: {
+          study: {
+            select: { organizationId: true },
+          },
+        },
+      });
+
+      if (!image || image.study.organizationId !== ctx.user.organizationId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Image not found',
+        });
+      }
+
+      // Calculate deviation if normal range provided
+      let deviation: number | null = null;
+      if (normalMin !== undefined && normalMax !== undefined) {
+        const normalMid = (normalMin + normalMax) / 2;
+        deviation = value - normalMid;
+      }
+
+      // Map extended types to base measurement types
+      let measurementType: ImagingMeasurementType;
+      switch (type) {
+        case 'LINEAR':
+        case 'DISC_HEIGHT':
+        case 'VERTEBRAL_HEIGHT':
+        case 'ATLAS_PLANE':
+        case 'GEORGES_LINE':
+          measurementType = 'LINEAR';
+          break;
+        case 'ANGLE':
+        case 'CERVICAL_LORDOSIS':
+        case 'LUMBAR_LORDOSIS':
+          measurementType = 'ANGLE';
+          break;
+        case 'COBB_ANGLE':
+          measurementType = 'COBB_ANGLE';
+          break;
+        case 'AREA':
+          measurementType = 'AREA';
+          break;
+        default:
+          measurementType = 'LINEAR';
+      }
+
+      const measurement = await ctx.prisma.imagingMeasurement.create({
+        data: {
+          imageId,
+          type: measurementType,
+          value,
+          unit,
+          coordinates: coordinates as Prisma.InputJsonValue,
+          label: label || type,
+          description,
+          normalMin,
+          normalMax,
+          deviation,
+          color,
+          createdById: ctx.user.id,
+        },
+      });
+
+      await createAuditLog({
+        action: 'CREATE',
+        entityType: 'ImagingMeasurement',
+        entityId: measurement.id,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          imageId,
+          type,
+          value,
+          unit,
+          label,
+        },
+      });
+
+      return measurement;
+    }),
+
+  /**
+   * Get measurements for an image
+   */
+  getMeasurements: protectedProcedure
+    .input(z.object({ imageId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const image = await ctx.prisma.imagingImage.findFirst({
+        where: { id: input.imageId },
+        include: {
+          study: {
+            select: { organizationId: true },
+          },
+        },
+      });
+
+      if (!image || image.study.organizationId !== ctx.user.organizationId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Image not found',
+        });
+      }
+
+      return ctx.prisma.imagingMeasurement.findMany({
+        where: { imageId: input.imageId },
+        orderBy: { createdAt: 'asc' },
+      });
+    }),
+
+  /**
+   * Delete a measurement
+   */
+  deleteMeasurement: providerProcedure
+    .input(z.object({ measurementId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const measurement = await ctx.prisma.imagingMeasurement.findFirst({
+        where: { id: input.measurementId },
+        include: {
+          image: {
+            include: {
+              study: {
+                select: { organizationId: true },
+              },
+            },
+          },
+        },
+      });
+
+      if (!measurement || measurement.image.study.organizationId !== ctx.user.organizationId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Measurement not found',
+        });
+      }
+
+      await ctx.prisma.imagingMeasurement.delete({
+        where: { id: input.measurementId },
+      });
+
+      await createAuditLog({
+        action: 'DELETE',
+        entityType: 'ImagingMeasurement',
+        entityId: input.measurementId,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          type: measurement.type,
+          value: measurement.value,
+          imageId: measurement.imageId,
+        },
+      });
+
+      return { success: true };
+    }),
+
+  // ============================================
+  // GEORGE'S LINE ASSESSMENT (US-227)
+  // ============================================
+
+  /**
+   * Perform George's Line assessment for cervical spine
+   * George's line checks posterior vertebral body alignment
+   */
+  assessGeorgesLine: providerProcedure
+    .input(
+      z.object({
+        imageId: z.string(),
+        vertebralPoints: z.array(
+          z.object({
+            level: z.string(), // e.g., "C2", "C3", etc.
+            superior: z.object({ x: z.number(), y: z.number() }),
+            inferior: z.object({ x: z.number(), y: z.number() }),
+          })
+        ),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { imageId, vertebralPoints } = input;
+
+      // Verify image
+      const image = await ctx.prisma.imagingImage.findFirst({
+        where: { id: imageId },
+        include: {
+          study: {
+            select: { organizationId: true },
+          },
+        },
+      });
+
+      if (!image || image.study.organizationId !== ctx.user.organizationId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Image not found',
+        });
+      }
+
+      // Calculate George's line assessment
+      // George's line is drawn along the posterior vertebral bodies
+      // Any deviation > 2mm suggests subluxation/instability
+      const posteriorPoints = vertebralPoints.map((v) => ({
+        level: v.level,
+        point: {
+          x: (v.superior.x + v.inferior.x) / 2,
+          y: v.superior.y, // Use superior point for posterior body alignment
+        },
+      }));
+
+      // Calculate deviations from ideal line
+      const assessments: {
+        level: string;
+        deviation: number;
+        finding: string;
+      }[] = [];
+
+      for (let i = 1; i < posteriorPoints.length - 1; i++) {
+        const prev = posteriorPoints[i - 1].point;
+        const curr = posteriorPoints[i].point;
+        const next = posteriorPoints[i + 1].point;
+
+        // Calculate expected position on line from prev to next
+        const t = 0.5; // midpoint
+        const expectedX = prev.x + t * (next.x - prev.x);
+        const expectedY = prev.y + t * (next.y - prev.y);
+
+        // Calculate deviation
+        const deviation = Math.sqrt(
+          Math.pow(curr.x - expectedX, 2) + Math.pow(curr.y - expectedY, 2)
+        );
+
+        let finding = 'Normal alignment';
+        if (deviation > 2) {
+          finding = deviation > 3.5 ? 'Significant subluxation' : 'Mild subluxation';
+        }
+
+        assessments.push({
+          level: posteriorPoints[i].level,
+          deviation: Math.round(deviation * 100) / 100,
+          finding,
+        });
+      }
+
+      // Create measurement records
+      const measurements = await Promise.all(
+        assessments.map((assessment) =>
+          ctx.prisma.imagingMeasurement.create({
+            data: {
+              imageId,
+              type: 'LINEAR',
+              value: assessment.deviation,
+              unit: 'mm',
+              coordinates: {
+                type: 'georgesLine',
+                level: assessment.level,
+                vertebralPoints,
+              } as Prisma.InputJsonValue,
+              label: `George's Line - ${assessment.level}`,
+              description: assessment.finding,
+              normalMin: 0,
+              normalMax: 2,
+              deviation: assessment.deviation > 2 ? assessment.deviation - 2 : null,
+              color: assessment.deviation > 2 ? '#FF0000' : '#00FF00',
+              createdById: ctx.user.id,
+            },
+          })
+        )
+      );
+
+      // Create annotation for visual representation
+      await ctx.prisma.imagingAnnotation.create({
+        data: {
+          imageId,
+          type: 'LINE',
+          coordinates: {
+            type: 'georgesLine',
+            points: posteriorPoints.map((p) => p.point),
+            levels: posteriorPoints.map((p) => p.level),
+          } as Prisma.InputJsonValue,
+          text: "George's Line",
+          color: '#00FFFF',
+          lineWidth: 2,
+          createdById: ctx.user.id,
+        },
+      });
+
+      await createAuditLog({
+        action: 'CREATE',
+        entityType: 'ImagingMeasurement',
+        entityId: imageId,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          operation: 'georgesLineAssessment',
+          levels: vertebralPoints.map((v) => v.level),
+          findings: assessments,
+        },
+      });
+
+      return {
+        assessments,
+        measurements,
+        overallFinding:
+          assessments.every((a) => a.deviation <= 2)
+            ? 'Normal posterior vertebral body alignment'
+            : 'Abnormal alignment detected - review recommended',
+      };
     }),
 });
 

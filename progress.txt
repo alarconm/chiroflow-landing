@@ -190,3 +190,82 @@ Story: US-225 - Image upload and storage
 --- Iteration 3 completed at 2026-01-22 ---
 Story: US-226 - DICOM viewer
 
+--- Iteration 3 completed at 2026-01-22 03:04:45 ---
+Story: US-226 - DICOM viewer
+
+## US-227: X-ray annotation tools
+**Status:** COMPLETED
+**Date:** 2026-01-22
+
+### What was done:
+1. Extended the imaging tRPC router with comprehensive annotation tools:
+   - `addAnnotation` - Add single annotation to image (arrow, line, text, circle, rectangle, angle, Cobb angle, freehand)
+   - `addAnnotations` - Bulk add annotations for saving entire annotation layer
+   - `getAnnotations` - Get all annotations for an image
+   - `updateAnnotation` - Update annotation properties (coordinates, color, visibility, etc.)
+   - `deleteAnnotation` - Delete single annotation
+   - `clearAnnotations` - Clear all annotations for an image
+   - `saveAnnotationLayer` - Export annotation layer as JSON snapshot
+   - `loadAnnotationLayer` - Import annotation layer from snapshot
+
+2. Added measurement tools for spinal analysis:
+   - `addMeasurement` - Add measurement with support for:
+     - LINEAR, ANGLE, COBB_ANGLE, CERVICAL_LORDOSIS, LUMBAR_LORDOSIS
+     - DISC_HEIGHT, VERTEBRAL_HEIGHT, ATLAS_PLANE, GEORGES_LINE, AREA
+   - `getMeasurements` - Get measurements for an image
+   - `deleteMeasurement` - Delete a measurement
+   - All measurements include normal range comparison and deviation calculation
+
+3. Implemented George's Line Assessment:
+   - `assessGeorgesLine` - Specialized procedure for cervical spine assessment
+   - Accepts vertebral points (C2-C7) with superior/inferior landmarks
+   - Calculates posterior vertebral body alignment
+   - Detects deviations > 2mm indicating subluxation
+   - Creates visual annotations and measurement records
+   - Returns assessments per level with findings
+
+4. Created AnnotationToolbar component (`app/src/components/imaging/AnnotationToolbar.tsx`):
+   - Tool groups: Drawing (arrow, line, circle, freehand), Text, Measurement (ruler, angle, Cobb), Shapes, Spinal (George's line)
+   - Color picker with 8 predefined colors
+   - Settings popover for line width and font size
+   - Undo/Redo/Clear actions
+   - Save/Export/Import buttons
+
+5. Created AnnotationCanvas component (`app/src/components/imaging/AnnotationCanvas.tsx`):
+   - Drawing functions for all annotation types:
+     - `drawArrow` - Arrow with arrowhead
+     - `drawLine` - Line with optional label
+     - `drawCircle` - Circle highlight with fill opacity
+     - `drawFreehand` - Freehand path drawing
+     - `drawTextWithLeader` - Text with leader line (anchor + text position)
+     - `drawGeorgesLine` - George's line with vertebral level markers
+   - Support for existing measurement types (ruler, angle, Cobb angle)
+   - Coordinate transformation support (imageToCanvas)
+
+6. Extended imaging types (`app/src/components/imaging/types.ts`):
+   - New tool types: arrow, line, circle, freehand, georgesLine
+   - New annotation interfaces:
+     - ArrowAnnotation - Arrow with start/end points and arrowhead size
+     - LineAnnotation - Simple line with optional label
+     - CircleAnnotation - Circle with fill opacity
+     - FreehandAnnotation - Path with points array
+     - TextWithLeaderAnnotation - Text with anchor and text positions
+     - GeorgesLineAnnotation - Vertebral level assessment data
+   - Extended VIEWER_TOOLS configuration
+   - Extended MEASUREMENT_COLORS
+
+7. Updated exports in `app/src/components/imaging/index.ts`
+
+8. Verified TypeScript compilation passes
+
+### Acceptance Criteria Met:
+- [x] imaging.addAnnotation - Add annotation to image
+- [x] Arrow and line drawing tools (ArrowAnnotation, LineAnnotation, drawArrow, drawLine)
+- [x] Text labels with leader lines (TextWithLeaderAnnotation, drawTextWithLeader)
+- [x] Highlight/circle regions of interest (CircleAnnotation, drawCircle)
+- [x] Cobb angle measurement tool (already in DICOMViewer, enhanced in router)
+- [x] George's line assessment (assessGeorgesLine procedure, GeorgesLineAnnotation)
+- [x] Save annotation layer separately from image (saveAnnotationLayer, loadAnnotationLayer)
+--- Iteration 4 completed at 2026-01-22 ---
+Story: US-227 - X-ray annotation tools
+
