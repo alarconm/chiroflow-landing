@@ -1,416 +1,49 @@
 # Ralph Autonomous Loop Progress
 
-## Epic 30: AI Receptionist Agent
+## Current Epic: Epic 31 - AI Billing Agent
 
-### Completed Stories
+## Completed Stories
 
-#### US-300: AI receptionist schema (COMPLETED)
-- Added ConversationChannel enum with Phone, Chat, SMS, Email
-- Added AIConversationStatus enum for conversation status tracking
-- Added AIActionType enum for receptionist actions
-- Added AIActionResult enum for action results
-- Added AIEscalationReason enum for escalation reasons
-- Added KnowledgeBaseCategory enum for FAQ categories
-- Added AIReceptionistConversation model with:
-  - patientId, channel, transcript, status
-  - externalCallId for Twilio integration
-  - phoneNumber, duration, recording fields
-  - summary and resolvedTopics
-- Added AIReceptionistAction model with:
-  - conversationId, actionType, parameters, result, confidence
-  - reasoning for AI decision tracking
-  - appointmentId and patientId for entity references
-- Added AIReceptionistEscalation model with:
-  - conversationId, reason, assignedTo, resolvedAt
-  - contextSummary and suggestedActions for handoff
-  - urgencyLevel and resolution tracking
-- Added AIKnowledgeBase model with:
-  - category, question, answer, keywords
-  - usage tracking (timesUsed, helpfulCount, unhelpfulCount)
-  - variations for alternative phrasings
-- Added AIVoiceConfig model with:
-  - voice settings (provider, voiceId, speed, pitch)
-  - greeting, holdMessage, transferMessage, afterHoursMsg
-  - businessHours and timezone configuration
-  - recording settings and escalation rules
-- Added relations to Organization and Patient models
-- Prisma schema validated successfully
-- Prisma client generated successfully
+### US-308 - AI billing agent schema
+**Status**: COMPLETED
+**Date**: 2026-01-22
 
-#### US-301: Voice AI integration (COMPLETED)
-- Created comprehensive types in `app/src/lib/ai-receptionist/types.ts`:
-  - VoiceConfig, BusinessHours, EscalationRule types
-  - CallState for managing active call state
-  - TranscriptEntry for conversation transcripts
-  - TwilioWebhookPayload and TwilioStreamPayload for Twilio integration
-  - OpenAI Realtime API types (OpenAISessionConfig, OpenAITool, events)
-  - SpeechToText and TextToSpeech service interfaces
-  - VoiceServiceConfig combining all configuration
-  - CallAnalytics and VoiceMetrics for reporting
-- Created VoiceService class in `app/src/lib/ai-receptionist/voice-service.ts`:
-  - handleIncomingCall - Handles Twilio webhook, identifies patient, builds greeting
-  - processSpeech - Processes speech input, detects intent and sentiment
-  - generateResponse - AI response generation based on detected intent
-  - Intent handlers for booking, rescheduling, canceling, questions
-  - transferCall - Transfer call to human staff with context handoff
-  - startRecording - Recording with consent management
-  - endCall - Save conversation and analytics to database
-  - isWithinBusinessHours - Business hours checking
-  - checkEscalationRules - Automatic escalation triggers
-  - getOpenAISessionConfig - OpenAI Realtime API configuration
-  - Event system for real-time call monitoring
-- Created tRPC router in `app/src/server/routers/ai-receptionist.ts`:
-  - Voice configuration CRUD (getVoiceConfig, upsertVoiceConfig)
-  - Call handling (handleIncomingCall, processSpeech, transferCall, endCall)
-  - Recording management (startRecording)
-  - Active call monitoring (getActiveCalls, getCallState)
-  - Conversation history (getConversations, getConversation)
-  - Escalation management (getPendingEscalations, resolveEscalation, assignEscalation)
-  - Knowledge base CRUD (getKnowledgeBase, createKnowledgeEntry, updateKnowledgeEntry, deleteKnowledgeEntry)
-  - Analytics (getVoiceMetrics, getCallAnalytics)
-- Added router to index.ts
-- All acceptance criteria met:
-  ✅ Twilio Voice + OpenAI Realtime API integration architecture
-  ✅ Natural voice synthesis with configurable voice (voiceProvider, voiceId, speed, pitch)
-  ✅ Real-time speech-to-text transcription (via OpenAI Whisper-1)
-  ✅ Low-latency conversational responses (OpenAI Realtime API with server VAD)
-  ✅ Call transfer to human when needed (transferCall with context handoff)
-  ✅ Call recording with consent (recordingConsent, recordingDisclosure)
-  ✅ After-hours automated handling (businessHours, afterHoursMsg)
+**Implementation Summary**:
+Created comprehensive database models for the AI Billing Agent system in Epic 31.
 
-#### US-302: Appointment scheduling agent (COMPLETED)
-- Created comprehensive SchedulingAgent class in `app/src/lib/ai-receptionist/scheduling-agent.ts`:
-  - Natural language parsing for scheduling requests (parseSchedulingRequest)
-  - Date extraction from text ("tomorrow", "next Monday", "January 15", "1/15")
-  - Time preference extraction ("morning", "afternoon", "2pm")
-  - Provider preference extraction ("Dr. Smith")
-  - Appointment type resolution from keywords
-- Booking operations:
-  - bookAppointment - Full booking flow with missing info prompts
-  - rescheduleAppointment - Find patient's upcoming appointments, offer new slots
-  - cancelAppointment - Confirm and cancel with reason tracking
-- Real-time availability checking:
-  - findAvailableSlots - Checks provider schedules, exceptions, existing appointments
-  - findAlternativeSlots - Suggests alternatives when preferred time unavailable
-  - Provider schedule parsing with time preference filtering
-- Patient information collection:
-  - collectPatientInfo - Extract name, DOB, phone, email from natural language
-  - confirmInsurance - Verify insurance on file or prompt for update
-- Confirmation sending:
-  - sendConfirmation - SMS/email/both confirmation (framework ready)
-- Message formatting for natural conversation flow
-- Added tRPC endpoints in ai-receptionist.ts:
-  - aiReceptionist.bookAppointment - Book via API/conversation
-  - aiReceptionist.rescheduleAppointment - Reschedule existing appointment
-  - aiReceptionist.cancelAppointment - Cancel with confirmation
-  - aiReceptionist.parseSchedulingRequest - Parse natural language input
-  - aiReceptionist.findAvailableSlots - Query available times
-  - aiReceptionist.collectPatientInfo - Gather patient details
-  - aiReceptionist.confirmInsurance - Insurance verification
-  - aiReceptionist.sendConfirmation - Send booking confirmation
-- Updated exports in ai-receptionist/index.ts
-- All acceptance criteria met:
-  ✅ Natural language understanding for booking requests
-  ✅ Provider availability checking in real-time
-  ✅ Alternative suggestions when preferred time unavailable
-  ✅ New patient info collection during booking
-  ✅ Insurance information confirmation
-  ✅ Appointment confirmation via patient's preferred method
-  ✅ Reschedule/cancel through conversation
+**Files Modified**:
+- `app/prisma/schema.prisma` - Added new enums, models, and relations
 
-#### US-303: FAQ and information agent (COMPLETED)
-- Created comprehensive FAQAgent class in `app/src/lib/ai-receptionist/faq-agent.ts`:
-  - Question answering from knowledge base (answerQuestion)
-  - Question classification into categories (PRACTICE_INFO, INSURANCE, SERVICES, PROVIDERS, etc.)
-  - Emergency detection and handling for urgent medical situations
-  - Keyword and pattern-based matching with confidence scoring
-- Specialized query methods:
-  - getPracticeInfo - Hours, location, parking, contact information
-  - getInsuranceInfo - Insurance acceptance and coverage questions
-  - getServiceInfo - Treatment and service offerings
-  - getProviderInfo - Doctor backgrounds and specialties
-  - getAppointmentPrep - Pre-appointment preparation instructions
-  - getNewPatientInfo - New patient process explanation
-- Search and discovery:
-  - searchFAQs - Full-text search across knowledge base
-  - getFAQsByCategory - Browse FAQs by category
-  - getPopularQuestions - Most frequently asked questions
-- Feedback and analytics:
-  - recordFeedback - Track helpful/unhelpful responses
-  - Usage tracking (timesUsed) for knowledge entries
-- Question classification with regex patterns and keywords for:
-  - Practice hours, location, parking
-  - Insurance and payment questions
-  - Services and treatment options
-  - Provider information
-  - Appointment preparation
-  - New patient process
-  - Policies (cancellation, rescheduling)
-  - Emergency situations
-- Added tRPC endpoints in ai-receptionist.ts:
-  - aiReceptionist.answerQuestion - Answer from knowledge base
-  - aiReceptionist.getPracticeInfo - Practice info by type
-  - aiReceptionist.getInsuranceInfo - Insurance questions
-  - aiReceptionist.getServiceInfo - Service/treatment info
-  - aiReceptionist.getProviderInfo - Provider backgrounds
-  - aiReceptionist.getAppointmentPrep - Appointment preparation
-  - aiReceptionist.getNewPatientInfo - New patient process
-  - aiReceptionist.searchFAQs - Search knowledge base
-  - aiReceptionist.getFAQsByCategory - Browse by category
-  - aiReceptionist.getPopularQuestions - Popular FAQs
-  - aiReceptionist.recordFAQFeedback - Feedback on answers
-- Updated exports in ai-receptionist/index.ts
-- All acceptance criteria met:
-  ✅ aiReceptionist.answerQuestion - Answer from knowledge base
-  ✅ Practice hours, location, parking information
-  ✅ Insurance and payment questions
-  ✅ Service and treatment questions
-  ✅ Appointment preparation instructions
-  ✅ New patient process explanation
-  ✅ Provider background and specialties
-  ✅ Escalate unknown questions to staff
+**New Enums Created**:
+1. `BillingTaskType` - Task types (SUBMIT, FOLLOW_UP, APPEAL, CORRECT, POST, SCRUB, ELIGIBILITY, STATUS)
+2. `BillingTaskStatus` - Task statuses (QUEUED, IN_PROGRESS, COMPLETED, FAILED, SKIPPED, CANCELLED, NEEDS_REVIEW)
+3. `AIAppealStatus` - Appeal workflow states (DRAFT through ESCALATED)
 
-#### US-304: Patient identification (COMPLETED)
-- Created comprehensive PatientIdentificationAgent class in `app/src/lib/ai-receptionist/patient-identification-agent.ts`:
-  - Caller ID lookup via PatientContact phone fields (homePhone, mobilePhone, workPhone)
-  - Phone number normalization for consistent matching
-  - Multi-patient household detection and handling
-- Verification methods:
-  - lookupByCallerId - Find patients by phone number with confidence scoring
-  - verifyByNameAndDOB - Secure name and date of birth verification
-  - verifyByVoice - Voice verification framework (placeholder for biometrics integration)
-  - parseVerificationInfo - Natural language parsing for name/DOB extraction
-- New patient creation during call:
-  - createNewPatient - Full patient record creation with demographics and contact
-  - collectNewPatientInfo - Progressive information collection from conversation
-  - Automatic MRN generation
-  - Soundex values for fuzzy name matching
-- Family member handling:
-  - handleFamilyMemberCalling - Verify family relationships via Household model
-  - promptForFamilyMember - Prompt when household has multiple patients
-  - verifyFamilyRelationship - Check shared households
-  - buildFamilyContext - Build context for family member calls
-- Privacy-compliant identification (HIPAA):
-  - verifyAuthorization - Check caller authorization for patient access
-  - getPrivacySafePatientInfo - Return only partial info for verification
-  - Age-based authorization rules for minors
-  - Authorized relationship types (PARENT, GUARDIAN, SPOUSE, etc.)
-- Conversation linking:
-  - linkConversationToPatient - Associate conversation with patient record
-  - Auto-linking option in configuration
-- Helper utilities:
-  - Soundex algorithm for fuzzy name matching
-  - findBySoundex - Search by phonetic similarity
-  - calculateAge - Age calculation for authorization rules
-  - normalizePhoneNumber - Clean phone numbers for comparison
-- Added tRPC endpoints in ai-receptionist.ts:
-  - aiReceptionist.identifyByCallerId - Lookup by phone number
-  - aiReceptionist.verifyByNameAndDOB - Name/DOB verification
-  - aiReceptionist.parseVerificationInfo - Parse natural language input
-  - aiReceptionist.identifyPatient - Main identification flow orchestrator
-  - aiReceptionist.createPatientDuringCall - Create new patient
-  - aiReceptionist.collectNewPatientInfo - Collect patient info progressively
-  - aiReceptionist.handleFamilyMemberCalling - Handle family member scenarios
-  - aiReceptionist.promptForFamilyMember - Prompt for household member selection
-  - aiReceptionist.verifyAuthorization - HIPAA authorization check
-  - aiReceptionist.getPrivacySafePatientInfo - Privacy-safe patient lookup
-  - aiReceptionist.linkConversationToPatient - Link conversation to patient
-- Updated exports in ai-receptionist/index.ts
-- All acceptance criteria met:
-  ✅ Caller ID lookup for existing patients
-  ✅ Voice verification option (framework ready)
-  ✅ DOB/name verification for security
-  ✅ Create new patient record during call
-  ✅ Link conversation to patient record
-  ✅ Handle family members calling
-  ✅ Privacy-compliant identification
+**New Models Created**:
+1. `AIBillingTask` - Core task tracking with type, claimId, status, attempts, result, priority, scheduling
+2. `AIBillingDecision` - Decision logging with decision, reasoning, confidence, alternatives, evidence
+3. `AIAppeal` - Comprehensive appeal tracking with content, deadlines, responses, financial tracking
+4. `AIBillingRule` - Configurable billing rules with conditions, actions, triggers, thresholds
+5. `AIBillingMetric` - Performance metrics for tasks, submissions, appeals, posting, AR tracking
 
-#### US-305: Smart escalation (COMPLETED)
-- Created comprehensive EscalationAgent class in `app/src/lib/ai-receptionist/escalation-agent.ts`:
-  - Frustration detection with pattern matching (multiple indicators)
-  - Urgency detection for medical emergencies and urgent situations
-  - Clinical question detection requiring provider input
-  - Billing dispute detection
-  - Human request detection (explicit requests to speak with a person)
-  - Repeated failure detection (AI unable to help)
-  - Low confidence detection
-- Main escalation methods:
-  - analyzeForEscalation - Analyze conversation for escalation triggers
-  - escalate - Transfer conversation to human staff with context handoff
-  - checkAndEscalate - Auto-check and escalate if needed
-- Detection patterns:
-  - 10+ frustration patterns (caps, punctuation, keywords)
-  - 8+ urgency patterns (emergency keywords, pain levels, medical terms)
-  - 8+ clinical patterns (medication, diagnosis, test results)
-  - 6+ billing patterns (disputes, insurance, refunds)
-  - 7+ human request patterns ("speak to a human", "real person")
-- Context handoff for human staff:
-  - Patient info, conversation summary, topics discussed
-  - Sentiment analysis (positive/neutral/negative/frustrated)
-  - Pending requests and suggested actions
-  - Last 10 transcript entries for context
-- Escalation metrics tracking:
-  - Total escalations by reason
-  - Average urgency and resolution time
-  - Escalation rate percentage
-  - Top reasons analysis
-- Added tRPC endpoints in ai-receptionist.ts:
-  - aiReceptionist.escalate - Manual escalation with context
-  - aiReceptionist.analyzeForEscalation - Analyze call for triggers
-  - aiReceptionist.checkAndEscalate - Auto-check and escalate
-  - aiReceptionist.detectFrustration - Frustration analysis endpoint
-  - aiReceptionist.detectUrgency - Urgency analysis endpoint
-  - aiReceptionist.detectClinicalQuestion - Clinical question detection
-  - aiReceptionist.detectBillingDispute - Billing dispute detection
-  - aiReceptionist.detectHumanRequest - Human request detection
-  - aiReceptionist.getEscalationMetrics - Metrics for date range
-  - aiReceptionist.recordEscalationFeedback - Record if escalation was appropriate
-  - aiReceptionist.getEscalationContext - Get full context for escalation
-- Updated exports in ai-receptionist/index.ts
-- All acceptance criteria met:
-  ✅ aiReceptionist.escalate - Transfer to human with context
-  ✅ Detect frustration or urgency via pattern matching
-  ✅ Clinical questions trigger escalation
-  ✅ Billing disputes trigger escalation
-  ✅ Patient request for human triggers immediate transfer
-  ✅ Context handoff to human staff (summary, topics, transcript)
-  ✅ Escalation metrics tracking (rate, reasons, resolution time)
+**Relations Added**:
+- Organization -> aiBillingTasks, aiBillingDecisions, aiAppeals, aiBillingRules, aiBillingMetrics
+- Claim -> aiBillingTasks, aiAppeals
+- Patient -> aiBillingTasks
+- InsurancePayer -> aiBillingTasks
+- Charge -> aiBillingTasks
+- AIBillingTask -> AIBillingDecision (one-to-many)
 
-#### US-306: Multi-channel support (COMPLETED)
-- Created comprehensive MultiChannelAgent class in `app/src/lib/ai-receptionist/multi-channel-agent.ts`:
-  - Unified conversation handling across all channels (Phone, Chat, SMS, Email)
-  - Channel-agnostic message processing with ConversationState management
-  - In-memory state management with database persistence
-- Website chat widget integration:
-  - initializeChatWidget - Configure and start chat sessions
-  - handleChatMessage - Process incoming chat messages
-  - Configurable widget settings (position, colors, greeting, offline message)
-  - Suggested questions and responses
-- SMS conversation support:
-  - handleSMSMessage - Process incoming SMS
-  - sendSMSResponse - Send SMS replies
-  - Automatic conversation threading by phone number
-  - Provider-agnostic architecture (Twilio, Vonage, MessageBird)
-- Channel preference learning:
-  - getChannelPreference - Learn patient's preferred communication channel
-  - updateChannelPreference - Track usage patterns over time
-  - Language preference tracking
-  - Contact time preferences
-- Conversation handoff between channels:
-  - handoffToChannel - Seamless channel switching
-  - Context preservation across channels
-  - Handoff summary generation
-  - Patient notification on channel change
-  - Previous channel history tracking
-- Multi-language support:
-  - detectLanguage - Automatic language detection via pattern matching
-  - 13 supported languages (en, es, zh, vi, tl, ko, ru, ar, pt, fr, de, ja, hi)
-  - Localized messages and greetings
-  - Language-specific response generation
-  - Unsupported language escalation
-- Added tRPC endpoints in ai-receptionist.ts:
-  - aiReceptionist.startMultiChannelConversation - Start conversation on any channel
-  - aiReceptionist.processMultiChannelMessage - Process messages across channels
-  - aiReceptionist.handoffToChannel - Transfer conversations between channels
-  - aiReceptionist.getChannelPreference - Get patient channel preferences
-  - aiReceptionist.initializeChatWidget - Initialize chat widget session
-  - aiReceptionist.handleChatMessage - Handle chat widget messages
-  - aiReceptionist.handleSMSMessage - Handle incoming SMS
-  - aiReceptionist.sendSMSResponse - Send SMS responses
-  - aiReceptionist.endMultiChannelConversation - End conversation with summary
-  - aiReceptionist.detectLanguage - Detect language from text
-  - aiReceptionist.getActiveMultiChannelConversations - List active conversations
-  - aiReceptionist.getMultiChannelConversationState - Get conversation state
-  - aiReceptionist.getSupportedLanguages - Get supported language list
-- Updated exports in ai-receptionist/index.ts
-- All acceptance criteria met:
-  ✅ Unified conversation handling across channels
-  ✅ Website chat widget integration
-  ✅ SMS conversation support
-  ✅ Consistent responses across channels
-  ✅ Channel preference learning
-  ✅ Conversation handoff between channels
-  ✅ Multi-language support
+**Validation**:
+- Prisma schema validates successfully
+- Prisma client generates successfully
+- Pre-existing TypeScript errors unrelated to this change
 
-### Pending Stories
-- US-307: AI receptionist dashboard
-
-### Notes
-- Mobile app has pre-existing TypeScript errors due to missing expo/react-native dependencies
-- These errors are unrelated to the AI receptionist schema changes
-- Main web app compiles successfully
---- Iteration 1 completed at 2026-01-22 09:03:28 ---
-Story: US-300 - AI receptionist schema
-
---- Iteration 2 completed at 2026-01-22 ---
-Story: US-301 - Voice AI integration
-
---- Iteration 2 completed at 2026-01-22 09:11:43 ---
-Story: US-301 - Voice AI integration
-
---- Iteration 3 completed at 2026-01-22 ---
-Story: US-302 - Appointment scheduling agent
-
---- Iteration 3 completed at 2026-01-22 09:20:46 ---
-Story: US-302 - Appointment scheduling agent
-
---- Iteration 4 completed at 2026-01-22 ---
-Story: US-303 - FAQ and information agent
-
---- Iteration 4 completed at 2026-01-22 09:26:54 ---
-Story: US-303 - FAQ and information agent
-
---- Iteration 5 completed at 2026-01-22 ---
-Story: US-304 - Patient identification
-
---- Iteration 5 completed at 2026-01-22 09:35:40 ---
-Story: US-304 - Patient identification
-
-
---- Iteration 6 completed at 2026-01-22 09:41:52 ---
-Story: US-305 - Smart escalation
---- Iteration 6 completed at 2026-01-22 09:42:34 ---
-Story: US-305 - Smart escalation
-
---- Iteration 7 completed at 2026-01-22 09:43:13 ---
-Story: US-306 - Multi-channel support
-
---- Iteration 8 completed at 2026-01-22 09:43:23 ---
-Story: US-306 - Multi-channel support
-
---- Iteration 9 completed at 2026-01-22 09:43:32 ---
-Story: US-306 - Multi-channel support
-
---- Iteration 10 completed at 2026-01-22 09:43:42 ---
-Story: US-306 - Multi-channel support
-
---- Iteration 11 completed at 2026-01-22 09:43:51 ---
-Story: US-306 - Multi-channel support
-
---- Iteration 12 completed at 2026-01-22 09:44:00 ---
-Story: US-306 - Multi-channel support
-
---- Iteration 13 completed at 2026-01-22 09:44:10 ---
-Story: US-306 - Multi-channel support
-
---- Iteration 14 completed at 2026-01-22 09:44:19 ---
-Story: US-306 - Multi-channel support
-
---- Iteration 15 completed at 2026-01-22 09:44:29 ---
-Story: US-306 - Multi-channel support
-
---- Iteration 16 completed at 2026-01-22 09:44:38 ---
-Story: US-306 - Multi-channel support
-
---- Iteration 17 completed at 2026-01-22 09:44:48 ---
-Story: US-306 - Multi-channel support
-
---- Iteration 18 completed at 2026-01-22 09:44:58 ---
-Story: US-306 - Multi-channel support
-
---- Iteration 19 completed at 2026-01-22 09:45:07 ---
-Story: US-306 - Multi-channel support
-
---- Iteration 20 completed at 2026-01-22 ---
-Story: US-306 - Multi-channel support (COMPLETED)
-
+## Next Stories to Implement
+- US-308 (2nd) - Autonomous claim submission
+- US-309 - Denial analysis and routing
+- US-310 - Automated appeal generation
+- US-311 - Claim follow-up automation
+- US-312 - Smart payment posting
+- US-313 - Billing optimization recommendations
+- US-314 - AI billing agent dashboard

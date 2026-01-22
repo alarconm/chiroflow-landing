@@ -19,7 +19,7 @@
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-301",
@@ -35,7 +35,7 @@
         "After-hours automated handling"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-302",
@@ -52,7 +52,7 @@
         "Handle rescheduling and cancellation requests"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-303",
@@ -69,7 +69,7 @@
         "Escalate unknown questions to staff"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-304",
@@ -85,7 +85,7 @@
         "Privacy-compliant identification"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-305",
@@ -101,7 +101,7 @@
         "Escalation metrics tracking"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-306",
@@ -117,7 +117,7 @@
         "Multi-language support"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-307",

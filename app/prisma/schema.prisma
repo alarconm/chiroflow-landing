@@ -242,6 +242,13 @@ model Organization {
   aiKnowledgeBaseEntries      AIKnowledgeBase[]
   aiVoiceConfig               AIVoiceConfig?
 
+  // AI Billing Agent relations (Epic 31)
+  aiBillingTasks     AIBillingTask[]
+  aiBillingDecisions AIBillingDecision[]
+  aiAppeals          AIAppeal[]
+  aiBillingRules     AIBillingRule[]
+  aiBillingMetrics   AIBillingMetric[]
+
   @@index([subdomain])
 }
 
@@ -549,6 +556,9 @@ model Patient {
 
   // AI Receptionist relations (Epic 30)
   aiReceptionistConversations AIReceptionistConversation[]
+
+  // AI Billing Agent relations (Epic 31)
+  aiBillingTasks AIBillingTask[]
 
   @@unique([mrn, organizationId])
   @@index([organizationId])
@@ -2186,6 +2196,9 @@ model InsurancePayer {
   patientInsurances PatientInsurance[]
   claims            Claim[]
 
+  // AI Billing Agent relations (Epic 31)
+  aiBillingTasks AIBillingTask[]
+
   @@index([name])
   @@index([payerId])
 }
@@ -2297,6 +2310,9 @@ model Charge {
   // AI Billing relations (Epic 09)
   paymentMatchSuggestions PaymentMatchSuggestion[]
   underpayments           UnderpaymentDetection[]
+
+  // AI Billing Agent relations (Epic 31)
+  aiBillingTasks AIBillingTask[]
 
   @@index([organizationId])
   @@index([patientId])
@@ -2459,6 +2475,10 @@ model Claim {
   scrubResults      ClaimScrubResult[]
   denialPredictions DenialPrediction[]
   underpayments     UnderpaymentDetection[]
+
+  // AI Billing Agent relations (Epic 31)
+  aiBillingTasks AIBillingTask[]
+  aiAppeals      AIAppeal[]
 
   @@index([organizationId])
   @@index([patientId])
@@ -11109,4 +11129,367 @@ model AIVoiceConfig {
   // One config per organization
   organizationId String       @unique
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+// ============================================
+// EPIC 31: AI BILLING AGENT
+// ============================================
+
+// Billing task type enum
+enum BillingTaskType {
+  SUBMIT // Submit new claims
+  FOLLOW_UP // Follow up on pending claims
+  APPEAL // Appeal denied claims
+  CORRECT // Correct rejected claims
+  POST // Post payments from ERA/EOB
+  SCRUB // Pre-submission scrubbing
+  ELIGIBILITY // Check patient eligibility
+  STATUS // Check claim status
+}
+
+// Billing task status enum
+enum BillingTaskStatus {
+  QUEUED // Waiting to be processed
+  IN_PROGRESS // Currently being processed
+  COMPLETED // Successfully completed
+  FAILED // Processing failed
+  SKIPPED // Skipped due to conditions
+  CANCELLED // Cancelled by user or system
+  NEEDS_REVIEW // Requires human review
+}
+
+// AI Billing Task - Tracks individual billing agent activities
+model AIBillingTask {
+  id       String            @id @default(cuid())
+  taskType BillingTaskType
+  status   BillingTaskStatus @default(QUEUED)
+
+  // Task target
+  claimId   String?
+  patientId String?
+  payerId   String?
+  chargeId  String?
+
+  // Priority and scheduling
+  priority     Int       @default(0) // Higher = more urgent
+  scheduledFor DateTime? // When to execute (null = ASAP)
+  startedAt    DateTime?
+  completedAt  DateTime?
+
+  // Retry tracking
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  lastError   String?   @db.Text
+  nextRetryAt DateTime?
+
+  // Task result
+  result          Json? // Outcome data from processing
+  resultSummary   String? // Human-readable summary
+  amountRecovered Decimal? @db.Decimal(10, 2) // For financial impact tracking
+
+  // Context and metadata
+  context  Json? // Input context for processing
+  metadata Json? // Additional metadata
+
+  // AI processing
+  aiModelUsed      String?
+  processingTimeMs Int?
+  tokensUsed       Int?
+
+  // Audit
+  createdBy String? // User or system that created
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  claim   Claim?          @relation(fields: [claimId], references: [id])
+  patient Patient?        @relation(fields: [patientId], references: [id])
+  payer   InsurancePayer? @relation(fields: [payerId], references: [id])
+  charge  Charge?         @relation(fields: [chargeId], references: [id])
+
+  // Related decisions
+  decisions AIBillingDecision[]
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([taskType])
+  @@index([status])
+  @@index([claimId])
+  @@index([patientId])
+  @@index([scheduledFor])
+  @@index([createdAt])
+}
+
+// AI Billing Decision - Records AI decisions with reasoning
+model AIBillingDecision {
+  id String @id @default(cuid())
+
+  // Decision details
+  decision   String @db.Text // The decision made
+  reasoning  String @db.Text // Why this decision was made
+  confidence Float // 0-1 confidence score
+
+  // Alternatives considered
+  alternatives Json? // Array of { option, reason, score }
+
+  // Evidence/supporting data
+  evidence     Json? // Data that informed the decision
+  rulesApplied Json? // Which billing rules were applied
+
+  // Risk assessment
+  riskLevel   String? // low, medium, high
+  riskFactors Json? // What risks were identified
+
+  // Outcome tracking (filled in after action)
+  outcomeStatus  String? // success, partial, failed
+  outcomeDetails Json?
+  actualImpact   Decimal? @db.Decimal(10, 2) // Actual financial impact
+
+  // User override
+  wasOverridden  Boolean   @default(false)
+  overriddenBy   String?
+  overrideReason String?   @db.Text
+  overriddenAt   DateTime?
+
+  // AI metadata
+  modelVersion     String?
+  processingTimeMs Int?
+  promptUsed       String? @db.Text // For debugging/improvement
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  taskId String
+  task   AIBillingTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([taskId])
+  @@index([decision])
+  @@index([confidence])
+  @@index([createdAt])
+}
+
+// Appeal status enum
+enum AIAppealStatus {
+  DRAFT // Being prepared
+  READY // Ready to send
+  SUBMITTED // Sent to payer
+  ACKNOWLEDGED // Payer acknowledged receipt
+  IN_REVIEW // Payer is reviewing
+  ADDITIONAL_INFO // Payer requested more info
+  APPROVED // Appeal approved
+  PARTIAL // Partially approved
+  DENIED // Appeal denied
+  ESCALATED // Escalated to higher level
+}
+
+// AI Appeal - Comprehensive appeal tracking
+model AIAppeal {
+  id     String         @id @default(cuid())
+  status AIAppealStatus @default(DRAFT)
+
+  // Appeal content
+  appealType String @default("FIRST_LEVEL") // FIRST_LEVEL, SECOND_LEVEL, EXTERNAL
+  subject    String
+  body       String @db.Text
+
+  // Denial being appealed
+  denialCode   String? // Original denial code
+  denialReason String?   @db.Text
+  denialDate   DateTime?
+  denialAmount Decimal?  @db.Decimal(10, 2)
+
+  // Supporting arguments
+  arguments        Json? // Array of appeal arguments
+  medicalNecessity String? @db.Text // Medical necessity justification
+  clinicalSummary  String? @db.Text // Relevant clinical information
+  citations        Json? // Legal/medical citations
+
+  // Attachments
+  attachments Json? // Array of { name, type, url, description }
+
+  // Deadlines
+  appealDeadline   DateTime? // When appeal must be submitted
+  payerResponseDue DateTime? // Expected response date
+
+  // Submission tracking
+  submittedAt        DateTime?
+  submittedBy        String?
+  submissionMethod   String? // electronic, mail, fax, portal
+  confirmationNumber String?
+
+  // Payer response
+  responseDate    DateTime?
+  responseDetails String?   @db.Text
+  approvedAmount  Decimal?  @db.Decimal(10, 2)
+  adjustmentCodes Json? // Any adjustment codes in response
+
+  // Financial tracking
+  originalAmount  Decimal? @db.Decimal(10, 2) // Original claim amount
+  recoveredAmount Decimal? @db.Decimal(10, 2) // Amount recovered
+
+  // Learning/improvement
+  successFactors  Json? // What made this appeal successful/unsuccessful
+  templateVersion String?
+
+  // AI metadata
+  generatedByAI    Boolean @default(true)
+  aiModelUsed      String?
+  processingTimeMs Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  claimId String
+  claim   Claim  @relation(fields: [claimId], references: [id])
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([claimId])
+  @@index([status])
+  @@index([appealDeadline])
+  @@index([createdAt])
+}
+
+// AI Billing Rule - Configurable rules for billing agent behavior
+model AIBillingRule {
+  id       String @id @default(cuid())
+  name     String
+  category String // submission, scrubbing, appeal, followup, posting
+
+  // Rule definition
+  description String @db.Text
+  conditions  Json // Array of { field, operator, value }
+  actions     Json // Array of { action, parameters }
+
+  // Applicability
+  payerIds       String[] // Specific payers (empty = all)
+  procedureCodes String[] // Specific CPT codes (empty = all)
+  claimTypes     String[] // professional, institutional (empty = all)
+
+  // Scheduling/triggers
+  triggerType  String  @default("automatic") // automatic, scheduled, manual
+  triggerTime  String? // Cron expression for scheduled
+  delayMinutes Int     @default(0) // Delay before executing
+
+  // Priority and thresholds
+  priority       Int      @default(0) // Higher = runs first
+  minClaimAmount Decimal? @db.Decimal(10, 2) // Minimum claim amount to apply
+  maxClaimAmount Decimal? @db.Decimal(10, 2) // Maximum claim amount
+
+  // Safety limits
+  maxActionsPerDay  Int      @default(100) // Max executions per day
+  requiresApproval  Boolean  @default(false) // Needs human approval
+  approvalThreshold Decimal? @db.Decimal(10, 2) // Amount above which needs approval
+
+  // Status
+  isActive    Boolean   @default(true)
+  lastRunAt   DateTime?
+  runCount    Int       @default(0)
+  successRate Float? // Historical success rate
+
+  // Audit
+  createdBy  String?
+  modifiedBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([category])
+  @@index([isActive])
+  @@index([priority])
+}
+
+// AI Billing Metric - Performance tracking for the billing agent
+model AIBillingMetric {
+  id         String   @id @default(cuid())
+  metricDate DateTime @default(now())
+  periodType String   @default("daily") // hourly, daily, weekly, monthly
+
+  // Task metrics
+  tasksQueued     Int @default(0)
+  tasksCompleted  Int @default(0)
+  tasksFailed     Int @default(0)
+  tasksSkipped    Int @default(0)
+  avgProcessingMs Int @default(0)
+
+  // Submission metrics
+  claimsSubmitted Int   @default(0)
+  claimsAccepted  Int   @default(0)
+  claimsRejected  Int   @default(0)
+  submissionRate  Float @default(0) // % accepted
+
+  // Follow-up metrics
+  followUpsPerformed Int @default(0)
+  statusesUpdated    Int @default(0)
+  stalledIdentified  Int @default(0)
+
+  // Appeal metrics
+  appealsGenerated  Int   @default(0)
+  appealsSubmitted  Int   @default(0)
+  appealsWon        Int   @default(0)
+  appealsLost       Int   @default(0)
+  appealSuccessRate Float @default(0)
+
+  // Posting metrics
+  paymentsPosted Int     @default(0)
+  amountPosted   Decimal @default(0) @db.Decimal(12, 2)
+  autoMatchRate  Float   @default(0) // % auto-matched
+
+  // Financial impact
+  revenueRecovered      Decimal @default(0) @db.Decimal(12, 2)
+  underpaymentsCaught   Int     @default(0)
+  underpaymentAmount    Decimal @default(0) @db.Decimal(12, 2)
+  denialPreventionSaved Decimal @default(0) @db.Decimal(12, 2)
+
+  // AR metrics
+  avgDaysInAR    Float   @default(0)
+  arOver30Days   Decimal @default(0) @db.Decimal(12, 2)
+  arOver60Days   Decimal @default(0) @db.Decimal(12, 2)
+  arOver90Days   Decimal @default(0) @db.Decimal(12, 2)
+  collectionRate Float   @default(0) // % collected
+
+  // AI performance
+  aiDecisionsMade    Int   @default(0)
+  aiDecisionsCorrect Int   @default(0)
+  aiAccuracyRate     Float @default(0)
+  userOverrides      Int   @default(0)
+
+  // Cost tracking
+  aiTokensUsed Int     @default(0)
+  aiCostUsd    Decimal @default(0) @db.Decimal(8, 4)
+
+  // Comparison to manual
+  manualHoursEquivalent Float   @default(0) // Hours saved
+  costSavingsUsd        Decimal @default(0) @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, metricDate, periodType])
+  @@index([organizationId])
+  @@index([metricDate])
+  @@index([periodType])
 }
