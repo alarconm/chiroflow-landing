@@ -1151,6 +1151,393 @@ export const clearinghouseRouter = router({
       return checks;
     }),
 
+  // Get latest eligibility for a patient (with caching support)
+  getLatestEligibility: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        insuranceId: z.string().optional(),
+        maxAgeDays: z.number().min(1).max(90).default(7), // Cache validity in days
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { patientId, insuranceId, maxAgeDays } = input;
+
+      // Calculate cache expiry date
+      const cacheExpiryDate = new Date();
+      cacheExpiryDate.setDate(cacheExpiryDate.getDate() - maxAgeDays);
+
+      // Build where clause for finding latest eligibility check
+      const where: Record<string, unknown> = {
+        organizationId: ctx.user.organizationId,
+        patientId,
+        checkDate: { gte: cacheExpiryDate },
+        status: { in: [EligibilityStatus.ACTIVE, EligibilityStatus.INACTIVE] },
+      };
+
+      if (insuranceId) {
+        where.insuranceId = insuranceId;
+      }
+
+      // Get the most recent eligibility check within cache period
+      const latestCheck = await ctx.prisma.eligibilityCheck.findFirst({
+        where,
+        include: {
+          insurance: {
+            include: { insurancePayer: true },
+          },
+        },
+        orderBy: { checkDate: 'desc' },
+      });
+
+      // If no insurance specified, also get checks for each active insurance
+      let allInsuranceChecks: typeof latestCheck[] = [];
+      if (!insuranceId) {
+        const patient = await ctx.prisma.patient.findFirst({
+          where: { id: patientId, organizationId: ctx.user.organizationId },
+          include: {
+            insurances: {
+              where: { isActive: true },
+              orderBy: { type: 'asc' }, // PRIMARY first
+            },
+          },
+        });
+
+        if (patient?.insurances) {
+          for (const ins of patient.insurances) {
+            const check = await ctx.prisma.eligibilityCheck.findFirst({
+              where: {
+                organizationId: ctx.user.organizationId,
+                patientId,
+                insuranceId: ins.id,
+                checkDate: { gte: cacheExpiryDate },
+                status: { in: [EligibilityStatus.ACTIVE, EligibilityStatus.INACTIVE] },
+              },
+              include: {
+                insurance: {
+                  include: { insurancePayer: true },
+                },
+              },
+              orderBy: { checkDate: 'desc' },
+            });
+            if (check) allInsuranceChecks.push(check);
+          }
+        }
+      }
+
+      const cacheAgeHours = latestCheck
+        ? Math.floor((Date.now() - new Date(latestCheck.checkDate).getTime()) / (1000 * 60 * 60))
+        : null;
+
+      return {
+        latestCheck,
+        allInsuranceChecks,
+        isCached: latestCheck !== null,
+        cacheAgeHours,
+        cacheExpiryDays: maxAgeDays,
+        needsRefresh: latestCheck === null || cacheAgeHours === null || cacheAgeHours > maxAgeDays * 24,
+      };
+    }),
+
+  // Check if cached eligibility exists and is valid
+  getCachedEligibility: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        insuranceId: z.string(),
+        maxAgeHours: z.number().min(1).max(720).default(24), // Default 24 hours
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { patientId, insuranceId, maxAgeHours } = input;
+
+      const cacheExpiryDate = new Date();
+      cacheExpiryDate.setHours(cacheExpiryDate.getHours() - maxAgeHours);
+
+      const cachedCheck = await ctx.prisma.eligibilityCheck.findFirst({
+        where: {
+          organizationId: ctx.user.organizationId,
+          patientId,
+          insuranceId,
+          checkDate: { gte: cacheExpiryDate },
+          status: { in: [EligibilityStatus.ACTIVE, EligibilityStatus.INACTIVE] },
+        },
+        include: {
+          insurance: {
+            include: { insurancePayer: true },
+          },
+        },
+        orderBy: { checkDate: 'desc' },
+      });
+
+      if (!cachedCheck) {
+        return {
+          isCached: false,
+          cachedCheck: null,
+          cacheAgeMinutes: null,
+          expiresInMinutes: null,
+        };
+      }
+
+      const cacheAgeMs = Date.now() - new Date(cachedCheck.checkDate).getTime();
+      const cacheAgeMinutes = Math.floor(cacheAgeMs / (1000 * 60));
+      const expiresInMinutes = Math.max(0, maxAgeHours * 60 - cacheAgeMinutes);
+
+      return {
+        isCached: true,
+        cachedCheck,
+        cacheAgeMinutes,
+        expiresInMinutes,
+      };
+    }),
+
+  // Check eligibility with optional cache bypass
+  checkEligibilityWithCache: billerProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        insurancePolicyId: z.string().optional(),
+        clearinghouseConfigId: z.string().optional(),
+        serviceDate: z.date().optional(),
+        forceRefresh: z.boolean().default(false), // Bypass cache if true
+        cacheHours: z.number().min(1).max(168).default(24), // Cache validity (default 24 hours)
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { patientId, forceRefresh, cacheHours } = input;
+
+      // Check for cached result first (unless force refresh)
+      if (!forceRefresh) {
+        const cacheExpiryDate = new Date();
+        cacheExpiryDate.setHours(cacheExpiryDate.getHours() - cacheHours);
+
+        const where: Record<string, unknown> = {
+          organizationId: ctx.user.organizationId,
+          patientId,
+          checkDate: { gte: cacheExpiryDate },
+          status: { in: [EligibilityStatus.ACTIVE, EligibilityStatus.INACTIVE] },
+        };
+
+        if (input.insurancePolicyId) {
+          where.insuranceId = input.insurancePolicyId;
+        }
+
+        const cachedCheck = await ctx.prisma.eligibilityCheck.findFirst({
+          where,
+          include: {
+            insurance: { include: { insurancePayer: true } },
+          },
+          orderBy: { checkDate: 'desc' },
+        });
+
+        if (cachedCheck) {
+          // Return cached result
+          return {
+            fromCache: true,
+            cacheAgeMinutes: Math.floor((Date.now() - new Date(cachedCheck.checkDate).getTime()) / (1000 * 60)),
+            eligibilityCheck: cachedCheck,
+            response: {
+              success: true,
+              status: cachedCheck.status,
+              responseDate: cachedCheck.responseDate,
+              coverage: {
+                status: cachedCheck.coverageStatus || 'Unknown',
+                planName: cachedCheck.planName,
+                planType: cachedCheck.planType,
+              },
+              benefits: {
+                deductible: cachedCheck.deductible ? Number(cachedCheck.deductible) : undefined,
+                deductibleMet: cachedCheck.deductibleMet ? Number(cachedCheck.deductibleMet) : undefined,
+                outOfPocketMax: cachedCheck.outOfPocketMax ? Number(cachedCheck.outOfPocketMax) : undefined,
+                outOfPocketMet: cachedCheck.outOfPocketMet ? Number(cachedCheck.outOfPocketMet) : undefined,
+                copay: cachedCheck.copay ? Number(cachedCheck.copay) : undefined,
+                coinsurance: cachedCheck.coinsurance ? Number(cachedCheck.coinsurance) : undefined,
+              },
+              visitLimits: cachedCheck.visitsMax
+                ? {
+                    max: cachedCheck.visitsMax,
+                    used: cachedCheck.visitsUsed || 0,
+                    remaining: cachedCheck.visitsRemaining || 0,
+                  }
+                : undefined,
+              authorization: {
+                required: cachedCheck.authRequired || false,
+                number: cachedCheck.authNumber || undefined,
+              },
+            },
+          };
+        }
+      }
+
+      // No cache or force refresh - perform actual eligibility check
+      // Get patient with insurance
+      const patient = await ctx.prisma.patient.findFirst({
+        where: { id: patientId, organizationId: ctx.user.organizationId },
+        include: {
+          demographics: true,
+          insurances: {
+            where: input.insurancePolicyId
+              ? { id: input.insurancePolicyId }
+              : { type: 'PRIMARY', isActive: true },
+            include: { insurancePayer: true },
+          },
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Patient not found' });
+      }
+
+      const insurance = patient.insurances[0];
+      if (!insurance) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'No active insurance found for patient' });
+      }
+
+      // Get clearinghouse config
+      let configId = input.clearinghouseConfigId;
+      if (!configId) {
+        const primary = await ctx.prisma.clearinghouseConfig.findFirst({
+          where: { organizationId: ctx.user.organizationId, isPrimary: true, isActive: true },
+        });
+        if (!primary) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'No clearinghouse configuration found',
+          });
+        }
+        configId = primary.id;
+      }
+
+      const config = await ctx.prisma.clearinghouseConfig.findFirst({
+        where: { id: configId, organizationId: ctx.user.organizationId },
+      });
+
+      if (!config) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Clearinghouse configuration not found' });
+      }
+
+      // Build eligibility request
+      const eligibilityRequest: EligibilityRequest = {
+        clearinghouseConfigId: configId,
+        patientId: patient.id,
+        insuranceId: insurance.id,
+        patient: {
+          firstName: patient.demographics?.firstName || '',
+          lastName: patient.demographics?.lastName || '',
+          dateOfBirth: patient.demographics?.dateOfBirth || new Date(),
+          gender: patient.demographics?.gender,
+        },
+        subscriber:
+          insurance.subscriberRelationship !== 'SELF'
+            ? {
+                memberId: insurance.subscriberId || '',
+                firstName: insurance.subscriberFirstName || patient.demographics?.firstName || '',
+                lastName: insurance.subscriberLastName || patient.demographics?.lastName || '',
+                dateOfBirth: insurance.subscriberDob || undefined,
+                relationshipCode: insurance.subscriberRelationship || 'SELF',
+              }
+            : undefined,
+        payer: {
+          payerId: insurance.insurancePayer?.payerId || '',
+          payerName: insurance.insurancePayer?.name || '',
+        },
+        serviceDate: input.serviceDate,
+        serviceTypes: ['30'], // Chiropractic service type
+      };
+
+      // Create eligibility check record
+      const eligibilityCheck = await ctx.prisma.eligibilityCheck.create({
+        data: {
+          patientId: patient.id,
+          insuranceId: insurance.id,
+          organizationId: ctx.user.organizationId,
+          clearinghouseConfigId: configId,
+          payerId: insurance.insurancePayer?.payerId,
+          payerName: insurance.insurancePayer?.name,
+          serviceDate: input.serviceDate || new Date(),
+          serviceTypes: eligibilityRequest.serviceTypes,
+          subscriberId: insurance.subscriberId,
+          subscriberName: insurance.subscriberFirstName && insurance.subscriberLastName
+            ? `${insurance.subscriberFirstName} ${insurance.subscriberLastName}`
+            : null,
+          subscriberDob: insurance.subscriberDob,
+          relationshipCode: insurance.subscriberRelationship,
+          status: EligibilityStatus.PENDING,
+        },
+      });
+
+      try {
+        // Check eligibility via clearinghouse
+        const provider = await createClearinghouseProvider(config as unknown as ClearinghouseConfigData);
+        const response = await provider.checkEligibility(eligibilityRequest);
+
+        // Update eligibility check with response
+        const updatedCheck = await ctx.prisma.eligibilityCheck.update({
+          where: { id: eligibilityCheck.id },
+          data: {
+            status: response.status,
+            responseDate: new Date(),
+            coverageStatus: response.coverage.status,
+            planName: response.coverage.planName,
+            planType: response.coverage.planType,
+            // Benefits
+            deductible: response.benefits.deductible,
+            deductibleMet: response.benefits.deductibleMet,
+            outOfPocketMax: response.benefits.outOfPocketMax,
+            outOfPocketMet: response.benefits.outOfPocketMet,
+            copay: response.benefits.copay,
+            coinsurance: response.benefits.coinsurance,
+            // Visit limits
+            visitsRemaining: response.visitLimits?.remaining,
+            visitsUsed: response.visitLimits?.used,
+            visitsMax: response.visitLimits?.max,
+            // Authorization
+            authRequired: response.authorization?.required || false,
+            authNumber: response.authorization?.number,
+            // Raw response
+            responseJson: response as unknown as object,
+            ediRequest: response.ediRequest,
+            ediResponse: response.ediResponse,
+          },
+          include: {
+            insurance: { include: { insurancePayer: true } },
+          },
+        });
+
+        await auditLog('ELIGIBILITY_CHECK', 'EligibilityCheck', {
+          entityId: eligibilityCheck.id,
+          changes: {
+            patientId: patient.id,
+            status: response.status,
+            planName: response.coverage.planName,
+            fromCache: false,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return {
+          fromCache: false,
+          cacheAgeMinutes: 0,
+          eligibilityCheck: updatedCheck,
+          response,
+        };
+      } catch (error) {
+        await ctx.prisma.eligibilityCheck.update({
+          where: { id: eligibilityCheck.id },
+          data: {
+            status: EligibilityStatus.ERROR,
+            errorMessage: error instanceof Error ? error.message : 'Unknown error',
+          },
+        });
+
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Eligibility check failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        });
+      }
+    }),
+
   // ============================================
   // Claim Status (276/277)
   // ============================================

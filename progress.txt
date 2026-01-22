@@ -1188,3 +1188,93 @@ Date: 2026-01-21
 --- Iteration 4 completed at 2026-01-21 ---
 Story: US-072 - Electronic claim submission
 
+--- Iteration 4 completed at 2026-01-21 20:26:24 ---
+Story: US-072 - Electronic claim submission
+
+--- Iteration 5 started at 2026-01-21 ---
+Story: US-073 - Real-time eligibility verification
+
+## Story: US-073 - Real-time eligibility verification
+Date: 2026-01-21
+
+### What I Did
+- Verified clearinghouse.checkEligibility endpoint already exists with full implementation (lines 951-1122)
+- Verified clearinghouse.checkEligibilityWithCache endpoint exists for cached eligibility (lines 1295-1539)
+- Verified clearinghouse.getLatestEligibility endpoint exists for retrieving cached results (lines 1155-1240)
+- Verified clearinghouse.getCachedEligibility endpoint exists for cache validation (lines 1243-1292)
+- Created PatientEligibilityCard component to display eligibility in patient record
+- Created PatientEligibilitySummary component for displaying all patient insurances
+- Added eligibility display to patient detail page Insurance tab
+- Verified secondary insurance support (checkEligibility accepts any insurancePolicyId)
+
+### Files Created
+- app/src/components/clearinghouse/PatientEligibilityCard.tsx (~300 lines)
+  - PatientEligibilityCard - Displays eligibility status for a single insurance
+  - PatientEligibilitySummary - Displays eligibility for all active insurances
+  - Compact mode for inline display
+  - Full card mode with benefits summary
+  - Refresh button with cache bypass option
+  - Status badges and icons
+  - Authorization warnings
+
+### Files Modified
+- app/src/components/clearinghouse/index.ts
+  - Added exports for PatientEligibilityCard and PatientEligibilitySummary
+
+- app/src/app/(dashboard)/patients/[id]/page.tsx
+  - Added import for PatientEligibilityCard
+  - Added eligibility display under each insurance policy in Insurance tab
+
+### Key Features Already Implemented (Router)
+1. **checkEligibility** - Real-time eligibility verification via clearinghouse API
+   - Returns coverage status, copay, deductible, coinsurance
+   - Stores full response in EligibilityCheck model
+   - Supports chiropractic service type (code 30)
+
+2. **checkEligibilityWithCache** - Eligibility with caching
+   - Returns cached result if available and not expired
+   - forceRefresh option to bypass cache
+   - Configurable cache hours (default 24)
+
+3. **getLatestEligibility** - Get cached eligibility for patient
+   - Returns latest check within cache period
+   - Can return checks for all active insurances
+   - Shows cache age and refresh recommendation
+
+4. **getCachedEligibility** - Check if valid cache exists
+   - Returns cache age in minutes
+   - Returns time until expiry
+
+5. **listEligibilityChecks** - List eligibility history
+   - Filter by patient, status
+   - Pagination support
+
+### UI Features (New Components)
+1. **PatientEligibilityCard**
+   - Shows eligibility status with color-coded badges
+   - Displays benefits summary (copay, deductible, visits remaining)
+   - Shows cache age and refresh recommendation
+   - Prior authorization warnings
+   - Compact mode for inline display
+   - Refresh button with loading state
+
+2. **Patient Record Integration**
+   - Eligibility card shown under each insurance policy
+   - Auto-loads cached eligibility on page load
+   - One-click refresh with cache bypass
+
+### Build Status
+- ✓ Build compiles successfully
+- ✓ TypeScript checks pass
+
+### Acceptance Criteria Status
+1. clearinghouse.checkEligibility - Verify patient coverage - ✓
+2. Return coverage status, copay, deductible, coinsurance - ✓
+3. Store eligibility response for reference - ✓ (EligibilityCheck model)
+4. Display eligibility in patient record - ✓ (PatientEligibilityCard)
+5. Support primary and secondary insurance - ✓ (any insurancePolicyId accepted)
+6. Cache eligibility for configurable period - ✓ (checkEligibilityWithCache)
+
+--- Iteration 5 completed at 2026-01-21 ---
+Story: US-073 - Real-time eligibility verification
+

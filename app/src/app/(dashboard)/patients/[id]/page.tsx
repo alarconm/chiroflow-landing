@@ -38,6 +38,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { DocumentList } from '@/components/patients';
 import { ClinicalHistoryView } from '@/components/clinical';
+import { PatientEligibilityCard } from '@/components/clearinghouse';
 import { usePermissions } from '@/hooks';
 
 const statusColors: Record<string, string> = {
@@ -481,67 +482,78 @@ export default function PatientDetailPage() {
             patient.insurances
               .filter((i) => i.isActive)
               .map((insurance) => (
-                <Card key={insurance.id}>
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-lg">
-                        {insuranceTypeLabels[insurance.type]} Insurance
-                      </CardTitle>
-                      <Badge
-                        variant={insurance.verifiedAt ? 'default' : 'secondary'}
-                        className={insurance.verifiedAt ? 'bg-green-500' : ''}
-                      >
-                        {insurance.verifiedAt ? 'Verified' : 'Unverified'}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid gap-4 md:grid-cols-3">
-                      <div>
-                        <p className="text-sm text-stone-500">Insurance Company</p>
-                        <p className="font-medium">{insurance.payerName}</p>
+                <div key={insurance.id} className="space-y-4">
+                  {/* Insurance Policy Card */}
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-lg">
+                          {insuranceTypeLabels[insurance.type]} Insurance
+                        </CardTitle>
+                        <Badge
+                          variant={insurance.verifiedAt ? 'default' : 'secondary'}
+                          className={insurance.verifiedAt ? 'bg-green-500' : ''}
+                        >
+                          {insurance.verifiedAt ? 'Verified' : 'Unverified'}
+                        </Badge>
                       </div>
-                      <div>
-                        <p className="text-sm text-stone-500">Plan Name</p>
-                        <p className="font-medium">{insurance.planName || '-'}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-stone-500">Plan Type</p>
-                        <p className="font-medium">{insurance.planType || '-'}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-stone-500">Policy Number</p>
-                        <p className="font-medium">{insurance.policyNumber}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-stone-500">Group Number</p>
-                        <p className="font-medium">{insurance.groupNumber || '-'}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-stone-500">Subscriber Relationship</p>
-                        <p className="font-medium capitalize">
-                          {insurance.subscriberRelationship.toLowerCase()}
-                        </p>
-                      </div>
-                      {insurance.copay && (
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid gap-4 md:grid-cols-3">
                         <div>
-                          <p className="text-sm text-stone-500">Copay</p>
-                          <p className="font-medium">
-                            ${parseFloat(insurance.copay.toString()).toFixed(2)}
+                          <p className="text-sm text-stone-500">Insurance Company</p>
+                          <p className="font-medium">{insurance.payerName}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-stone-500">Plan Name</p>
+                          <p className="font-medium">{insurance.planName || '-'}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-stone-500">Plan Type</p>
+                          <p className="font-medium">{insurance.planType || '-'}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-stone-500">Policy Number</p>
+                          <p className="font-medium">{insurance.policyNumber}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-stone-500">Group Number</p>
+                          <p className="font-medium">{insurance.groupNumber || '-'}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-stone-500">Subscriber Relationship</p>
+                          <p className="font-medium capitalize">
+                            {insurance.subscriberRelationship.toLowerCase()}
                           </p>
                         </div>
-                      )}
-                      {insurance.deductible && (
-                        <div>
-                          <p className="text-sm text-stone-500">Deductible</p>
-                          <p className="font-medium">
-                            ${parseFloat(insurance.deductible.toString()).toFixed(2)}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
+                        {insurance.copay && (
+                          <div>
+                            <p className="text-sm text-stone-500">Copay</p>
+                            <p className="font-medium">
+                              ${parseFloat(insurance.copay.toString()).toFixed(2)}
+                            </p>
+                          </div>
+                        )}
+                        {insurance.deductible && (
+                          <div>
+                            <p className="text-sm text-stone-500">Deductible</p>
+                            <p className="font-medium">
+                              ${parseFloat(insurance.deductible.toString()).toFixed(2)}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Eligibility Status Card */}
+                  <PatientEligibilityCard
+                    patientId={patientId}
+                    insuranceId={insurance.id}
+                    insuranceName={insurance.payerName || undefined}
+                    insuranceType={insurance.type as 'PRIMARY' | 'SECONDARY' | 'TERTIARY'}
+                  />
+                </div>
               ))
           ) : (
             <Card>

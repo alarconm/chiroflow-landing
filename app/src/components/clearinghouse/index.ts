@@ -9,3 +9,4 @@ export { EligibilityChecker } from './EligibilityChecker';
 export { ClaimSubmissionList } from './ClaimSubmissionList';
 export { RemittanceList } from './RemittanceList';
 export { DenialManager } from './DenialManager';
+export { PatientEligibilityCard, PatientEligibilitySummary } from './PatientEligibilityCard';
