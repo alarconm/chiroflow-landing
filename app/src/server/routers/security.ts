@@ -1794,23 +1794,855 @@ export const securityRouter = router({
 
     return keysDueForRotation;
   }),
+
+  // ============================================
+  // Session Security (US-259)
+  // ============================================
+
+  // Get session security settings
+  getSessionSettings: adminProcedure.query(async ({ ctx }) => {
+    const settings = await ctx.prisma.securitySetting.findUnique({
+      where: { organizationId: ctx.user.organizationId },
+    });
+
+    return {
+      sessionTimeoutMinutes: settings?.sessionTimeoutMinutes ?? 60,
+      idleTimeoutMinutes: settings?.idleTimeoutMinutes ?? 15,
+      maxConcurrentSessions: settings?.maxConcurrentSessions ?? 3,
+      ipWhitelistEnabled: settings?.ipWhitelistEnabled ?? false,
+      ipWhitelist: settings?.ipWhitelist ?? [],
+      ipBlacklist: settings?.ipBlacklist ?? [],
+    };
+  }),
+
+  // Update session security settings (configurable timeout)
+  updateSessionSettings: adminProcedure
+    .input(
+      z.object({
+        sessionTimeoutMinutes: z.number().min(5).max(1440).optional(), // 5 min to 24 hours
+        idleTimeoutMinutes: z.number().min(1).max(120).optional(), // 1 min to 2 hours
+        maxConcurrentSessions: z.number().min(1).max(10).optional(),
+        ipWhitelistEnabled: z.boolean().optional(),
+        ipWhitelist: z.array(z.string()).optional(),
+        ipBlacklist: z.array(z.string()).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const settings = await ctx.prisma.securitySetting.upsert({
+        where: { organizationId: ctx.user.organizationId },
+        update: {
+          ...(input.sessionTimeoutMinutes !== undefined && {
+            sessionTimeoutMinutes: input.sessionTimeoutMinutes,
+          }),
+          ...(input.idleTimeoutMinutes !== undefined && {
+            idleTimeoutMinutes: input.idleTimeoutMinutes,
+          }),
+          ...(input.maxConcurrentSessions !== undefined && {
+            maxConcurrentSessions: input.maxConcurrentSessions,
+          }),
+          ...(input.ipWhitelistEnabled !== undefined && {
+            ipWhitelistEnabled: input.ipWhitelistEnabled,
+          }),
+          ...(input.ipWhitelist !== undefined && {
+            ipWhitelist: input.ipWhitelist,
+          }),
+          ...(input.ipBlacklist !== undefined && {
+            ipBlacklist: input.ipBlacklist,
+          }),
+        },
+        create: {
+          organizationId: ctx.user.organizationId,
+          sessionTimeoutMinutes: input.sessionTimeoutMinutes ?? 60,
+          idleTimeoutMinutes: input.idleTimeoutMinutes ?? 15,
+          maxConcurrentSessions: input.maxConcurrentSessions ?? 3,
+          ipWhitelistEnabled: input.ipWhitelistEnabled ?? false,
+          ipWhitelist: input.ipWhitelist ?? [],
+          ipBlacklist: input.ipBlacklist ?? [],
+        },
+      });
+
+      await logSecurityEvent(
+        ctx.prisma as unknown as PrismaClient,
+        'CONFIG_CHANGED',
+        ctx.user.id,
+        ctx.user.organizationId,
+        true,
+        { type: 'session_settings_updated', changes: input }
+      );
+
+      await auditLog('UPDATE', 'SecuritySetting', {
+        entityId: settings.id,
+        changes: { action: 'session_settings_updated', ...input },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { success: true };
+    }),
+
+  // Create a new session with all tracking
+  createSession: protectedProcedure
+    .input(
+      z.object({
+        rememberDevice: z.boolean().default(false),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { ipAddress, userAgent } = await getRequestMetadata();
+
+      // Check IP restrictions
+      const settings = await ctx.prisma.securitySetting.findUnique({
+        where: { organizationId: ctx.user.organizationId },
+      });
+
+      if (settings?.ipWhitelistEnabled) {
+        // Check if IP is in whitelist
+        const isWhitelisted = settings.ipWhitelist.some(ip =>
+          isIpInRange(ipAddress, ip)
+        );
+        if (!isWhitelisted) {
+          await logSecurityEvent(
+            ctx.prisma as unknown as PrismaClient,
+            'LOGIN_FAILURE',
+            ctx.user.id,
+            ctx.user.organizationId,
+            false,
+            { reason: 'ip_not_whitelisted', ip: ipAddress }
+          );
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Access denied: IP address not authorized',
+          });
+        }
+      }
+
+      // Check if IP is blacklisted
+      if (settings?.ipBlacklist.some(ip => isIpInRange(ipAddress, ip))) {
+        await logSecurityEvent(
+          ctx.prisma as unknown as PrismaClient,
+          'LOGIN_FAILURE',
+          ctx.user.id,
+          ctx.user.organizationId,
+          false,
+          { reason: 'ip_blacklisted', ip: ipAddress }
+        );
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Access denied: IP address blocked',
+        });
+      }
+
+      // Check concurrent session limit
+      const activeSessions = await ctx.prisma.userSession.count({
+        where: {
+          userId: ctx.user.id,
+          status: 'ACTIVE',
+          expiresAt: { gt: new Date() },
+        },
+      });
+
+      const maxSessions = settings?.maxConcurrentSessions ?? 3;
+      if (activeSessions >= maxSessions) {
+        // Terminate oldest session to make room
+        const oldestSession = await ctx.prisma.userSession.findFirst({
+          where: {
+            userId: ctx.user.id,
+            status: 'ACTIVE',
+          },
+          orderBy: { createdAt: 'asc' },
+        });
+
+        if (oldestSession) {
+          await ctx.prisma.userSession.update({
+            where: { id: oldestSession.id },
+            data: {
+              status: 'TERMINATED',
+              terminatedAt: new Date(),
+              terminatedReason: 'Exceeded concurrent session limit',
+            },
+          });
+
+          await logSecurityEvent(
+            ctx.prisma as unknown as PrismaClient,
+            'LOGOUT',
+            ctx.user.id,
+            ctx.user.organizationId,
+            true,
+            { reason: 'concurrent_session_limit', sessionId: oldestSession.id }
+          );
+        }
+      }
+
+      // Generate session token and fingerprint
+      const sessionToken = generateSessionToken();
+      const fingerprint = generateDeviceFingerprint(userAgent, ipAddress);
+      const sessionTimeout = settings?.sessionTimeoutMinutes ?? 60;
+      const idleTimeout = settings?.idleTimeoutMinutes ?? 15;
+
+      // Create the session
+      const session = await ctx.prisma.userSession.create({
+        data: {
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+          sessionToken: hashSessionToken(sessionToken),
+          deviceFingerprint: fingerprint,
+          deviceType: userAgent.includes('Mobile') ? 'mobile' : 'desktop',
+          browser: extractBrowser(userAgent),
+          browserVersion: extractBrowserVersion(userAgent),
+          os: extractOS(userAgent),
+          osVersion: extractOSVersion(userAgent),
+          ipAddress,
+          expiresAt: new Date(Date.now() + sessionTimeout * 60 * 1000),
+          idleTimeoutAt: new Date(Date.now() + idleTimeout * 60 * 1000),
+          rememberDevice: input.rememberDevice,
+          trustScore: 100,
+        },
+      });
+
+      await logSecurityEvent(
+        ctx.prisma as unknown as PrismaClient,
+        'LOGIN_SUCCESS',
+        ctx.user.id,
+        ctx.user.organizationId,
+        true,
+        {
+          sessionId: session.id,
+          deviceType: session.deviceType,
+          browser: session.browser,
+          rememberDevice: input.rememberDevice,
+        }
+      );
+
+      return {
+        sessionId: session.id,
+        sessionToken,
+        expiresAt: session.expiresAt,
+        idleTimeoutAt: session.idleTimeoutAt,
+      };
+    }),
+
+  // Get current session info with idle timeout warning
+  getSessionInfo: protectedProcedure
+    .input(
+      z.object({
+        sessionToken: z.string(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const hashedToken = hashSessionToken(input.sessionToken);
+
+      const session = await ctx.prisma.userSession.findFirst({
+        where: {
+          sessionToken: hashedToken,
+          userId: ctx.user.id,
+          status: 'ACTIVE',
+        },
+      });
+
+      if (!session) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Session not found or expired',
+        });
+      }
+
+      const now = new Date();
+      const idleWarningThreshold = 2 * 60 * 1000; // 2 minutes before idle timeout
+
+      // Check if session is expired
+      if (session.expiresAt < now) {
+        await ctx.prisma.userSession.update({
+          where: { id: session.id },
+          data: {
+            status: 'EXPIRED',
+            terminatedAt: now,
+            terminatedReason: 'Session expired',
+          },
+        });
+
+        return {
+          valid: false,
+          reason: 'session_expired',
+        };
+      }
+
+      // Check if idle timeout exceeded
+      if (session.idleTimeoutAt && session.idleTimeoutAt < now) {
+        await ctx.prisma.userSession.update({
+          where: { id: session.id },
+          data: {
+            status: 'EXPIRED',
+            terminatedAt: now,
+            terminatedReason: 'Idle timeout',
+          },
+        });
+
+        await logSecurityEvent(
+          ctx.prisma as unknown as PrismaClient,
+          'LOGOUT',
+          ctx.user.id,
+          ctx.user.organizationId,
+          true,
+          { reason: 'idle_timeout', sessionId: session.id }
+        );
+
+        return {
+          valid: false,
+          reason: 'idle_timeout',
+        };
+      }
+
+      // Calculate idle warning
+      const idleTimeRemaining = session.idleTimeoutAt
+        ? session.idleTimeoutAt.getTime() - now.getTime()
+        : null;
+      const showIdleWarning = idleTimeRemaining !== null && idleTimeRemaining < idleWarningThreshold;
+
+      return {
+        valid: true,
+        sessionId: session.id,
+        expiresAt: session.expiresAt,
+        idleTimeoutAt: session.idleTimeoutAt,
+        idleTimeRemaining,
+        showIdleWarning,
+        lastActivityAt: session.lastActivityAt,
+        trustScore: session.trustScore,
+        deviceType: session.deviceType,
+        browser: session.browser,
+      };
+    }),
+
+  // Extend session / record activity (heartbeat)
+  recordSessionActivity: protectedProcedure
+    .input(
+      z.object({
+        sessionToken: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const hashedToken = hashSessionToken(input.sessionToken);
+      const { ipAddress, userAgent } = await getRequestMetadata();
+
+      const session = await ctx.prisma.userSession.findFirst({
+        where: {
+          sessionToken: hashedToken,
+          userId: ctx.user.id,
+          status: 'ACTIVE',
+        },
+      });
+
+      if (!session) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Session not found',
+        });
+      }
+
+      // Get security settings for timeout values
+      const settings = await ctx.prisma.securitySetting.findUnique({
+        where: { organizationId: ctx.user.organizationId },
+      });
+
+      const idleTimeout = settings?.idleTimeoutMinutes ?? 15;
+
+      // Validate IP consistency (IP-based session validation)
+      let trustScore = session.trustScore;
+      if (session.ipAddress && session.ipAddress !== ipAddress) {
+        // IP changed - decrease trust score
+        trustScore = Math.max(0, trustScore - 20);
+
+        await logSecurityEvent(
+          ctx.prisma as unknown as PrismaClient,
+          'SUSPICIOUS_ACTIVITY',
+          ctx.user.id,
+          ctx.user.organizationId,
+          false,
+          {
+            reason: 'ip_changed',
+            originalIp: session.ipAddress,
+            newIp: ipAddress,
+            sessionId: session.id,
+          }
+        );
+
+        // If trust score drops too low, mark session as suspicious
+        if (trustScore < 50) {
+          await ctx.prisma.userSession.update({
+            where: { id: session.id },
+            data: {
+              status: 'SUSPICIOUS',
+              trustScore,
+            },
+          });
+
+          throw new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'Session flagged as suspicious due to unusual activity',
+          });
+        }
+      }
+
+      // Validate device fingerprint
+      const currentFingerprint = generateDeviceFingerprint(userAgent, ipAddress);
+      if (session.deviceFingerprint && session.deviceFingerprint !== currentFingerprint) {
+        trustScore = Math.max(0, trustScore - 10);
+
+        await logSecurityEvent(
+          ctx.prisma as unknown as PrismaClient,
+          'SUSPICIOUS_ACTIVITY',
+          ctx.user.id,
+          ctx.user.organizationId,
+          false,
+          {
+            reason: 'device_fingerprint_changed',
+            sessionId: session.id,
+          }
+        );
+      }
+
+      // Update session activity
+      const updatedSession = await ctx.prisma.userSession.update({
+        where: { id: session.id },
+        data: {
+          lastActivityAt: new Date(),
+          idleTimeoutAt: new Date(Date.now() + idleTimeout * 60 * 1000),
+          trustScore,
+        },
+      });
+
+      return {
+        success: true,
+        idleTimeoutAt: updatedSession.idleTimeoutAt,
+        trustScore,
+      };
+    }),
+
+  // List all active sessions for current user
+  listActiveSessions: protectedProcedure.query(async ({ ctx }) => {
+    const sessions = await ctx.prisma.userSession.findMany({
+      where: {
+        userId: ctx.user.id,
+        status: { in: ['ACTIVE', 'SUSPICIOUS'] },
+        expiresAt: { gt: new Date() },
+      },
+      select: {
+        id: true,
+        deviceType: true,
+        browser: true,
+        browserVersion: true,
+        os: true,
+        osVersion: true,
+        ipAddress: true,
+        city: true,
+        country: true,
+        lastActivityAt: true,
+        createdAt: true,
+        status: true,
+        trustScore: true,
+        rememberDevice: true,
+        mfaVerified: true,
+      },
+      orderBy: { lastActivityAt: 'desc' },
+    });
+
+    return sessions;
+  }),
+
+  // Terminate a specific session
+  terminateSession: protectedProcedure
+    .input(
+      z.object({
+        sessionId: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const session = await ctx.prisma.userSession.findFirst({
+        where: {
+          id: input.sessionId,
+          userId: ctx.user.id,
+        },
+      });
+
+      if (!session) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Session not found',
+        });
+      }
+
+      await ctx.prisma.userSession.update({
+        where: { id: session.id },
+        data: {
+          status: 'TERMINATED',
+          terminatedAt: new Date(),
+          terminatedReason: 'User terminated session',
+        },
+      });
+
+      await logSecurityEvent(
+        ctx.prisma as unknown as PrismaClient,
+        'LOGOUT',
+        ctx.user.id,
+        ctx.user.organizationId,
+        true,
+        { reason: 'user_terminated', sessionId: session.id }
+      );
+
+      return { success: true };
+    }),
+
+  // Force logout from all devices
+  terminateAllSessions: protectedProcedure
+    .input(
+      z.object({
+        exceptCurrent: z.boolean().default(true),
+        currentSessionToken: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const where: Record<string, unknown> = {
+        userId: ctx.user.id,
+        status: { in: ['ACTIVE', 'SUSPICIOUS'] },
+      };
+
+      // Exclude current session if requested
+      if (input.exceptCurrent && input.currentSessionToken) {
+        const hashedToken = hashSessionToken(input.currentSessionToken);
+        where.sessionToken = { not: hashedToken };
+      }
+
+      const result = await ctx.prisma.userSession.updateMany({
+        where,
+        data: {
+          status: 'TERMINATED',
+          terminatedAt: new Date(),
+          terminatedReason: 'Force logout from all devices',
+        },
+      });
+
+      await logSecurityEvent(
+        ctx.prisma as unknown as PrismaClient,
+        'LOGOUT',
+        ctx.user.id,
+        ctx.user.organizationId,
+        true,
+        {
+          reason: 'force_logout_all',
+          sessionsTerminated: result.count,
+          exceptCurrent: input.exceptCurrent,
+        }
+      );
+
+      return {
+        success: true,
+        terminatedCount: result.count,
+      };
+    }),
+
+  // Admin: Force logout a specific user from all devices
+  adminTerminateUserSessions: adminProcedure
+    .input(
+      z.object({
+        userId: z.string(),
+        reason: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Verify user belongs to organization
+      const targetUser = await ctx.prisma.user.findFirst({
+        where: {
+          id: input.userId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!targetUser) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'User not found',
+        });
+      }
+
+      const result = await ctx.prisma.userSession.updateMany({
+        where: {
+          userId: input.userId,
+          status: { in: ['ACTIVE', 'SUSPICIOUS'] },
+        },
+        data: {
+          status: 'TERMINATED',
+          terminatedAt: new Date(),
+          terminatedReason: input.reason || 'Admin force logout',
+        },
+      });
+
+      await logSecurityEvent(
+        ctx.prisma as unknown as PrismaClient,
+        'ACCOUNT_LOCKED',
+        input.userId,
+        ctx.user.organizationId,
+        true,
+        {
+          action: 'admin_force_logout',
+          adminId: ctx.user.id,
+          reason: input.reason,
+          sessionsTerminated: result.count,
+        }
+      );
+
+      await auditLog('UPDATE', 'UserSession', {
+        changes: {
+          action: 'admin_force_logout',
+          targetUserId: input.userId,
+          reason: input.reason,
+          sessionsTerminated: result.count,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        success: true,
+        terminatedCount: result.count,
+      };
+    }),
+
+  // Get session activity log for current user
+  getSessionActivityLog: protectedProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(100).default(50),
+        includeExpired: z.boolean().default(false),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const sessions = await ctx.prisma.userSession.findMany({
+        where: {
+          userId: ctx.user.id,
+          ...(input.includeExpired
+            ? {}
+            : { status: { in: ['ACTIVE', 'TERMINATED'] } }),
+        },
+        orderBy: { createdAt: 'desc' },
+        take: input.limit,
+        select: {
+          id: true,
+          status: true,
+          deviceType: true,
+          browser: true,
+          os: true,
+          ipAddress: true,
+          city: true,
+          country: true,
+          createdAt: true,
+          lastActivityAt: true,
+          terminatedAt: true,
+          terminatedReason: true,
+        },
+      });
+
+      return sessions;
+    }),
+
+  // Admin: List all active sessions for organization
+  adminListOrgSessions: adminProcedure
+    .input(
+      z.object({
+        status: z.enum(['ACTIVE', 'EXPIRED', 'TERMINATED', 'SUSPICIOUS']).optional(),
+        userId: z.string().optional(),
+        limit: z.number().min(1).max(100).default(50),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const sessions = await ctx.prisma.userSession.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          ...(input.status && { status: input.status }),
+          ...(input.userId && { userId: input.userId }),
+        },
+        orderBy: { lastActivityAt: 'desc' },
+        take: input.limit,
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              role: true,
+            },
+          },
+        },
+      });
+
+      return sessions;
+    }),
+
+  // Validate session token (for middleware use)
+  validateSession: protectedProcedure
+    .input(
+      z.object({
+        sessionToken: z.string(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { ipAddress, userAgent } = await getRequestMetadata();
+      const hashedToken = hashSessionToken(input.sessionToken);
+
+      const session = await ctx.prisma.userSession.findFirst({
+        where: {
+          sessionToken: hashedToken,
+          userId: ctx.user.id,
+        },
+      });
+
+      if (!session) {
+        return { valid: false, reason: 'session_not_found' };
+      }
+
+      if (session.status !== 'ACTIVE') {
+        return { valid: false, reason: `session_${session.status.toLowerCase()}` };
+      }
+
+      const now = new Date();
+
+      if (session.expiresAt < now) {
+        return { valid: false, reason: 'session_expired' };
+      }
+
+      if (session.idleTimeoutAt && session.idleTimeoutAt < now) {
+        return { valid: false, reason: 'idle_timeout' };
+      }
+
+      // IP-based validation
+      if (session.ipAddress && session.ipAddress !== ipAddress) {
+        // Log but don't invalidate - just flag
+        await logSecurityEvent(
+          ctx.prisma as unknown as PrismaClient,
+          'SUSPICIOUS_ACTIVITY',
+          ctx.user.id,
+          ctx.user.organizationId,
+          false,
+          { reason: 'ip_mismatch_on_validate', sessionId: session.id }
+        );
+      }
+
+      // Device fingerprint validation
+      const currentFingerprint = generateDeviceFingerprint(userAgent, ipAddress);
+      const fingerprintMatch = !session.deviceFingerprint ||
+        session.deviceFingerprint === currentFingerprint;
+
+      return {
+        valid: true,
+        sessionId: session.id,
+        mfaVerified: session.mfaVerified,
+        trustScore: session.trustScore,
+        fingerprintMatch,
+        expiresAt: session.expiresAt,
+        idleTimeoutAt: session.idleTimeoutAt,
+      };
+    }),
+
+  // Get device fingerprint for current request
+  getDeviceFingerprint: protectedProcedure.query(async () => {
+    const { ipAddress, userAgent } = await getRequestMetadata();
+    const fingerprint = generateDeviceFingerprint(userAgent, ipAddress);
+
+    return {
+      fingerprint,
+      deviceType: userAgent.includes('Mobile') ? 'mobile' : 'desktop',
+      browser: extractBrowser(userAgent),
+      browserVersion: extractBrowserVersion(userAgent),
+      os: extractOS(userAgent),
+      osVersion: extractOSVersion(userAgent),
+      ipAddress,
+    };
+  }),
 });
 
 // Helper functions
 function extractBrowser(userAgent: string): string {
   if (userAgent.includes('Firefox')) return 'Firefox';
+  if (userAgent.includes('Edg')) return 'Edge'; // Edge uses "Edg" in UA
   if (userAgent.includes('Chrome')) return 'Chrome';
   if (userAgent.includes('Safari')) return 'Safari';
-  if (userAgent.includes('Edge')) return 'Edge';
-  if (userAgent.includes('Opera')) return 'Opera';
+  if (userAgent.includes('Opera') || userAgent.includes('OPR')) return 'Opera';
+  return 'Unknown';
+}
+
+function extractBrowserVersion(userAgent: string): string {
+  const patterns = [
+    /Firefox\/(\d+(?:\.\d+)?)/,
+    /Edg\/(\d+(?:\.\d+)?)/,
+    /Chrome\/(\d+(?:\.\d+)?)/,
+    /Safari\/(\d+(?:\.\d+)?)/,
+    /OPR\/(\d+(?:\.\d+)?)/,
+    /Opera\/(\d+(?:\.\d+)?)/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = userAgent.match(pattern);
+    if (match) return match[1];
+  }
   return 'Unknown';
 }
 
 function extractOS(userAgent: string): string {
   if (userAgent.includes('Windows')) return 'Windows';
   if (userAgent.includes('Mac OS')) return 'macOS';
-  if (userAgent.includes('Linux')) return 'Linux';
+  if (userAgent.includes('iPhone') || userAgent.includes('iPad')) return 'iOS';
   if (userAgent.includes('Android')) return 'Android';
-  if (userAgent.includes('iOS')) return 'iOS';
+  if (userAgent.includes('Linux')) return 'Linux';
   return 'Unknown';
+}
+
+function extractOSVersion(userAgent: string): string {
+  const patterns = [
+    /Windows NT (\d+(?:\.\d+)?)/,
+    /Mac OS X (\d+[._]\d+(?:[._]\d+)?)/,
+    /iPhone OS (\d+[._]\d+)/,
+    /Android (\d+(?:\.\d+)?)/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = userAgent.match(pattern);
+    if (match) return match[1].replace(/_/g, '.');
+  }
+  return 'Unknown';
+}
+
+// Simple IP range check (supports exact match and CIDR notation)
+function isIpInRange(ip: string, range: string): boolean {
+  // Exact match
+  if (ip === range) return true;
+
+  // CIDR notation check (simplified - only handles /24, /16, /8 for IPv4)
+  if (range.includes('/')) {
+    const [rangeIp, cidrStr] = range.split('/');
+    const cidr = parseInt(cidrStr, 10);
+
+    if (cidr === 24) {
+      // /24 - match first 3 octets
+      const ipParts = ip.split('.').slice(0, 3).join('.');
+      const rangeParts = rangeIp.split('.').slice(0, 3).join('.');
+      return ipParts === rangeParts;
+    } else if (cidr === 16) {
+      // /16 - match first 2 octets
+      const ipParts = ip.split('.').slice(0, 2).join('.');
+      const rangeParts = rangeIp.split('.').slice(0, 2).join('.');
+      return ipParts === rangeParts;
+    } else if (cidr === 8) {
+      // /8 - match first octet
+      const ipParts = ip.split('.')[0];
+      const rangeParts = rangeIp.split('.')[0];
+      return ipParts === rangeParts;
+    }
+  }
+
+  // Wildcard support (e.g., 192.168.*)
+  if (range.includes('*')) {
+    const rangePattern = range.replace(/\./g, '\\.').replace(/\*/g, '.*');
+    return new RegExp(`^${rangePattern}$`).test(ip);
+  }
+
+  return false;
 }
