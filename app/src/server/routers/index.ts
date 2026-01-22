@@ -70,6 +70,7 @@ import { imagingRouter } from './imaging';
 // Patient Education & Home Care (Epic 23)
 import { exerciseRouter } from './exercise';
 import { prescriptionRouter } from './prescription';
+import { homeCareRouter } from './homeCare';
 
 export const appRouter = router({
   auth: authRouter,
@@ -143,6 +144,7 @@ export const appRouter = router({
   // Patient Education & Home Care (Epic 23)
   exercise: exerciseRouter,
   prescription: prescriptionRouter,
+  homeCare: homeCareRouter,
 });
 
 
