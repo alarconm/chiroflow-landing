@@ -76,6 +76,8 @@ import { progressRouter } from './progress';
 import { portalEducationRouter } from './portalEducation';
 // Wearable & Device Integration (Epic 24)
 import { devicesRouter } from './devices';
+// Multi-Location Enterprise (Epic 25)
+import { locationRouter } from './location';
 
 export const appRouter = router({
   auth: authRouter,
@@ -155,6 +157,8 @@ export const appRouter = router({
   portalEducation: portalEducationRouter,
   // Wearable & Device Integration (Epic 24)
   devices: devicesRouter,
+  // Multi-Location Enterprise (Epic 25)
+  location: locationRouter,
 });
 
 

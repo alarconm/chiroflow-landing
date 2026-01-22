@@ -72,3 +72,88 @@ Date: 2026-01-22
 - [x] LocationSettings model for location-specific configuration
 - [x] Organization model enhanced for parent company
 - [x] Prisma migrations run successfully
+--- Iteration 1 completed at 2026-01-22 05:33:34 ---
+Story: US-248 - Multi-location schema
+
+## US-249: Location management - COMPLETED
+Date: 2026-01-22
+
+### Changes Made:
+
+1. **Created location router** (`app/src/server/routers/location.ts`)
+   - Full CRUD operations for location management
+   - Zod schemas for input validation
+   - Organization-scoped access control
+
+2. **Implemented location.create**
+   - Creates new location with address, contact info, timezone
+   - Auto-creates LocationSettings with defaults
+   - Auto-creates LocationHours (Mon-Fri 9-5 default)
+   - Validates address format (US state codes)
+   - Prevents duplicate location codes within organization
+   - Handles isPrimary flag (unsets existing if setting new primary)
+   - Transaction-based to ensure atomicity
+
+3. **Implemented location.update**
+   - Updates location details, settings, or branding
+   - Address validation on address field changes
+   - Duplicate code check when changing code
+   - Upserts LocationSettings when settings provided
+
+4. **Implemented location.list**
+   - Lists all organization locations
+   - Optional filters: includeInactive, includeDeleted
+   - Includes settings, hours, and counts (staff, appointments)
+   - Ordered by isPrimary (desc) then name
+
+5. **Implemented location.get**
+   - Full location details with settings, hours, staff
+   - Includes counts for appointments, encounters, inventory
+
+6. **Implemented location.deactivate**
+   - Soft delete with deletedAt timestamp
+   - Prevents deactivation if future appointments exist
+   - Prevents deactivation of only active location
+   - Deactivates all LocationStaff assignments
+
+7. **Implemented location.reactivate**
+   - Restores deactivated location to active status
+
+8. **Location-specific branding options**
+   - location.updateBranding procedure
+   - Supports logoUrl, primaryColor, accentColor
+
+9. **Address validation**
+   - US state code validation (50 states + DC, territories)
+   - ZIP code format validation (5-digit or 9-digit)
+   - Basic address line length check
+
+10. **Additional procedures**
+    - location.updateHours - Update operating hours
+    - location.getPrimary - Get primary/headquarters location
+
+11. **Added audit log actions** (`app/src/lib/audit.ts`)
+    - LOCATION_CREATE, LOCATION_UPDATE
+    - LOCATION_DEACTIVATE, LOCATION_REACTIVATE
+    - LOCATION_HOURS_UPDATE, LOCATION_BRANDING_UPDATE
+    - LOCATION_STAFF_ASSIGN, LOCATION_STAFF_REMOVE
+
+12. **Registered router** (`app/src/server/routers/index.ts`)
+    - Added locationRouter import and registration
+
+### Files Created:
+- app/src/server/routers/location.ts
+
+### Files Modified:
+- app/src/lib/audit.ts
+- app/src/server/routers/index.ts
+
+### Acceptance Criteria Status:
+- [x] location.create - Add new location
+- [x] location.update - Modify location details
+- [x] location.list - List all organization locations
+- [x] location.get - Get location with settings
+- [x] location.deactivate - Soft delete location
+- [x] Location-specific branding options
+- [x] Address validation
+

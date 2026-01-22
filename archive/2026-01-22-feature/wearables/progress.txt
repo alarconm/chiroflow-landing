@@ -1,0 +1,504 @@
+# Ralph Progress - Epic 24: Wearable & Device Integration
+
+## US-240: Device integration schema - COMPLETED
+
+### What was done:
+1. Created DeviceType enum with values: APPLE_HEALTH, GOOGLE_FIT, FITBIT, WHOOP, POSTURE_SENSOR
+2. Created DeviceConnectionStatus enum with values: PENDING, CONNECTED, EXPIRED, DISCONNECTED, ERROR
+3. Created HeartRateType enum with values: RESTING, ACTIVE, WORKOUT, CONTINUOUS, SPOT_CHECK
+
+4. Created DeviceConnection model with:
+   - patientId, deviceType, connectionToken (encrypted), refreshToken
+   - status, syncFrequency, lastSyncAt, syncEnabled
+   - Error tracking fields
+   - Relations to all data models
+
+5. Created ActivityData model with:
+   - patientId, date, steps, activeMinutes, calories
+   - distance, hourlySteps (JSON), workouts (JSON)
+   - Device connection relation
+
+6. Created SleepData model with:
+   - patientId, date, duration, quality, efficiency
+   - Sleep stages (awake, light, deep, rem)
+   - Sleep times (start, end, timeToSleep)
+   - Awakenings and restlessness tracking
+
+7. Created PostureData model with:
+   - patientId, timestamp, score, isAlert
+   - angle, position, duration, sessionId
+   - Alert type tracking
+
+8. Created HeartRateData model with:
+   - patientId, timestamp, bpm, type
+   - HRV (heart rate variability)
+   - Activity level context
+
+9. Added relations to Patient and Organization models
+10. Prisma schema pushed to database successfully
+11. TypeScript compilation verified
+
+### Acceptance Criteria Met:
+- [x] DeviceConnection model with patientId, deviceType, connectionToken, status
+- [x] ActivityData model with patientId, date, steps, activeMinutes, calories
+- [x] SleepData model with patientId, date, duration, quality, stages
+- [x] PostureData model with patientId, timestamp, score, alerts
+- [x] HeartRateData model with patientId, timestamp, bpm, type
+- [x] DeviceType enum (AppleHealth, GoogleFit, Fitbit, Whoop, PostureSensor)
+- [x] Prisma migrations run successfully
+
+---
+
+## Remaining Stories:
+- US-241: Apple Health integration
+- US-242: Google Fit integration
+- US-243: Posture sensor integration
+- US-244: Activity correlation analysis
+- US-245: Activity goals and alerts
+- US-246: Device data dashboard
+- US-247: Device connection portal
+--- Iteration 1 completed at 2026-01-22 04:43:05 ---
+Story: US-240 - Device integration schema
+
+## US-241: Apple Health integration - COMPLETED
+
+### What was done:
+1. Created `app/src/server/routers/devices.ts` with complete Apple Health integration:
+   - `devices.connectAppleHealth` - Initiate Apple Health connection with OAuth flow
+   - OAuth flow handling with state token for CSRF protection
+   - `devices.completeAppleHealthAuth` - Complete OAuth flow, exchange code for tokens
+   - `devices.syncAppleHealth` - Manual sync trigger for activity, sleep, workout data
+   - `devices.scheduleAppleHealthSync` - Background sync scheduling (15min to 24hr)
+   - `devices.getActivityData` - Retrieve synced activity data with summaries
+   - `devices.getSleepData` - Retrieve synced sleep data with summaries
+   - `devices.getConnections` - List all device connections for a patient
+   - `devices.getConnection` - Get single device connection details
+   - `devices.disconnect` - Disconnect a device, revoke tokens
+   - `devices.getSupportedDevices` - List supported device types
+
+2. Token encryption/decryption for secure storage using AES-256-CBC
+
+3. Data mapping to internal models:
+   - Activity data: steps, distance, activeMinutes, calories, hourlySteps, workouts
+   - Sleep data: duration, quality, efficiency, stages (awake, light, deep, rem), sleepStart/End
+   - Workout sessions with type, duration, calories, startTime
+
+4. Token expiry handling with automatic status update to EXPIRED
+
+5. Audit logging for all device operations
+
+6. Added router to index.ts
+
+7. TypeScript compilation verified - no errors
+
+### Acceptance Criteria Met:
+- [x] devices.connectAppleHealth - Initiate Apple Health connection
+- [x] OAuth flow for authorization
+- [x] Sync activity data (steps, distance, calories)
+- [x] Sync sleep data
+- [x] Sync workout sessions
+- [x] devices.syncAppleHealth - Manual sync trigger
+- [x] Background sync scheduling
+- [x] Data mapping to internal models
+
+---
+
+## Remaining Stories:
+- US-242: Google Fit integration
+- US-243: Posture sensor integration
+- US-244: Activity correlation analysis
+- US-245: Activity goals and alerts
+- US-246: Device data dashboard
+- US-247: Device connection portal
+--- Iteration 2 completed at 2026-01-22 ---
+Story: US-241 - Apple Health integration
+
+--- Iteration 2 completed at 2026-01-22 04:46:55 ---
+Story: US-241 - Apple Health integration
+
+## US-242: Google Fit integration - COMPLETED
+
+### What was done:
+1. Added Google Fit OAuth2 configuration with:
+   - Client ID, secret, endpoints
+   - Fitness API scopes for activity, sleep, heart rate, body data
+   - Token endpoint and revoke endpoint URLs
+
+2. Created Google Fit data source mappings:
+   - Activity data sources (steps, distance, calories, active minutes)
+   - Sleep data sources (sleep segments)
+   - Heart rate data sources (bpm, heart minutes)
+   - Sleep stage mapping (awake, light, deep, REM)
+
+3. Implemented tRPC procedures:
+   - `devices.connectGoogleFit` - Initiate OAuth2 connection with state token (CSRF)
+   - `devices.completeGoogleFitAuth` - Exchange authorization code for tokens
+   - `devices.refreshGoogleFitToken` - Automatic token refresh using refresh token
+   - `devices.syncGoogleFit` - Manual sync trigger for activity, sleep, heart rate data
+   - `devices.scheduleGoogleFitSync` - Background sync scheduling (15min to 24hr)
+   - `devices.subscribeGoogleFitUpdates` - Real-time data subscription via webhooks
+   - `devices.unsubscribeGoogleFitUpdates` - Cancel real-time subscriptions
+   - `devices.getHeartRateData` - Retrieve synced heart rate data with statistics
+
+4. Token management:
+   - Automatic token refresh when access token expires
+   - Refresh token stored encrypted for long-term access
+   - Graceful handling when refresh token unavailable (re-auth required)
+
+5. Data mapping to internal models:
+   - Activity data: steps, distance, activeMinutes, calories, hourlySteps, workouts
+   - Sleep data: duration, quality, stages (awake, light, deep, rem), times
+   - Heart rate data: bpm, type, HRV, activity level
+
+6. Real-time subscription support:
+   - Subscribe to specific data types (activity, sleep, heartRate)
+   - Webhook URL configuration for push notifications
+   - Subscription state tracked in scopes array
+
+7. TypeScript compilation verified - no errors
+
+### Acceptance Criteria Met:
+- [x] devices.connectGoogleFit - Initiate Google Fit connection
+- [x] OAuth2 flow for authorization
+- [x] Sync activity data
+- [x] Sync sleep data
+- [x] Sync heart rate data
+- [x] devices.syncGoogleFit - Manual sync trigger
+- [x] Real-time data subscription
+- [x] Handle token refresh
+
+---
+
+## Remaining Stories:
+- US-243: Posture sensor integration
+- US-244: Activity correlation analysis
+- US-245: Activity goals and alerts
+- US-246: Device data dashboard
+- US-247: Device connection portal
+--- Iteration 3 completed at 2026-01-22 ---
+Story: US-242 - Google Fit integration
+
+--- Iteration 3 completed at 2026-01-22 04:52:02 ---
+Story: US-242 - Google Fit integration
+
+## US-243: Posture sensor integration - COMPLETED
+
+### What was done:
+1. Added Upright Go device API configuration and constants
+2. Added generic posture sensor API support for any sensor with REST API
+3. Created posture sensor types configuration with features list
+
+4. Implemented tRPC procedures:
+   - `devices.connectUprightGo` - Connect Upright Go device with API key
+   - `devices.connectPostureSensor` - Connect generic posture sensor via API endpoint
+   - `devices.recordPostureData` - Record real-time posture measurements
+   - `devices.syncPostureData` - Sync posture data from sensor API
+   - `devices.getPostureData` - Retrieve posture data with filtering and summaries
+   - `devices.getSlouchAlertHistory` - Get alert history with groupings by day/type/hour
+   - `devices.getDailyPostureSummary` - Daily summaries with good/poor posture minutes
+   - `devices.correlatePostureWithSymptoms` - Analyze posture-symptom correlations
+   - `devices.checkPostureTrends` - Provider alerts for poor posture trends
+   - `devices.getSupportedPostureSensors` - List supported posture sensor types
+
+5. Real-time posture score tracking:
+   - Score 0-100 scale
+   - Alert detection for scores below threshold
+   - Alert types: slouch, hunched, head_forward, tilted, prolonged_sitting
+   - Position tracking: sitting, standing, walking, lying
+   - Session tracking for grouping readings
+
+6. Slouch alert history:
+   - Alerts grouped by day, type, and hour
+   - Most common alert type identification
+   - Peak alert hour detection
+
+7. Daily posture summary:
+   - Average, min, max scores per day
+   - Total minutes tracked
+   - Good posture minutes (score >= 70)
+   - Poor posture minutes
+   - Trend analysis (improving/declining/stable)
+
+8. Posture-symptom correlation:
+   - Matches posture data with encounter SOAP notes
+   - Identifies pain keywords in symptoms
+   - Correlates poor posture with pain reports
+   - Generates provider recommendations
+
+9. Provider alerts for poor posture trends:
+   - Configurable threshold for score and alert count
+   - Audit logging for alerts
+   - Recommendations for follow-up
+
+10. TypeScript compilation verified - no errors
+
+### Acceptance Criteria Met:
+- [x] Support Upright Go device
+- [x] Support generic posture sensors via API
+- [x] Real-time posture score tracking
+- [x] Slouch alert history
+- [x] Daily posture summary
+- [x] Correlate posture data with symptoms
+- [x] Alert provider on poor posture trends
+
+---
+
+## Remaining Stories:
+- US-244: Activity correlation analysis
+- US-245: Activity goals and alerts
+- US-246: Device data dashboard
+- US-247: Device connection portal
+--- Iteration 4 completed at 2026-01-22 ---
+Story: US-243 - Posture sensor integration
+
+--- Iteration 4 completed at 2026-01-22 04:57:05 ---
+Story: US-243 - Posture sensor integration
+
+## US-244: Activity correlation analysis - COMPLETED
+
+### What was done:
+1. Implemented main `devices.analyzeCorrelation` tRPC procedure with comprehensive analysis:
+   - Fetches activity data, sleep data, and encounters for correlation analysis
+   - Supports configurable analysis types: activityPain, sleepPain, activityRecovery, or all
+   - Returns combined results with provider insights and patient recommendations
+
+2. Created `devices.getActivityPatternsBeforePain` procedure:
+   - Identifies activity patterns 1-7 days before pain flares
+   - Calculates baseline activity and standard deviation
+   - Detects patterns: overexertion, sedentary, inconsistent, or normal
+   - Returns pattern breakdown with dominant pattern and recommendations
+
+3. Created `devices.getSleepPainCorrelation` procedure:
+   - Analyzes sleep quality the night before pain days vs good days
+   - Compares quality, duration, and deep sleep minutes
+   - Calculates correlation strength based on quality differences
+   - Generates insights and recommendations for sleep hygiene
+
+4. Created `devices.getActivityRecoveryCorrelation` procedure:
+   - Tracks recovery periods between encounters
+   - Analyzes activity levels during recovery periods
+   - Determines outcomes (improved/stable/worsened/unknown) from SOAP notes
+   - Identifies optimal activity range for improved outcomes
+
+5. Created `devices.getCorrelationTrends` procedure for visualization:
+   - Supports daily and weekly granularity
+   - Returns activity, sleep, and pain trend data
+   - Includes correlation markers for encounters
+   - Weekly aggregation with averages and data point counts
+
+6. Implemented helper functions:
+   - `extractPainDataFromEncounters` - Extracts pain levels from SOAP notes
+   - `analyzeActivityPainCorrelation` - Core activity-pain correlation logic
+   - `analyzeSleepPainCorrelation` - Core sleep-pain correlation logic
+   - `analyzeActivityRecoveryCorrelation` - Core activity-recovery logic
+   - `determineRecoveryOutcome` - Parses SOAP notes for recovery indicators
+   - `generatePatientRecommendations` - Creates actionable patient advice
+   - `buildActivityTrendData`, `buildSleepTrendData`, `buildRecoveryTrendData` - Trend builders
+   - `calculateAverage`, `calculateStdDev`, `getWeekStart` - Statistical helpers
+
+7. Provider insights generation:
+   - Activity-pain correlation insights with severity levels
+   - Sleep-pain relationship insights
+   - Optimal activity range identification
+   - Automatic recommendation generation
+
+8. Patient-facing recommendations:
+   - Activity pacing for overexertion patterns
+   - Gentle movement recommendations for sedentary patterns
+   - Activity goals based on optimal recovery ranges
+   - Sleep hygiene recommendations
+
+9. TypeScript compilation verified - no errors
+
+### Acceptance Criteria Met:
+- [x] devices.analyzeCorrelation - Analyze activity vs symptoms
+- [x] Identify activity patterns before pain flares
+- [x] Sleep quality vs pain correlation
+- [x] Activity level vs recovery correlation
+- [x] Generate insights for provider
+- [x] Patient-facing activity recommendations
+- [x] Trend visualization
+
+---
+
+## Remaining Stories:
+- US-245: Activity goals and alerts
+- US-246: Device data dashboard
+- US-247: Device connection portal
+--- Iteration 5 completed at 2026-01-22 ---
+Story: US-244 - Activity correlation analysis
+
+--- Iteration 5 completed at 2026-01-22 05:02:45 ---
+Story: US-244 - Activity correlation analysis
+
+## US-245: Activity goals and alerts - COMPLETED
+
+### What was done:
+1. Created database schema for activity goals:
+   - GoalType enum (STEPS, ACTIVE_MINUTES, SLEEP_DURATION, CALORIES, DISTANCE)
+   - ActivityGoal model with target values, alert preferences, streak tracking
+   - Relations to Patient, Organization, and User models
+   - Prisma schema pushed to database successfully
+
+2. Implemented tRPC procedures for goal management:
+   - `devices.setGoal` - Set daily activity goals with upsert logic
+   - `devices.getGoals` - Retrieve all goals for a patient
+   - `devices.updateGoal` - Modify goal settings
+   - `devices.deleteGoal` - Soft delete (deactivate) a goal
+
+3. Implemented goal achievement tracking:
+   - `devices.checkGoalAchievement` - Check if goals are achieved for a date
+   - Achievement alerts with success severity
+   - Automatic streak tracking (current streak, longest streak)
+   - Total achievement counter
+
+4. Implemented activity decrease alerts:
+   - `devices.checkActivityDecrease` - Detect significant decreases
+   - Compares first half vs second half of lookback period
+   - Configurable threshold per goal (default 30%)
+   - Severity levels: warning (30-49%) and critical (50%+)
+   - Recommendations based on goal type
+
+5. Implemented weekly progress reports:
+   - `devices.getWeeklyProgressReport` - Comprehensive weekly summary
+   - Goal progress with achievement rates
+   - Week-over-week comparisons for all metrics
+   - Daily breakdown with activity and sleep data
+   - Auto-generated highlights and recommendations
+   - Summary with overall trend (improving/stable/declining)
+
+6. Provider alert dashboard:
+   - `devices.getProviderAlertSummary` - All patients with alerts
+   - Sorted by severity (critical first)
+   - Total alert counts and monitoring summary
+
+7. TypeScript compilation verified - no errors
+
+### Acceptance Criteria Met:
+- [x] devices.setGoal - Set daily activity goals
+- [x] Step count goals
+- [x] Active minutes goals
+- [x] Sleep duration goals
+- [x] Alert on goal achievement
+- [x] Alert on significant decrease in activity
+- [x] Weekly progress reports
+
+---
+
+## Remaining Stories:
+- US-246: Device data dashboard
+- US-247: Device connection portal
+--- Iteration 6 completed at 2026-01-22 ---
+Story: US-245 - Activity goals and alerts
+
+--- Iteration 6 completed at 2026-01-22 05:10:06 ---
+Story: US-245 - Activity goals and alerts
+
+## US-246: Device data dashboard - COMPLETED
+
+### What was done:
+1. Created `app/src/components/wearables/WearableDataDashboard.tsx`:
+   - Main dashboard component with activity trends, sleep visualization, posture history
+   - Date range selector (7d, 14d, 30d)
+   - Summary cards showing avg steps, sleep quality, posture score, weekly trend
+   - Activity bar chart with goal tracking visualization
+   - Sleep quality horizontal bar chart
+   - Posture score heatmap grid (7-day view)
+   - Goals progress section with achievement tracking
+   - Tabbed interface: Overview, Activity, Sleep, Posture, Devices
+   - Activity details tab with daily breakdown (steps, calories, active minutes)
+   - Sleep details tab with duration, deep sleep, REM, awakenings
+   - Posture details tab with daily scores and alert counts
+   - Empty state when no devices connected
+   - Loading skeletons for all data sections
+
+2. Created `app/src/components/wearables/DeviceConnectionManager.tsx`:
+   - Connect new devices dialog with available device types
+   - Device type configurations (Apple Health, Google Fit, Fitbit, Whoop, Posture Sensor)
+   - Status indicators with icons (Connected, Pending, Expired, Disconnected, Error)
+   - Sync button for manual data refresh
+   - Disconnect dialog with confirmation
+   - Data sync status summary (activity, sleep, heart rate, posture counts)
+   - Last sync timestamp display
+
+3. Created `app/src/components/wearables/index.ts` for exports
+
+4. Added Wearables tab to patient detail page:
+   - Updated `app/src/app/(dashboard)/patients/[id]/page.tsx`
+   - Added Watch icon import
+   - Added WearableDataDashboard import
+   - Expanded TabsList to 8 columns
+   - Added Wearables tab trigger with Watch icon
+   - Added Wearables tab content with WearableDataDashboard component
+
+5. TypeScript compilation verified - no errors
+
+### Acceptance Criteria Met:
+- [x] Display activity trends (steps, calories, active minutes)
+- [x] Sleep quality visualization
+- [x] Posture score history
+- [x] Device connection status
+- [x] Last sync time
+- [x] Manual sync button
+- [x] Device management (connect/disconnect)
+- [x] Add to patient detail page as new tab
+
+---
+
+## Remaining Stories:
+- US-247: Device connection portal
+--- Iteration 7 completed at 2026-01-22 ---
+Story: US-246 - Device data dashboard
+
+--- Iteration 7 completed at 2026-01-22 05:18:04 ---
+Story: US-246 - Device data dashboard
+
+## US-247: Device connection portal - COMPLETED
+
+### What was done:
+1. Added portal device procedures to `app/src/server/routers/portal.ts`:
+   - `portal.getDeviceConnections` - Get all device connections for logged-in patient
+   - `portal.getSupportedDevices` - List available device types with descriptions
+   - `portal.connectDevice` - Initiate OAuth connection with CSRF protection
+   - `portal.completeDeviceConnection` - Complete OAuth flow after callback
+   - `portal.disconnectDevice` - Disconnect a device with audit logging
+   - `portal.updateDeviceSharingPreferences` - Configure what data types to share
+   - `portal.getDeviceSharingPreferences` - Get current sharing preferences
+   - `portal.getDeviceDataSummary` - Get activity/sleep data summary
+
+2. Created `app/src/components/portal/DeviceConnectionPortal.tsx`:
+   - Connect Devices page with patient-friendly UI
+   - Tabbed interface: "My Devices" and "Available" devices
+   - Step-by-step connection guides in accordion
+   - OAuth authorization flow handling
+   - Connection status display with icons
+   - Disconnect option with confirmation dialog
+   - Data sharing preferences dialog
+   - Privacy explanation alerts throughout
+
+3. Created `app/src/app/portal/devices/page.tsx`:
+   - Portal page for device connections
+
+4. Updated `app/src/components/portal/PortalLayout.tsx`:
+   - Added "Connect Devices" navigation item with Watch icon
+
+5. Updated `app/src/components/portal/index.ts`:
+   - Added DeviceConnectionPortal export
+
+6. TypeScript compilation verified - no errors
+
+### Acceptance Criteria Met:
+- [x] Connect Devices page in portal
+- [x] Step-by-step connection guides
+- [x] Authorization flow handling
+- [x] Connection status display
+- [x] Disconnect option
+- [x] Data sharing preferences
+- [x] Privacy explanation
+
+---
+
+## All Stories Complete!
+--- Iteration 8 completed at 2026-01-22 ---
+Story: US-247 - Device connection portal
+
