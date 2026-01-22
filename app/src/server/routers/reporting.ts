@@ -63,6 +63,13 @@ import {
   getNewPatientReport,
   getPatientVisitFrequencyReport,
   getPeakHoursReport,
+  // Clinical Reports (US-105)
+  getDiagnosisFrequencyReport,
+  getTreatmentPlanCompletionReport,
+  getAverageVisitsPerCaseReport,
+  getProviderCaseMixReport,
+  getOutcomeTrackingReport,
+  getCarePlanAdherenceReport,
 } from '@/lib/reporting';
 
 import type {
@@ -1084,6 +1091,70 @@ export const reportingRouter = router({
     .input(dateRangeSchema)
     .query(async ({ ctx, input }) => {
       return getPeakHoursReport(ctx.user.organizationId, {
+        start: input.start,
+        end: input.end,
+      });
+    }),
+
+  // ============================================
+  // CLINICAL REPORTS (US-105)
+  // ============================================
+
+  // Diagnosis frequency report - top diagnoses by volume
+  getDiagnosisFrequency: protectedProcedure
+    .input(dateRangeSchema)
+    .query(async ({ ctx, input }) => {
+      return getDiagnosisFrequencyReport(ctx.user.organizationId, {
+        start: input.start,
+        end: input.end,
+      });
+    }),
+
+  // Treatment plan completion report
+  getTreatmentPlanCompletion: protectedProcedure
+    .input(dateRangeSchema)
+    .query(async ({ ctx, input }) => {
+      return getTreatmentPlanCompletionReport(ctx.user.organizationId, {
+        start: input.start,
+        end: input.end,
+      });
+    }),
+
+  // Average visits per case report
+  getAverageVisitsPerCase: protectedProcedure
+    .input(dateRangeSchema)
+    .query(async ({ ctx, input }) => {
+      return getAverageVisitsPerCaseReport(ctx.user.organizationId, {
+        start: input.start,
+        end: input.end,
+      });
+    }),
+
+  // Provider case mix report
+  getProviderCaseMix: protectedProcedure
+    .input(dateRangeSchema)
+    .query(async ({ ctx, input }) => {
+      return getProviderCaseMixReport(ctx.user.organizationId, {
+        start: input.start,
+        end: input.end,
+      });
+    }),
+
+  // Outcome tracking report
+  getOutcomeTracking: protectedProcedure
+    .input(dateRangeSchema)
+    .query(async ({ ctx, input }) => {
+      return getOutcomeTrackingReport(ctx.user.organizationId, {
+        start: input.start,
+        end: input.end,
+      });
+    }),
+
+  // Care plan adherence report
+  getCarePlanAdherence: protectedProcedure
+    .input(dateRangeSchema)
+    .query(async ({ ctx, input }) => {
+      return getCarePlanAdherenceReport(ctx.user.organizationId, {
         start: input.start,
         end: input.end,
       });

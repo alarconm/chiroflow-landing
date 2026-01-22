@@ -63,7 +63,7 @@
         "Peak hours analysis"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-105",
@@ -78,7 +78,7 @@
         "Care plan adherence report"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-106",

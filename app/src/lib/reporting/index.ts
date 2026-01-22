@@ -177,3 +177,44 @@ export type {
   DayHourHeatmap,
   PeakTimeSummary,
 } from './scheduling-reports';
+
+// Clinical reports (US-105)
+export {
+  getDiagnosisFrequencyReport,
+  getTreatmentPlanCompletionReport,
+  getAverageVisitsPerCaseReport,
+  getProviderCaseMixReport,
+  getOutcomeTrackingReport,
+  getCarePlanAdherenceReport,
+} from './clinical-reports';
+
+export type {
+  DiagnosisFrequencyReport,
+  DiagnosisFrequencyRow,
+  DiagnosisByBodySite,
+  DiagnosisByProvider,
+  TreatmentPlanCompletionReport,
+  TreatmentPlanByProvider,
+  TreatmentPlanByStatus,
+  GoalAchievementSummary,
+  RecentCompletedPlan,
+  AverageVisitsPerCaseReport,
+  VisitsPerCaseByDiagnosis,
+  VisitsPerCaseByProvider,
+  VisitCountBucket,
+  VisitsPerCaseTrend,
+  ProviderCaseMixReport,
+  ProviderCaseMix,
+  ProviderDiagnosisMix,
+  EncounterTypeBreakdown,
+  PatientDemographicMix,
+  OutcomeTrackingReport,
+  OutcomeByAssessmentType,
+  OutcomeByProvider,
+  OutcomeTrendPoint,
+  RecentOutcomeAssessment,
+  CarePlanAdherenceReport,
+  AdherenceByProvider,
+  PatientAdherenceDetail,
+  AdherenceTrendPoint,
+} from './clinical-reports';

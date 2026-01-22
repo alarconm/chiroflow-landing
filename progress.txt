@@ -301,3 +301,92 @@ All acceptance criteria met. TypeScript compiles without errors.
 --- Iteration 4 completed at 2026-01-22 ---
 Story: US-104 - Scheduling and productivity reports
 
+--- Iteration 4 completed at 2026-01-21 23:19:05 ---
+Story: US-104 - Scheduling and productivity reports
+
+### US-105: Clinical reports - COMPLETED
+Date: 2026-01-22
+Status: PASSED
+
+Implementation:
+1. Created clinical-reports.ts with 6 comprehensive clinical reports:
+
+   a. Diagnosis Frequency Report (getDiagnosisFrequencyReport):
+      - Top diagnoses by volume with ICD-10 codes
+      - Total and unique diagnosis counts
+      - Percentage distribution
+      - Primary diagnosis tracking
+      - Breakdown by body site with top diagnoses per site
+      - Breakdown by provider with unique diagnoses per provider
+
+   b. Treatment Plan Completion Report (getTreatmentPlanCompletionReport):
+      - Summary: total, active, completed, discontinued, draft, expired plans
+      - Completion rate calculation
+      - Average visits and days to completion
+      - Breakdown by provider with completion rates
+      - Breakdown by status with planned vs completed visits
+      - Goal achievement summary (achieved, partial, not achieved, in progress, not started)
+      - Recent completions list with detailed metrics
+
+   c. Average Visits Per Case Report (getAverageVisitsPerCaseReport):
+      - Summary: total cases, visits, avg/median/min/max visits per case
+      - Breakdown by diagnosis (primary diagnosis from encounters)
+      - Breakdown by provider with active/completed case counts
+      - Visit count distribution buckets (1-3, 4-6, 7-12, 13-20, 21+)
+      - Monthly trends
+
+   d. Provider Case Mix Report (getProviderCaseMixReport):
+      - Per-provider: total patients, new patients, encounters, avg encounters/patient
+      - Top diagnoses per provider with patient and encounter counts
+      - Encounter type breakdown (initial eval, follow-up, re-eval, etc.)
+      - Patient demographics: average age, gender distribution
+      - Organization-wide totals
+
+   e. Outcome Tracking Report (getOutcomeTrackingReport):
+      - Summary: total assessments, unique patients, improvement metrics
+      - Improvement/no-change/worsening rates
+      - Breakdown by assessment type (ODI, NDI, VAS, NPRS, FABQ, DASH, SF36, Custom)
+      - Breakdown by provider with improvement rates
+      - Monthly trends
+      - Recent assessments list with scores and interpretations
+
+   f. Care Plan Adherence Report (getCarePlanAdherenceReport):
+      - Summary: active plans, on-track/behind/ahead counts, adherence rate
+      - Average completion percentage
+      - Breakdown by provider
+      - Patient-level details with adherence status
+      - Expected vs actual visits tracking
+      - Days remaining calculation
+
+2. Added tRPC router procedures:
+   - getDiagnosisFrequency: Diagnosis frequency with date range
+   - getTreatmentPlanCompletion: Treatment plan completion with date range
+   - getAverageVisitsPerCase: Avg visits per case with date range
+   - getProviderCaseMix: Provider case mix with date range
+   - getOutcomeTracking: Outcome tracking with date range
+   - getCarePlanAdherence: Care plan adherence with date range
+
+3. Helper functions implemented:
+   - getStatusLabel: Treatment plan status to human-readable label
+   - getAssessmentTypeLabel: Assessment type to full name
+   - getEncounterTypeLabel: Encounter type to human-readable label
+   - calculateMedian: Statistical median calculation
+   - getMonthLabel: Format month for display
+
+4. Proper TypeScript types for all report interfaces:
+   - DiagnosisFrequencyReport, DiagnosisFrequencyRow, DiagnosisByBodySite, DiagnosisByProvider
+   - TreatmentPlanCompletionReport, TreatmentPlanByProvider, TreatmentPlanByStatus, GoalAchievementSummary, RecentCompletedPlan
+   - AverageVisitsPerCaseReport, VisitsPerCaseByDiagnosis, VisitsPerCaseByProvider, VisitCountBucket, VisitsPerCaseTrend
+   - ProviderCaseMixReport, ProviderCaseMix, ProviderDiagnosisMix, EncounterTypeBreakdown, PatientDemographicMix
+   - OutcomeTrackingReport, OutcomeByAssessmentType, OutcomeByProvider, OutcomeTrendPoint, RecentOutcomeAssessment
+   - CarePlanAdherenceReport, AdherenceByProvider, PatientAdherenceDetail, AdherenceTrendPoint
+
+Files Modified:
+- app/src/lib/reporting/clinical-reports.ts (new - 1400+ lines)
+- app/src/lib/reporting/index.ts (added exports)
+- app/src/server/routers/reporting.ts (added 6 procedures)
+
+All acceptance criteria met. TypeScript compiles without errors.
+--- Iteration 5 completed at 2026-01-22 ---
+Story: US-105 - Clinical reports
+
