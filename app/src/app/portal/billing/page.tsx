@@ -2,10 +2,11 @@
 
 /**
  * Epic 14: Patient Portal - Billing Page
+ * US-097: Online bill pay
  */
 
-import { StatementsList } from '@/components/portal';
+import { OnlineBillPay } from '@/components/portal';
 
 export default function PortalBillingPage() {
-  return <StatementsList />;
+  return <OnlineBillPay />;
 }

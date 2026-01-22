@@ -283,3 +283,110 @@ Files Created/Modified:
 --- Iteration 4 completed at 2026-01-22 ---
 Story: US-096 - Patient form completion portal
 
+--- Iteration 4 completed at 2026-01-21 22:20:55 ---
+Story: US-096 - Patient form completion portal
+
+US-097: Online bill pay - COMPLETE
+-----------------------------------
+Implemented comprehensive online bill payment system for patient portal:
+
+1. OnlineBillPay component (/portal/billing)
+   - Full billing dashboard with tabbed interface
+   - Balance overview cards with current balance, payment plans count, saved cards
+   - Quick "Pay Now" button for immediate payment
+   - "Set Up Payment Plan" option for larger balances
+
+2. Itemized Charges View (Overview Tab)
+   - Lists all outstanding charges with service date
+   - Shows CPT code, description, provider name
+   - Displays fee breakdown: original, adjustments, payments, balance
+   - Status badges for charge status
+   - "Pay Full Balance" and "Pay Custom Amount" buttons
+   - Empty state for accounts with no outstanding charges
+
+3. Payment History Tab
+   - Chronological list of all past payments
+   - Shows payment date, amount, method, reference number
+   - Status badges for payment status
+   - Receipt download links where available
+
+4. Saved Payment Methods Tab
+   - View all saved cards with last 4 digits, brand, expiry
+   - Set default payment method
+   - Delete payment methods with confirmation
+   - Add new card functionality
+   - Auto-pay enrollment cancellation on card deletion
+
+5. Statements Tab
+   - List of billing statements
+   - Statement number, date, period covered
+   - Amount due display
+   - PDF download functionality
+
+6. Make Payment Dialog
+   - Pay full balance or custom amount
+   - Select from saved cards or enter new card
+   - Card number formatting (auto-spaces)
+   - Expiry month/year dropdowns
+   - CVV and cardholder name inputs
+   - Billing ZIP code field
+   - "Save card for future use" checkbox
+   - Secure payment indicator
+   - Real-time validation
+
+7. Payment Plan Setup Dialog
+   - Split balance into 3, 6, 9, or 12 monthly payments
+   - Shows calculated monthly payment amount
+   - Select saved payment method for auto-pay
+   - Choose start date
+   - Creates installment schedule automatically
+   - Sets up auto-pay enrollment
+
+8. Active Payment Plans Display
+   - Progress bar showing amount paid vs total
+   - Installment count progress (e.g., "3/6 payments made")
+   - Next due date display
+   - Plan status badge
+
+9. Portal Router Endpoints Added:
+   - getItemizedCharges: List outstanding charges with provider info
+   - getPaymentHistory: Paginated payment history with transaction status
+   - getSavedPaymentMethods: List active payment methods
+   - deletePaymentMethod: Soft delete with auto-pay cancellation
+   - setDefaultPaymentMethod: Update default card
+   - getPaymentPlans: List patient payment plans
+   - createPaymentPlan: Set up new payment plan with installments
+   - makePaymentWithMethod: Process payment with saved or new card
+
+10. Helper Functions:
+    - detectCardBrand: Identify Visa, MC, Amex, Discover from card number
+    - Card number formatting
+    - Status badge rendering
+    - Card brand icon display
+
+Acceptance Criteria Status:
+- [x] View current balance and itemized charges
+- [x] View payment history
+- [x] Pay full balance or custom amount
+- [x] Save payment method for future use
+- [x] Set up payment plan (if enabled by practice)
+- [x] Download receipts and statements
+
+Technical Implementation:
+- Payment allocation to oldest charges first
+- Transaction tracking with external IDs
+- Audit logging for all payment actions
+- Card tokenization placeholders (real implementation in Epic 10)
+- Auto-pay enrollment management
+- Installment scheduling with proper date math
+- Balance validation before payment
+
+Files Created/Modified:
+- app/src/components/portal/OnlineBillPay.tsx (NEW - 850+ lines)
+- app/src/app/portal/billing/page.tsx (MODIFIED - uses OnlineBillPay)
+- app/src/server/routers/portal.ts (MODIFIED - added 8 new endpoints)
+- app/src/components/portal/index.ts (MODIFIED - added OnlineBillPay export)
+
+--- Iteration 5 completed at 2026-01-21 ---
+Story: US-097 - Online bill pay
+

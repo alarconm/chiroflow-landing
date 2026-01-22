@@ -79,7 +79,7 @@
         "Download receipts and statements"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-098",

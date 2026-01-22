@@ -2341,4 +2341,699 @@ export const portalRouter = router({
           : undefined,
       };
     }),
+
+  // ============================================
+  // BILLING - ITEMIZED CHARGES (US-097)
+  // ============================================
+
+  // Get itemized charges
+  getItemizedCharges: publicProcedure
+    .input(
+      z.object({
+        sessionToken: z.string(),
+        status: z.enum(['outstanding', 'all']).default('outstanding'),
+        limit: z.number().min(1).max(100).default(50),
+        offset: z.number().min(0).default(0),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const { sessionToken, status, limit, offset } = input;
+      const user = await getPortalUserFromToken(sessionToken);
+      const ipAddress = (ctx as Record<string, unknown>).ipAddress as string | undefined;
+
+      const where: Record<string, unknown> = {
+        patientId: user.patientId,
+        organizationId: user.organizationId,
+      };
+
+      if (status === 'outstanding') {
+        where.status = { in: ['PENDING', 'BILLED'] };
+        where.balance = { gt: 0 };
+      }
+
+      const [charges, total] = await Promise.all([
+        prisma.charge.findMany({
+          where,
+          include: {
+            provider: {
+              select: {
+                title: true,
+                user: {
+                  select: { firstName: true, lastName: true },
+                },
+              },
+            },
+          },
+          orderBy: { serviceDate: 'desc' },
+          take: limit,
+          skip: offset,
+        }),
+        prisma.charge.count({ where }),
+      ]);
+
+      // Log access
+      await logPortalAccess({
+        action: 'PORTAL_VIEW_CHARGES',
+        portalUserId: user.id,
+        organizationId: user.organizationId,
+        ipAddress,
+        success: true,
+      });
+
+      return {
+        charges: charges.map((c) => ({
+          id: c.id,
+          serviceDate: c.serviceDate,
+          cptCode: c.cptCode,
+          description: c.description,
+          fee: Number(c.fee),
+          adjustments: Number(c.adjustments),
+          payments: Number(c.payments),
+          balance: Number(c.balance),
+          status: c.status,
+          providerName: c.provider
+            ? `${c.provider.title || ''} ${c.provider.user.firstName} ${c.provider.user.lastName}`.trim()
+            : undefined,
+        })),
+        total,
+      };
+    }),
+
+  // ============================================
+  // BILLING - PAYMENT HISTORY (US-097)
+  // ============================================
+
+  // Get payment history
+  getPaymentHistory: publicProcedure
+    .input(
+      z.object({
+        sessionToken: z.string(),
+        limit: z.number().min(1).max(100).default(20),
+        offset: z.number().min(0).default(0),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const { sessionToken, limit, offset } = input;
+      const user = await getPortalUserFromToken(sessionToken);
+      const ipAddress = (ctx as Record<string, unknown>).ipAddress as string | undefined;
+
+      const [payments, total] = await Promise.all([
+        prisma.payment.findMany({
+          where: {
+            patientId: user.patientId,
+            organizationId: user.organizationId,
+            isVoid: false,
+          },
+          include: {
+            paymentTransaction: {
+              select: {
+                status: true,
+                externalTransactionId: true,
+              },
+            },
+          },
+          orderBy: { paymentDate: 'desc' },
+          take: limit,
+          skip: offset,
+        }),
+        prisma.payment.count({
+          where: {
+            patientId: user.patientId,
+            organizationId: user.organizationId,
+            isVoid: false,
+          },
+        }),
+      ]);
+
+      // Log access
+      await logPortalAccess({
+        action: 'PORTAL_VIEW_PAYMENT_HISTORY',
+        portalUserId: user.id,
+        organizationId: user.organizationId,
+        ipAddress,
+        success: true,
+      });
+
+      return {
+        payments: payments.map((p) => ({
+          id: p.id,
+          paymentDate: p.paymentDate,
+          amount: Number(p.amount),
+          paymentMethod: p.paymentMethod,
+          referenceNumber: p.referenceNumber,
+          status: p.paymentTransaction?.status || 'COMPLETED',
+          receiptUrl: p.paymentTransaction?.externalTransactionId
+            ? `/api/portal/receipts/${p.id}`
+            : undefined,
+        })),
+        total,
+      };
+    }),
+
+  // ============================================
+  // BILLING - SAVED PAYMENT METHODS (US-097)
+  // ============================================
+
+  // Get saved payment methods
+  getSavedPaymentMethods: publicProcedure
+    .input(z.object({ sessionToken: z.string() }))
+    .query(async ({ input }) => {
+      const user = await getPortalUserFromToken(input.sessionToken);
+
+      const methods = await prisma.storedPaymentMethod.findMany({
+        where: {
+          patientId: user.patientId,
+          organizationId: user.organizationId,
+          isActive: true,
+        },
+        orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
+      });
+
+      return {
+        methods: methods.map((m) => ({
+          id: m.id,
+          last4: m.last4,
+          cardBrand: m.cardBrand,
+          cardType: m.cardType,
+          expiryMonth: m.expiryMonth,
+          expiryYear: m.expiryYear,
+          cardholderName: m.cardholderName,
+          isDefault: m.isDefault,
+          nickname: m.nickname,
+        })),
+      };
+    }),
+
+  // Delete payment method
+  deletePaymentMethod: publicProcedure
+    .input(
+      z.object({
+        sessionToken: z.string(),
+        paymentMethodId: z.string(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { sessionToken, paymentMethodId } = input;
+      const user = await getPortalUserFromToken(sessionToken);
+      const ipAddress = (ctx as Record<string, unknown>).ipAddress as string | undefined;
+
+      // Verify ownership
+      const method = await prisma.storedPaymentMethod.findFirst({
+        where: {
+          id: paymentMethodId,
+          patientId: user.patientId,
+          organizationId: user.organizationId,
+        },
+      });
+
+      if (!method) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Payment method not found',
+        });
+      }
+
+      // Soft delete by marking inactive
+      await prisma.storedPaymentMethod.update({
+        where: { id: paymentMethodId },
+        data: { isActive: false },
+      });
+
+      // Cancel any auto-pay enrollments using this method
+      await prisma.autoPayEnrollment.updateMany({
+        where: {
+          paymentMethodId,
+          isActive: true,
+        },
+        data: {
+          isActive: false,
+          cancelledAt: new Date(),
+        },
+      });
+
+      // Log the deletion
+      await logPortalAccess({
+        action: 'PORTAL_DELETE_PAYMENT_METHOD',
+        portalUserId: user.id,
+        organizationId: user.organizationId,
+        resource: 'StoredPaymentMethod',
+        resourceId: paymentMethodId,
+        ipAddress,
+        success: true,
+      });
+
+      return { success: true };
+    }),
+
+  // Set default payment method
+  setDefaultPaymentMethod: publicProcedure
+    .input(
+      z.object({
+        sessionToken: z.string(),
+        paymentMethodId: z.string(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { sessionToken, paymentMethodId } = input;
+      const user = await getPortalUserFromToken(sessionToken);
+      const ipAddress = (ctx as Record<string, unknown>).ipAddress as string | undefined;
+
+      // Verify ownership
+      const method = await prisma.storedPaymentMethod.findFirst({
+        where: {
+          id: paymentMethodId,
+          patientId: user.patientId,
+          organizationId: user.organizationId,
+          isActive: true,
+        },
+      });
+
+      if (!method) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Payment method not found',
+        });
+      }
+
+      // Remove default from all other methods
+      await prisma.storedPaymentMethod.updateMany({
+        where: {
+          patientId: user.patientId,
+          organizationId: user.organizationId,
+          id: { not: paymentMethodId },
+        },
+        data: { isDefault: false },
+      });
+
+      // Set as default
+      await prisma.storedPaymentMethod.update({
+        where: { id: paymentMethodId },
+        data: { isDefault: true },
+      });
+
+      // Log the update
+      await logPortalAccess({
+        action: 'PORTAL_SET_DEFAULT_PAYMENT_METHOD',
+        portalUserId: user.id,
+        organizationId: user.organizationId,
+        resource: 'StoredPaymentMethod',
+        resourceId: paymentMethodId,
+        ipAddress,
+        success: true,
+      });
+
+      return { success: true };
+    }),
+
+  // ============================================
+  // BILLING - PAYMENT PLANS (US-097)
+  // ============================================
+
+  // Get payment plans
+  getPaymentPlans: publicProcedure
+    .input(z.object({ sessionToken: z.string() }))
+    .query(async ({ input }) => {
+      const user = await getPortalUserFromToken(input.sessionToken);
+
+      const plans = await prisma.paymentPlan.findMany({
+        where: {
+          patientId: user.patientId,
+          organizationId: user.organizationId,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      return {
+        plans: plans.map((p) => ({
+          id: p.id,
+          name: p.name,
+          totalAmount: Number(p.totalAmount),
+          amountPaid: Number(p.amountPaid),
+          amountRemaining: Number(p.amountRemaining),
+          numberOfInstallments: p.numberOfInstallments,
+          installmentsPaid: p.installmentsPaid,
+          installmentAmount: Number(p.installmentAmount),
+          frequency: p.frequency,
+          nextDueDate: p.nextDueDate,
+          status: p.status,
+        })),
+      };
+    }),
+
+  // Create payment plan
+  createPaymentPlan: publicProcedure
+    .input(
+      z.object({
+        sessionToken: z.string(),
+        totalAmount: z.number().positive(),
+        numberOfInstallments: z.number().min(2).max(24),
+        paymentMethodId: z.string().optional(),
+        startDate: z.coerce.date().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { sessionToken, totalAmount, numberOfInstallments, paymentMethodId, startDate } = input;
+      const user = await getPortalUserFromToken(sessionToken);
+      const ipAddress = (ctx as Record<string, unknown>).ipAddress as string | undefined;
+
+      // Verify payment method if provided
+      if (paymentMethodId) {
+        const method = await prisma.storedPaymentMethod.findFirst({
+          where: {
+            id: paymentMethodId,
+            patientId: user.patientId,
+            organizationId: user.organizationId,
+            isActive: true,
+          },
+        });
+
+        if (!method) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Payment method not found',
+          });
+        }
+      }
+
+      // Check for existing active plan
+      const existingPlan = await prisma.paymentPlan.findFirst({
+        where: {
+          patientId: user.patientId,
+          organizationId: user.organizationId,
+          status: 'ACTIVE',
+        },
+      });
+
+      if (existingPlan) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'You already have an active payment plan. Please contact us to modify it.',
+        });
+      }
+
+      const installmentAmount = totalAmount / numberOfInstallments;
+      const planStartDate = startDate || new Date();
+
+      // Create the payment plan
+      const plan = await prisma.paymentPlan.create({
+        data: {
+          patientId: user.patientId,
+          organizationId: user.organizationId,
+          name: `${numberOfInstallments}-Payment Plan`,
+          totalAmount,
+          numberOfInstallments,
+          installmentAmount,
+          frequency: 'MONTHLY',
+          status: 'ACTIVE',
+          amountPaid: 0,
+          amountRemaining: totalAmount,
+          installmentsPaid: 0,
+          startDate: planStartDate,
+          nextDueDate: planStartDate,
+          termsAcceptedAt: new Date(),
+        },
+      });
+
+      // Create installment records
+      const installments = [];
+      for (let i = 0; i < numberOfInstallments; i++) {
+        const dueDate = new Date(planStartDate);
+        dueDate.setMonth(dueDate.getMonth() + i);
+
+        installments.push({
+          paymentPlanId: plan.id,
+          installmentNumber: i + 1,
+          amount: installmentAmount,
+          dueDate,
+          status: i === 0 ? 'PENDING' : 'SCHEDULED',
+        });
+      }
+
+      await prisma.paymentPlanInstallment.createMany({
+        data: installments as Array<{
+          paymentPlanId: string;
+          installmentNumber: number;
+          amount: number;
+          dueDate: Date;
+          status: 'SCHEDULED' | 'PENDING';
+        }>,
+      });
+
+      // Set up auto-pay if payment method provided
+      if (paymentMethodId) {
+        await prisma.autoPayEnrollment.create({
+          data: {
+            patientId: user.patientId,
+            organizationId: user.organizationId,
+            paymentMethodId,
+            frequency: 'MONTHLY',
+            isActive: true,
+            nextChargeDate: planStartDate,
+            consentIp: ipAddress,
+          },
+        });
+      }
+
+      // Log the creation
+      await logPortalAccess({
+        action: 'PORTAL_CREATE_PAYMENT_PLAN',
+        portalUserId: user.id,
+        organizationId: user.organizationId,
+        resource: 'PaymentPlan',
+        resourceId: plan.id,
+        ipAddress,
+        success: true,
+        metadata: { totalAmount, numberOfInstallments },
+      });
+
+      return { success: true, planId: plan.id };
+    }),
+
+  // ============================================
+  // BILLING - MAKE PAYMENT WITH METHOD (US-097)
+  // ============================================
+
+  // Make payment with saved or new card
+  makePaymentWithMethod: publicProcedure
+    .input(
+      z.object({
+        sessionToken: z.string(),
+        amount: z.number().positive('Amount must be positive'),
+        paymentMethodId: z.string().optional(),
+        newCard: z
+          .object({
+            cardNumber: z.string(),
+            expiryMonth: z.string(),
+            expiryYear: z.string(),
+            cvv: z.string(),
+            cardholderName: z.string(),
+            billingZip: z.string().optional(),
+            saveForFuture: z.boolean().default(false),
+          })
+          .optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { sessionToken, amount, paymentMethodId, newCard } = input;
+      const user = await getPortalUserFromToken(sessionToken);
+      const ipAddress = (ctx as Record<string, unknown>).ipAddress as string | undefined;
+
+      // Verify patient has an outstanding balance
+      const balance = await prisma.charge.aggregate({
+        where: {
+          patientId: user.patientId,
+          organizationId: user.organizationId,
+          status: { in: ['PENDING', 'BILLED'] },
+        },
+        _sum: { balance: true },
+      });
+
+      const outstandingBalance = Number(balance._sum.balance || 0);
+
+      if (outstandingBalance <= 0) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'No outstanding balance to pay',
+        });
+      }
+
+      if (amount > outstandingBalance) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Payment amount exceeds balance of $${outstandingBalance.toFixed(2)}`,
+        });
+      }
+
+      let usedPaymentMethodId = paymentMethodId;
+
+      // If using new card and want to save it
+      if (newCard && newCard.saveForFuture) {
+        // Detect card brand from number
+        const cardBrand = detectCardBrand(newCard.cardNumber);
+
+        // Create stored payment method (in real implementation, tokenize with payment processor first)
+        const storedMethod = await prisma.storedPaymentMethod.create({
+          data: {
+            patientId: user.patientId,
+            organizationId: user.organizationId,
+            paymentToken: `tok_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, // Placeholder
+            last4: newCard.cardNumber.slice(-4),
+            cardBrand,
+            cardType: 'CREDIT',
+            expiryMonth: parseInt(newCard.expiryMonth),
+            expiryYear: 2000 + parseInt(newCard.expiryYear),
+            cardholderName: newCard.cardholderName,
+            billingZip: newCard.billingZip,
+            isDefault: false,
+            isActive: true,
+          },
+        });
+        usedPaymentMethodId = storedMethod.id;
+      }
+
+      // Verify payment method if using saved one
+      if (paymentMethodId) {
+        const method = await prisma.storedPaymentMethod.findFirst({
+          where: {
+            id: paymentMethodId,
+            patientId: user.patientId,
+            organizationId: user.organizationId,
+            isActive: true,
+          },
+        });
+
+        if (!method) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Payment method not found',
+          });
+        }
+
+        // Update last used
+        await prisma.storedPaymentMethod.update({
+          where: { id: paymentMethodId },
+          data: { lastUsedAt: new Date() },
+        });
+      }
+
+      // TODO: Process payment through payment gateway (Epic 10)
+      // This is a placeholder - actual payment processing would involve:
+      // 1. Creating a payment intent with Stripe/processor
+      // 2. Charging the card
+      // 3. Handling success/failure
+      // 4. Recording the transaction
+
+      // Create payment transaction record
+      const transaction = await prisma.paymentTransaction.create({
+        data: {
+          patientId: user.patientId,
+          organizationId: user.organizationId,
+          amount,
+          status: 'COMPLETED', // In real implementation, this would start as PENDING
+          paymentMethodId: usedPaymentMethodId,
+          externalTransactionId: `txn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          processedAt: new Date(),
+        },
+      });
+
+      // Create payment record
+      const payment = await prisma.payment.create({
+        data: {
+          patientId: user.patientId,
+          organizationId: user.organizationId,
+          amount,
+          paymentMethod: 'CREDIT_CARD',
+          payerType: 'patient',
+          referenceNumber: `PORTAL-${transaction.id.slice(-8).toUpperCase()}`,
+          notes: 'Payment submitted via patient portal',
+        },
+      });
+
+      // Link transaction to payment
+      await prisma.paymentTransaction.update({
+        where: { id: transaction.id },
+        data: { paymentId: payment.id },
+      });
+
+      // Apply payment to outstanding charges
+      let remainingAmount = amount;
+      const outstandingCharges = await prisma.charge.findMany({
+        where: {
+          patientId: user.patientId,
+          organizationId: user.organizationId,
+          status: { in: ['PENDING', 'BILLED'] },
+          balance: { gt: 0 },
+        },
+        orderBy: { serviceDate: 'asc' },
+      });
+
+      for (const charge of outstandingCharges) {
+        if (remainingAmount <= 0) break;
+
+        const chargeBalance = Number(charge.balance);
+        const allocationAmount = Math.min(remainingAmount, chargeBalance);
+
+        // Create allocation
+        await prisma.paymentAllocation.create({
+          data: {
+            paymentId: payment.id,
+            chargeId: charge.id,
+            amount: allocationAmount,
+          },
+        });
+
+        // Update charge
+        const newBalance = chargeBalance - allocationAmount;
+        const newPayments = Number(charge.payments) + allocationAmount;
+
+        await prisma.charge.update({
+          where: { id: charge.id },
+          data: {
+            payments: newPayments,
+            balance: newBalance,
+            status: newBalance <= 0 ? 'PAID' : charge.status,
+          },
+        });
+
+        remainingAmount -= allocationAmount;
+      }
+
+      // If any amount remains (shouldn't happen if validation is correct), record as unapplied
+      if (remainingAmount > 0) {
+        await prisma.payment.update({
+          where: { id: payment.id },
+          data: { unappliedAmount: remainingAmount },
+        });
+      }
+
+      // Log the payment
+      await logPortalAccess({
+        action: 'PORTAL_MAKE_PAYMENT',
+        portalUserId: user.id,
+        organizationId: user.organizationId,
+        resource: 'Payment',
+        resourceId: payment.id,
+        ipAddress,
+        success: true,
+        metadata: { amount, transactionId: transaction.id },
+      });
+
+      return {
+        success: true,
+        paymentId: payment.id,
+        transactionId: transaction.id,
+      };
+    }),
 });
+
+// Helper function to detect card brand
+function detectCardBrand(cardNumber: string): 'VISA' | 'MASTERCARD' | 'AMEX' | 'DISCOVER' | 'OTHER' {
+  const cleanNumber = cardNumber.replace(/\s/g, '');
+
+  if (/^4/.test(cleanNumber)) return 'VISA';
+  if (/^5[1-5]/.test(cleanNumber) || /^2[2-7]/.test(cleanNumber)) return 'MASTERCARD';
+  if (/^3[47]/.test(cleanNumber)) return 'AMEX';
+  if (/^6(?:011|5)/.test(cleanNumber)) return 'DISCOVER';
+
+  return 'OTHER';
+}
