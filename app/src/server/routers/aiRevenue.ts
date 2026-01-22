@@ -1574,4 +1574,817 @@ export const aiRevenueRouter = router({
 
     return summary;
   }),
+
+  // ============================================
+  // US-342: Service Mix Optimization
+  // ============================================
+
+  /**
+   * Analyze service mix for optimal profitability
+   * Evaluates profitability by service type, identifies high-margin services,
+   * recommends service expansion/reduction, analyzes payer mix, and capacity utilization
+   */
+  analyzeServiceMix: billerProcedure
+    .input(
+      z.object({
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+        providerId: z.string().optional(),
+        minVolumeThreshold: z.number().default(10), // Minimum procedures to include
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { dateFrom, dateTo, providerId, minVolumeThreshold } = input;
+      const organizationId = ctx.user.organizationId;
+
+      // Default date range: last 12 months
+      const endDate = dateTo || new Date();
+      const startDate = dateFrom || new Date(endDate.getTime() - 365 * 24 * 60 * 60 * 1000);
+
+      // Service category definitions for chiropractic
+      const SERVICE_CATEGORIES: Record<string, { name: string; codes: string[]; avgTimeMinutes: number }> = {
+        cmt: {
+          name: 'Chiropractic Manipulation',
+          codes: ['98940', '98941', '98942', '98943'],
+          avgTimeMinutes: 15,
+        },
+        em_new: {
+          name: 'E&M - New Patient',
+          codes: ['99201', '99202', '99203', '99204', '99205'],
+          avgTimeMinutes: 30,
+        },
+        em_established: {
+          name: 'E&M - Established',
+          codes: ['99211', '99212', '99213', '99214', '99215'],
+          avgTimeMinutes: 15,
+        },
+        therapy_manual: {
+          name: 'Manual Therapy',
+          codes: ['97140'],
+          avgTimeMinutes: 15,
+        },
+        therapy_exercise: {
+          name: 'Therapeutic Exercise',
+          codes: ['97110', '97530'],
+          avgTimeMinutes: 15,
+        },
+        therapy_neuro: {
+          name: 'Neuromuscular Re-education',
+          codes: ['97112'],
+          avgTimeMinutes: 15,
+        },
+        modalities_attended: {
+          name: 'Attended Modalities',
+          codes: ['97032', '97035', '97033'],
+          avgTimeMinutes: 8,
+        },
+        modalities_unattended: {
+          name: 'Unattended Modalities',
+          codes: ['97014', 'G0283'],
+          avgTimeMinutes: 0, // No provider time
+        },
+        evaluation: {
+          name: 'PT Evaluation',
+          codes: ['97161', '97162', '97163'],
+          avgTimeMinutes: 45,
+        },
+        xray: {
+          name: 'X-Ray',
+          codes: ['72040', '72050', '72070', '72100', '72110'],
+          avgTimeMinutes: 10,
+        },
+        acupuncture: {
+          name: 'Acupuncture',
+          codes: ['97810', '97811', '97813', '97814'],
+          avgTimeMinutes: 20,
+        },
+        supplies: {
+          name: 'Supplies',
+          codes: ['99070', 'A4550', 'A4570'],
+          avgTimeMinutes: 0,
+        },
+      };
+
+      // Get all charges with claim/payment data for the period
+      const charges = await ctx.prisma.charge.findMany({
+        where: {
+          organizationId,
+          serviceDate: {
+            gte: startDate,
+            lte: endDate,
+          },
+          ...(providerId && { providerId }),
+          status: {
+            in: ['BILLED', 'PAID'],
+          },
+        },
+        include: {
+          claimLines: {
+            include: {
+              claim: {
+                include: {
+                  payer: true,
+                },
+              },
+            },
+          },
+          provider: true,
+          encounter: true,
+        },
+      });
+
+      // Get all encounters to analyze time utilization
+      const encounters = await ctx.prisma.encounter.findMany({
+        where: {
+          organizationId,
+          encounterDate: {
+            gte: startDate,
+            lte: endDate,
+          },
+          ...(providerId && { providerId }),
+          status: 'COMPLETED',
+        },
+        include: {
+          provider: {
+            include: {
+              user: true,
+            },
+          },
+          charges: true,
+        },
+      });
+
+      // ============================================
+      // 1. Profitability by Service Type
+      // ============================================
+
+      interface ServiceAnalysis {
+        category: string;
+        categoryName: string;
+        cptCodes: string[];
+        volume: number;
+        totalRevenue: number;
+        totalReimbursement: number;
+        totalAdjustments: number;
+        avgFee: number;
+        avgReimbursement: number;
+        reimbursementRate: number; // % of fee collected
+        profitMargin: number; // Estimated based on reimbursement vs cost
+        timeMinutes: number;
+        revenuePerMinute: number;
+        highMargin: boolean;
+        unprofitable: boolean;
+        recommendation: string;
+        priority: 'low' | 'medium' | 'high' | 'critical';
+      }
+
+      const serviceAnalysisByCategory: Record<string, ServiceAnalysis> = {};
+
+      // Initialize categories
+      for (const [key, category] of Object.entries(SERVICE_CATEGORIES)) {
+        serviceAnalysisByCategory[key] = {
+          category: key,
+          categoryName: category.name,
+          cptCodes: [],
+          volume: 0,
+          totalRevenue: 0,
+          totalReimbursement: 0,
+          totalAdjustments: 0,
+          avgFee: 0,
+          avgReimbursement: 0,
+          reimbursementRate: 0,
+          profitMargin: 0,
+          timeMinutes: 0,
+          revenuePerMinute: 0,
+          highMargin: false,
+          unprofitable: false,
+          recommendation: '',
+          priority: 'low',
+        };
+      }
+
+      // Analyze each charge
+      for (const charge of charges) {
+        // Find which category this CPT belongs to
+        let categoryKey = 'other';
+        for (const [key, category] of Object.entries(SERVICE_CATEGORIES)) {
+          if (category.codes.includes(charge.cptCode)) {
+            categoryKey = key;
+            break;
+          }
+        }
+
+        // Create 'other' category if needed
+        if (!serviceAnalysisByCategory[categoryKey]) {
+          serviceAnalysisByCategory[categoryKey] = {
+            category: categoryKey,
+            categoryName: 'Other Services',
+            cptCodes: [],
+            volume: 0,
+            totalRevenue: 0,
+            totalReimbursement: 0,
+            totalAdjustments: 0,
+            avgFee: 0,
+            avgReimbursement: 0,
+            reimbursementRate: 0,
+            profitMargin: 0,
+            timeMinutes: 0,
+            revenuePerMinute: 0,
+            highMargin: false,
+            unprofitable: false,
+            recommendation: '',
+            priority: 'low',
+          };
+        }
+
+        const analysis = serviceAnalysisByCategory[categoryKey];
+
+        // Track unique CPT codes
+        if (!analysis.cptCodes.includes(charge.cptCode)) {
+          analysis.cptCodes.push(charge.cptCode);
+        }
+
+        // Accumulate metrics
+        analysis.volume += charge.units;
+        analysis.totalRevenue += Number(charge.fee) * charge.units;
+        analysis.totalAdjustments += Number(charge.adjustments || 0);
+
+        // Get reimbursement from claim lines
+        const reimbursement = charge.claimLines?.reduce((sum: number, cl: { paidAmount: unknown }) => sum + Number(cl.paidAmount || 0), 0) || 0;
+        analysis.totalReimbursement += reimbursement;
+
+        // Calculate time (based on units and category average)
+        const categoryConfig = SERVICE_CATEGORIES[categoryKey];
+        if (categoryConfig) {
+          analysis.timeMinutes += categoryConfig.avgTimeMinutes * charge.units;
+        } else {
+          analysis.timeMinutes += 15 * charge.units; // Default 15 minutes
+        }
+      }
+
+      // Calculate derived metrics for each category
+      const analysisResults: ServiceAnalysis[] = [];
+
+      for (const [key, analysis] of Object.entries(serviceAnalysisByCategory)) {
+        if (analysis.volume < minVolumeThreshold) continue; // Skip low-volume services
+
+        // Calculate averages and rates
+        analysis.avgFee = analysis.volume > 0 ? analysis.totalRevenue / analysis.volume : 0;
+        analysis.avgReimbursement = analysis.volume > 0 ? analysis.totalReimbursement / analysis.volume : 0;
+        analysis.reimbursementRate = analysis.totalRevenue > 0
+          ? (analysis.totalReimbursement / analysis.totalRevenue) * 100
+          : 0;
+
+        // Revenue per minute (key efficiency metric)
+        analysis.revenuePerMinute = analysis.timeMinutes > 0
+          ? analysis.totalReimbursement / analysis.timeMinutes
+          : 0;
+
+        // Estimate profit margin (reimbursement rate minus estimated overhead)
+        // Assume ~40% overhead for direct costs (staff, supplies, etc.)
+        const estimatedOverheadRate = 0.4;
+        analysis.profitMargin = analysis.reimbursementRate * (1 - estimatedOverheadRate);
+
+        // Classify as high-margin or unprofitable
+        analysis.highMargin = analysis.revenuePerMinute > 3.0 && analysis.reimbursementRate > 60;
+        analysis.unprofitable = analysis.revenuePerMinute < 1.5 || analysis.reimbursementRate < 30;
+
+        // Generate recommendations
+        if (analysis.unprofitable) {
+          analysis.recommendation = `Consider reducing or eliminating ${analysis.categoryName}. Revenue per minute ($${analysis.revenuePerMinute.toFixed(2)}) is below threshold. Review payer contracts for this service.`;
+          analysis.priority = analysis.totalRevenue > 5000 ? 'high' : 'medium';
+        } else if (analysis.highMargin) {
+          analysis.recommendation = `Expand ${analysis.categoryName} - high profitability with $${analysis.revenuePerMinute.toFixed(2)}/minute. Consider adding capacity or marketing this service.`;
+          analysis.priority = 'medium';
+        } else if (analysis.reimbursementRate < 50) {
+          analysis.recommendation = `Review payer contracts for ${analysis.categoryName}. Reimbursement rate of ${analysis.reimbursementRate.toFixed(1)}% indicates potential fee schedule or coding issues.`;
+          analysis.priority = 'medium';
+        } else {
+          analysis.recommendation = `${analysis.categoryName} is performing within normal parameters. Continue monitoring.`;
+          analysis.priority = 'low';
+        }
+
+        analysisResults.push(analysis);
+      }
+
+      // Sort by revenue per minute (descending)
+      analysisResults.sort((a, b) => b.revenuePerMinute - a.revenuePerMinute);
+
+      // ============================================
+      // 2. Payer Mix Analysis
+      // ============================================
+
+      interface PayerMixAnalysis {
+        payerName: string;
+        payerId?: string;
+        claimCount: number;
+        totalBilled: number;
+        totalReimbursed: number;
+        reimbursementRate: number;
+        avgDaysToPayment: number;
+        denialRate: number;
+        volumePercent: number;
+        recommendation: string;
+        priority: 'low' | 'medium' | 'high' | 'critical';
+      }
+
+      const payerStats: Record<string, {
+        name: string;
+        id?: string;
+        claims: number;
+        billed: number;
+        reimbursed: number;
+        denials: number;
+        paymentDays: number[];
+      }> = {};
+
+      // Get claims for payer analysis
+      const claims = await ctx.prisma.claim.findMany({
+        where: {
+          organizationId,
+          createdDate: {
+            gte: startDate,
+            lte: endDate,
+          },
+        },
+        include: {
+          payer: true,
+          claimLines: true,
+        },
+      });
+
+      for (const claim of claims) {
+        const payerName = claim.payer?.name || 'Self-Pay/Unknown';
+        const payerId = claim.payerId || 'unknown';
+
+        if (!payerStats[payerName]) {
+          payerStats[payerName] = {
+            name: payerName,
+            id: payerId,
+            claims: 0,
+            billed: 0,
+            reimbursed: 0,
+            denials: 0,
+            paymentDays: [],
+          };
+        }
+
+        payerStats[payerName].claims++;
+        payerStats[payerName].billed += Number(claim.totalCharges || 0);
+        payerStats[payerName].reimbursed += Number(claim.totalPaid || 0);
+
+        if (claim.status === 'DENIED') {
+          payerStats[payerName].denials++;
+        }
+
+        // Calculate days to payment
+        if (claim.paidDate && claim.submittedDate) {
+          const daysToPayment = Math.floor(
+            (claim.paidDate.getTime() - claim.submittedDate.getTime()) / (24 * 60 * 60 * 1000)
+          );
+          payerStats[payerName].paymentDays.push(daysToPayment);
+        }
+      }
+
+      const totalClaims = Object.values(payerStats).reduce((sum, p) => sum + p.claims, 0);
+      const payerMixAnalysis: PayerMixAnalysis[] = [];
+
+      for (const [name, stats] of Object.entries(payerStats)) {
+        const reimbursementRate = stats.billed > 0 ? (stats.reimbursed / stats.billed) * 100 : 0;
+        const denialRate = stats.claims > 0 ? (stats.denials / stats.claims) * 100 : 0;
+        const avgDaysToPayment = stats.paymentDays.length > 0
+          ? stats.paymentDays.reduce((a, b) => a + b, 0) / stats.paymentDays.length
+          : 0;
+        const volumePercent = totalClaims > 0 ? (stats.claims / totalClaims) * 100 : 0;
+
+        let recommendation = '';
+        let priority: 'low' | 'medium' | 'high' | 'critical' = 'low';
+
+        if (reimbursementRate < 40) {
+          recommendation = `${name} has very low reimbursement rate (${reimbursementRate.toFixed(1)}%). Consider contract renegotiation or dropping this payer.`;
+          priority = volumePercent > 10 ? 'critical' : 'high';
+        } else if (denialRate > 20) {
+          recommendation = `${name} has high denial rate (${denialRate.toFixed(1)}%). Review coding and authorization processes for this payer.`;
+          priority = 'high';
+        } else if (avgDaysToPayment > 60) {
+          recommendation = `${name} slow payment (avg ${avgDaysToPayment.toFixed(0)} days). Implement follow-up protocols for this payer.`;
+          priority = 'medium';
+        } else if (reimbursementRate > 70 && volumePercent < 10) {
+          recommendation = `Consider increasing volume with ${name} - high reimbursement rate (${reimbursementRate.toFixed(1)}%) suggests favorable contracts.`;
+          priority = 'medium';
+        } else {
+          recommendation = `${name} performing normally. Monitor for changes.`;
+        }
+
+        payerMixAnalysis.push({
+          payerName: name,
+          payerId: stats.id,
+          claimCount: stats.claims,
+          totalBilled: stats.billed,
+          totalReimbursed: stats.reimbursed,
+          reimbursementRate,
+          avgDaysToPayment,
+          denialRate,
+          volumePercent,
+          recommendation,
+          priority,
+        });
+      }
+
+      // Sort by volume
+      payerMixAnalysis.sort((a, b) => b.claimCount - a.claimCount);
+
+      // ============================================
+      // 3. Time vs Revenue Analysis
+      // ============================================
+
+      interface TimeRevenueAnalysis {
+        providerId?: string;
+        providerName: string;
+        totalEncounters: number;
+        totalTimeMinutes: number;
+        totalRevenue: number;
+        revenuePerHour: number;
+        avgEncounterMinutes: number;
+        avgRevenuePerEncounter: number;
+        utilizationPercent: number; // % of available time used
+        recommendation: string;
+        priority: 'low' | 'medium' | 'high' | 'critical';
+      }
+
+      const providerTimeStats: Record<string, {
+        id?: string;
+        name: string;
+        encounters: number;
+        totalMinutes: number;
+        totalRevenue: number;
+      }> = {};
+
+      for (const encounter of encounters) {
+        const providerName = encounter.provider?.user
+          ? `${encounter.provider.user.firstName || ''} ${encounter.provider.user.lastName || ''}`.trim() || 'Unknown Provider'
+          : 'Unknown Provider';
+        const provId = encounter.providerId || 'unknown';
+
+        if (!providerTimeStats[provId]) {
+          providerTimeStats[provId] = {
+            id: provId === 'unknown' ? undefined : provId,
+            name: providerName,
+            encounters: 0,
+            totalMinutes: 0,
+            totalRevenue: 0,
+          };
+        }
+
+        providerTimeStats[provId].encounters++;
+
+        // Estimate encounter time based on charges
+        let encounterMinutes = 0;
+        let encounterRevenue = 0;
+        for (const charge of encounter.charges) {
+          // Find time for this CPT
+          let timePerUnit = 15; // Default
+          for (const category of Object.values(SERVICE_CATEGORIES)) {
+            if (category.codes.includes(charge.cptCode)) {
+              timePerUnit = category.avgTimeMinutes;
+              break;
+            }
+          }
+          encounterMinutes += timePerUnit * charge.units;
+          encounterRevenue += Number(charge.fee) * charge.units;
+        }
+
+        providerTimeStats[provId].totalMinutes += encounterMinutes;
+        providerTimeStats[provId].totalRevenue += encounterRevenue;
+      }
+
+      const timeRevenueAnalysis: TimeRevenueAnalysis[] = [];
+      const workingHoursPerMonth = 160; // 40 hours * 4 weeks
+      const analysisMonths = Math.max(1, (endDate.getTime() - startDate.getTime()) / (30 * 24 * 60 * 60 * 1000));
+
+      for (const [id, stats] of Object.entries(providerTimeStats)) {
+        if (stats.encounters < 10) continue; // Skip providers with minimal activity
+
+        const revenuePerHour = stats.totalMinutes > 0
+          ? (stats.totalRevenue / stats.totalMinutes) * 60
+          : 0;
+        const avgEncounterMinutes = stats.encounters > 0
+          ? stats.totalMinutes / stats.encounters
+          : 0;
+        const avgRevenuePerEncounter = stats.encounters > 0
+          ? stats.totalRevenue / stats.encounters
+          : 0;
+
+        // Calculate utilization (% of available time used)
+        const availableMinutes = workingHoursPerMonth * 60 * analysisMonths;
+        const utilizationPercent = (stats.totalMinutes / availableMinutes) * 100;
+
+        let recommendation = '';
+        let priority: 'low' | 'medium' | 'high' | 'critical' = 'low';
+
+        if (revenuePerHour < 150) {
+          recommendation = `${stats.name}: Revenue/hour ($${revenuePerHour.toFixed(0)}) is below benchmark. Review service mix or scheduling efficiency.`;
+          priority = 'high';
+        } else if (utilizationPercent < 50) {
+          recommendation = `${stats.name}: Low utilization (${utilizationPercent.toFixed(0)}%). Opportunity to increase patient volume or add services.`;
+          priority = 'medium';
+        } else if (utilizationPercent > 90) {
+          recommendation = `${stats.name}: Near capacity (${utilizationPercent.toFixed(0)}%). Consider adding provider coverage or extending hours.`;
+          priority = 'medium';
+        } else if (revenuePerHour > 300) {
+          recommendation = `${stats.name}: Excellent revenue/hour ($${revenuePerHour.toFixed(0)}). Consider this provider's practices as a model.`;
+          priority = 'low';
+        } else {
+          recommendation = `${stats.name}: Operating within normal parameters.`;
+        }
+
+        timeRevenueAnalysis.push({
+          providerId: stats.id,
+          providerName: stats.name,
+          totalEncounters: stats.encounters,
+          totalTimeMinutes: stats.totalMinutes,
+          totalRevenue: stats.totalRevenue,
+          revenuePerHour,
+          avgEncounterMinutes,
+          avgRevenuePerEncounter,
+          utilizationPercent,
+          recommendation,
+          priority,
+        });
+      }
+
+      // Sort by revenue per hour
+      timeRevenueAnalysis.sort((a, b) => b.revenuePerHour - a.revenuePerHour);
+
+      // ============================================
+      // 4. Capacity Utilization Analysis
+      // ============================================
+
+      interface CapacityRecommendation {
+        type: 'expansion' | 'reduction' | 'optimization' | 'rebalance';
+        title: string;
+        description: string;
+        projectedImpact: number;
+        effortLevel: 'easy' | 'moderate' | 'complex';
+        priority: 'low' | 'medium' | 'high' | 'critical';
+      }
+
+      const capacityRecommendations: CapacityRecommendation[] = [];
+
+      // Analyze high-margin services for expansion
+      const highMarginServices = analysisResults.filter(a => a.highMargin);
+      if (highMarginServices.length > 0) {
+        const topService = highMarginServices[0];
+        const expansionImpact = topService.totalReimbursement * 0.25; // 25% growth potential
+
+        capacityRecommendations.push({
+          type: 'expansion',
+          title: `Expand ${topService.categoryName} Services`,
+          description: `${topService.categoryName} generates $${topService.revenuePerMinute.toFixed(2)}/minute with ${topService.reimbursementRate.toFixed(1)}% collection rate. Marketing and capacity expansion could increase revenue by ~$${expansionImpact.toFixed(0)}/year.`,
+          projectedImpact: expansionImpact,
+          effortLevel: 'moderate',
+          priority: 'high',
+        });
+      }
+
+      // Analyze unprofitable services for reduction
+      const unprofitableServices = analysisResults.filter(a => a.unprofitable);
+      for (const service of unprofitableServices.slice(0, 3)) {
+        const savingsImpact = service.totalRevenue * (1 - service.reimbursementRate / 100) * 0.5;
+
+        capacityRecommendations.push({
+          type: 'reduction',
+          title: `Review ${service.categoryName} Viability`,
+          description: `${service.categoryName} has low revenue/minute ($${service.revenuePerMinute.toFixed(2)}) and ${service.reimbursementRate.toFixed(1)}% collection. Consider reducing or repricing this service.`,
+          projectedImpact: savingsImpact,
+          effortLevel: 'easy',
+          priority: service.totalRevenue > 10000 ? 'high' : 'medium',
+        });
+      }
+
+      // Analyze payer mix for rebalancing
+      const problematicPayers = payerMixAnalysis.filter(p => p.reimbursementRate < 50 && p.volumePercent > 5);
+      if (problematicPayers.length > 0) {
+        const totalLoss = problematicPayers.reduce((sum, p) =>
+          sum + (p.totalBilled - p.totalReimbursed), 0);
+
+        capacityRecommendations.push({
+          type: 'rebalance',
+          title: 'Optimize Payer Mix',
+          description: `${problematicPayers.length} payers have <50% reimbursement rates, representing $${totalLoss.toFixed(0)} in potential lost revenue. Consider contract renegotiation or shifting volume to better-paying payers.`,
+          projectedImpact: totalLoss * 0.3, // 30% recovery potential
+          effortLevel: 'complex',
+          priority: 'critical',
+        });
+      }
+
+      // Analyze provider utilization
+      const underutilizedProviders = timeRevenueAnalysis.filter(p => p.utilizationPercent < 60);
+      if (underutilizedProviders.length > 0) {
+        const potentialRevenue = underutilizedProviders.reduce((sum, p) => {
+          const capacityGap = (70 - p.utilizationPercent) / 100; // Target 70% utilization
+          return sum + (p.totalRevenue * capacityGap);
+        }, 0);
+
+        capacityRecommendations.push({
+          type: 'optimization',
+          title: 'Increase Provider Utilization',
+          description: `${underutilizedProviders.length} providers are below 60% utilization. Improving scheduling and patient volume could generate ~$${potentialRevenue.toFixed(0)} additional annual revenue.`,
+          projectedImpact: potentialRevenue,
+          effortLevel: 'moderate',
+          priority: 'high',
+        });
+      }
+
+      // Sort recommendations by projected impact
+      capacityRecommendations.sort((a, b) => b.projectedImpact - a.projectedImpact);
+
+      // ============================================
+      // 5. Generate Summary & Persist Results
+      // ============================================
+
+      // Calculate overall metrics
+      const totalRevenue = analysisResults.reduce((sum, a) => sum + a.totalRevenue, 0);
+      const totalReimbursement = analysisResults.reduce((sum, a) => sum + a.totalReimbursement, 0);
+      const overallReimbursementRate = totalRevenue > 0 ? (totalReimbursement / totalRevenue) * 100 : 0;
+      const totalTimeMinutes = analysisResults.reduce((sum, a) => sum + a.timeMinutes, 0);
+      const overallRevenuePerMinute = totalTimeMinutes > 0 ? totalReimbursement / totalTimeMinutes : 0;
+
+      // Create revenue opportunity for top recommendations
+      for (const rec of capacityRecommendations.slice(0, 5)) {
+        if (rec.projectedImpact > 1000) {
+          await ctx.prisma.revenueOpportunity.create({
+            data: {
+              opportunityType: `service_mix_${rec.type}`,
+              title: rec.title,
+              description: rec.description,
+              estimatedValue: new Decimal(rec.projectedImpact),
+              confidence: new Decimal(70),
+              status: 'identified',
+              organizationId,
+            },
+          });
+        }
+      }
+
+      const summary = {
+        dateRange: { from: startDate, to: endDate },
+        overallMetrics: {
+          totalRevenue,
+          totalReimbursement,
+          reimbursementRate: overallReimbursementRate,
+          totalTimeMinutes,
+          revenuePerMinute: overallRevenuePerMinute,
+          revenuePerHour: overallRevenuePerMinute * 60,
+        },
+        serviceCount: analysisResults.length,
+        highMarginServices: analysisResults.filter(a => a.highMargin).length,
+        unprofitableServices: analysisResults.filter(a => a.unprofitable).length,
+        payerCount: payerMixAnalysis.length,
+        problematicPayers: payerMixAnalysis.filter(p => p.reimbursementRate < 50).length,
+        providerCount: timeRevenueAnalysis.length,
+        totalOpportunities: capacityRecommendations.length,
+        totalProjectedImpact: capacityRecommendations.reduce((sum, r) => sum + r.projectedImpact, 0),
+      };
+
+      return {
+        success: true,
+        summary,
+        serviceAnalysis: analysisResults,
+        payerMixAnalysis,
+        timeRevenueAnalysis,
+        capacityRecommendations,
+        analyzedAt: new Date(),
+      };
+    }),
+
+  /**
+   * Get service mix analysis summary
+   */
+  getServiceMixSummary: billerProcedure.query(async ({ ctx }) => {
+    const organizationId = ctx.user.organizationId;
+
+    // Get recent service mix opportunities
+    const opportunities = await ctx.prisma.revenueOpportunity.findMany({
+      where: {
+        organizationId,
+        opportunityType: {
+          startsWith: 'service_mix_',
+        },
+        status: {
+          in: ['identified', 'in_progress'],
+        },
+      },
+      orderBy: { estimatedValue: 'desc' },
+      take: 10,
+    });
+
+    // Get captured value from service mix optimizations
+    const capturedOpportunities = await ctx.prisma.revenueOpportunity.findMany({
+      where: {
+        organizationId,
+        opportunityType: {
+          startsWith: 'service_mix_',
+        },
+        status: 'captured',
+        capturedAt: {
+          gte: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000),
+        },
+      },
+    });
+
+    const totalCaptured = capturedOpportunities.reduce(
+      (sum, o) => sum + Number(o.capturedValue || 0), 0
+    );
+
+    return {
+      activeOpportunities: opportunities.length,
+      totalEstimatedValue: opportunities.reduce((sum, o) => sum + Number(o.estimatedValue), 0),
+      capturedThisYear: totalCaptured,
+      topOpportunities: opportunities.slice(0, 5).map(o => ({
+        id: o.id,
+        type: o.opportunityType,
+        title: o.title,
+        estimatedValue: Number(o.estimatedValue),
+        status: o.status,
+      })),
+    };
+  }),
+
+  /**
+   * Act on a service mix recommendation
+   */
+  actOnServiceMixRecommendation: billerProcedure
+    .input(
+      z.object({
+        opportunityId: z.string(),
+        action: z.enum(['start', 'complete', 'decline']),
+        capturedValue: z.number().optional(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { opportunityId, action, capturedValue, notes } = input;
+
+      const opportunity = await ctx.prisma.revenueOpportunity.findFirst({
+        where: {
+          id: opportunityId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!opportunity) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Opportunity not found',
+        });
+      }
+
+      let newStatus: string;
+      switch (action) {
+        case 'start':
+          newStatus = 'in_progress';
+          break;
+        case 'complete':
+          newStatus = 'captured';
+          break;
+        case 'decline':
+          newStatus = 'declined';
+          break;
+      }
+
+      const updated = await ctx.prisma.revenueOpportunity.update({
+        where: { id: opportunityId },
+        data: {
+          status: newStatus,
+          ...(action === 'complete' && {
+            capturedValue: capturedValue ? new Decimal(capturedValue) : null,
+            capturedAt: new Date(),
+            capturedBy: ctx.user.id,
+          }),
+          notes: notes || opportunity.notes,
+        },
+      });
+
+      // Create optimization action record
+      if (action === 'complete') {
+        await ctx.prisma.optimizationAction.create({
+          data: {
+            actionType: 'service_mix_optimization',
+            action: `Completed: ${opportunity.title}`,
+            projectedImpact: opportunity.estimatedValue,
+            actualImpact: capturedValue ? new Decimal(capturedValue) : null,
+            status: 'completed',
+            completedAt: new Date(),
+            completedBy: ctx.user.id,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+      }
+
+      return {
+        success: true,
+        opportunity: updated,
+      };
+    }),
 });

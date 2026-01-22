@@ -62,3 +62,36 @@ COMPLETED: Added comprehensive fee schedule optimization to aiRevenue.ts:
 - Creates OptimizationAction records for tracking
 - TypeScript compilation passes
 
+--- Iteration 8 completed at 2026-01-22 14:37:06 ---
+Story: US-341 - Fee schedule optimization
+
+--- Iteration 9 completed at 2026-01-22 ---
+Story: US-342 - Service mix optimization
+COMPLETED: Added comprehensive service mix optimization to aiRevenue.ts:
+- aiRevenue.analyzeServiceMix - Main service mix analysis procedure
+  - Profitability by service type (12 chiropractic service categories)
+  - Service category definitions with CPT codes and avg time per procedure
+  - High-margin service identification ($3+/minute revenue with 60%+ collection)
+  - Unprofitable service identification (<$1.5/minute or <30% collection)
+  - Service expansion recommendations based on profitability metrics
+- Payer mix optimization analysis:
+  - Reimbursement rates by payer
+  - Denial rates and days-to-payment tracking
+  - Volume distribution analysis
+  - Contract renegotiation recommendations
+- Time vs revenue analysis:
+  - Revenue per hour by provider
+  - Encounter duration analysis
+  - Provider utilization percentage
+  - Scheduling efficiency recommendations
+- Capacity utilization recommendations:
+  - Expansion opportunities for high-margin services
+  - Reduction recommendations for unprofitable services
+  - Payer mix rebalancing suggestions
+  - Provider utilization optimization
+- aiRevenue.getServiceMixSummary - Dashboard summary
+- aiRevenue.actOnServiceMixRecommendation - Act on opportunities
+- Creates RevenueOpportunity records for top recommendations
+- Creates OptimizationAction records for tracking
+- TypeScript compilation passes
+
