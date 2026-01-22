@@ -83,6 +83,8 @@ import { patientLocationRouter } from './patientLocation';
 import { crossLocationSchedulingRouter } from './crossLocationScheduling';
 import { enterpriseReportingRouter } from './enterpriseReporting';
 import { interLocationInventoryRouter } from './interLocationInventory';
+// Advanced Security & Compliance (Epic 26)
+import { securityRouter } from './security';
 
 export const appRouter = router({
   auth: authRouter,
@@ -169,6 +171,8 @@ export const appRouter = router({
   crossLocationScheduling: crossLocationSchedulingRouter,
   enterpriseReporting: enterpriseReportingRouter,
   interLocationInventory: interLocationInventoryRouter,
+  // Advanced Security & Compliance (Epic 26)
+  security: securityRouter,
 });
 
 

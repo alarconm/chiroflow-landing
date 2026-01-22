@@ -1,0 +1,793 @@
+# ChiroFlow Ralph Progress Log
+
+## US-248: Multi-location schema - COMPLETED
+Date: 2026-01-22
+
+### Changes Made:
+
+1. **Created Location model** (`app/prisma/schema.prisma`)
+   - Fields: id, name, code, isActive, isPrimary
+   - Address fields: addressLine1, addressLine2, city, state, zipCode, country
+   - Contact: phone, fax, email
+   - Timezone support
+   - Branding options: logoUrl, primaryColor, accentColor
+   - Soft delete with deletedAt
+
+2. **Created LocationStaff model** (`app/prisma/schema.prisma`)
+   - Links users to locations with isPrimary designation
+   - Role override capability per location
+   - Schedule visibility permissions: canViewSchedule, canManageSchedule
+
+3. **Created LocationHours model** (`app/prisma/schema.prisma`)
+   - Per-location operating hours by day of week
+   - Break time support
+   - Holiday/override capability with effectiveDate
+
+4. **Created LocationSettings model** (`app/prisma/schema.prisma`)
+   - Appointment settings: duration, interval, buffer
+   - Patient settings: cross-location access, record sharing
+   - Inventory settings: tracking, alerts
+   - Billing settings: separate billing option
+   - Communication settings: reminders
+   - Custom settings JSON for extensibility
+
+5. **Added locationId to existing models**:
+   - Appointment model - optional locationId with Location relation
+   - Encounter model - optional locationId with location_ relation
+   - InventoryItem model - optional locationId with Location relation
+   - InventoryMovement model - locationId, fromLocationId, toLocationId for transfers
+
+6. **Enhanced Organization model**:
+   - Added isEnterprise boolean flag
+   - Added parentOrganizationId for sub-organizations
+   - Added enterpriseSettings JSON
+   - Added primary contact fields
+   - Added locations relation
+
+7. **Added LocationStaff relation to User model**:
+   - locationAssignments relation for multi-location staff assignment
+
+8. **Updated inventory code for schema changes**:
+   - Renamed `location` field to `storageArea` in InventoryItem
+   - Renamed `fromLocation`/`toLocation` to `fromStorageArea`/`toStorageArea` in InventoryMovement
+   - Updated inventory-tracker.ts, pos.ts, product-service.ts, inventory.ts router
+
+9. **Database migration**:
+   - Prisma schema validated successfully
+   - Schema pushed to database with `prisma db push`
+   - Prisma client regenerated
+
+### Files Modified:
+- app/prisma/schema.prisma
+- app/src/lib/inventory/inventory-tracker.ts
+- app/src/lib/inventory/pos.ts
+- app/src/lib/inventory/product-service.ts
+- app/src/server/routers/inventory.ts
+
+### Acceptance Criteria Status:
+- [x] Location model with organizationId, name, address, phone, timezone
+- [x] Add locationId to Appointment, Encounter, Inventory models
+- [x] LocationStaff model linking users to locations with roles
+- [x] LocationHours model for per-location operating hours
+- [x] LocationSettings model for location-specific configuration
+- [x] Organization model enhanced for parent company
+- [x] Prisma migrations run successfully
+--- Iteration 1 completed at 2026-01-22 05:33:34 ---
+Story: US-248 - Multi-location schema
+
+## US-249: Location management - COMPLETED
+Date: 2026-01-22
+
+### Changes Made:
+
+1. **Created location router** (`app/src/server/routers/location.ts`)
+   - Full CRUD operations for location management
+   - Zod schemas for input validation
+   - Organization-scoped access control
+
+2. **Implemented location.create**
+   - Creates new location with address, contact info, timezone
+   - Auto-creates LocationSettings with defaults
+   - Auto-creates LocationHours (Mon-Fri 9-5 default)
+   - Validates address format (US state codes)
+   - Prevents duplicate location codes within organization
+   - Handles isPrimary flag (unsets existing if setting new primary)
+   - Transaction-based to ensure atomicity
+
+3. **Implemented location.update**
+   - Updates location details, settings, or branding
+   - Address validation on address field changes
+   - Duplicate code check when changing code
+   - Upserts LocationSettings when settings provided
+
+4. **Implemented location.list**
+   - Lists all organization locations
+   - Optional filters: includeInactive, includeDeleted
+   - Includes settings, hours, and counts (staff, appointments)
+   - Ordered by isPrimary (desc) then name
+
+5. **Implemented location.get**
+   - Full location details with settings, hours, staff
+   - Includes counts for appointments, encounters, inventory
+
+6. **Implemented location.deactivate**
+   - Soft delete with deletedAt timestamp
+   - Prevents deactivation if future appointments exist
+   - Prevents deactivation of only active location
+   - Deactivates all LocationStaff assignments
+
+7. **Implemented location.reactivate**
+   - Restores deactivated location to active status
+
+8. **Location-specific branding options**
+   - location.updateBranding procedure
+   - Supports logoUrl, primaryColor, accentColor
+
+9. **Address validation**
+   - US state code validation (50 states + DC, territories)
+   - ZIP code format validation (5-digit or 9-digit)
+   - Basic address line length check
+
+10. **Additional procedures**
+    - location.updateHours - Update operating hours
+    - location.getPrimary - Get primary/headquarters location
+
+11. **Added audit log actions** (`app/src/lib/audit.ts`)
+    - LOCATION_CREATE, LOCATION_UPDATE
+    - LOCATION_DEACTIVATE, LOCATION_REACTIVATE
+    - LOCATION_HOURS_UPDATE, LOCATION_BRANDING_UPDATE
+    - LOCATION_STAFF_ASSIGN, LOCATION_STAFF_REMOVE
+
+12. **Registered router** (`app/src/server/routers/index.ts`)
+    - Added locationRouter import and registration
+
+### Files Created:
+- app/src/server/routers/location.ts
+
+### Files Modified:
+- app/src/lib/audit.ts
+- app/src/server/routers/index.ts
+
+### Acceptance Criteria Status:
+- [x] location.create - Add new location
+- [x] location.update - Modify location details
+- [x] location.list - List all organization locations
+- [x] location.get - Get location with settings
+- [x] location.deactivate - Soft delete location
+- [x] Location-specific branding options
+- [x] Address validation
+
+--- Iteration 2 completed at 2026-01-22 05:38:24 ---
+Story: US-249 - Location management
+
+--- Iteration 2 completed at 2026-01-22 05:38:35 ---
+Story: US-249 - Location management
+
+## US-250: Staff location assignment - COMPLETED
+Date: 2026-01-22
+
+### Changes Made:
+
+1. **Created locationStaff router** (`app/src/server/routers/locationStaff.ts`)
+   - Full CRUD operations for staff location assignments
+   - Zod schemas for input validation
+   - Organization-scoped access control
+
+2. **Implemented locationStaff.assign**
+   - Assigns user to location with options for:
+     - isPrimary designation
+     - roleOverride (location-specific role)
+     - canViewSchedule, canManageSchedule permissions
+   - Validates user and location belong to organization
+   - Handles reactivation of previously removed assignments
+   - Automatically unsets existing primary when setting new one
+
+3. **Implemented locationStaff.remove**
+   - Soft delete by setting isActive to false
+   - Supports removal by id or by userId+locationId combination
+   - Maintains audit trail
+
+4. **Implemented locationStaff.list**
+   - Lists all staff at a specific location
+   - Includes user details, provider info, and schedule permissions
+   - Optional includeInactive filter
+   - Ordered by isPrimary (desc), lastName (asc)
+
+5. **Implemented locationStaff.listByUser**
+   - Lists all locations for a specific user
+   - Shows primary location designation
+   - Optional includeInactive filter
+
+6. **Support for multi-location assignment (floating staff)**
+   - locationStaff.bulkAssign - Assign user to multiple locations at once
+   - Sets primary location from the provided list
+   - Deactivates assignments not in the new list
+   - Atomic transaction for consistency
+
+7. **Location-specific role overrides**
+   - getEffectiveRole - Returns user's effective role at a location
+   - Supports roleOverride per assignment (OWNER, ADMIN, PROVIDER, STAFF, BILLER)
+   - Falls back to base user role if no override
+
+8. **Primary location designation**
+   - locationStaff.setPrimary - Set primary work location
+   - locationStaff.getPrimary - Get user's primary location
+   - Falls back to first active assignment if no primary set
+   - Ensures only one primary per user
+
+9. **Schedule visibility by assigned locations**
+   - locationStaff.getScheduleViewableLocations - Locations user can view schedules for
+   - locationStaff.getScheduleManageableLocations - Locations user can manage schedules for
+   - Admins/Owners can see/manage all locations
+   - Other roles limited by canViewSchedule/canManageSchedule flags
+
+10. **Staff overview utilities**
+    - locationStaff.update - Update assignment permissions
+    - locationStaff.listAllStaff - All staff with location counts
+
+11. **Registered router** (`app/src/server/routers/index.ts`)
+    - Added locationStaffRouter import and registration
+
+### Files Created:
+- app/src/server/routers/locationStaff.ts
+
+### Files Modified:
+- app/src/server/routers/index.ts
+
+### Acceptance Criteria Status:
+- [x] locationStaff.assign - Assign user to location
+- [x] locationStaff.remove - Remove user from location
+- [x] locationStaff.list - List staff at location
+- [x] Support multi-location assignment for floating staff
+- [x] Location-specific role overrides
+- [x] Primary location designation
+- [x] Schedule visibility by assigned locations
+
+--- Iteration 3 completed at 2026-01-22 ---
+Story: US-250 - Staff location assignment
+
+--- Iteration 3 completed at 2026-01-22 05:44:38 ---
+Story: US-250 - Staff location assignment
+
+## US-251: Cross-location patient access - COMPLETED
+Date: 2026-01-22
+
+### Changes Made:
+
+1. **Extended Patient model** (`app/prisma/schema.prisma`)
+   - Added homeLocationId - Patient's home/primary location
+   - Added homeLocation relation to Location
+   - Added consentForCrossLocationSharing boolean
+   - Added crossLocationConsentDate timestamp
+   - Added crossLocationAccessLogs relation
+   - Added balanceByLocation relation
+   - Added index on homeLocationId
+
+2. **Created CrossLocationAccessType enum** (`app/prisma/schema.prisma`)
+   - VIEW_RECORD - Viewed patient record from another location
+   - VIEW_ENCOUNTERS - Viewed patient encounters
+   - VIEW_BALANCE - Viewed patient balance/financial info
+   - VIEW_DOCUMENTS - Viewed patient documents
+   - CREATE_ENCOUNTER - Created encounter at non-home location
+   - CREATE_APPOINTMENT - Created appointment at non-home location
+   - UPDATE_RECORD - Updated patient info from another location
+
+3. **Created CrossLocationAccessLog model** (`app/prisma/schema.prisma`)
+   - Full audit trail for cross-location patient access
+   - Tracks accessType, entityType, entityId
+   - Records reason and notes for access
+   - Captures IP address and user agent for security
+   - Links to patient, user, and accessing location
+   - Organization-scoped with proper indexes
+
+4. **Created PatientLocationBalance model** (`app/prisma/schema.prisma`)
+   - Per-location balance tracking (optional feature)
+   - Tracks totalCharges, totalPayments, totalAdjustments, currentBalance
+   - Records lastChargeDate and lastPaymentDate
+   - Unique constraint on patientId + locationId
+
+5. **Updated Location model** (`app/prisma/schema.prisma`)
+   - Added homePatients relation
+   - Added crossLocationAccessLogs relation
+   - Added patientBalances relation
+
+6. **Updated User and Organization models** (`app/prisma/schema.prisma`)
+   - Added crossLocationAccessLogs relations for audit trail
+
+7. **Added audit log actions** (`app/src/lib/audit.ts`)
+   - PATIENT_HOME_LOCATION_SET
+   - PATIENT_HOME_LOCATION_CHANGE
+   - PATIENT_CROSS_LOCATION_CONSENT
+   - PATIENT_CROSS_LOCATION_ACCESS
+   - PATIENT_CROSS_LOCATION_VIEW
+   - PATIENT_CROSS_LOCATION_ENCOUNTER
+   - PATIENT_BALANCE_BY_LOCATION_UPDATE
+
+8. **Created patientLocation router** (`app/src/server/routers/patientLocation.ts`)
+   - **setHomeLocation** - Set patient's home/primary location
+   - **updateCrossLocationConsent** - Update patient consent for cross-location sharing
+   - **getCrossLocation** - Get patient with cross-location access verification
+     - Checks location settings for allowCrossLocationAccess
+     - Verifies patient consent before allowing access
+     - Logs cross-location access with full audit trail
+   - **getVisitHistory** - Get patient visit history with location info
+     - Shows location for each encounter
+     - Supports filtering by location or all locations
+   - **getBalanceByLocation** - Get patient balance broken down by location
+     - Shows per-location balance details
+     - Calculates consolidated balance across all locations
+   - **getAccessLog** - Get cross-location access audit log for a patient
+   - **logAccess** - Manual logging endpoint for other routers
+   - **listByLocation** - List patients by home location
+   - **updateLocationBalance** - Update patient balance (for billing module)
+
+9. **Registered router** (`app/src/server/routers/index.ts`)
+   - Added patientLocationRouter import and registration
+
+10. **Fixed pre-existing bug in locationStaff.ts**
+    - Corrected `npi` to `npiNumber` in provider select
+
+### Files Created:
+- app/src/server/routers/patientLocation.ts
+
+### Files Modified:
+- app/prisma/schema.prisma
+- app/src/lib/audit.ts
+- app/src/server/routers/index.ts
+- app/src/server/routers/locationStaff.ts (bug fix)
+
+### Acceptance Criteria Status:
+- [x] Patient records visible at all locations
+- [x] Location of service recorded on encounters
+- [x] Patient home location designation
+- [x] Visit history shows location
+- [x] Balance tracking by location option
+- [x] Consent for cross-location sharing
+- [x] Audit trail for cross-location access
+
+--- Iteration 4 completed at 2026-01-22 ---
+Story: US-251 - Cross-location patient access
+
+--- Iteration 4 completed at 2026-01-22 05:52:27 ---
+Story: US-251 - Cross-location patient access
+
+## US-252: Cross-location scheduling - COMPLETED
+Date: 2026-01-22
+
+### Changes Made:
+
+1. **Extended Room model** (`app/prisma/schema.prisma`)
+   - Added locationId - Optional location assignment for rooms
+   - Added location relation to Location
+   - Added index on locationId
+
+2. **Extended Resource model** (`app/prisma/schema.prisma`)
+   - Added locationId - Optional location assignment for resources
+   - Added location relation to Location
+   - Added index on locationId
+
+3. **Created AppointmentTypeLocation model** (`app/prisma/schema.prisma`)
+   - Location-specific availability for appointment types
+   - isEnabled flag to enable/disable appointment types per location
+   - durationOverride for location-specific appointment durations
+   - priceOverride for location-specific pricing
+   - Unique constraint on appointmentTypeId + locationId
+
+4. **Updated AppointmentType model** (`app/prisma/schema.prisma`)
+   - Added locationAvailability relation for location-specific configuration
+
+5. **Updated Location model** (`app/prisma/schema.prisma`)
+   - Added rooms relation
+   - Added resources relation
+   - Added appointmentTypeAvailability relation
+
+6. **Added audit log actions** (`app/src/lib/audit.ts`)
+   - APPOINTMENT_TRANSFER_LOCATION
+   - APPOINTMENT_TYPE_LOCATION_UPDATE
+   - ROOM_LOCATION_ASSIGN
+   - RESOURCE_LOCATION_ASSIGN
+
+7. **Created crossLocationScheduling router** (`app/src/server/routers/crossLocationScheduling.ts`)
+
+   **Location Selection:**
+   - **getBookableLocations** - Get available locations for booking appointments
+
+   **Provider Availability by Location:**
+   - **getProviderAvailabilityByLocation** - Get provider availability at specific location
+   - **getLocationProviders** - Get all providers available at a location
+
+   **Resource Availability by Location:**
+   - **getLocationResources** - Get resources at a location with availability check
+   - **getLocationRooms** - Get rooms at a location with availability check
+   - **assignRoomToLocation** - Assign/unassign room to location
+   - **assignResourceToLocation** - Assign/unassign resource to location
+
+   **Cross-Location Appointment Booking:**
+   - **bookAtLocation** - Book appointment at any location
+     - Validates patient, location, provider, and appointment type
+     - Checks if provider is assigned to location
+     - Checks if appointment type is enabled at location
+     - Validates room and resource availability
+     - Creates appointment with location assignment
+
+   **Transfer Appointment Between Locations:**
+   - **transferAppointment** - Transfer existing appointment to different location
+     - Validates appointment status (can't transfer completed/cancelled)
+     - Optionally changes provider, room, and time
+     - Checks for conflicts at new location
+     - Adds transfer note to appointment
+
+   **Multi-Location Availability View:**
+   - **getMultiLocationAvailability** - Get availability overview across all locations
+     - Shows appointment counts, provider counts per location
+     - Shows which locations have appointment type available
+   - **findAvailableSlots** - Find available time slots across all locations
+     - Filters by date, duration, appointment type, provider
+     - Returns slots per location and provider
+
+   **Location-Specific Appointment Types:**
+   - **getLocationAppointmentTypes** - Get appointment types with location-specific settings
+   - **setAppointmentTypeLocation** - Configure appointment type at a location
+   - **bulkSetAppointmentTypeLocations** - Bulk configure types for a location
+
+   **Appointments by Location:**
+   - **listAppointmentsByLocation** - List appointments at a location
+   - **getLocationStats** - Get appointment statistics by location
+
+8. **Registered router** (`app/src/server/routers/index.ts`)
+   - Added crossLocationSchedulingRouter import and registration
+
+9. **Database migration**
+   - Prisma schema validated successfully
+   - Schema pushed to database with `prisma db push`
+   - Prisma client regenerated
+   - TypeScript compilation successful
+
+### Files Created:
+- app/src/server/routers/crossLocationScheduling.ts
+
+### Files Modified:
+- app/prisma/schema.prisma
+- app/src/lib/audit.ts
+- app/src/server/routers/index.ts
+
+### Acceptance Criteria Status:
+- [x] Location selector in appointment booking
+- [x] Provider availability by location
+- [x] Resource availability by location
+- [x] Patient can book at any location
+- [x] Transfer appointment between locations
+- [x] Multi-location availability view
+- [x] Location-specific appointment types
+
+--- Iteration 5 completed at 2026-01-22 ---
+Story: US-252 - Cross-location scheduling
+
+--- Iteration 5 completed at 2026-01-22 05:59:35 ---
+Story: US-252 - Cross-location scheduling
+
+## US-253: Consolidated reporting - COMPLETED
+Date: 2026-01-22
+
+### Changes Made:
+
+1. **Created enterpriseReporting router** (`app/src/server/routers/enterpriseReporting.ts`)
+   - Comprehensive enterprise-wide reporting for multi-location organizations
+   - Full TypeScript types for all report structures
+
+2. **Implemented reports.getEnterprise (All-location aggregated reports)**
+   - Enterprise overview with aggregated metrics across all locations
+   - Volume metrics: appointments, completed, cancelled, no-shows
+   - Patient metrics: total, new, active patients per location
+   - Financial metrics: charges, collections, adjustments, net revenue, outstanding AR
+   - Efficiency metrics: no-show rate, collection rate, avg revenue per visit
+   - Location-by-location breakdown with all metrics
+   - Optional location filtering to limit scope
+
+3. **Implemented Filter reports by location**
+   - getFinancialByLocation - Financial report filtered by specific locations
+   - Validates locations belong to organization
+   - Returns charges, collections, adjustments, net revenue per location
+   - Includes collection rate and charge count
+
+4. **Implemented Compare locations side-by-side**
+   - compareLocations - Compare 2-10 locations across key metrics
+   - Configurable metrics: appointments, completedVisits, noShowRate, newPatients,
+     totalCharges, totalCollections, collectionRate, avgRevenuePerVisit, outstandingAR
+   - Shows enterprise total and average for each metric
+   - Proper format specification (number, currency, percentage)
+
+5. **Implemented Roll-up financial reports**
+   - getFinancialRollup - Consolidated financial data across all locations
+   - Grouping by day, week, or month
+   - Per-period breakdown by location
+   - Grand totals across all periods
+   - Shows charges, collections, adjustments, net revenue
+
+6. **Implemented Multi-location AR aging**
+   - getARAgingByLocation - AR aging broken down by location
+   - Standard aging buckets: current, 31-60, 61-90, 91-120, 120+ days
+   - Per-location totals and charge counts
+   - Average age per location
+   - Enterprise totals with weighted average age
+
+7. **Implemented Provider productivity by location**
+   - getProviderProductivityByLocation - Provider metrics by location
+   - Shows visits, charges, collections, collection rate per provider per location
+   - Provider totals across all locations
+   - Location totals across all providers
+   - Optional provider filter
+
+8. **Implemented Patient volume by location**
+   - getPatientVolumeByLocation - Patient metrics by location
+   - Total patients, new patients, returning patients
+   - Average visits per patient
+   - Top 5 diagnoses by location
+   - Enterprise totals
+
+9. **Implemented Export enterprise reports**
+   - exportEnterpriseReport - Export any enterprise report
+   - Supports all report types: enterprise-overview, location-comparison,
+     ar-aging-by-location, provider-productivity, patient-volume, financial-rollup
+   - All export formats supported (CSV, PDF, Excel)
+   - Creates export record in database
+   - Full audit logging
+
+10. **Utility procedures**
+    - getLocationsForFilter - Get locations for report filter dropdowns
+
+11. **Added audit log actions** (`app/src/lib/audit.ts`)
+    - ENTERPRISE_REPORT_VIEW
+    - ENTERPRISE_REPORT_EXPORT
+    - ENTERPRISE_LOCATION_COMPARE
+
+12. **Registered router** (`app/src/server/routers/index.ts`)
+    - Added enterpriseReportingRouter import and registration
+
+### Files Created:
+- app/src/server/routers/enterpriseReporting.ts
+
+### Files Modified:
+- app/src/lib/audit.ts
+- app/src/server/routers/index.ts
+
+### Acceptance Criteria Status:
+- [x] reports.getEnterprise - All-location aggregated reports
+- [x] Filter reports by location
+- [x] Compare locations side-by-side
+- [x] Roll-up financial reports
+- [x] Multi-location AR aging
+- [x] Provider productivity by location
+- [x] Patient volume by location
+- [x] Export enterprise reports
+
+--- Iteration 6 completed at 2026-01-22 ---
+Story: US-253 - Consolidated reporting
+
+--- Iteration 6 completed at 2026-01-22 06:06:14 ---
+Story: US-253 - Consolidated reporting
+
+## US-254: Inter-location inventory - COMPLETED
+Date: 2026-01-22
+
+### Changes Made:
+
+1. **Extended LowStockAlert model** (`app/prisma/schema.prisma`)
+   - Added locationId - Optional location for per-location alerts
+   - Added location relation to Location
+   - Added index on locationId
+
+2. **Created TransferStatus enum** (`app/prisma/schema.prisma`)
+   - PENDING - Request created, awaiting approval
+   - APPROVED - Approved by destination location
+   - REJECTED - Rejected by destination location
+   - IN_TRANSIT - Items shipped, in transit
+   - RECEIVED - Items received at destination
+   - CANCELLED - Cancelled by requester
+   - PARTIAL - Partially received
+
+3. **Created InventoryTransfer model** (`app/prisma/schema.prisma`)
+   - Transfer number with auto-generation
+   - Full workflow status tracking
+   - Shipping info (tracking, method, cost)
+   - Priority levels (normal, urgent, critical)
+   - Expected dates for shipping and arrival
+   - Relations to requesting, approving, and receiving users
+   - From/to location relations
+
+4. **Created InventoryTransferItem model** (`app/prisma/schema.prisma`)
+   - Requested, approved, shipped, and received quantities
+   - Unit cost and total cost tracking
+   - Condition notes for receipt inspection
+
+5. **Updated related models with new relations**:
+   - Location: outgoingTransfers, incomingTransfers, lowStockAlerts
+   - User: transfersRequested, transfersApproved, transfersReceived
+   - Organization: inventoryTransfers
+   - Product: transferItems
+
+6. **Added audit log actions** (`app/src/lib/audit.ts`)
+   - INVENTORY_TRANSFER_CREATE
+   - INVENTORY_TRANSFER_APPROVE
+   - INVENTORY_TRANSFER_REJECT
+   - INVENTORY_TRANSFER_SHIP
+   - INVENTORY_TRANSFER_RECEIVE
+   - INVENTORY_TRANSFER_CANCEL
+   - INVENTORY_TRANSFER_UPDATE
+   - INVENTORY_LOW_STOCK_ALERT_CREATE
+   - INVENTORY_LOW_STOCK_ALERT_RESOLVE
+   - INVENTORY_VALUE_REPORT_VIEW
+
+7. **Created interLocationInventory router** (`app/src/server/routers/interLocationInventory.ts`)
+
+   **Transfer Procedures:**
+   - **transfer** - Create a new inventory transfer request
+     - Validates locations and products
+     - Checks stock availability at source
+     - Reserves stock during pending status
+     - Auto-generates transfer number
+   - **approveTransfer** - Approve pending transfer
+     - Can adjust approved quantities
+     - Releases excess reservations
+   - **rejectTransfer** - Reject pending transfer
+     - Releases all reserved stock
+   - **shipTransfer** - Ship approved transfer
+     - Creates TRANSFER_OUT inventory movements
+     - Deducts stock from source location
+   - **receiveTransfer** - Receive shipped transfer
+     - Creates TRANSFER_IN inventory movements
+     - Adds stock to destination with weighted avg cost
+     - Supports partial receipt
+   - **cancelTransfer** - Cancel pending/approved transfer
+
+   **Transfer Query Procedures:**
+   - **getTransfer** - Get single transfer by ID
+   - **listTransfers** - List with filters (status, locations, dates)
+   - **getProductTransferHistory** - Transfer history for a product
+
+   **Inventory by Location Procedures:**
+   - **getInventoryByLocation** - Stock levels at a location
+   - **getInventorySummaryByLocation** - Summary across all locations
+
+   **Low Stock Alert Procedures:**
+   - **getLowStockAlertsByLocation** - Alerts filtered by location
+   - **createLowStockAlert** - Create alert for specific location
+   - **checkLowStockByLocation** - Batch check and create alerts
+
+   **Consolidated Reporting Procedures:**
+   - **getConsolidatedInventoryValue** - Value report across locations
+     - Cost value, retail value, potential profit
+     - Top products by value at each location
+   - **compareLocationInventory** - Side-by-side comparison
+   - **getTransferStatsByLocation** - Transfer statistics
+
+8. **Registered router** (`app/src/server/routers/index.ts`)
+   - Added interLocationInventoryRouter import and registration
+
+9. **Database migration**
+   - Prisma schema validated successfully
+   - Schema pushed to database with `prisma db push`
+   - Prisma client regenerated
+   - TypeScript compilation successful
+
+### Files Created:
+- app/src/server/routers/interLocationInventory.ts
+
+### Files Modified:
+- app/prisma/schema.prisma
+- app/src/lib/audit.ts
+- app/src/server/routers/index.ts
+
+### Acceptance Criteria Status:
+- [x] inventory.transfer - Transfer stock between locations
+- [x] Transfer request and approval workflow
+- [x] Track inventory by location
+- [x] Low stock alerts per location
+- [x] Consolidated inventory value report
+- [x] Inter-location transfer history
+
+--- Iteration 7 completed at 2026-01-22 ---
+Story: US-254 - Inter-location inventory
+
+--- Iteration 7 completed at 2026-01-22 06:14:07 ---
+Story: US-254 - Inter-location inventory
+
+## US-255: Enterprise dashboard UI - COMPLETED
+Date: 2026-01-22
+
+### Changes Made:
+
+1. **Created enterprise components directory** (`app/src/components/enterprise/`)
+   - New component folder for all enterprise-related UI components
+
+2. **Created LocationSwitcher component** (`app/src/components/enterprise/LocationSwitcher.tsx`)
+   - Dropdown-style location selector with "All Locations" option
+   - Shows HQ badge for primary locations
+   - Integrates with location.list tRPC query
+   - Supports single location or all-locations selection
+
+3. **Created EnterpriseOverviewMetrics component** (`app/src/components/enterprise/EnterpriseOverviewMetrics.tsx`)
+   - All-locations aggregated metrics display
+   - Shows: location count, total revenue, appointments, patients, collection rate
+   - Integrates with enterpriseReporting.getEnterprise query
+   - Supports filtering by selected locations
+
+4. **Created LocationComparisonChart component** (`app/src/components/enterprise/LocationComparisonChart.tsx`)
+   - Side-by-side location comparison table
+   - Configurable metrics selection
+   - Shows: appointments, visits, no-show rate, charges, collections, etc.
+   - Progress bars and trend indicators
+   - Highlights top performers with badges
+   - Integrates with enterpriseReporting.compareLocations query
+
+5. **Created LocationDashboardCards component** (`app/src/components/enterprise/LocationDashboardCards.tsx`)
+   - Quick access cards for each location
+   - Shows key metrics: appointments, revenue, collection rate
+   - Health status indicators (healthy/warning/critical)
+   - Health issues list when attention needed
+   - Links to individual location dashboards
+   - Collection rate progress bars with color coding
+
+6. **Created EnterpriseSettingsPanel component** (`app/src/components/enterprise/EnterpriseSettingsPanel.tsx`)
+   - Enterprise configuration management UI
+   - Location management section (add/edit/deactivate)
+   - Cross-location access settings (patient sharing, scheduling, inventory)
+   - Billing & finance settings (consolidated billing, unified reporting)
+   - Security settings (SSO, centralized user management)
+   - Uses accordion layout for organized settings groups
+
+7. **Created LocationHealthIndicators component** (`app/src/components/enterprise/LocationHealthIndicators.tsx`)
+   - Detailed health status for each location
+   - Metrics tracked: collection rate, no-show rate, appointment completion
+   - Health levels: excellent, good, fair, poor, critical
+   - Visual health bars with color coding
+   - Sorted by health status (worst first)
+   - Shows target vs actual for each metric
+
+8. **Created EnterpriseDashboard component** (`app/src/components/enterprise/EnterpriseDashboard.tsx`)
+   - Main dashboard container component
+   - Tabbed interface: Overview, Comparison, Health, Settings
+   - Location switcher in header
+   - Date range picker integration
+   - Export functionality (CSV/PDF)
+   - Integrates all sub-components
+
+9. **Created enterprise page** (`app/src/app/(dashboard)/enterprise/page.tsx`)
+   - Route: /enterprise
+   - Uses DashboardLayout (authentication required)
+   - Renders EnterpriseDashboard component
+
+10. **Updated Sidebar navigation** (`app/src/components/layout/Sidebar.tsx`)
+    - Added Building2 icon import from lucide-react
+    - Added "Enterprise" nav item linking to /enterprise
+    - Positioned in main navigation group after Schedule
+
+11. **Created component index** (`app/src/components/enterprise/index.ts`)
+    - Exports all enterprise components for clean imports
+
+### Files Created:
+- app/src/components/enterprise/LocationSwitcher.tsx
+- app/src/components/enterprise/EnterpriseOverviewMetrics.tsx
+- app/src/components/enterprise/LocationComparisonChart.tsx
+- app/src/components/enterprise/LocationDashboardCards.tsx
+- app/src/components/enterprise/EnterpriseSettingsPanel.tsx
+- app/src/components/enterprise/LocationHealthIndicators.tsx
+- app/src/components/enterprise/EnterpriseDashboard.tsx
+- app/src/components/enterprise/index.ts
+- app/src/app/(dashboard)/enterprise/page.tsx
+
+### Files Modified:
+- app/src/components/layout/Sidebar.tsx
+
+### Acceptance Criteria Status:
+- [x] Enterprise dashboard at /enterprise
+- [x] Location switcher in navigation
+- [x] All-locations overview metrics
+- [x] Location comparison charts
+- [x] Quick access to location dashboards
+- [x] Enterprise settings management
+- [x] Location health status indicators
+
+--- Iteration 8 completed at 2026-01-22 ---
+Story: US-255 - Enterprise dashboard UI
+

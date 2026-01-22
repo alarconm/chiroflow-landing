@@ -32,4 +32,57 @@
 
 ---
 
-## Next Story: US-257 (Multi-factor authentication)
+### US-257: Multi-factor authentication
+- Status: COMPLETE
+- Date: 2026-01-22
+
+#### What was implemented:
+1. **TOTP Security Library** (`app/src/lib/security/totp.ts`)
+   - TOTP secret generation (RFC 6238 compliant)
+   - TOTP code generation and verification with clock drift tolerance
+   - Backup codes generation and verification (10 codes, 8-char alphanumeric)
+   - OTP generation for SMS/Email (6-digit codes)
+   - QR code URI generation for authenticator apps
+   - Device fingerprinting for trusted devices
+   - Session token generation and hashing
+
+2. **Security Router** (`app/src/server/routers/security.ts`) with procedures:
+   - `security.getMFAStatus` - Get current user's MFA configuration
+   - `security.setupMFA` - Initialize MFA setup (TOTP, SMS, EMAIL)
+   - `security.verifyMFASetup` - Verify initial MFA code during setup
+   - `security.verifyMFA` - Verify MFA code at login with backup code support
+   - `security.disableMFA` - Disable MFA (with password verification)
+   - `security.regenerateBackupCodes` - Generate new backup codes
+   - `security.requestMFARecovery` - Start recovery flow for lost device
+   - `security.completeMFARecovery` - Complete recovery with token
+   - `security.getMFAPolicy` - Get organization MFA policy (admin)
+   - `security.updateMFAPolicy` - Update organization MFA policy (admin)
+   - `security.listTrustedDevices` - List remembered devices
+   - `security.removeTrustedDevice` - Remove single trusted device
+   - `security.removeAllTrustedDevices` - Remove all trusted devices
+   - `security.checkTrustedDevice` - Check if current device is trusted
+   - `security.resendOTP` - Resend SMS/Email verification code
+   - `security.checkMFARequired` - Check if user needs MFA
+
+#### Security Features:
+- Account lockout after 5 failed MFA attempts (15 min lockout)
+- OTP codes expire after 10 minutes
+- Backup codes can only be used once each
+- Trusted devices valid for 30 days with device fingerprinting
+- MFA policy enforcement by role (ADMINS_ONLY) or all users
+- Grace period support for MFA requirement
+- Security event logging for all MFA operations
+
+#### Verification:
+- TypeScript compiles without errors
+- Router integrated into app router index
+
+---
+
+## Next Story: US-258 (Field-level encryption)
+--- Iteration 1 completed at 2026-01-22 06:26:20 ---
+Story: US-256 - Security schema
+
+--- Iteration 2 completed at 2026-01-22 ---
+Story: US-257 - Multi-factor authentication
+
