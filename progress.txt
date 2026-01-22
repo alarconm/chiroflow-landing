@@ -1,527 +1,59 @@
-Epic 23: Patient Education & Home Care - Progress Log
-=====================================================
-
-## US-232: Education content schema - COMPLETED
-
-### Date: 2026-01-22
-
-### What was implemented:
-1. Created new enums for patient education system:
-   - ExerciseDifficulty (BEGINNER, INTERMEDIATE, ADVANCED)
-   - BodyRegion (CERVICAL, THORACIC, LUMBAR, SACRAL, UPPER_EXTREMITY, LOWER_EXTREMITY, CORE, FULL_BODY)
-   - ExerciseCategoryType (STRETCHING, STRENGTHENING, MOBILITY, POSTURE, BALANCE, STABILITY, REHABILITATION)
-   - PrescriptionStatus (ACTIVE, PAUSED, COMPLETED, DISCONTINUED)
-   - HomeCareInstructionStatus (ACTIVE, COMPLETED, EXPIRED)
-   - ReadingLevel (SIMPLE, STANDARD, DETAILED)
-
-2. Created new models:
-   - ExerciseCategory: Categories for grouping exercises (name, type, description, iconUrl)
-   - Exercise: Therapeutic exercise model with full details including:
-     - Name, description, instructions
-     - Video and image URLs
-     - Difficulty level and body region
-     - Default parameters (sets, reps, hold time, frequency)
-     - Equipment requirements and modifications
-     - Contraindications and precautions
-   - EducationArticle: Patient education content with:
-     - Title, content, summary
-     - Category, reading level, language
-     - Related conditions and keywords
-     - Publishing workflow
-   - ExercisePrescription: Links patients to exercises with:
-     - Sets, reps, hold time, frequency
-     - Start/end dates
-     - Special instructions and precautions
-     - Progression schedule
-     - Links to encounter, treatment plan, diagnosis
-   - PrescribedArticle: Links patients to education articles
-   - HomeCareInstruction: Home care instructions with:
-     - Ice/heat protocols
-     - Activity modifications
-     - Ergonomic recommendations
-     - Warning signs and follow-up instructions
-     - PDF generation support
-   - PatientExerciseProgress: Tracks patient exercise completion with:
-     - Sets/reps/hold time completed
-     - Pain levels before/after
-     - Difficulty feedback
-     - Skip tracking
-
-3. Added relations to existing models:
-   - Organization: exercisePrescriptions, prescribedArticles, homeCareInstructions, patientExerciseProgress
-   - Patient: exercisePrescriptions, prescribedArticles, homeCareInstructions, patientExerciseProgress
-   - Provider: exercisePrescriptions, prescribedArticles, homeCareInstructions
-   - Encounter: exercisePrescriptions, prescribedArticles, homeCareInstructions
-   - TreatmentPlan: exercisePrescriptions
-   - Diagnosis: exercisePrescriptions
-
-### Files modified:
-- app/prisma/schema.prisma
-
-### Verification:
-- Prisma client generated successfully
-- Database schema synchronized with `prisma db push`
-- TypeScript compilation passed with no errors
---- Iteration 1 completed at 2026-01-22 03:47:29 ---
-Story: US-232 - Education content schema
-
-## US-233: Exercise library management - COMPLETED
-
-### Date: 2026-01-22
-
-### What was implemented:
-1. Created comprehensive exercise tRPC router (`app/src/server/routers/exercise.ts`) with:
-   - `exercise.list` - Browse exercises by category, body region, difficulty
-   - `exercise.get` - Get exercise with full details, video URL, and instructions
-   - `exercise.create` - Add custom exercise (admin only)
-   - `exercise.update` - Update exercise details (admin only)
-   - `exercise.delete` - Delete exercise if not in use (admin only)
-   - `exercise.search` - Search by name or condition with filters
-
-2. Additional helper endpoints:
-   - `exercise.getCategories` - List all exercise categories with counts
-   - `exercise.getBodyRegions` - Get body regions with exercise counts
-   - `exercise.getDifficultyLevels` - Get difficulty levels with counts
-   - `exercise.createCategory` - Add new exercise category (admin)
-   - `exercise.seedLibrary` - Seed database with standard exercises (admin)
-
-3. Seeded exercise library with 14 common chiropractic exercises:
-   - Cervical Stretches: Chin Tucks, Upper Trapezius Stretch, Levator Scapulae Stretch
-   - Cervical Strengthening: Isometric Neck Flexion
-   - Lumbar Stretches: Knee to Chest, Cat-Cow, Piriformis Stretch
-   - Core Stability: Dead Bug, Bird Dog, Plank
-   - Posture Correction: Wall Angels, Bruegger's Relief Position
-   - Thoracic Mobility: Thoracic Extension on Foam Roller
-   - Hip & Pelvis: Hip Flexor Stretch (Kneeling)
-   - Balance: Single Leg Balance
-
-4. Created 10 standard exercise categories:
-   - Cervical Stretches, Cervical Strengthening
-   - Lumbar Stretches, Lumbar Strengthening
-   - Core Stability, Posture Correction
-   - Thoracic Mobility, Hip & Pelvis
-   - Shoulder Rehabilitation, Balance & Proprioception
-
-5. Each exercise includes:
-   - Video demonstration hosting support (videoUrl field)
-   - Difficulty levels (beginner, intermediate, advanced)
-   - Equipment requirements
-   - Step-by-step instructions
-   - Target muscles and conditions
-   - Default parameters (sets, reps, hold time, frequency)
-   - Contraindications and precautions
-   - Modifications for different abilities
-
-### Files created:
-- app/src/server/routers/exercise.ts
-
-### Files modified:
-- app/src/server/routers/index.ts
-
-### Verification:
-- TypeScript compilation passed with no errors
---- Iteration 2 completed at 2026-01-22 ---
-Story: US-233 - Exercise library management
-
---- Iteration 2 completed at 2026-01-22 03:52:04 ---
-Story: US-233 - Exercise library management
-
-## US-234: Exercise prescription - COMPLETED
-
-### Date: 2026-01-22
-
-### What was implemented:
-1. Created comprehensive prescription tRPC router (`app/src/server/routers/prescription.ts`) with:
-   - `prescription.list` - List prescriptions for a patient with filtering by status, encounter, treatment plan, diagnosis
-   - `prescription.get` - Get single prescription with full details including compliance stats
-   - `prescription.create` - Prescribe exercises to patient (provider only) with:
-     - Specify sets, reps, hold time, frequency
-     - Progression schedule (JSON array of weekly parameters)
-     - Special instructions and precautions
-     - Link to diagnosis, encounter, and treatment plan
-   - `prescription.update` - Modify prescription parameters (provider only)
-   - `prescription.discontinue` - End prescription with reason (provider only)
-
-2. Additional endpoints:
-   - `prescription.bulkCreate` - Create multiple prescriptions at once
-   - `prescription.getActiveForPatient` - Get active prescriptions for patient portal
-   - `prescription.advanceProgression` - Advance to next week of progression schedule
-   - `prescription.getSummary` - Get prescription counts and compliance stats for a patient
-
-3. Features implemented:
-   - Exercise defaults fallback (uses exercise.defaultSets/Reps/etc if not specified)
-   - Progression schedule support (auto-applies parameters when week advances)
-   - Compliance tracking (calculates completion rate from progress logs)
-   - Audit logging for all create/update/discontinue operations
-   - Organization-scoped access control
-   - Provider role verification for mutation operations
-
-4. Fixed TypeScript errors:
-   - Updated patient selection to use demographics relation (firstName, lastName, dateOfBirth via patient.demographics)
-   - Updated encounter selection to use encounterDate/encounterType fields
-   - Updated diagnosis selection to use icd10Code field
-   - Fixed diagnosis validation to use encounter relation instead of direct patientId
-
-### Files created:
-- app/src/server/routers/prescription.ts
-
-### Files modified:
-- app/src/server/routers/index.ts (added prescriptionRouter)
-
-### Verification:
-- TypeScript compilation passed with no errors
-
---- Iteration 4 completed at 2026-01-22 ---
-Story: US-234 - Exercise prescription
-
---- Iteration 4 completed at 2026-01-22 03:59:35 ---
-Story: US-234 - Exercise prescription
-
-## US-235: Home care instructions - COMPLETED
-
-### Date: 2026-01-22
-
-### What was implemented:
-1. Created comprehensive home care tRPC router (`app/src/server/routers/homeCare.ts`) with:
-   - `homeCare.list` - List home care instructions for a patient with filtering by status, encounter
-   - `homeCare.get` - Get single instruction with full details
-   - `homeCare.create` - Create instruction set with all protocol fields (provider only)
-   - `homeCare.update` - Modify instruction (provider only)
-   - `homeCare.complete` - Mark instruction as completed/expired (provider only)
-   - `homeCare.send` - Deliver via email or patient portal (provider only)
-   - `homeCare.generatePrintable` - Generate printable HTML (for PDF)
-   - `homeCare.getActiveForPatient` - Get active instructions for patient portal
-   - `homeCare.createFromTemplate` - Create from predefined templates (provider only)
-   - `homeCare.getTemplates` - List available templates
-
-2. Home care instruction features:
-   - Ice/heat protocols with timing instructions
-   - Activity modifications (avoid, limit, modify, encouraged)
-   - Ergonomic recommendations
-   - Warning signs to watch for with urgency levels
-   - Follow-up instructions
-   - Duration tracking with start/end dates
-
-3. Delivery methods implemented:
-   - Email delivery with HTML formatting using notification service
-   - Patient portal delivery (marks as available in portal)
-   - Printable PDF format via HTML generation
-
-4. Pre-built templates:
-   - General Home Care
-   - Post-Adjustment Care (spinal adjustment)
-   - Soft Tissue Therapy
-   - Acute Injury Protocol (R.I.C.E.)
-   - Chronic Pain Management
-   - Post-Treatment Recovery
-
-5. HTML generation for:
-   - Email content with responsive styling
-   - Printable documents with proper print CSS
-   - Professional formatting with practice branding
-
-### Files created:
-- app/src/server/routers/homeCare.ts
-
-### Files modified:
-- app/src/server/routers/index.ts (added homeCareRouter)
-
-### Verification:
-- TypeScript compilation passed with no errors
-
---- Iteration 5 completed at 2026-01-22 ---
-Story: US-235 - Home care instructions
-
---- Iteration 5 completed at 2026-01-22 04:05:47 ---
-Story: US-235 - Home care instructions
-
-## US-236: Condition-specific education - COMPLETED
-
-### Date: 2026-01-22
-
-### What was implemented:
-1. Created comprehensive education tRPC router (`app/src/server/routers/education.ts`) with:
-   - `education.getByCondition` - Get content for diagnosis (ICD-10 code, condition slug, or keyword)
-   - `education.list` - List all articles with filtering and pagination
-   - `education.get` - Get single article with view count tracking
-   - `education.getCategories` - Get available article categories with counts
-   - `education.getLanguages` - Get available languages with counts
-   - `education.getConditions` - Get common chiropractic conditions list
-   - `education.getFAQ` - Get FAQ articles for a condition
-   - `education.getRecoveryTimeline` - Get recovery timeline for a condition
-   - `education.getLifestyleGuidance` - Get lifestyle modification articles
-   - `education.prescribeArticle` - Prescribe article to patient (provider only)
-   - `education.getPatientArticles` - Get prescribed articles for patient
-   - `education.markArticleRead` - Mark prescribed article as read
-   - `education.create` - Create new article (admin only)
-   - `education.update` - Update article (admin only)
-   - `education.delete` - Delete article if not prescribed (admin only)
-   - `education.seedContent` - Seed database with standard content (admin only)
-
-2. Condition overview articles and treatment explanations:
-   - 10 common chiropractic conditions mapped with ICD-10 codes:
-     - Low Back Pain (M54.5)
-     - Neck Pain (M54.2)
-     - Sciatica (M54.3)
-     - Headache/Migraine (G43, R51)
-     - Herniated Disc (M51, M50)
-     - Whiplash (S13.4)
-     - Scoliosis (M41)
-     - Shoulder Pain (M25.51, M75)
-     - Carpal Tunnel (G56.0)
-     - Fibromyalgia (M79.7)
-
-3. Article categories implemented:
-   - Condition Overview
-   - Treatment Options
-   - Recovery Timeline
-   - Lifestyle Modifications
-   - FAQ
-   - Prevention
-   - Self Care
-   - When to Seek Help
-
-4. Multi-language support:
-   - Language field with 10 language labels (English, Spanish, Chinese, Vietnamese, Korean, Russian, Arabic, Portuguese, French, German)
-   - Seeded example article in Spanish (Entendiendo el Dolor de Espalda Baja)
-   - Language-filtered queries throughout the router
-
-5. Reading level options:
-   - SIMPLE (5th grade) - Basic explanation with short sentences
-   - STANDARD (8th grade) - Default comprehensive content
-   - DETAILED (12th grade) - More technical information
-   - Seeded example article at SIMPLE reading level
-
-6. Seeded content library with 9 articles:
-   - Low Back Pain: Overview, Recovery Timeline, Lifestyle Changes, FAQ
-   - Neck Pain: Overview
-   - Sciatica: Overview
-   - Headaches: Overview
-   - Low Back Pain (Simple): Easy-to-read version
-   - Low Back Pain (Spanish): Spanish translation
-
-### Files created:
-- app/src/server/routers/education.ts
-
-### Files modified:
-- app/src/server/routers/index.ts (added educationRouter)
-
-### Verification:
-- TypeScript compilation passed with no errors
-
---- Iteration 6 completed at 2026-01-22 ---
-Story: US-236 - Condition-specific education
-
---- Iteration 6 completed at 2026-01-22 04:10:46 ---
-Story: US-236 - Condition-specific education
-
-## US-237: Patient progress tracking - COMPLETED
-
-### Date: 2026-01-22
-
-### What was implemented:
-1. Created comprehensive progress tRPC router (`app/src/server/routers/progress.ts`) with:
-   - `progress.logExercise` - Patient logs completed exercise with sets, reps, pain tracking
-   - `progress.getCompliance` - Calculate compliance rate for patient/prescription over time periods
-   - `progress.getPainHistory` - Track pain levels before/after exercises with averages
-   - `progress.getDifficultyFeedback` - Get difficulty feedback by exercise with distribution
-   - `progress.getProviderComplianceView` - Provider dashboard for all patient compliance
-   - `progress.scheduleReminder` - Schedule exercise reminders (daily, weekdays, custom)
-   - `progress.sendReminder` - Send immediate reminder via SMS or email (provider only)
-   - `progress.getAchievements` - Get patient achievement badges
-   - `progress.getHistory` - Get full progress log history with pagination
-   - `progress.updateLog` - Update a progress log entry
-   - `progress.deleteLog` - Delete a progress log entry
-
-2. Pain tracking before/after exercises:
-   - Pain levels 0-10 scale recorded before and after
-   - Average pain reduction calculation
-   - Pain history view with trend data
-   - Filtering by prescription and date range
-
-3. Difficulty feedback from patient:
-   - 5-level difficulty scale (Very Easy to Very Difficult)
-   - Distribution analysis across all exercises
-   - Average difficulty per exercise
-   - Trend tracking (last 5 entries per exercise)
-
-4. Provider view of patient compliance:
-   - Overview mode: All patients with prescriptions sorted by compliance
-   - Single patient mode: Detailed prescription-level compliance
-   - Summary stats: Total patients, compliant (80%+), at-risk (<50%)
-   - Filtering by date range (week, month, quarter)
-   - Sorting by compliance rate, last activity, total exercises, patient name
-
-5. Reminder notifications for exercises:
-   - Schedule reminders with time and frequency (daily, weekdays, custom days)
-   - Channel selection (SMS, EMAIL, PUSH)
-   - Send immediate reminders with custom messages
-   - HTML-formatted email with exercise list
-   - Integrates with existing notification service
-
-6. Achievement badges for consistency:
-   - First Steps: Complete first exercise
-   - Week Warrior: 7-day streak
-   - Fortnight Fighter: 14-day streak
-   - Monthly Master: 30-day streak
-   - Getting Started: 10 exercise sessions
-   - Dedicated: 50 exercise sessions
-   - Century Club: 100 exercise sessions
-   - Pain Fighter: Consistent pain reduction
-   - Progress tracking toward each badge
-   - Earned date tracking
-
-### Files created:
-- app/src/server/routers/progress.ts
-
-### Files modified:
-- app/src/server/routers/index.ts (added progressRouter)
-
-### Verification:
-- TypeScript compilation passed with no errors
-
---- Iteration 7 completed at 2026-01-22 ---
-Story: US-237 - Patient progress tracking
-
---- Iteration 7 completed at 2026-01-22 04:17:59 ---
-Story: US-237 - Patient progress tracking
-
-## US-238: Patient education portal - COMPLETED
-
-### Date: 2026-01-22
-
-### What was implemented:
-1. Created comprehensive portal education tRPC router (`app/src/server/routers/portalEducation.ts`) with:
-   - `portalEducation.getMyExercises` - Get active exercise prescriptions for patient portal
-   - `portalEducation.getExerciseDetails` - Get single exercise with full details
-   - `portalEducation.logExerciseCompletion` - Patient logs completed exercise with pain/difficulty tracking
-   - `portalEducation.getProgressHistory` - Get exercise progress history with chart data
-   - `portalEducation.getAchievements` - Get patient achievement badges with progress
-   - `portalEducation.getHomeCareInstructions` - Get active home care instructions
-   - `portalEducation.getEducationArticles` - Get education articles library with filtering
-   - `portalEducation.getArticle` - Get single education article with view tracking
-   - `portalEducation.getPrescribedArticles` - Get articles prescribed to patient
-   - `portalEducation.markArticleRead` - Mark prescribed article as read
-   - `portalEducation.askProviderQuestion` - Send question to provider about exercise/care
-   - `portalEducation.getDailyChecklist` - Get daily exercise checklist with status
-
-2. Created full-featured PatientEducationPortal component (`app/src/components/portal/PatientEducationPortal.tsx`):
-   - 5-tab interface: Exercises, Progress, Home Care, Education, Achievements
-   - Daily exercise checklist with completion/skip tracking
-   - Exercise cards with video player support, instructions, equipment
-   - Progress tracking with activity history and charts
-   - Home care instructions with ice/heat protocols, activity modifications, warning signs
-   - Education articles library with category filtering
-   - Prescribed articles section with read tracking
-   - Achievement badges with progress indicators
-   - Log exercise dialog with pain before/after sliders and difficulty rating
-   - Ask provider question dialog with context linking
-   - Mobile-responsive design with conditional text display
-
-3. Created exercises page route (`app/src/app/portal/exercises/page.tsx`)
-
-4. Updated navigation:
-   - Added Dumbbell icon import to PortalLayout
-   - Added "My Exercises" nav item to portal navigation
-
-5. Features matching all acceptance criteria:
-   - My Exercises page in patient portal ✓
-   - Exercise video player with instructions ✓
-   - Daily exercise checklist ✓
-   - Progress history and charts ✓
-   - Home care instructions view ✓
-   - Educational articles library ✓
-   - Ask provider question feature ✓
-   - Mobile-friendly design ✓
-
-### Files created:
-- app/src/server/routers/portalEducation.ts
-- app/src/components/portal/PatientEducationPortal.tsx
-- app/src/app/portal/exercises/page.tsx
-
-### Files modified:
-- app/src/server/routers/index.ts (added portalEducationRouter)
-- app/src/components/portal/index.ts (added PatientEducationPortal export)
-- app/src/components/portal/PortalLayout.tsx (added Dumbbell icon and exercises nav item)
-
-### Verification:
-- TypeScript compilation passed with no errors
-
---- Iteration 8 completed at 2026-01-22 ---
-Story: US-238 - Patient education portal
-
---- Iteration 8 completed at 2026-01-22 04:32:59 ---
-Story: US-238 - Patient education portal
-
-## US-239: Education prescription UI - COMPLETED
-
-### Date: 2026-01-22
-
-### What was implemented:
-1. Created comprehensive ExercisePrescriptionBuilder component (`app/src/components/encounters/ExercisePrescriptionBuilder.tsx`) with:
-   - Exercise prescription builder integrated into encounter workflow
-   - Three-tab interface: Exercise Library, Selected Exercises, Templates
-
-2. Exercise Library Tab:
-   - Search exercises by name/description
-   - Filter by body region, difficulty, and category
-   - Visual exercise cards with difficulty badges
-   - Click to add exercises to selection
-   - Checkmark indicators for already-selected exercises
-   - Clear filters button
-
-3. Selected Exercises Tab:
-   - Drag-and-drop reordering of selected exercises
-   - Edit parameters dialog (sets, reps, hold time, frequency, special instructions)
-   - Remove exercises with confirmation
-   - Display of exercise details and parameters
-
-4. Templates Tab (Bulk prescribe common protocols):
-   - 5 pre-built exercise protocols:
-     - Cervical Rehabilitation (4 exercises, 4 weeks)
-     - Lumbar & Core Stability (5 exercises, 6 weeks)
-     - Posture Correction (4 exercises, 4 weeks)
-     - Sciatica Relief (4 exercises, 4 weeks)
-     - Balance & Proprioception (2 exercises, 4 weeks)
-   - One-click apply to add all protocol exercises
-   - Body region and duration labels
-
-5. Patient Preview (Preview patient view):
-   - Sheet panel showing how exercises appear in patient portal
-   - Exercise cards with numbered sequence
-   - Parameter badges (sets, reps, hold time, frequency)
-   - Video indicator for exercises with demonstrations
-   - Special instructions highlighted in amber
-
-6. Take-Home Handout (Generate take-home handout):
-   - Modal dialog with iframe preview
-   - Printable HTML format with professional styling
-   - Exercise details with parameters and instructions
-   - Page breaks for long programs
-   - Open in new window for printing
-   - HTML escaping for security
-
-7. Prescription Effectiveness Tracking:
-   - Displays patient compliance rate in header
-   - Color-coded compliance (green 80%+, yellow 50-79%, red <50%)
-   - Integration with prescription summary API
-
-8. Additional features:
-   - Bulk create mutation for prescribing multiple exercises at once
-   - Links to encounter, treatment plan, and diagnosis
-   - Shows existing active prescriptions for the patient
-   - Organization-scoped data access
-   - Audit logging integration
-
-### Files created:
-- app/src/components/encounters/ExercisePrescriptionBuilder.tsx
-
-### Files modified:
-- app/src/components/encounters/index.ts (added ExercisePrescriptionBuilder export)
-
-### Verification:
-- TypeScript compilation passed with no errors
-
---- Iteration 9 completed at 2026-01-22 ---
-Story: US-239 - Education prescription UI
-
+# Ralph Progress - Epic 24: Wearable & Device Integration
+
+## US-240: Device integration schema - COMPLETED
+
+### What was done:
+1. Created DeviceType enum with values: APPLE_HEALTH, GOOGLE_FIT, FITBIT, WHOOP, POSTURE_SENSOR
+2. Created DeviceConnectionStatus enum with values: PENDING, CONNECTED, EXPIRED, DISCONNECTED, ERROR
+3. Created HeartRateType enum with values: RESTING, ACTIVE, WORKOUT, CONTINUOUS, SPOT_CHECK
+
+4. Created DeviceConnection model with:
+   - patientId, deviceType, connectionToken (encrypted), refreshToken
+   - status, syncFrequency, lastSyncAt, syncEnabled
+   - Error tracking fields
+   - Relations to all data models
+
+5. Created ActivityData model with:
+   - patientId, date, steps, activeMinutes, calories
+   - distance, hourlySteps (JSON), workouts (JSON)
+   - Device connection relation
+
+6. Created SleepData model with:
+   - patientId, date, duration, quality, efficiency
+   - Sleep stages (awake, light, deep, rem)
+   - Sleep times (start, end, timeToSleep)
+   - Awakenings and restlessness tracking
+
+7. Created PostureData model with:
+   - patientId, timestamp, score, isAlert
+   - angle, position, duration, sessionId
+   - Alert type tracking
+
+8. Created HeartRateData model with:
+   - patientId, timestamp, bpm, type
+   - HRV (heart rate variability)
+   - Activity level context
+
+9. Added relations to Patient and Organization models
+10. Prisma schema pushed to database successfully
+11. TypeScript compilation verified
+
+### Acceptance Criteria Met:
+- [x] DeviceConnection model with patientId, deviceType, connectionToken, status
+- [x] ActivityData model with patientId, date, steps, activeMinutes, calories
+- [x] SleepData model with patientId, date, duration, quality, stages
+- [x] PostureData model with patientId, timestamp, score, alerts
+- [x] HeartRateData model with patientId, timestamp, bpm, type
+- [x] DeviceType enum (AppleHealth, GoogleFit, Fitbit, Whoop, PostureSensor)
+- [x] Prisma migrations run successfully
+
+---
+
+## Remaining Stories:
+- US-241: Apple Health integration
+- US-242: Google Fit integration
+- US-243: Posture sensor integration
+- US-244: Activity correlation analysis
+- US-245: Activity goals and alerts
+- US-246: Device data dashboard
+- US-247: Device connection portal

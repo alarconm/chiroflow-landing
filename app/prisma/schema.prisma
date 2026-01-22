@@ -175,6 +175,13 @@ model Organization {
   homeCareInstructions     HomeCareInstruction[]
   patientExerciseProgress  PatientExerciseProgress[]
 
+  // Wearable & Device Integration relations (Epic 24)
+  deviceConnections DeviceConnection[]
+  activityData      ActivityData[]
+  sleepData         SleepData[]
+  postureData       PostureData[]
+  heartRateData     HeartRateData[]
+
   @@index([subdomain])
 }
 
@@ -421,6 +428,13 @@ model Patient {
   prescribedArticles      PrescribedArticle[]
   homeCareInstructions    HomeCareInstruction[]
   patientExerciseProgress PatientExerciseProgress[]
+
+  // Wearable & Device Integration relations (Epic 24)
+  deviceConnections DeviceConnection[]
+  activityData      ActivityData[]
+  sleepData         SleepData[]
+  postureData       PostureData[]
+  heartRateData     HeartRateData[]
 
   @@unique([mrn, organizationId])
   @@index([organizationId])
@@ -8607,5 +8621,240 @@ model PatientExerciseProgress {
   @@index([prescriptionId])
   @@index([patientId])
   @@index([completedAt])
+  @@index([organizationId])
+}
+
+// =============================================================================
+// Epic 24: Wearable & Device Integration
+// =============================================================================
+
+// Types of wearable devices and health platforms
+enum DeviceType {
+  APPLE_HEALTH
+  GOOGLE_FIT
+  FITBIT
+  WHOOP
+  POSTURE_SENSOR
+}
+
+// Connection status for devices
+enum DeviceConnectionStatus {
+  PENDING     // Authorization initiated but not completed
+  CONNECTED   // Successfully connected and syncing
+  EXPIRED     // Token expired, needs reauthorization
+  DISCONNECTED // User disconnected the device
+  ERROR       // Connection error
+}
+
+// Device/platform connections for patients
+model DeviceConnection {
+  id        String                 @id @default(cuid())
+  status    DeviceConnectionStatus @default(PENDING)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+
+  // Device info
+  deviceType   DeviceType
+  deviceName   String?   // Friendly name (e.g., "John's Apple Watch")
+  deviceModel  String?   // Model info if available
+
+  // OAuth/Authorization
+  connectionToken String?  @db.Text // Encrypted access token
+  refreshToken    String?  @db.Text // Encrypted refresh token
+  tokenExpiresAt  DateTime?
+  scopes          String[] // Permissions granted
+
+  // Sync settings
+  lastSyncAt     DateTime?
+  syncFrequency  Int       @default(60) // Minutes between syncs
+  syncEnabled    Boolean   @default(true)
+
+  // Error tracking
+  lastError      String?   @db.Text
+  lastErrorAt    DateTime?
+  errorCount     Int       @default(0)
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Data relations
+  activityData  ActivityData[]
+  sleepData     SleepData[]
+  postureData   PostureData[]
+  heartRateData HeartRateData[]
+
+  @@unique([patientId, deviceType]) // One connection per device type per patient
+  @@index([patientId])
+  @@index([organizationId])
+  @@index([status])
+  @@index([deviceType])
+}
+
+// Daily activity data from wearables
+model ActivityData {
+  id        String   @id @default(cuid())
+  date      DateTime // The date this data is for (date only, no time)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Activity metrics
+  steps         Int?   // Total steps
+  distance      Float? // Distance in meters
+  activeMinutes Int?   // Total active minutes
+  calories      Int?   // Calories burned
+
+  // Detailed breakdown (JSON for flexibility)
+  hourlySteps   Json?  // Steps per hour { "0": 0, "1": 50, ... }
+  workouts      Json?  // Workout sessions [{ type, duration, calories, startTime }]
+
+  // Source info
+  sourceDevice String? // Which device provided this data
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  deviceConnectionId String
+  deviceConnection   DeviceConnection @relation(fields: [deviceConnectionId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([patientId, date, deviceConnectionId]) // One record per day per device
+  @@index([patientId])
+  @@index([date])
+  @@index([organizationId])
+}
+
+// Sleep data from wearables
+model SleepData {
+  id        String   @id @default(cuid())
+  date      DateTime // The night this sleep data is for
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sleep metrics
+  duration      Int?   // Total sleep duration in minutes
+  quality       Int?   // Sleep quality score 0-100
+  efficiency    Int?   // Sleep efficiency percentage
+
+  // Sleep times
+  sleepStart    DateTime? // When user fell asleep
+  sleepEnd      DateTime? // When user woke up
+  timeToSleep   Int?      // Minutes to fall asleep
+
+  // Sleep stages (in minutes)
+  stages        Json?  // { awake, light, deep, rem }
+  awakeMinutes  Int?
+  lightMinutes  Int?
+  deepMinutes   Int?
+  remMinutes    Int?
+
+  // Disturbances
+  awakenings    Int?   // Number of times woke up
+  restlessness  Int?   // Restlessness score
+
+  // Source info
+  sourceDevice String?
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  deviceConnectionId String
+  deviceConnection   DeviceConnection @relation(fields: [deviceConnectionId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([patientId, date, deviceConnectionId])
+  @@index([patientId])
+  @@index([date])
+  @@index([organizationId])
+}
+
+// Posture data from posture sensors
+model PostureData {
+  id        String   @id @default(cuid())
+  timestamp DateTime // Exact timestamp of the measurement
+  createdAt DateTime @default(now())
+
+  // Posture metrics
+  score           Int?     // Posture score 0-100
+  isAlert         Boolean  @default(false) // Was this a slouch alert?
+  alertType       String?  // Type of alert (slouch, hunched, etc.)
+
+  // Position data
+  angle           Float?   // Spine angle in degrees
+  position        String?  // Sitting, standing, etc.
+  duration        Int?     // How long in this position (seconds)
+
+  // Session tracking
+  sessionId       String?  // Group readings into sessions
+
+  // Source info
+  sourceDevice    String?  // Which sensor provided this
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  deviceConnectionId String
+  deviceConnection   DeviceConnection @relation(fields: [deviceConnectionId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@index([timestamp])
+  @@index([isAlert])
+  @@index([organizationId])
+  @@index([sessionId])
+}
+
+// Heart rate data from wearables
+enum HeartRateType {
+  RESTING     // Resting heart rate
+  ACTIVE      // During activity
+  WORKOUT     // During workout
+  CONTINUOUS  // Continuous monitoring reading
+  SPOT_CHECK  // Manual spot check
+}
+
+model HeartRateData {
+  id        String   @id @default(cuid())
+  timestamp DateTime // When this reading was taken
+  createdAt DateTime @default(now())
+
+  // Heart rate metrics
+  bpm       Int           // Beats per minute
+  type      HeartRateType @default(CONTINUOUS)
+
+  // Variability (if available)
+  hrv       Float?  // Heart rate variability (ms)
+
+  // Context
+  activityLevel String?  // What user was doing (resting, walking, etc.)
+
+  // Source info
+  sourceDevice String?
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  deviceConnectionId String
+  deviceConnection   DeviceConnection @relation(fields: [deviceConnectionId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@index([timestamp])
+  @@index([type])
   @@index([organizationId])
 }
