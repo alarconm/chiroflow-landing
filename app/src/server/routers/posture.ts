@@ -1,6 +1,16 @@
 import { z } from 'zod';
 import { router, protectedProcedure, providerProcedure } from '../trpc';
 import { TRPCError } from '@trpc/server';
+import {
+  detectLandmarks,
+  getLandmarksForView,
+  LANDMARK_DEFINITIONS,
+  LANDMARK_GROUPS,
+  calculateLandmarkAngle,
+  calculateLevelDifference,
+  type LandmarkName,
+  type DetectedLandmark,
+} from '@/lib/services/landmarkDetection';
 
 // Validation schemas
 const postureViewSchema = z.enum(['ANTERIOR', 'POSTERIOR', 'LATERAL_LEFT', 'LATERAL_RIGHT']);
@@ -458,6 +468,561 @@ export const postureRouter = router({
         totalAssessments,
         completedAssessments,
         recentAssessment,
+      };
+    }),
+
+  // ============================================
+  // AI LANDMARK DETECTION (US-210)
+  // ============================================
+
+  // Run AI landmark detection on an image
+  analyzeLandmarks: providerProcedure
+    .input(
+      z.object({
+        imageId: z.string(),
+        forceReanalyze: z.boolean().default(false),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { imageId, forceReanalyze } = input;
+
+      // Get the image with its assessment
+      const image = await ctx.prisma.postureImage.findFirst({
+        where: {
+          id: imageId,
+          assessment: {
+            organizationId: ctx.user.organizationId,
+          },
+        },
+        include: {
+          assessment: true,
+          landmarks: true,
+        },
+      });
+
+      if (!image) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Image not found',
+        });
+      }
+
+      // Check if already analyzed (unless force reanalyze)
+      if (image.isAnalyzed && !forceReanalyze && image.landmarks.length > 0) {
+        return {
+          success: true,
+          message: 'Image already analyzed. Use forceReanalyze to re-analyze.',
+          landmarks: image.landmarks,
+          wasReanalyzed: false,
+        };
+      }
+
+      // Run AI detection
+      const result = await detectLandmarks(image.imageUrl, image.view);
+
+      if (!result.success) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: result.error || 'Failed to analyze landmarks',
+        });
+      }
+
+      // Delete existing landmarks if reanalyzing
+      if (forceReanalyze && image.landmarks.length > 0) {
+        await ctx.prisma.postureLandmark.deleteMany({
+          where: { imageId },
+        });
+      }
+
+      // Store detected landmarks
+      const createdLandmarks = await Promise.all(
+        result.landmarks.map((landmark) =>
+          ctx.prisma.postureLandmark.create({
+            data: {
+              imageId,
+              name: landmark.name,
+              x: landmark.x,
+              y: landmark.y,
+              z: landmark.z || null,
+              confidence: landmark.confidence,
+              isManual: false,
+            },
+          })
+        )
+      );
+
+      // Update image analysis status
+      await ctx.prisma.postureImage.update({
+        where: { id: imageId },
+        data: {
+          isAnalyzed: true,
+          analyzedAt: new Date(),
+          analysisData: {
+            method: result.analysisMethod,
+            modelVersion: result.modelVersion,
+            processingTimeMs: result.processingTimeMs,
+            warnings: result.warnings,
+          },
+        },
+      });
+
+      return {
+        success: true,
+        message: `Detected ${createdLandmarks.length} landmarks`,
+        landmarks: createdLandmarks,
+        wasReanalyzed: forceReanalyze,
+        warnings: result.warnings,
+      };
+    }),
+
+  // Update a single landmark (manual adjustment)
+  updateLandmark: providerProcedure
+    .input(
+      z.object({
+        landmarkId: z.string(),
+        x: z.number().min(0).max(1),
+        y: z.number().min(0).max(1),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { landmarkId, x, y } = input;
+
+      // Get landmark and verify access
+      const landmark = await ctx.prisma.postureLandmark.findFirst({
+        where: {
+          id: landmarkId,
+          image: {
+            assessment: {
+              organizationId: ctx.user.organizationId,
+            },
+          },
+        },
+      });
+
+      if (!landmark) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Landmark not found',
+        });
+      }
+
+      // Update landmark, storing original if first manual adjustment
+      return ctx.prisma.postureLandmark.update({
+        where: { id: landmarkId },
+        data: {
+          x,
+          y,
+          isManual: true,
+          originalX: landmark.isManual ? landmark.originalX : landmark.x,
+          originalY: landmark.isManual ? landmark.originalY : landmark.y,
+          confidence: 1.0, // Manual adjustments are considered high confidence
+        },
+      });
+    }),
+
+  // Batch update landmarks
+  updateLandmarksBatch: providerProcedure
+    .input(
+      z.object({
+        imageId: z.string(),
+        landmarks: z.array(
+          z.object({
+            id: z.string().optional(), // Optional for new landmarks
+            name: z.string(),
+            x: z.number().min(0).max(1),
+            y: z.number().min(0).max(1),
+          })
+        ),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { imageId, landmarks } = input;
+
+      // Verify image access
+      const image = await ctx.prisma.postureImage.findFirst({
+        where: {
+          id: imageId,
+          assessment: {
+            organizationId: ctx.user.organizationId,
+          },
+        },
+        include: {
+          landmarks: true,
+        },
+      });
+
+      if (!image) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Image not found',
+        });
+      }
+
+      // Process each landmark
+      const results = await Promise.all(
+        landmarks.map(async (lm) => {
+          if (lm.id) {
+            // Update existing landmark
+            const existing = image.landmarks.find((l) => l.id === lm.id);
+            if (existing) {
+              return ctx.prisma.postureLandmark.update({
+                where: { id: lm.id },
+                data: {
+                  x: lm.x,
+                  y: lm.y,
+                  isManual: true,
+                  originalX: existing.isManual ? existing.originalX : existing.x,
+                  originalY: existing.isManual ? existing.originalY : existing.y,
+                  confidence: 1.0,
+                },
+              });
+            }
+          }
+
+          // Create new landmark
+          return ctx.prisma.postureLandmark.create({
+            data: {
+              imageId,
+              name: lm.name,
+              x: lm.x,
+              y: lm.y,
+              isManual: true,
+              confidence: 1.0,
+            },
+          });
+        })
+      );
+
+      return {
+        success: true,
+        updated: results.length,
+        landmarks: results,
+      };
+    }),
+
+  // Add a new landmark manually
+  addLandmark: providerProcedure
+    .input(
+      z.object({
+        imageId: z.string(),
+        name: z.string(),
+        x: z.number().min(0).max(1),
+        y: z.number().min(0).max(1),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { imageId, name, x, y } = input;
+
+      // Verify image access
+      const image = await ctx.prisma.postureImage.findFirst({
+        where: {
+          id: imageId,
+          assessment: {
+            organizationId: ctx.user.organizationId,
+          },
+        },
+      });
+
+      if (!image) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Image not found',
+        });
+      }
+
+      return ctx.prisma.postureLandmark.create({
+        data: {
+          imageId,
+          name,
+          x,
+          y,
+          isManual: true,
+          confidence: 1.0,
+        },
+      });
+    }),
+
+  // Delete a landmark
+  deleteLandmark: providerProcedure
+    .input(z.object({ landmarkId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const landmark = await ctx.prisma.postureLandmark.findFirst({
+        where: {
+          id: input.landmarkId,
+          image: {
+            assessment: {
+              organizationId: ctx.user.organizationId,
+            },
+          },
+        },
+      });
+
+      if (!landmark) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Landmark not found',
+        });
+      }
+
+      await ctx.prisma.postureLandmark.delete({
+        where: { id: input.landmarkId },
+      });
+
+      return { success: true };
+    }),
+
+  // Reset landmark to AI-detected position
+  resetLandmark: providerProcedure
+    .input(z.object({ landmarkId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const landmark = await ctx.prisma.postureLandmark.findFirst({
+        where: {
+          id: input.landmarkId,
+          image: {
+            assessment: {
+              organizationId: ctx.user.organizationId,
+            },
+          },
+        },
+      });
+
+      if (!landmark) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Landmark not found',
+        });
+      }
+
+      if (!landmark.isManual || landmark.originalX === null || landmark.originalY === null) {
+        return landmark; // Already at original position
+      }
+
+      return ctx.prisma.postureLandmark.update({
+        where: { id: input.landmarkId },
+        data: {
+          x: landmark.originalX,
+          y: landmark.originalY,
+          isManual: false,
+          confidence: 0.5, // Reset to AI confidence
+        },
+      });
+    }),
+
+  // Get landmarks for an image
+  getLandmarks: protectedProcedure
+    .input(z.object({ imageId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const image = await ctx.prisma.postureImage.findFirst({
+        where: {
+          id: input.imageId,
+          assessment: {
+            organizationId: ctx.user.organizationId,
+          },
+        },
+        include: {
+          landmarks: true,
+        },
+      });
+
+      if (!image) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Image not found',
+        });
+      }
+
+      return {
+        landmarks: image.landmarks,
+        isAnalyzed: image.isAnalyzed,
+        analyzedAt: image.analyzedAt,
+        analysisData: image.analysisData,
+      };
+    }),
+
+  // Get landmark definitions for a view
+  getLandmarkDefinitions: protectedProcedure
+    .input(z.object({ view: postureViewSchema }))
+    .query(({ input }) => {
+      const applicableLandmarks = getLandmarksForView(input.view);
+
+      return {
+        landmarks: applicableLandmarks.map((landmarkKey) => {
+          const def = LANDMARK_DEFINITIONS[landmarkKey];
+          return {
+            key: landmarkKey,
+            name: def.name,
+            group: def.group,
+            views: def.views,
+          };
+        }),
+        groups: LANDMARK_GROUPS,
+      };
+    }),
+
+  // Analyze all images in an assessment
+  analyzeAssessment: providerProcedure
+    .input(
+      z.object({
+        assessmentId: z.string(),
+        forceReanalyze: z.boolean().default(false),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { assessmentId, forceReanalyze } = input;
+
+      const assessment = await ctx.prisma.postureAssessment.findFirst({
+        where: {
+          id: assessmentId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          images: {
+            include: {
+              landmarks: true,
+            },
+          },
+        },
+      });
+
+      if (!assessment) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Assessment not found',
+        });
+      }
+
+      const results = [];
+
+      for (const image of assessment.images) {
+        // Skip if already analyzed and not forcing reanalyze
+        if (image.isAnalyzed && !forceReanalyze && image.landmarks.length > 0) {
+          results.push({
+            imageId: image.id,
+            view: image.view,
+            skipped: true,
+            landmarkCount: image.landmarks.length,
+          });
+          continue;
+        }
+
+        // Run detection
+        const result = await detectLandmarks(image.imageUrl, image.view);
+
+        if (result.success) {
+          // Delete existing landmarks if reanalyzing
+          if (forceReanalyze) {
+            await ctx.prisma.postureLandmark.deleteMany({
+              where: { imageId: image.id },
+            });
+          }
+
+          // Store landmarks
+          const landmarks = await Promise.all(
+            result.landmarks.map((lm) =>
+              ctx.prisma.postureLandmark.create({
+                data: {
+                  imageId: image.id,
+                  name: lm.name,
+                  x: lm.x,
+                  y: lm.y,
+                  z: lm.z || null,
+                  confidence: lm.confidence,
+                  isManual: false,
+                },
+              })
+            )
+          );
+
+          // Update image
+          await ctx.prisma.postureImage.update({
+            where: { id: image.id },
+            data: {
+              isAnalyzed: true,
+              analyzedAt: new Date(),
+              analysisData: {
+                method: result.analysisMethod,
+                modelVersion: result.modelVersion,
+                processingTimeMs: result.processingTimeMs,
+              },
+            },
+          });
+
+          results.push({
+            imageId: image.id,
+            view: image.view,
+            success: true,
+            landmarkCount: landmarks.length,
+          });
+        } else {
+          results.push({
+            imageId: image.id,
+            view: image.view,
+            success: false,
+            error: result.error,
+          });
+        }
+      }
+
+      const successCount = results.filter((r) => r.success || r.skipped).length;
+      const totalLandmarks = results.reduce((sum, r) => sum + (r.landmarkCount || 0), 0);
+
+      return {
+        success: successCount === results.length,
+        message: `Analyzed ${successCount}/${results.length} images with ${totalLandmarks} total landmarks`,
+        results,
+      };
+    }),
+
+  // Get analysis status for assessment
+  getAnalysisStatus: protectedProcedure
+    .input(z.object({ assessmentId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const assessment = await ctx.prisma.postureAssessment.findFirst({
+        where: {
+          id: input.assessmentId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          images: {
+            select: {
+              id: true,
+              view: true,
+              isAnalyzed: true,
+              analyzedAt: true,
+              _count: {
+                select: { landmarks: true },
+              },
+            },
+          },
+        },
+      });
+
+      if (!assessment) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Assessment not found',
+        });
+      }
+
+      const totalImages = assessment.images.length;
+      const analyzedImages = assessment.images.filter((i) => i.isAnalyzed).length;
+      const totalLandmarks = assessment.images.reduce(
+        (sum, i) => sum + i._count.landmarks,
+        0
+      );
+
+      return {
+        totalImages,
+        analyzedImages,
+        totalLandmarks,
+        isFullyAnalyzed: totalImages > 0 && analyzedImages === totalImages,
+        images: assessment.images.map((img) => ({
+          id: img.id,
+          view: img.view,
+          isAnalyzed: img.isAnalyzed,
+          analyzedAt: img.analyzedAt,
+          landmarkCount: img._count.landmarks,
+        })),
       };
     }),
 });

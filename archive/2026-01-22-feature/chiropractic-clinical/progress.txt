@@ -1,0 +1,545 @@
+--- Iteration 1 completed at 2026-01-21 23:59:15 ---
+Story: US-200 - Chiropractic clinical schema
+
+--- Iteration 2 completed at 2026-01-21 23:59:25 ---
+Story: US-200 - Chiropractic clinical schema
+
+--- Iteration 3 completed at 2026-01-21 23:59:34 ---
+Story: US-200 - Chiropractic clinical schema
+
+--- Iteration 4 completed at 2026-01-21 23:59:44 ---
+Story: US-200 - Chiropractic clinical schema
+
+--- Iteration 5 completed at 2026-01-21 23:59:53 ---
+Story: US-200 - Chiropractic clinical schema
+
+--- Iteration 6 completed at 2026-01-22 ---
+Story: US-200 - Chiropractic clinical schema
+
+Implemented:
+- SpinalRegion enum (CERVICAL, THORACIC, LUMBAR, SACRAL, PELVIS)
+- SubluxationSeverity enum (MINIMAL to EXTREME, 1-5 scale)
+- TechniqueCategory enum (MANUAL, INSTRUMENT, TABLE_ASSISTED, LOW_FORCE)
+- AdjustmentResponse enum (EXCELLENT to POOR)
+- Technique model with name, category, description, indications, contraindications
+- TechniqueFavorite model for provider quick access
+- Subluxation model with patientId, encounterId, vertebra, listing, severity, notes
+- SubluxationHistory model for tracking changes over time
+- Adjustment model with encounterId, vertebra, technique, force, direction, response, pre/post findings
+- VertebralListing model with segment, laterality, rotation, Gonstead/Palmer notation support
+- ChiropracticExam model with leg length, muscle testing, palpation, ROM, neurological screening
+
+Added relations to:
+- Organization model
+- Patient model
+- Encounter model
+- Provider model (techniqueFavorites)
+- User model (subluxationHistoryEntries)
+- BodyDiagram model (subluxations)
+
+Schema validated with `prisma validate` ✓
+Prisma client generated successfully ✓
+TypeScript compilation passes ✓
+Note: Run `npx prisma migrate dev --name chiropractic_clinical_schema` to apply migration
+
+--- Iteration 6 completed at 2026-01-22 00:05:11 ---
+Story: US-200 - Chiropractic clinical schema
+
+--- Iteration 7 completed at 2026-01-22 ---
+Story: US-201 - Technique library management
+
+Implemented:
+- technique.list - Lists all techniques with category filtering, search, pagination
+  - Groups techniques by category (MANUAL, INSTRUMENT, TABLE_ASSISTED, LOW_FORCE)
+  - Shows both system techniques and organization-specific techniques
+- technique.get - Gets technique details including contraindications and usage counts
+- technique.create - Adds custom technique (admin only)
+- technique.update - Updates org-specific techniques (admin only)
+- technique.delete - Deletes unused org-specific techniques (admin only)
+- technique.getCategories - Lists categories with technique counts
+- technique.favorites.list - Gets provider's favorite techniques
+- technique.favorites.add - Adds technique to provider favorites
+- technique.favorites.remove - Removes technique from favorites
+- technique.favorites.reorder - Reorders favorite techniques
+- technique.seedStandard - Seeds standard chiropractic techniques (admin, idempotent)
+
+Standard techniques seeded:
+- Manual: Diversified, Gonstead, Toggle Recoil
+- Instrument-assisted: Activator Methods, Impulse Adjusting
+- Table-assisted: Thompson Drop, Cox Flexion-Distraction
+- Low-force: Sacro-Occipital Technique (SOT), Craniosacral Therapy, Network Spinal Analysis
+
+Each technique includes:
+- Name and category
+- Detailed description
+- Indications (conditions where technique is indicated)
+- Contraindications (when NOT to use)
+- Instructions for performing
+
+Added audit action types for technique operations
+Router registered in index.ts
+TypeScript compilation passes ✓
+
+--- Iteration 7 completed at 2026-01-22 00:09:35 ---
+Story: US-201 - Technique library management
+
+--- Iteration 8 completed at 2026-01-22 ---
+Story: US-202 - Subluxation documentation
+
+Implemented:
+- subluxation.create - Document subluxation finding with vertebra, listing, severity
+  - Auto-detects spinal region from vertebra (C1-C7=Cervical, T1-T12=Thoracic, etc.)
+  - Creates initial history entry for tracking
+  - Prevents duplicates at same vertebra in same encounter
+- subluxation.update - Update subluxation status with history tracking
+  - Records changes in SubluxationHistory with changeReason
+  - Supports marking as resolved with resolvedNotes
+- subluxation.list - List patient subluxations by region
+  - Filter by region, encounter, include/exclude resolved
+  - Groups results by SpinalRegion
+  - Includes severity info with color coding
+- subluxation.get - Get full subluxation details with history and adjustments
+- subluxation.getHistory - Get subluxation timeline
+  - Shows all changes over time with who documented and when
+  - Includes severity change direction (improved/worsened)
+- subluxation.compare - Compare subluxations between visits
+  - Identifies new, resolved, improved, worsened, unchanged
+  - Calculates overall treatment trend
+  - Summary statistics for progress tracking
+- subluxation.delete - Delete subluxation (only if unsigned and no adjustments)
+- subluxation.getSeverityScale - Returns severity scale info (1-5 with colors)
+- subluxation.getListingNotations - Returns Gonstead and Palmer listing codes
+- subluxation.getPatientOverview - Complete spine overview with all active subluxations
+
+Standard listing notation support:
+- Gonstead: PLS, PRS, PLI, PRI, AS, PI, IN, EX, AS-IN, AS-EX, PI-IN, PI-EX
+- Palmer: PL, PR, P, A, L, R, I, S, RL, RR, PS, AS
+- Full descriptions for each listing code
+
+Severity scale (1-5) with visual indicators:
+- 1 MINIMAL (#22c55e green) - Minimal dysfunction
+- 2 MILD (#84cc16 lime) - Mild dysfunction
+- 3 MODERATE (#f59e0b amber) - Moderate dysfunction
+- 4 SEVERE (#f97316 orange) - Severe dysfunction
+- 5 EXTREME (#ef4444 red) - Extreme dysfunction
+
+Body diagram integration via bodyDiagramId foreign key
+Comparison view shows side-by-side visit comparison with change tracking
+
+Added audit action types: SUBLUXATION_CREATE, SUBLUXATION_UPDATE, SUBLUXATION_DELETE, SUBLUXATION_RESOLVE
+Router registered in index.ts
+TypeScript compilation passes ✓
+
+--- Iteration 8 completed at 2026-01-22 00:15:10 ---
+Story: US-202 - Subluxation documentation
+
+--- Iteration 9 completed at 2026-01-22 ---
+Story: US-203 - Adjustment documentation
+
+Implemented:
+- adjustment.create - Record adjustment with technique, segment, response
+  - Links to encounter, technique, and optionally subluxation
+  - Auto-detects spinal region from vertebra
+  - Validates encounter is not signed
+  - Records all adjustment details including force, direction, position
+- adjustment.update - Update adjustment details (if encounter not signed)
+- adjustment.list - List adjustments by encounter
+  - Filter by region, groups by spinal region
+  - Includes technique and subluxation relations
+- adjustment.get - Get single adjustment with full details
+- adjustment.getPatientHistory - All adjustments for patient
+  - Filter by region, vertebra, date range
+  - Includes encounter and provider info
+  - Pagination support
+- adjustment.delete - Remove adjustment (only from unsigned encounters)
+
+Pre/post findings recording:
+- preLegLength/postLegLength - Leg length difference before/after
+- preROM/postROM - Range of motion before/after
+- prePain/postPain - Pain scale 0-10 before/after
+
+Patient response documentation:
+- response enum: EXCELLENT, GOOD, FAIR, GUARDED, POOR
+- cavitation - Boolean for audible release
+- muscleGuarding - Boolean for guarding present
+- immediateRelief - Boolean for relief achieved
+- responseNotes - Text field for additional notes
+
+Response scale with color coding:
+- EXCELLENT (#22c55e) - Cavitation with immediate relief
+- GOOD (#84cc16) - Partial correction, positive response
+- FAIR (#f59e0b) - Minimal response
+- GUARDED (#f97316) - Muscle guarding present
+- POOR (#ef4444) - No correction achieved
+
+Segment tracking over time:
+- adjustment.getSegmentStats - Comprehensive statistics including:
+  - Total adjustments count
+  - Breakdown by vertebra (with counts and response distribution)
+  - Breakdown by region
+  - Breakdown by technique
+  - Monthly trend data
+  - Overall response distribution
+
+Quick entry templates (8 templates):
+- full-spine-diversified - Standard full spine with Diversified
+- cervical-focus - Upper and mid cervical
+- low-back-pelvis - Lumbar and pelvic
+- activator-full - Low-force full spine with Activator
+- cox-flexion-lumbar - Flexion-distraction for disc issues
+- thoracic-focus - Mid and lower thoracic
+- upper-cervical - Atlas and Axis specific
+- sot-category-2 - SOT block placement
+
+Template features:
+- adjustment.getTemplates - List all templates with resolved technique IDs
+- adjustment.applyTemplate - Create multiple adjustments from template
+  - Supports overrides for technique, force, position, response
+  - Optional pre/post pain to apply to all segments
+- adjustment.bulkCreate - Custom bulk adjustment creation
+
+Helper endpoints:
+- adjustment.getResponseScale - Response enum info with colors
+- adjustment.getForceOptions - LIGHT, MODERATE, FIRM descriptions
+- adjustment.getPositionOptions - PRONE, SUPINE, SIDE_LYING, SEATED, STANDING
+
+Router registered in index.ts
+TypeScript compilation passes ✓
+
+--- Iteration 9 completed at 2026-01-22 00:19:44 ---
+Story: US-203 - Adjustment documentation
+
+--- Iteration 10 completed at 2026-01-22 ---
+Story: US-204 - Vertebral listing system
+
+Implemented:
+- vertebralListing.create - Document listing for segment
+  - Supports both Gonstead and Palmer notation
+  - Auto-detects spinal region from segment
+  - Parses listing notation to extract laterality and rotation
+  - Records additional findings: fixation, hypermobility, edema, tenderness, muscleSpasm
+  - Validates encounter is not signed
+  - Prevents duplicate listings at same segment in same encounter
+- vertebralListing.update - Update listing findings
+  - Updates all positional and additional finding fields
+  - Maintains audit trail of changes
+- vertebralListing.list - List patient listings by region/encounter
+  - Groups by spinal region
+  - Includes listing info with notation description
+- vertebralListing.get - Get single listing with full details
+  - Includes patient and encounter info
+  - Returns related segments for suggestions
+- vertebralListing.compare - Compare listings across visits
+  - Side-by-side comparison of two encounters
+  - Identifies new, resolved, changed, unchanged segments
+  - Tracks specific changes (listing, fixation, tenderness, etc.)
+  - Summary statistics for progress tracking
+- vertebralListing.delete - Remove listing (only from unsigned encounters)
+- vertebralListing.bulkCreate - Quick entry for multiple listings
+
+Listing notation support:
+- Gonstead: PLS, PRS, PLI, PRI, AS, PI, IN, EX, AS-IN, AS-EX, PI-IN, PI-EX, PLS-m, PRS-m
+  - Full descriptions (e.g., "Posterior-Left-Superior (body rotated left, superior)")
+  - Extracts laterality (L/R) and rotation (S/I)
+- Palmer: PL, PR, P, A, L, R, I, S, RL, RR, PS, AI
+  - Full descriptions
+  - Custom notation support as fallback
+
+Reference endpoints:
+- vertebralListing.getGonsteadNotations - Complete Gonstead notation reference
+- vertebralListing.getPalmerNotations - Complete Palmer notation reference
+- vertebralListing.getSpinalSegments - All 35 spinal segments with metadata
+
+Visual spine diagram:
+- vertebralListing.getSpineDiagramData - Returns data for spine visualization
+  - Supports sagittal (side) and coronal (front) views
+  - Position indicators based on laterality (L/R deviation)
+  - Severity color coding based on findings (green/lime/amber/red)
+  - Groups segments by region (Cervical, Thoracic, Lumbar, Sacral, Pelvis)
+  - Each segment includes: name, region, index, hasListing, position, severityColor
+
+Auto-suggest related segments:
+- vertebralListing.getSuggestedSegments - Biomechanics-based suggestions
+  - Compensatory segments (adjacent, directly affected)
+  - Functional segments (biomechanically related)
+  - Example: C1 → compensatory: C2, Occiput; functional: C5, C6, T4
+  - Includes reason for relationship
+  - If patientId provided, indicates which suggested segments already have findings
+
+Biomechanical relationships defined for:
+- C1, C2, C5, C7 (cervical)
+- T4, T12 (thoracic)
+- L4, L5 (lumbar)
+- Sacrum, Left Ilium, Right Ilium (pelvic)
+
+Router registered in index.ts
+TypeScript compilation passes ✓
+
+--- Iteration 10 completed at 2026-01-22 00:25:00 ---
+Story: US-204 - Vertebral listing system
+
+--- Iteration 10 completed at 2026-01-22 00:24:26 ---
+Story: US-204 - Vertebral listing system
+
+--- Iteration 11 completed at 2026-01-22 ---
+Story: US-205 - Chiropractic examination
+
+Implemented:
+- chiropracticExam.create - Create comprehensive exam record
+  - Links to patient and encounter
+  - Validates encounter is not signed
+  - Prevents duplicate exams per encounter
+  - Auto-generates exam summary for SOAP note integration
+
+- chiropracticExam.update - Update exam with partial data
+  - Supports all exam sections
+  - Optional summary regeneration
+  - Validates encounter is not signed
+
+- chiropracticExam.get - Get exam by ID with full details
+- chiropracticExam.getByEncounter - Get exam by encounter ID
+- chiropracticExam.listByPatient - List all exams for a patient with pagination
+- chiropracticExam.delete - Delete exam (only for unsigned encounters)
+
+Leg Length Assessment:
+- chiropracticExam.updateLegLength - Update leg length findings
+  - Prone position assessment
+  - Supine position assessment
+  - Seated position assessment
+  - Notes field for additional observations
+
+Muscle Testing (0-5 MRC Scale):
+- chiropracticExam.updateMuscleTesting - Update muscle test data
+  - Supports bilateral testing with L/R/bilateral designation
+  - Grade 0 (No contraction) to Grade 5 (Normal)
+  - 14 common muscles with myotome mapping (deltoid, biceps, quadriceps, etc.)
+- chiropracticExam.getMuscleGrades - Returns grading scale reference
+- chiropracticExam.getMuscleOptions - Returns testable muscles with myotome levels
+
+Static and Motion Palpation:
+- chiropracticExam.updateStaticPalpation - Document static findings
+  - Per-segment findings array
+  - Severity (mild/moderate/marked)
+  - Finding types: tenderness, spasm, hypertonicity, trigger point, etc.
+- chiropracticExam.updateMotionPalpation - Document motion restrictions
+  - Per-segment restriction array
+  - Restriction types: flexion, extension, lateral flexion, rotation
+- chiropracticExam.getPalpationOptions - Returns available finding types
+
+Postural Analysis Integration:
+- chiropracticExam.updatePosturalAnalysis - Document postural deviations
+  - Three views: anterior, lateral, posterior
+  - Checkpoints per view (head position, shoulder level, pelvic tilt, etc.)
+  - Deviation descriptions with severity
+- chiropracticExam.getPosturalCheckpoints - Returns checkpoints by view
+
+Orthopedic Tests:
+- chiropracticExam.updateOrthopedicTests - Record test results
+  - Result: positive/negative/equivocal
+  - Side: left/right/bilateral/central
+  - Notes per test
+- chiropracticExam.getOrthopedicTestOptions - Returns 30+ tests organized by region
+  - Cervical: Compression, Distraction, Spurling's, Jackson's, Bakody's
+  - Shoulder: Neer's, Hawkins-Kennedy, Empty Can, Speed's
+  - Lumbar: SLR, Crossed SLR, Braggard's, Kemp's, Slump
+  - SI Joint: FABER, Gaenslen's, Yeoman's
+  - Hip: Thomas, Trendelenburg, Ober's, Piriformis
+
+Neurological Screening:
+- chiropracticExam.updateNeurologicalScreening - Full neuro update
+  - DTRs: left/right grading per reflex
+  - Dermatomes: sensation per level (normal/diminished/absent/hyperesthetic)
+  - Myotomes: strength grading per level
+  - Notes field
+- chiropracticExam.getDTROptions - Returns reflexes and grading scale
+  - Reflexes: Biceps, Brachioradialis, Triceps, Patellar, Achilles
+  - Grades: 0 (absent) to 4+ (clonus)
+- chiropracticExam.getDermatomeOptions - Returns dermatomes C2-S2 with areas
+- chiropracticExam.getMyotomeOptions - Returns myotomes with muscles
+
+Range of Motion:
+- chiropracticExam.updateROM - Update single region ROM
+- chiropracticExam.updateAllROM - Update all regions at once
+  - Cervical, thoracic, lumbar regions
+  - Movements: flexion, extension, lateral flexion, rotation
+  - Pain on movement tracking
+- chiropracticExam.getNormalROM - Returns normal values for comparison
+
+Summary Generation:
+- chiropracticExam.regenerateSummary - Regenerate exam summary
+- chiropracticExam.getSummary - Get or generate exam summary
+  - Auto-formats findings into SOAP note format
+  - Highlights abnormal findings
+  - Sections: LEG LENGTH, MUSCLE TESTING, STATIC PALPATION, MOTION PALPATION,
+    POSTURAL ANALYSIS, ORTHOPEDIC TESTS, NEUROLOGICAL, RANGE OF MOTION, OBSERVATIONS
+
+Comparison Tools:
+- chiropracticExam.compareExams - Compare two exams for a patient
+  - Leg length comparison
+  - ROM comparison with change calculations
+  - Orthopedic test result comparison
+
+Added audit action types:
+- CHIROPRACTIC_EXAM_CREATE
+- CHIROPRACTIC_EXAM_UPDATE
+- CHIROPRACTIC_EXAM_DELETE
+
+Router registered in index.ts
+TypeScript compilation passes ✓
+
+--- Iteration 11 completed at 2026-01-22 00:35:00 ---
+Story: US-205 - Chiropractic examination
+
+--- Iteration 11 completed at 2026-01-22 00:31:01 ---
+Story: US-205 - Chiropractic examination
+
+--- Iteration 12 completed at 2026-01-22 ---
+Story: US-206 - Spinal analysis tools
+
+Implemented:
+
+Backend (spinalAnalysis router):
+- spinalAnalysis.getDiagramData - Get interactive spine diagram data with findings
+  - Supports coronal (front) and sagittal (side) views
+  - Returns all 29 spinal segments with position data
+  - Color-coded severity visualization (green to red, 1-5 scale)
+  - X-axis offsets based on laterality (coronal) or AP position (sagittal)
+  - Groups segments by region with summary statistics
+  - Includes subluxation, listing, and adjustment data per segment
+
+- spinalAnalysis.exportToSoapNote - Export spine diagram to SOAP note format
+  - Generates formatted text for clinical documentation
+  - Groups findings by region and type
+  - Include/exclude findings and recommendations
+  - Returns counts for subluxations, listings, and adjustments
+
+- spinalAnalysis.generatePatientEducationDiagram - Print-ready patient education report
+  - Patient-friendly explanations of findings
+  - Progress notes when comparing visits
+  - Region explanations (what each area affects)
+  - Overall health message based on findings
+  - Care instructions list
+
+- spinalAnalysis.getSegmentDetails - Click-to-document segment info
+  - Returns current and historical data for a segment
+  - Recent adjustments with technique and response
+  - Subluxation and listing history
+
+- spinalAnalysis.getSegmentsList - Reference list of all spinal segments
+
+Frontend Components:
+
+InteractiveSpineDiagram.tsx:
+- Click-to-document functionality for each vertebra
+- Coronal/sagittal view toggle
+- Visual spine representation with clickable segments
+- Color-coded severity indicators
+- Tooltip on hover showing segment details
+- Summary panel with findings count by region/severity
+- Detail dialog when clicking a segment
+- Document Finding action button
+
+SpineAnalysisPanel.tsx:
+- Complete panel with diagram and controls
+- Export to SOAP Note dialog
+  - Checkbox options for findings/recommendations
+  - Preview pane with formatted content
+  - Copy to clipboard functionality
+- Print Patient Education Report dialog
+  - Full preview with styled HTML
+  - Safe DOM manipulation for print
+  - Includes header, findings, summary, instructions, footer
+- Region statistics cards (Cervical, Thoracic, Lumbar, Sacral, Pelvis)
+- Finding count display with severity breakdown
+
+Updated exports:
+- body-diagram/index.ts exports new components
+- Router registered in routers/index.ts
+
+TypeScript compilation passes
+
+--- Iteration 12 completed at 2026-01-22 00:39:32 ---
+Story: US-206 - Spinal analysis tools
+
+--- Iteration 13 completed at 2026-01-22 ---
+Story: US-207 - Chiropractic clinical dashboard
+
+Implemented:
+
+Backend (chiropracticDashboard router):
+- chiropracticDashboard.getPatientSpineOverview - Patient spine with current subluxations
+  - Returns all active subluxations with severity info
+  - Includes vertebral listings from latest encounter
+  - Groups subluxations by spinal region
+  - Statistics: total count, by severity, by region, average severity, most affected region
+
+- chiropracticDashboard.getAdjustmentTimeline - Adjustment history with timeline view
+  - Groups adjustments by date/encounter
+  - Provider attribution
+  - Response information per adjustment
+  - Pagination support with date filtering
+  - Links to technique and subluxation data
+
+- chiropracticDashboard.getTreatmentResponseTrends - Response trends over time
+  - Response distribution by month (excellent/good/fair/guarded/poor)
+  - Severity changes tracked over time
+  - Overall trend calculation (improving/declining/stable)
+  - Average pain reduction calculation
+  - Configurable time period (3/6/12 months)
+
+- chiropracticDashboard.getSubluxationProgress - Subluxation progress visualization
+  - Per-vertebra progress tracking
+  - First severity vs current severity comparison
+  - Resolved/improved/worsened/unchanged counts
+  - Average severity trend over time
+  - Full history per subluxation with change tracking
+
+- chiropracticDashboard.getTechniqueUsageStats - Technique usage statistics
+  - Usage count by technique with success rate
+  - Grouped by category (Manual, Instrument, Table-Assisted, Low-Force)
+  - Response distribution per technique
+  - Region distribution per technique
+  - Optional filtering by patient, provider, date range
+
+- chiropracticDashboard.getQuickEntryData - Quick adjustment entry interface
+  - Active subluxations with "already adjusted" indicator
+  - Provider's favorite techniques
+  - Frequently used techniques for this patient
+  - Current encounter status
+
+- chiropracticDashboard.getSoapNoteIntegration - SOAP note integration
+  - Encounter details with subluxations and adjustments
+  - Chiropractic exam data
+  - Auto-generated SOAP sections:
+    - Objective: Findings grouped by region
+    - Assessment: Subluxation summary with severity breakdown
+    - Plan: Adjustments by technique with success rate
+
+Frontend Component (ChiropracticDashboard.tsx):
+- Five-tab dashboard interface:
+  1. Spine Overview - Interactive spine diagram with active subluxations list
+  2. Adjustment History - Timeline view of all adjustments
+  3. Response Trends - Monthly response distribution with overall trend
+  4. Subluxation Progress - Progress tracking per vertebra
+  5. Technique Stats - Usage statistics with success rates
+
+- Summary cards showing:
+  - Total active subluxations
+  - Count by region (Cervical, Thoracic, Lumbar, Sacral)
+
+- Quick Adjustment Entry dialog:
+  - Shows unadjusted subluxations for current visit
+  - Provider's favorite techniques
+  - Frequently used techniques
+
+- Integration with InteractiveSpineDiagram component
+- Color-coded severity (green to red scale)
+- Response visualization (excellent to poor)
+
+Component exports:
+- New chiropractic/ directory with ChiropracticDashboard
+- Index file for clean imports
+
+Router registered in routers/index.ts
+TypeScript compilation passes ✓
+

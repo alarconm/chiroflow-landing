@@ -19,7 +19,7 @@
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-209",
@@ -35,7 +35,7 @@
         "Batch upload for multiple views"
       ],
       "priority": 2,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-210",
@@ -51,7 +51,7 @@
         "Use Google MediaPipe or similar pose estimation"
       ],
       "priority": 3,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-211",

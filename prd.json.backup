@@ -1,129 +1,140 @@
 {
-  "branch": "feature/marketing",
-  "title": "Epic 18: Marketing & Referrals",
-  "description": "Marketing automation, referral tracking, and patient engagement tools. Helps grow the practice through automated campaigns and referral programs.",
-  "epic": "18-marketing",
-  "dependencies": ["01-platform-foundation", "06-patient-communication"],
+  "branch": "feature/chiropractic-clinical",
+  "title": "Epic 19: Chiropractic Clinical Intelligence",
+  "description": "Deep chiropractic-specific clinical features including subluxation tracking, vertebral listings, technique library, adjustment documentation, and spinal analysis tools. The core differentiator that makes ChiroFlow built specifically for chiropractors.",
+  "epic": "19-chiropractic-clinical",
+  "dependencies": ["05-ehr-soap-notes"],
   "userStories": [
     {
-      "id": "US-117",
-      "title": "Marketing and referral schema",
-      "description": "Create database models for marketing campaigns and referral tracking.",
+      "id": "US-200",
+      "title": "Chiropractic clinical schema",
+      "description": "Create database models for chiropractic-specific clinical data.",
       "acceptanceCriteria": [
-        "ReferralSource model with name, type (provider/patient/web/other), contactInfo",
-        "PatientReferral model linking patient to referral source",
-        "Campaign model with name, type, startDate, endDate, content",
-        "CampaignRecipient model tracking who received campaign",
-        "CampaignResponse model tracking opens, clicks, conversions",
+        "Subluxation model with patientId, encounterId, vertebra, listing, severity, notes",
+        "SubluxationHistory model for tracking changes over time",
+        "Technique model with name, category, description, contraindications",
+        "Adjustment model with encounterId, vertebra, technique, force, direction, response",
+        "VertebralListing model with segment, laterality, rotation, flexion, extension",
+        "SpinalRegion enum (Cervical, Thoracic, Lumbar, Sacral, Pelvis)",
+        "ChiropracticExam model with leg length, muscle testing, palpation findings",
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": false
+      "passes": true
     },
     {
-      "id": "US-118",
-      "title": "Referral source tracking",
-      "description": "Track where new patients come from for ROI analysis.",
+      "id": "US-201",
+      "title": "Technique library management",
+      "description": "Create comprehensive library of chiropractic adjustment techniques.",
       "acceptanceCriteria": [
-        "marketing.createReferralSource - Add referral source",
-        "marketing.assignReferral - Link patient to referral source",
-        "Capture referral source at patient intake",
-        "marketing.getReferralStats - Patients by source with revenue",
-        "Provider referral tracking with thank you triggers",
-        "Web tracking parameter support (UTM codes)"
+        "technique.list - List all techniques with filtering by category",
+        "technique.get - Get technique details with contraindications",
+        "technique.create - Add custom technique (admin only)",
+        "Seed standard techniques: Diversified, Gonstead, Thompson, Activator, SOT, Cox Flexion, Toggle Recoil",
+        "Category grouping: Manual, Instrument-assisted, Table-assisted, Low-force",
+        "Include indications and contraindications for each technique",
+        "Provider favorites for quick access"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
-      "id": "US-119",
-      "title": "Patient referral program",
-      "description": "Enable existing patients to refer new patients with incentives.",
+      "id": "US-202",
+      "title": "Subluxation documentation",
+      "description": "Document and track vertebral subluxations with detailed listings.",
       "acceptanceCriteria": [
-        "Generate unique referral code per patient",
-        "Referral landing page with patient code",
-        "Track referral code usage at new patient intake",
-        "Credit referring patient when referral completes first visit",
-        "Configurable reward (discount, credit, gift)",
-        "Referral leaderboard for gamification"
+        "subluxation.create - Document subluxation finding",
+        "subluxation.update - Update subluxation status",
+        "subluxation.list - List patient subluxations by region",
+        "subluxation.getHistory - Get subluxation timeline",
+        "Support standard listing notations (PLS, PRI, AS, PI, etc.)",
+        "Severity scale (1-5) with visual indicator",
+        "Link to body diagram markings",
+        "Comparison view between visits"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
-      "id": "US-120",
-      "title": "Email campaign builder",
-      "description": "Create and send marketing email campaigns to patient lists.",
+      "id": "US-203",
+      "title": "Adjustment documentation",
+      "description": "Document adjustments performed during encounters.",
       "acceptanceCriteria": [
-        "marketing.createCampaign - Create email campaign",
-        "Email template builder with merge fields",
-        "Patient list segmentation (active, inactive, by diagnosis, etc.)",
-        "marketing.sendCampaign - Send to selected list",
-        "Schedule campaign for future date",
-        "Respect unsubscribe preferences"
+        "adjustment.create - Record adjustment with technique, segment, response",
+        "adjustment.list - List adjustments by encounter",
+        "adjustment.getPatientHistory - All adjustments for patient",
+        "Record pre/post findings (leg length, ROM, pain)",
+        "Document patient response (cavitation, muscle guarding, relief)",
+        "Track adjustment count by segment over time",
+        "Quick entry templates for common adjustment patterns"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
-      "id": "US-121",
-      "title": "Campaign analytics",
-      "description": "Track email campaign performance metrics.",
+      "id": "US-204",
+      "title": "Vertebral listing system",
+      "description": "Comprehensive vertebral listing and misalignment documentation.",
       "acceptanceCriteria": [
-        "Track email opens with pixel tracking",
-        "Track link clicks",
-        "Calculate conversion (recipient becomes appointment)",
-        "marketing.getCampaignStats - Open rate, click rate, conversions",
-        "A/B testing support for subject lines",
-        "Campaign comparison reporting"
+        "vertebralListing.create - Document listing for segment",
+        "vertebralListing.update - Update listing findings",
+        "vertebralListing.compare - Compare listings across visits",
+        "Support Gonstead listing notation (PLS, PRI, PRS, PLI, AS, PI, IN, EX)",
+        "Support Palmer listing notation",
+        "Visual spine diagram with listing indicators",
+        "Auto-suggest related segments based on biomechanics"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
-      "id": "US-122",
-      "title": "Reactivation campaigns",
-      "description": "Automated campaigns to re-engage inactive patients.",
+      "id": "US-205",
+      "title": "Chiropractic examination",
+      "description": "Document comprehensive chiropractic examination findings.",
       "acceptanceCriteria": [
-        "Define inactive patient criteria (no visit in X days)",
-        "marketing.getInactivePatients - List patients matching criteria",
-        "Automated reactivation email sequence",
-        "Track reactivation success rate",
-        "Configurable triggers and timing",
-        "Easy opt-out from reactivation campaigns"
+        "chiropracticExam.create - Create exam record",
+        "Leg length assessment (prone, supine, seated)",
+        "Muscle testing (grading scale 0-5)",
+        "Static and motion palpation findings",
+        "Postural analysis integration",
+        "Orthopedic test results with normal/abnormal",
+        "Neurological screening (DTRs, dermatomes, myotomes)",
+        "Generate exam summary for notes"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
-      "id": "US-123",
-      "title": "Review and reputation management",
-      "description": "Solicit and manage online reviews from patients.",
+      "id": "US-206",
+      "title": "Spinal analysis tools",
+      "description": "Interactive spinal analysis and documentation tools.",
       "acceptanceCriteria": [
-        "Send review request after appointment",
-        "Configurable delay after visit",
-        "Direct links to Google, Yelp, Facebook reviews",
-        "Track review request sends and completion",
-        "Happy patient filter (only ask satisfied patients)",
-        "Review stats dashboard"
+        "Interactive spine diagram component",
+        "Click segment to document findings",
+        "Color-coded severity visualization",
+        "Sagittal and coronal plane views",
+        "Cervical, thoracic, lumbar, pelvic regions",
+        "Export spine diagram to SOAP note",
+        "Print-ready patient education diagram"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
-      "id": "US-124",
-      "title": "Marketing dashboard UI",
-      "description": "Create UI for marketing management and analytics.",
+      "id": "US-207",
+      "title": "Chiropractic clinical dashboard",
+      "description": "Dashboard for chiropractic-specific clinical workflows.",
       "acceptanceCriteria": [
-        "Marketing dashboard at /marketing with overview stats",
-        "Referral source management interface",
-        "Campaign builder with preview",
-        "Campaign list with performance metrics",
-        "Patient referral program management",
-        "Referral and marketing ROI reporting"
+        "Patient spine overview with current subluxations",
+        "Adjustment history timeline",
+        "Treatment response trends",
+        "Quick adjustment entry interface",
+        "Subluxation progress visualization",
+        "Technique usage statistics",
+        "Integration with SOAP note workflow"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }
