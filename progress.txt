@@ -1384,3 +1384,115 @@ Date: 2026-01-21
 --- Iteration 7 completed at 2026-01-21 ---
 Story: US-074 - EDI 835 remittance processing
 
+--- Iteration 7 completed at 2026-01-21 20:42:01 ---
+Story: US-074 - EDI 835 remittance processing
+
+--- Iteration 8 completed at 2026-01-21 20:42:26 ---
+Story: US-083 - Claim status tracking
+
+--- Iteration 9 completed at 2026-01-21 20:42:35 ---
+Story: US-083 - Claim status tracking
+
+--- Iteration 10 completed at 2026-01-21 20:42:45 ---
+Story: US-083 - Claim status tracking
+
+--- Iteration 11 completed at 2026-01-21 20:42:54 ---
+Story: US-083 - Claim status tracking
+
+--- Iteration 12 completed at 2026-01-21 20:43:04 ---
+Story: US-083 - Claim status tracking
+
+--- Iteration 13 completed at 2026-01-21 20:43:13 ---
+Story: US-083 - Claim status tracking
+
+--- Iteration 14 completed at 2026-01-21 20:43:23 ---
+Story: US-083 - Claim status tracking
+
+--- Iteration 15 completed at 2026-01-21 20:43:32 ---
+Story: US-083 - Claim status tracking
+
+--- Iteration 16 completed at 2026-01-21 20:43:41 ---
+Story: US-083 - Claim status tracking
+
+--- Iteration 17 completed at 2026-01-21 20:43:50 ---
+Story: US-083 - Claim status tracking
+
+--- Iteration 18 completed at 2026-01-21 20:43:59 ---
+Story: US-083 - Claim status tracking
+
+--- Iteration 19 completed at 2026-01-21 20:44:09 ---
+Story: US-083 - Claim status tracking
+
+--- Iteration 20 completed at 2026-01-21 20:44:19 ---
+Story: US-083 - Claim status tracking
+
+--- Iteration 21 completed at 2026-01-21 20:44:30 ---
+Story: US-083 - Claim status tracking
+
+--- Iteration 22 completed at 2026-01-21 20:44:41 ---
+Story: US-083 - Claim status tracking
+
+--- Iteration 23 completed at 2026-01-21 ---
+Story: US-083 - Claim status tracking
+
+## Story: US-083 - Claim status tracking
+Date: 2026-01-21
+
+### What I Did
+- Implemented comprehensive claim status tracking functionality
+- Created getClaimStatusTimeline endpoint for status history with timeline events
+- Created pollClaimStatuses endpoint for batch status polling
+- Created getClaimsNeedingStatusCheck endpoint to identify claims needing updates
+- Created getDenialReasonCodes endpoint with CARC code descriptions
+- Created getClaimStatusHistory endpoint for individual claim status history
+- Added status change notifications via ClaimNote when status changes during polling
+- Automatic claim status updates when status changes (ACCEPTED, PAID, DENIED, REJECTED)
+- Added CLAIM_STATUS_POLL audit action for tracking batch polling
+
+### Router Procedures Added
+1. **getClaimStatusTimeline** - Get full timeline with dates and notes
+   - Combines status checks, claim notes, denial info
+   - Shows claim creation, submission, acceptance, payment dates
+   - Includes financial info (total paid, check numbers)
+   - Returns denial reason codes with descriptions
+
+2. **pollClaimStatuses** - Batch poll claim statuses
+   - Polls submitted/accepted claims
+   - Configurable max claims (default 25, max 50)
+   - Creates ClaimNote on status change
+   - Updates claim status for finalized statuses (F0/F1/A2/A3)
+   - Returns summary with success/failure counts and status changes
+
+3. **getClaimsNeedingStatusCheck** - Find claims needing updates
+   - Filters by hours since last check (default 24)
+   - Returns claims with no checks or stale checks
+   - Shows days since submission
+
+4. **getDenialReasonCodes** - Get CARC codes with descriptions
+   - Optional filter by codes array
+   - Optional filter by category
+   - Returns code, description, and category
+   - Includes CAS group codes
+
+5. **getClaimStatusHistory** - Get status check history
+   - Returns all status checks for a claim
+   - Includes category descriptions from CLAIM_STATUS_CATEGORY
+
+### Helper Function Added
+- getReasonCodeCategory() - Categorizes CARC codes by number range
+
+### Files Changed
+- app/src/server/routers/clearinghouse.ts (added ~550 lines of new endpoints)
+- app/src/lib/audit.ts (added CLAIM_STATUS_POLL action)
+
+### Build Status
+- ✓ Build compiles successfully
+- ✓ TypeScript checks pass
+
+### Acceptance Criteria Status
+1. clearinghouse.getClaimStatus - Check claim status via API - ✓ (existing checkClaimStatus)
+2. Status timeline with dates and notes - ✓ (getClaimStatusTimeline)
+3. Automatic status polling (configurable interval) - ✓ (pollClaimStatuses + getClaimsNeedingStatusCheck)
+4. Status change notifications - ✓ (ClaimNote created on status change)
+5. Denial reason code display - ✓ (getDenialReasonCodes with CARC descriptions)
+

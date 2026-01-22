@@ -106,7 +106,7 @@
         "Denial reason code display"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-084",

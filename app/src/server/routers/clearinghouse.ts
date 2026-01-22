@@ -32,6 +32,7 @@ import {
   generatePostingReport,
   CARC_CODES,
   CAS_GROUP_CODES,
+  CLAIM_STATUS_CATEGORY,
 } from '@/lib/clearinghouse';
 import type {
   ClearinghouseConfigData,
@@ -40,6 +41,24 @@ import type {
   ClaimStatusRequest,
   EDI837Config,
 } from '@/lib/clearinghouse';
+
+// Helper function to categorize denial reason codes
+function getReasonCodeCategory(code: string): string {
+  const codeNum = parseInt(code, 10);
+  if (codeNum >= 1 && codeNum <= 3) return 'Deductible';
+  if (codeNum >= 4 && codeNum <= 6) return 'Copayment';
+  if (codeNum >= 7 && codeNum <= 12) return 'Procedure Related';
+  if (codeNum >= 13 && codeNum <= 19) return 'Date/Time Related';
+  if (codeNum >= 20 && codeNum <= 29) return 'Authorization';
+  if (codeNum >= 30 && codeNum <= 44) return 'Patient Eligibility';
+  if (codeNum >= 45 && codeNum <= 49) return 'Contractual Obligations';
+  if (codeNum >= 50 && codeNum <= 99) return 'Non-Covered Services';
+  if (codeNum >= 100 && codeNum <= 149) return 'Payment Adjustment';
+  if (codeNum >= 150 && codeNum <= 199) return 'Payer Initiated';
+  if (codeNum >= 200 && codeNum <= 249) return 'Claim/Service';
+  if (codeNum >= 250 && codeNum <= 299) return 'Additional Information';
+  return 'Other';
+}
 
 // Zod schemas for validation
 const credentialsSchema = z.object({
@@ -2709,6 +2728,656 @@ export const clearinghouseRouter = router({
         })),
         adjustmentBreakdown,
         generatedAt: new Date(),
+      };
+    }),
+
+  // ============================================
+  // Claim Status Tracking (US-083)
+  // ============================================
+
+  // Get claim status timeline with history
+  getClaimStatusTimeline: protectedProcedure
+    .input(z.object({ claimId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const claim = await ctx.prisma.claim.findFirst({
+        where: { id: input.claimId, organizationId: ctx.user.organizationId },
+        include: {
+          patient: {
+            include: { demographics: { select: { firstName: true, lastName: true } } },
+          },
+          payer: { select: { name: true, payerId: true } },
+        },
+      });
+
+      if (!claim) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Claim not found' });
+      }
+
+      // Get all status checks for this claim
+      const statusChecks = await ctx.prisma.claimStatusCheck.findMany({
+        where: { claimId: input.claimId },
+        orderBy: { checkDate: 'desc' },
+        include: {
+          clearinghouseConfig: { select: { name: true, provider: true } },
+        },
+      });
+
+      // Get all claim notes for timeline
+      const claimNotes = await ctx.prisma.claimNote.findMany({
+        where: { claimId: input.claimId },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      // Get denial if any
+      const denial = await ctx.prisma.denial.findFirst({
+        where: { claimId: input.claimId, organizationId: ctx.user.organizationId },
+        include: { notes: { orderBy: { createdAt: 'desc' } } },
+      });
+
+      // Build timeline events
+      const timelineEvents: Array<{
+        id: string;
+        date: Date;
+        type: 'status_check' | 'status_change' | 'submission' | 'denial' | 'note';
+        title: string;
+        description: string | null;
+        statusCode?: string;
+        statusCategory?: string;
+        denialCode?: string;
+        denialCodeDescription?: string;
+        financial?: {
+          totalCharged?: number;
+          totalPaid?: number;
+          checkNumber?: string;
+          paymentDate?: Date;
+        };
+        source?: string;
+      }> = [];
+
+      // Add claim creation
+      timelineEvents.push({
+        id: `created-${claim.id}`,
+        date: claim.createdDate,
+        type: 'status_change',
+        title: 'Claim Created',
+        description: `Claim ${claim.claimNumber || claim.id} created`,
+        statusCode: 'DRAFT',
+        statusCategory: 'Created',
+      });
+
+      // Add submission if submitted
+      if (claim.submittedDate) {
+        timelineEvents.push({
+          id: `submitted-${claim.id}`,
+          date: claim.submittedDate,
+          type: 'submission',
+          title: 'Claim Submitted',
+          description: claim.submissionMethod === 'electronic'
+            ? 'Submitted electronically via clearinghouse'
+            : `Submitted via ${claim.submissionMethod || 'unknown method'}`,
+          statusCode: 'SUBMITTED',
+          statusCategory: 'Submitted',
+        });
+      }
+
+      // Add status checks
+      for (const check of statusChecks) {
+        const categoryCode = check.claimStatus as keyof typeof CLAIM_STATUS_CATEGORY;
+        const categoryDesc = CLAIM_STATUS_CATEGORY[categoryCode] || check.claimStatus || 'Unknown';
+
+        timelineEvents.push({
+          id: check.id,
+          date: check.responseDate || check.checkDate,
+          type: 'status_check',
+          title: 'Status Check',
+          description: check.statusDescription || categoryDesc,
+          statusCode: check.statusCode || undefined,
+          statusCategory: categoryDesc,
+          financial: check.totalPaid || check.checkNumber ? {
+            totalCharged: check.totalCharged ? Number(check.totalCharged) : undefined,
+            totalPaid: check.totalPaid ? Number(check.totalPaid) : undefined,
+            checkNumber: check.checkNumber || undefined,
+            paymentDate: check.paymentDate || undefined,
+          } : undefined,
+          source: check.clearinghouseConfig?.name,
+        });
+      }
+
+      // Add claim notes
+      for (const note of claimNotes) {
+        timelineEvents.push({
+          id: note.id,
+          date: note.createdAt,
+          type: note.noteType === 'status_change' ? 'status_change' : 'note',
+          title: note.noteType === 'status_change' ? 'Status Updated' :
+                 note.noteType === 'rejection' ? 'Claim Rejected' :
+                 note.noteType === 'appeal' ? 'Appeal Filed' :
+                 'Note Added',
+          description: note.note,
+        });
+      }
+
+      // Add denial if exists
+      if (denial) {
+        const carcInfo = denial.denialCode ? COMMON_CARC_CODES[denial.denialCode] : null;
+
+        timelineEvents.push({
+          id: denial.id,
+          date: denial.createdAt,
+          type: 'denial',
+          title: 'Claim Denied',
+          description: denial.denialReason || carcInfo?.description || 'Claim was denied',
+          denialCode: denial.denialCode || undefined,
+          denialCodeDescription: carcInfo?.description,
+          financial: {
+            totalCharged: Number(denial.billedAmount),
+            totalPaid: 0,
+          },
+        });
+
+        // Add denial notes
+        for (const note of denial.notes) {
+          timelineEvents.push({
+            id: note.id,
+            date: note.createdAt,
+            type: 'note',
+            title: note.noteType === 'appeal' ? 'Appeal Update' : 'Denial Note',
+            description: note.note,
+          });
+        }
+      }
+
+      // Add accepted/paid dates if available
+      if (claim.acceptedDate) {
+        timelineEvents.push({
+          id: `accepted-${claim.id}`,
+          date: claim.acceptedDate,
+          type: 'status_change',
+          title: 'Claim Accepted',
+          description: 'Claim was accepted by payer',
+          statusCode: 'ACCEPTED',
+          statusCategory: 'Accepted',
+        });
+      }
+
+      if (claim.paidDate) {
+        timelineEvents.push({
+          id: `paid-${claim.id}`,
+          date: claim.paidDate,
+          type: 'status_change',
+          title: 'Claim Paid',
+          description: 'Payment received from payer',
+          statusCode: 'PAID',
+          statusCategory: 'Paid',
+          financial: {
+            totalPaid: Number(claim.totalPaid),
+            totalCharged: Number(claim.totalCharges),
+          },
+        });
+      }
+
+      // Sort by date descending
+      timelineEvents.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+      return {
+        claim: {
+          id: claim.id,
+          claimNumber: claim.claimNumber,
+          payerClaimNumber: claim.payerClaimNumber,
+          status: claim.status,
+          statusMessage: claim.statusMessage,
+          totalCharges: Number(claim.totalCharges),
+          totalPaid: Number(claim.totalPaid),
+          totalAdjusted: Number(claim.totalAdjusted),
+          patientResponsibility: Number(claim.patientResponsibility),
+          patientName: claim.patient.demographics
+            ? `${claim.patient.demographics.firstName} ${claim.patient.demographics.lastName}`
+            : 'Unknown',
+          payerName: claim.payer?.name || 'Unknown Payer',
+        },
+        timeline: timelineEvents,
+        currentStatus: {
+          code: claim.status,
+          lastChecked: statusChecks[0]?.checkDate || null,
+          lastStatusCode: statusChecks[0]?.claimStatus || null,
+          lastStatusDescription: statusChecks[0]?.statusDescription || null,
+        },
+        denial: denial ? {
+          id: denial.id,
+          code: denial.denialCode,
+          reason: denial.denialReason,
+          amount: Number(denial.deniedAmount),
+          status: denial.status,
+          appealDeadline: denial.appealDeadline,
+        } : null,
+      };
+    }),
+
+  // Poll claim statuses - batch check multiple claims
+  pollClaimStatuses: billerProcedure
+    .input(
+      z.object({
+        claimIds: z.array(z.string()).optional(), // If not provided, poll all submitted claims
+        maxClaims: z.number().min(1).max(50).default(25),
+        onlyPending: z.boolean().default(true), // Only poll claims with pending status
+        clearinghouseConfigId: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { claimIds, maxClaims, onlyPending, clearinghouseConfigId } = input;
+
+      // Get clearinghouse config
+      let configId = clearinghouseConfigId;
+      if (!configId) {
+        const primary = await ctx.prisma.clearinghouseConfig.findFirst({
+          where: { organizationId: ctx.user.organizationId, isPrimary: true, isActive: true },
+        });
+        if (!primary) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'No clearinghouse configuration found',
+          });
+        }
+        configId = primary.id;
+      }
+
+      const config = await ctx.prisma.clearinghouseConfig.findFirst({
+        where: { id: configId, organizationId: ctx.user.organizationId },
+      });
+
+      if (!config) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Clearinghouse configuration not found' });
+      }
+
+      // Build query for claims to poll
+      const statusesToPoll: ClaimStatus[] = onlyPending
+        ? [ClaimStatus.SUBMITTED, ClaimStatus.ACCEPTED]
+        : [ClaimStatus.SUBMITTED, ClaimStatus.ACCEPTED, ClaimStatus.REJECTED];
+
+      const claimsQuery: Record<string, unknown> = {
+        organizationId: ctx.user.organizationId,
+        status: { in: statusesToPoll },
+      };
+
+      if (claimIds && claimIds.length > 0) {
+        claimsQuery.id = { in: claimIds };
+      }
+
+      // Get claims to poll
+      const claimsToPoll = await ctx.prisma.claim.findMany({
+        where: claimsQuery,
+        take: maxClaims,
+        orderBy: { submittedDate: 'asc' }, // Oldest first
+        include: {
+          patient: { include: { demographics: true } },
+          payer: true,
+          insurancePolicy: true,
+          claimLines: { orderBy: { lineNumber: 'asc' } },
+        },
+      });
+
+      if (claimsToPoll.length === 0) {
+        return {
+          success: true,
+          message: 'No claims to poll',
+          results: [],
+          summary: {
+            total: 0,
+            successful: 0,
+            failed: 0,
+            statusChanges: 0,
+          },
+        };
+      }
+
+      const provider = await createClearinghouseProvider(config as unknown as ClearinghouseConfigData);
+      const results: Array<{
+        claimId: string;
+        claimNumber: string | null;
+        success: boolean;
+        previousStatus: string | null;
+        newStatus: string | null;
+        statusChanged: boolean;
+        statusDescription: string | null;
+        error?: string;
+        financial?: {
+          totalPaid?: number;
+          checkNumber?: string;
+          paymentDate?: Date;
+        };
+      }> = [];
+
+      let statusChanges = 0;
+
+      for (const claim of claimsToPoll) {
+        try {
+          // Build status request
+          const statusRequest: ClaimStatusRequest = {
+            clearinghouseConfigId: configId,
+            claimId: claim.id,
+            claimNumber: claim.claimNumber || undefined,
+            payerClaimNumber: claim.payerClaimNumber || undefined,
+            patient: {
+              firstName: claim.patient.demographics?.firstName || '',
+              lastName: claim.patient.demographics?.lastName || '',
+              dateOfBirth: claim.patient.demographics?.dateOfBirth || new Date(),
+              memberId: claim.insurancePolicy?.subscriberId || undefined,
+            },
+            payer: {
+              payerId: claim.payer?.payerId || '',
+              payerName: claim.payer?.name || '',
+            },
+            serviceDateFrom: claim.claimLines[0]?.serviceDateFrom,
+            serviceDateTo: claim.claimLines[claim.claimLines.length - 1]?.serviceDateTo,
+          };
+
+          const response = await provider.checkClaimStatus(statusRequest);
+
+          // Get previous status check for comparison
+          const lastCheck = await ctx.prisma.claimStatusCheck.findFirst({
+            where: { claimId: claim.id },
+            orderBy: { checkDate: 'desc' },
+          });
+
+          const previousStatus = lastCheck?.claimStatus || null;
+          const newStatus = response.claimStatus.categoryCode;
+          const statusChanged = previousStatus !== newStatus;
+
+          // Create status check record
+          await ctx.prisma.claimStatusCheck.create({
+            data: {
+              claimId: claim.id,
+              organizationId: ctx.user.organizationId,
+              clearinghouseConfigId: configId,
+              status: 'ACCEPTED',
+              responseDate: new Date(),
+              claimStatus: newStatus,
+              statusCode: response.claimStatus.statusCode,
+              statusDescription: response.claimStatus.statusDescription,
+              payerClaimNumber: response.payerClaimNumber,
+              traceNumber: response.traceNumber,
+              totalPaid: response.financial?.totalPaid,
+              totalCharged: response.financial?.totalCharged,
+              checkNumber: response.financial?.checkNumber,
+              adjudicationDate: response.financial?.adjudicationDate,
+              paymentDate: response.financial?.paymentDate,
+              responseJson: response as unknown as object,
+            },
+          });
+
+          // If status changed, create a claim note
+          if (statusChanged) {
+            statusChanges++;
+            const categoryDesc = CLAIM_STATUS_CATEGORY[newStatus as keyof typeof CLAIM_STATUS_CATEGORY] || newStatus;
+
+            await ctx.prisma.claimNote.create({
+              data: {
+                claimId: claim.id,
+                noteType: 'status_change',
+                note: `Status changed from ${previousStatus || 'Unknown'} to ${newStatus}: ${categoryDesc}${response.claimStatus.statusDescription ? ` - ${response.claimStatus.statusDescription}` : ''}`,
+                userId: ctx.user.id,
+              },
+            });
+
+            // Update claim with payer claim number if provided
+            if (response.payerClaimNumber && !claim.payerClaimNumber) {
+              await ctx.prisma.claim.update({
+                where: { id: claim.id },
+                data: { payerClaimNumber: response.payerClaimNumber },
+              });
+            }
+
+            // Update claim status for finalized statuses
+            if (newStatus.startsWith('F0')) {
+              // Finalized/Payment
+              await ctx.prisma.claim.update({
+                where: { id: claim.id },
+                data: {
+                  status: ClaimStatus.PAID,
+                  paidDate: response.financial?.paymentDate || new Date(),
+                  totalPaid: response.financial?.totalPaid || claim.totalPaid,
+                },
+              });
+            } else if (newStatus.startsWith('F1')) {
+              // Finalized/Denial
+              await ctx.prisma.claim.update({
+                where: { id: claim.id },
+                data: {
+                  status: ClaimStatus.DENIED,
+                  statusMessage: response.claimStatus.statusDescription,
+                },
+              });
+            } else if (newStatus.startsWith('A2') || newStatus.startsWith('A7')) {
+              // Accepted into adjudication
+              await ctx.prisma.claim.update({
+                where: { id: claim.id },
+                data: {
+                  status: ClaimStatus.ACCEPTED,
+                  acceptedDate: new Date(),
+                },
+              });
+            } else if (newStatus.startsWith('A3') || newStatus.startsWith('A6')) {
+              // Rejected
+              await ctx.prisma.claim.update({
+                where: { id: claim.id },
+                data: {
+                  status: ClaimStatus.REJECTED,
+                  statusMessage: response.claimStatus.statusDescription,
+                },
+              });
+            }
+          }
+
+          results.push({
+            claimId: claim.id,
+            claimNumber: claim.claimNumber,
+            success: true,
+            previousStatus,
+            newStatus,
+            statusChanged,
+            statusDescription: response.claimStatus.statusDescription || null,
+            financial: response.financial ? {
+              totalPaid: response.financial.totalPaid,
+              checkNumber: response.financial.checkNumber,
+              paymentDate: response.financial.paymentDate,
+            } : undefined,
+          });
+        } catch (error) {
+          results.push({
+            claimId: claim.id,
+            claimNumber: claim.claimNumber,
+            success: false,
+            previousStatus: null,
+            newStatus: null,
+            statusChanged: false,
+            statusDescription: null,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+        }
+      }
+
+      await auditLog('CLAIM_STATUS_POLL', 'Claim', {
+        entityId: 'batch',
+        changes: {
+          totalPolled: claimsToPoll.length,
+          successful: results.filter(r => r.success).length,
+          statusChanges,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        success: true,
+        message: `Polled ${claimsToPoll.length} claims`,
+        results,
+        summary: {
+          total: claimsToPoll.length,
+          successful: results.filter(r => r.success).length,
+          failed: results.filter(r => !r.success).length,
+          statusChanges,
+        },
+      };
+    }),
+
+  // Get claims needing status check
+  getClaimsNeedingStatusCheck: protectedProcedure
+    .input(
+      z.object({
+        minHoursSinceLastCheck: z.number().min(1).default(24),
+        limit: z.number().min(1).max(100).default(50),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { minHoursSinceLastCheck, limit } = input;
+      const cutoffDate = new Date(Date.now() - minHoursSinceLastCheck * 60 * 60 * 1000);
+
+      // Get submitted claims that haven't been checked recently
+      const claims = await ctx.prisma.claim.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: { in: [ClaimStatus.SUBMITTED, ClaimStatus.ACCEPTED] },
+          OR: [
+            // No status checks at all
+            { statusChecks: { none: {} } },
+            // Last check was before cutoff
+            {
+              statusChecks: {
+                every: { checkDate: { lt: cutoffDate } },
+              },
+            },
+          ],
+        },
+        include: {
+          patient: {
+            include: { demographics: { select: { firstName: true, lastName: true } } },
+          },
+          payer: { select: { name: true } },
+          statusChecks: {
+            orderBy: { checkDate: 'desc' },
+            take: 1,
+          },
+        },
+        orderBy: { submittedDate: 'asc' },
+        take: limit,
+      });
+
+      return {
+        claims: claims.map(claim => ({
+          id: claim.id,
+          claimNumber: claim.claimNumber,
+          status: claim.status,
+          submittedDate: claim.submittedDate,
+          patientName: claim.patient.demographics
+            ? `${claim.patient.demographics.firstName} ${claim.patient.demographics.lastName}`
+            : 'Unknown',
+          payerName: claim.payer?.name || 'Unknown',
+          lastCheckDate: claim.statusChecks[0]?.checkDate || null,
+          lastCheckStatus: claim.statusChecks[0]?.claimStatus || null,
+          daysSinceSubmission: claim.submittedDate
+            ? Math.floor((Date.now() - claim.submittedDate.getTime()) / (1000 * 60 * 60 * 24))
+            : null,
+        })),
+        total: claims.length,
+        cutoffDate,
+      };
+    }),
+
+  // Get denial reason codes with descriptions
+  getDenialReasonCodes: protectedProcedure
+    .input(
+      z.object({
+        codes: z.array(z.string()).optional(),
+        category: z.string().optional(),
+      })
+    )
+    .query(({ input }) => {
+      const { codes, category } = input;
+
+      let filteredCodes = Object.entries(CARC_CODES);
+
+      if (codes && codes.length > 0) {
+        filteredCodes = filteredCodes.filter(([code]) => codes.includes(code));
+      }
+
+      if (category) {
+        const categoryKey = category as keyof typeof CAS_GROUP_CODES;
+        // Filter by category prefix (e.g., CO codes are contractual)
+        if (category === 'Contractual Obligations') {
+          filteredCodes = filteredCodes.filter(([code]) =>
+            code.startsWith('45') || code.startsWith('42') || code.startsWith('237')
+          );
+        } else if (category === 'Patient Responsibility') {
+          filteredCodes = filteredCodes.filter(([code]) =>
+            code.startsWith('1') || code.startsWith('2') || code.startsWith('3')
+          );
+        }
+      }
+
+      return {
+        codes: filteredCodes.map(([code, description]) => ({
+          code,
+          description,
+          category: getReasonCodeCategory(code),
+        })),
+        groupCodes: CAS_GROUP_CODES,
+        total: filteredCodes.length,
+      };
+    }),
+
+  // Get claim status history
+  getClaimStatusHistory: protectedProcedure
+    .input(
+      z.object({
+        claimId: z.string(),
+        limit: z.number().min(1).max(100).default(50),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { claimId, limit } = input;
+
+      // Verify claim belongs to organization
+      const claim = await ctx.prisma.claim.findFirst({
+        where: { id: claimId, organizationId: ctx.user.organizationId },
+        select: { id: true, claimNumber: true, status: true },
+      });
+
+      if (!claim) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Claim not found' });
+      }
+
+      // Get status checks
+      const statusChecks = await ctx.prisma.claimStatusCheck.findMany({
+        where: { claimId },
+        orderBy: { checkDate: 'desc' },
+        take: limit,
+        include: {
+          clearinghouseConfig: { select: { name: true } },
+        },
+      });
+
+      return {
+        claimId,
+        claimNumber: claim.claimNumber,
+        currentStatus: claim.status,
+        checks: statusChecks.map(check => ({
+          id: check.id,
+          checkDate: check.checkDate,
+          responseDate: check.responseDate,
+          claimStatus: check.claimStatus,
+          statusCode: check.statusCode,
+          statusDescription: check.statusDescription,
+          categoryDescription: check.claimStatus
+            ? CLAIM_STATUS_CATEGORY[check.claimStatus as keyof typeof CLAIM_STATUS_CATEGORY] || check.claimStatus
+            : null,
+          payerClaimNumber: check.payerClaimNumber,
+          totalPaid: check.totalPaid ? Number(check.totalPaid) : null,
+          totalCharged: check.totalCharged ? Number(check.totalCharged) : null,
+          checkNumber: check.checkNumber,
+          paymentDate: check.paymentDate,
+          clearinghouseName: check.clearinghouseConfig?.name,
+        })),
+        totalChecks: statusChecks.length,
       };
     }),
 });
