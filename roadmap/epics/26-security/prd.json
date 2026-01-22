@@ -19,7 +19,7 @@
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-257",
@@ -36,7 +36,7 @@
         "Remember device option"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-258",
@@ -52,7 +52,7 @@
         "Audit access to encrypted fields"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-259",
@@ -68,7 +68,7 @@
         "Device fingerprinting"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-260",
@@ -84,7 +84,7 @@
         "Security event dashboard"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-261",
@@ -100,7 +100,7 @@
         "BAA compliance dashboard"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-262",
@@ -116,7 +116,7 @@
         "Access request workflow"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-263",
@@ -133,7 +133,7 @@
         "Security reports"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }
