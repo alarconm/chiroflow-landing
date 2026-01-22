@@ -468,3 +468,115 @@ Story: US-219 - Video consultation interface
 --- Iteration 5 completed at 2026-01-22 ---
 Story: US-220 - Telehealth documentation
 
+--- Iteration 5 completed at 2026-01-22 02:23:20 ---
+Story: US-220 - Telehealth documentation
+
+## US-221: Telehealth consent management
+**Status:** COMPLETED
+**Date:** 2026-01-22
+
+### What was implemented:
+
+1. **telehealth.sendConsent tRPC procedure**:
+   - Sends consent form request to patient
+   - Creates pending consent record
+   - Supports resending existing pending consents
+   - Custom expiration days (1-730, default 365)
+   - Optional notification flag
+   - Custom consent text override support
+
+2. **telehealth.checkConsent tRPC procedure**:
+   - Checks consent status for a patient
+   - Supports multiple consent types in single query
+   - Returns detailed validity information per consent type
+   - Calculates days until expiration
+   - Determines if renewal is needed (within 30 days)
+   - Checks state-specific requirements
+   - Returns actionable recommendations
+
+3. **telehealth.signConsent tRPC procedure**:
+   - Digital signature capture support
+   - Supports typed and drawn signatures
+   - Base64 encoded signature data storage
+   - Acknowledgment verification required
+   - IP address tracking for audit
+   - Full audit trail with metadata
+
+4. **telehealth.getConsentDetails tRPC procedure**:
+   - Returns full consent text and details
+   - Marks consent as viewed (for audit)
+   - Includes patient information
+   - Secure - doesn't expose raw signature data
+
+5. **telehealth.renewConsent tRPC procedure**:
+   - Creates new consent based on expired one
+   - Preserves old consent for audit trail
+   - Marks old consent as EXPIRED
+   - Configurable new expiration period
+
+6. **telehealth.revokeConsent tRPC procedure**:
+   - Allows consent revocation
+   - Requires revocation reason
+   - Full audit trail
+
+7. **telehealth.listPatientConsents tRPC procedure**:
+   - Lists all consents for a patient
+   - Filter by status
+   - Option to include/exclude expired
+   - Returns summary information
+
+8. **telehealth.validateSessionConsent tRPC procedure**:
+   - Validates consent before telehealth session
+   - Checks all required consent types
+   - Returns can/cannot proceed with reason
+   - Used to block sessions without valid consent
+
+9. **telehealth.getStateRequirements tRPC procedure**:
+   - Returns state-specific telehealth requirements
+   - Includes consent requirements list
+   - Includes restrictions
+   - Notes about state regulations
+
+10. **Helper functions**:
+    - getDefaultConsentText() - Returns standard consent text by type
+    - getStateSpecificConsentText() - Returns state-specific addendum
+    - getStateSpecificRequirements() - Returns state telehealth regulations
+    - getConsentRecommendations() - Returns actionable recommendations
+
+11. **TelehealthConsentForm component** (`app/src/components/telehealth/TelehealthConsentForm.tsx`):
+    - Consent status overview with cards showing validity
+    - State-specific requirements display
+    - Send consent request form
+    - Consent history table with actions
+    - Sign consent dialog with typed/drawn signature capture
+    - Canvas-based signature drawing
+    - View consent text dialog
+    - Renew and revoke actions
+    - Real-time validation feedback
+    - Session blocking alerts when consent invalid
+
+### Files created:
+- `app/src/components/telehealth/TelehealthConsentForm.tsx` - Full consent management UI
+
+### Files modified:
+- `app/src/server/routers/telehealth.ts` - Added 9 new consent procedures + helper functions
+- `app/src/components/telehealth/index.ts` - Added TelehealthConsentForm export
+
+### Acceptance criteria met:
+- [x] telehealth.sendConsent - Send consent form to patient
+- [x] telehealth.checkConsent - Verify consent status
+- [x] Digital signature capture (typed and drawn)
+- [x] Consent expiration and renewal
+- [x] State-specific consent requirements (CA, TX, NY, FL with defaults for others)
+- [x] Store consent with audit trail (full metadata logging)
+- [x] Block session without valid consent (validateSessionConsent)
+
+### Validation:
+- TypeScript compilation passes
+- All tRPC procedures follow existing patterns
+- UI components use shadcn/ui
+- Audit logging for compliance
+
+--- Iteration 6 completed at 2026-01-22 ---
+Story: US-221 - Telehealth consent management
+

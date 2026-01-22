@@ -100,7 +100,7 @@
         "Block session without valid consent"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-222",
