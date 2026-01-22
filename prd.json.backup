@@ -1,139 +1,143 @@
 {
-  "branch": "feature/ai-receptionist",
-  "title": "Epic 30: AI Receptionist Agent",
-  "description": "Autonomous AI receptionist that handles phone calls, schedules appointments, answers patient questions, and manages the front desk workflow 24/7. Reduces staff burden and ensures no call goes unanswered.",
-  "epic": "30-ai-receptionist",
-  "dependencies": ["03-patient-scheduling", "11-patient-communication"],
+  "branch": "feature/ai-billing-agent",
+  "title": "Epic 31: AI Billing Agent",
+  "description": "Autonomous AI agent that handles the entire billing cycle - claim submission, denial management, appeals, follow-ups, and payment posting. Works 24/7 to maximize revenue and minimize AR days.",
+  "epic": "31-ai-billing-agent",
+  "dependencies": ["07-billing-claims", "08-clearinghouse"],
   "userStories": [
     {
-      "id": "US-300",
-      "title": "AI receptionist schema",
-      "description": "Create database models for AI receptionist conversations and actions.",
+      "id": "US-308",
+      "title": "AI billing agent schema",
+      "description": "Create database models for AI billing agent activities.",
       "acceptanceCriteria": [
-        "AIConversation model with patientId, channel (phone/chat/sms), transcript, status",
-        "AIAction model with conversationId, actionType, parameters, result, confidence",
-        "AIEscalation model with conversationId, reason, assignedTo, resolvedAt",
-        "AIKnowledgeBase model for FAQ and practice information",
-        "AIVoiceConfig model with voice settings, greeting, hold music",
-        "ConversationChannel enum (Phone, Chat, SMS, Email)",
+        "AIBillingTask model with type, claimId, status, attempts, result",
+        "AIBillingDecision model with taskId, decision, reasoning, confidence",
+        "AIAppeal model with claimId, appealText, attachments, submittedDate",
+        "AIBillingRule model for configurable billing logic",
+        "AIBillingMetric model for tracking agent performance",
+        "BillingTaskType enum (Submit, FollowUp, Appeal, Correct, Post)",
         "Prisma migrations run successfully"
       ],
       "priority": 1,
       "passes": true
     },
     {
-      "id": "US-301",
-      "title": "Voice AI integration",
-      "description": "Integrate with voice AI platform for phone call handling.",
+      "id": "US-308",
+      "title": "Autonomous claim submission",
+      "description": "AI agent that automatically submits clean claims.",
       "acceptanceCriteria": [
-        "Twilio Voice + OpenAI Realtime API integration",
-        "Natural voice synthesis with configurable voice",
-        "Real-time speech-to-text transcription",
-        "Low-latency conversational responses",
-        "Call transfer to human when needed",
-        "Call recording with consent",
-        "After-hours automated handling"
+        "aiBilling.submitClaims - Auto-submit ready claims",
+        "Pre-submission validation and scrubbing",
+        "Auto-correct common errors",
+        "Optimize code selection for reimbursement",
+        "Batch submission scheduling",
+        "Track submission success rate",
+        "Alert on submission failures",
+        "Configurable auto-submit rules"
       ],
       "priority": 2,
       "passes": true
     },
     {
-      "id": "US-302",
-      "title": "Appointment scheduling agent",
-      "description": "AI agent that books, reschedules, and cancels appointments.",
+      "id": "US-309",
+      "title": "Denial analysis and routing",
+      "description": "AI analysis of claim denials with intelligent routing.",
       "acceptanceCriteria": [
-        "aiReceptionist.bookAppointment - Book from conversation",
-        "Understand natural language scheduling requests",
-        "Check provider availability in real-time",
-        "Offer alternative times if preferred unavailable",
-        "Collect patient information for new patients",
-        "Confirm insurance information",
-        "Send confirmation via patient's preferred method",
-        "Handle rescheduling and cancellation requests"
+        "aiBilling.analyzeDenial - Analyze denial reason",
+        "Categorize denial type (coding, eligibility, authorization)",
+        "Determine if correctable or needs appeal",
+        "Route to appropriate workflow",
+        "Learn from denial patterns",
+        "Suggest prevention strategies",
+        "Provider-level denial trending"
       ],
       "priority": 3,
       "passes": true
     },
     {
-      "id": "US-303",
-      "title": "FAQ and information agent",
-      "description": "AI agent that answers common patient questions.",
+      "id": "US-310",
+      "title": "Automated appeal generation",
+      "description": "AI generates appeal letters for denied claims.",
       "acceptanceCriteria": [
-        "aiReceptionist.answerQuestion - Answer from knowledge base",
-        "Practice hours, location, parking information",
-        "Insurance and payment questions",
-        "Service and treatment questions",
-        "Appointment preparation instructions",
-        "New patient process explanation",
-        "Provider background and specialties",
-        "Escalate unknown questions to staff"
+        "aiBilling.generateAppeal - Create appeal letter",
+        "Payer-specific appeal templates",
+        "Medical necessity arguments",
+        "Supporting documentation selection",
+        "Clinical rationale from notes",
+        "Compliance with appeal deadlines",
+        "Track appeal success rates",
+        "Learn from successful appeals"
       ],
       "priority": 4,
       "passes": true
     },
     {
-      "id": "US-304",
-      "title": "Patient identification",
-      "description": "Identify callers and retrieve their information.",
+      "id": "US-311",
+      "title": "Claim follow-up automation",
+      "description": "AI agent that follows up on pending claims.",
       "acceptanceCriteria": [
-        "Caller ID lookup for existing patients",
-        "Voice verification option",
-        "DOB/name verification for security",
-        "Create new patient record during call",
-        "Link conversation to patient record",
-        "Handle family members calling",
-        "Privacy-compliant identification"
+        "aiBilling.followUp - Check claim status",
+        "Automated status checks on schedule",
+        "Identify stalled claims",
+        "Determine follow-up action needed",
+        "Generate follow-up tasks for staff",
+        "Track days in AR",
+        "Escalate aged claims",
+        "Payer response time analysis"
       ],
       "priority": 5,
       "passes": true
     },
     {
-      "id": "US-305",
-      "title": "Smart escalation",
-      "description": "Intelligently escalate to human staff when needed.",
+      "id": "US-312",
+      "title": "Smart payment posting",
+      "description": "AI-assisted ERA processing and payment posting.",
       "acceptanceCriteria": [
-        "aiReceptionist.escalate - Transfer to human",
-        "Detect frustration or urgency",
-        "Clinical questions trigger escalation",
-        "Billing disputes trigger escalation",
-        "Patient request for human triggers immediate transfer",
-        "Context handoff to human staff",
-        "Escalation metrics tracking"
+        "aiBilling.processERA - Auto-post from ERA",
+        "Match payments to claims intelligently",
+        "Handle partial payments and adjustments",
+        "Identify posting discrepancies",
+        "Flag unusual adjustments for review",
+        "Secondary claim triggering",
+        "Patient responsibility calculation",
+        "Balance forward automation"
       ],
       "priority": 6,
       "passes": true
     },
     {
-      "id": "US-306",
-      "title": "Multi-channel support",
-      "description": "Handle conversations across phone, chat, and SMS.",
+      "id": "US-313",
+      "title": "Billing optimization recommendations",
+      "description": "AI provides recommendations to optimize billing.",
       "acceptanceCriteria": [
-        "Unified conversation handling across channels",
-        "Website chat widget integration",
-        "SMS conversation support",
-        "Consistent responses across channels",
-        "Channel preference learning",
-        "Conversation handoff between channels",
-        "Multi-language support"
+        "aiBilling.getRecommendations - Get optimization suggestions",
+        "Identify undercoding opportunities",
+        "Suggest modifier additions",
+        "Flag documentation gaps",
+        "Payer mix optimization",
+        "Fee schedule analysis",
+        "Contract negotiation insights",
+        "Revenue leakage identification"
       ],
       "priority": 7,
       "passes": true
     },
     {
-      "id": "US-307",
-      "title": "AI receptionist dashboard",
-      "description": "Dashboard for monitoring and configuring AI receptionist.",
+      "id": "US-314",
+      "title": "AI billing agent dashboard",
+      "description": "Dashboard for monitoring AI billing agent activities.",
       "acceptanceCriteria": [
-        "Live conversation monitoring",
-        "Conversation history and transcripts",
-        "Escalation queue management",
-        "Performance metrics (calls handled, resolution rate)",
-        "Knowledge base management",
-        "Voice and greeting configuration",
-        "Business hours and routing rules"
+        "Agent activity feed",
+        "Claims processed metrics",
+        "Denial and appeal tracking",
+        "Revenue impact visualization",
+        "Pending tasks queue",
+        "Configuration and rules",
+        "Performance comparison to manual",
+        "ROI calculator"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }

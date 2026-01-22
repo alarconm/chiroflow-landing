@@ -18,7 +18,7 @@
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-316",
@@ -35,7 +35,7 @@
         "Transcript editing capability"
       ],
       "priority": 2,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-317",
@@ -52,7 +52,7 @@
         "Editable draft for provider review"
       ],
       "priority": 3,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-318",
@@ -69,7 +69,7 @@
         "Flag potential upcoding/downcoding"
       ],
       "priority": 4,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-319",
@@ -86,7 +86,7 @@
         "Pre-billing compliance gate"
       ],
       "priority": 5,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-320",

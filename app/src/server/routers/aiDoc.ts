@@ -2085,6 +2085,617 @@ export const aiDocRouter = router({
 
       return updated;
     }),
+
+  // ============================================
+  // US-319: Compliance checking
+  // ============================================
+
+  /**
+   * Check SOAP note compliance for an encounter
+   * Main entry point for compliance validation
+   */
+  checkCompliance: providerProcedure
+    .input(
+      z.object({
+        encounterId: z.string(),
+        draftNoteId: z.string().optional(),
+        payerType: z.string().optional(), // MEDICARE, BLUE_CROSS, UNITED, AETNA, WORKERS_COMP, AUTO_PIP
+        includePayerSpecific: z.boolean().default(true),
+        preBillingGate: z.boolean().default(false), // If true, block billing on critical issues
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { encounterId, draftNoteId, payerType, includePayerSpecific, preBillingGate } = input;
+      const startTime = Date.now();
+
+      // Get encounter with SOAP note
+      const encounter = await ctx.prisma.encounter.findFirst({
+        where: {
+          id: encounterId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          patient: {
+            include: {
+              demographics: true,
+              insuranceInfo: true,
+            },
+          },
+          provider: true,
+          soapNote: true,
+          aiCodeSuggestions: {
+            where: { status: { in: ['ACCEPTED', 'MODIFIED'] } },
+          },
+        },
+      });
+
+      if (!encounter) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Encounter not found',
+        });
+      }
+
+      // Get SOAP content
+      let soapContent: { subjective?: string | null; objective?: string | null; assessment?: string | null; plan?: string | null } = {};
+      if (draftNoteId) {
+        const draftNote = await ctx.prisma.aIDraftNote.findFirst({
+          where: {
+            id: draftNoteId,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+        if (draftNote) {
+          soapContent = {
+            subjective: draftNote.subjective,
+            objective: draftNote.objective,
+            assessment: draftNote.assessment,
+            plan: draftNote.plan,
+          };
+        }
+      } else if (encounter.soapNote) {
+        soapContent = {
+          subjective: encounter.soapNote.subjective,
+          objective: encounter.soapNote.objective,
+          assessment: encounter.soapNote.assessment,
+          plan: encounter.soapNote.plan,
+        };
+      }
+
+      if (!soapContent.subjective && !soapContent.objective && !soapContent.assessment && !soapContent.plan) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'No SOAP note found for this encounter',
+        });
+      }
+
+      // Run compliance checks
+      const issues: ComplianceIssue[] = [];
+      let auditRiskScore = 0;
+
+      // 1. Check for missing required elements
+      const encounterType = encounter.encounterType || 'FOLLOW_UP';
+      const requiredElements = REQUIRED_ELEMENTS[encounterType] || REQUIRED_ELEMENTS.FOLLOW_UP;
+
+      const missingElements = checkRequiredElements(soapContent, requiredElements, encounterType);
+      issues.push(...missingElements);
+      auditRiskScore += missingElements.filter(i => i.severity === 'ERROR').length * AUDIT_RISK_FACTORS.missingElements;
+
+      // 2. Check medical necessity documentation
+      const medicalNecessityIssues = checkMedicalNecessity(soapContent, encounter.encounterType);
+      issues.push(...medicalNecessityIssues);
+      if (medicalNecessityIssues.some(i => i.severity === 'ERROR' || i.severity === 'CRITICAL')) {
+        auditRiskScore += AUDIT_RISK_FACTORS.insufficientMedicalNecessity;
+      }
+
+      // 3. Check payer-specific requirements
+      if (includePayerSpecific && payerType) {
+        const payerIssues = checkPayerRequirements(soapContent, payerType);
+        issues.push(...payerIssues);
+        auditRiskScore += payerIssues.filter(i => i.severity === 'CRITICAL').length * 10;
+      }
+
+      // 4. Check for cloned/duplicate note indicators
+      const clonedNoteIssues = await checkForClonedNote(ctx.prisma, encounter, soapContent);
+      issues.push(...clonedNoteIssues);
+      if (clonedNoteIssues.length > 0) {
+        auditRiskScore += AUDIT_RISK_FACTORS.clonedNote;
+      }
+
+      // 5. Check documentation supports billing codes
+      const codeIssues = checkCodeDocumentation(soapContent, encounter.aiCodeSuggestions);
+      issues.push(...codeIssues);
+      if (codeIssues.some(i => i.severity === 'ERROR')) {
+        auditRiskScore += AUDIT_RISK_FACTORS.highCodeComplexity;
+      }
+
+      // 6. Call AI service for additional compliance check
+      const aiComplianceResult = await aiService.checkDocumentationCompliance(
+        {
+          subjective: soapContent.subjective || undefined,
+          objective: soapContent.objective || undefined,
+          assessment: soapContent.assessment || undefined,
+          plan: soapContent.plan || undefined,
+        },
+        encounterType
+      );
+
+      // Convert AI issues to our format
+      for (const aiIssue of aiComplianceResult.issues) {
+        issues.push({
+          issueType: 'AI_DETECTED',
+          severity: mapAISeverity(aiIssue.severity),
+          title: aiIssue.message.substring(0, 100),
+          description: aiIssue.message,
+          soapSection: aiIssue.section || undefined,
+          suggestion: aiIssue.suggestion,
+          autoFixable: false,
+        });
+      }
+
+      const processingTime = Date.now() - startTime;
+
+      // Calculate overall compliance score
+      const complianceScore = calculateComplianceScore(issues);
+
+      // Determine if billing should be blocked (pre-billing gate)
+      const hasCriticalIssues = issues.some(i => i.severity === 'CRITICAL');
+      const hasErrors = issues.some(i => i.severity === 'ERROR');
+      const billingBlocked = preBillingGate && (hasCriticalIssues || (hasErrors && auditRiskScore > 50));
+
+      // Store compliance checks in database
+      const createdChecks = [];
+      for (const issue of issues) {
+        const check = await ctx.prisma.aIComplianceCheck.create({
+          data: {
+            encounterId,
+            organizationId: ctx.user.organizationId,
+            noteId: encounter.soapNote?.id || null,
+            issueType: issue.issueType,
+            severity: issue.severity,
+            title: issue.title,
+            description: issue.description,
+            soapSection: issue.soapSection,
+            fieldPath: issue.fieldPath,
+            requirementSource: issue.requirementSource,
+            requirementCode: issue.requirementCode,
+            payerSpecific: issue.payerSpecific,
+            suggestion: issue.suggestion,
+            exampleFix: issue.exampleFix,
+            autoFixable: issue.autoFixable,
+            suggestedText: issue.suggestedText,
+            auditRiskImpact: issue.auditRiskImpact,
+            denialRisk: issue.denialRisk,
+            aiModelUsed: aiService.getProviderName(),
+            processingTimeMs: processingTime,
+          },
+        });
+        createdChecks.push(check);
+      }
+
+      // Log the action
+      await auditLog('AI_COMPLIANCE_CHECK', 'AIComplianceCheck', {
+        entityId: encounterId,
+        changes: {
+          issueCount: issues.length,
+          criticalCount: issues.filter(i => i.severity === 'CRITICAL').length,
+          errorCount: issues.filter(i => i.severity === 'ERROR').length,
+          warningCount: issues.filter(i => i.severity === 'WARNING').length,
+          complianceScore,
+          auditRiskScore,
+          billingBlocked,
+          processingTimeMs: processingTime,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        encounterId,
+        complianceScore,
+        auditRiskScore: Math.min(auditRiskScore, 100),
+        issues: issues.map((issue, index) => ({
+          id: createdChecks[index]?.id,
+          ...issue,
+        })),
+        summary: {
+          total: issues.length,
+          critical: issues.filter(i => i.severity === 'CRITICAL').length,
+          errors: issues.filter(i => i.severity === 'ERROR').length,
+          warnings: issues.filter(i => i.severity === 'WARNING').length,
+          info: issues.filter(i => i.severity === 'INFO').length,
+        },
+        billingBlocked,
+        billingBlockReason: billingBlocked
+          ? hasCriticalIssues
+            ? 'Critical compliance issues must be resolved before billing'
+            : 'High audit risk - review errors before billing'
+          : null,
+        processingTimeMs: processingTime,
+      };
+    }),
+
+  /**
+   * Get compliance issues for an encounter
+   */
+  getComplianceIssues: providerProcedure
+    .input(
+      z.object({
+        encounterId: z.string(),
+        noteId: z.string().optional(),
+        resolved: z.boolean().optional(),
+        severity: z.enum(['INFO', 'WARNING', 'ERROR', 'CRITICAL']).optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const issues = await ctx.prisma.aIComplianceCheck.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          ...(input.encounterId ? { encounterId: input.encounterId } : {}),
+          ...(input.noteId ? { noteId: input.noteId } : {}),
+          ...(input.resolved !== undefined ? { resolved: input.resolved } : {}),
+          ...(input.severity ? { severity: input.severity } : {}),
+        },
+        orderBy: [
+          { severity: 'desc' }, // CRITICAL first
+          { createdAt: 'desc' },
+        ],
+      });
+
+      return issues;
+    }),
+
+  /**
+   * Resolve a compliance issue
+   */
+  resolveComplianceIssue: providerProcedure
+    .input(
+      z.object({
+        issueId: z.string(),
+        resolution: z.string(),
+        dismiss: z.boolean().default(false), // Dismiss without fixing
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { issueId, resolution, dismiss } = input;
+
+      const issue = await ctx.prisma.aIComplianceCheck.findFirst({
+        where: {
+          id: issueId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!issue) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Compliance issue not found',
+        });
+      }
+
+      const updated = await ctx.prisma.aIComplianceCheck.update({
+        where: { id: issueId },
+        data: {
+          resolved: true,
+          resolvedAt: new Date(),
+          resolvedBy: ctx.user.id,
+          resolution,
+          wasDismissed: dismiss,
+        },
+      });
+
+      await auditLog('AI_COMPLIANCE_RESOLVE', 'AIComplianceCheck', {
+        entityId: issueId,
+        changes: {
+          resolution,
+          wasDismissed: dismiss,
+          severity: issue.severity,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return updated;
+    }),
+
+  /**
+   * Apply auto-fix suggestion for a compliance issue
+   */
+  applyComplianceFix: providerProcedure
+    .input(
+      z.object({
+        issueId: z.string(),
+        applyToSection: z.enum(['subjective', 'objective', 'assessment', 'plan']),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { issueId, applyToSection } = input;
+
+      const issue = await ctx.prisma.aIComplianceCheck.findFirst({
+        where: {
+          id: issueId,
+          organizationId: ctx.user.organizationId,
+          autoFixable: true,
+        },
+        include: {
+          encounter: {
+            include: { soapNote: true },
+          },
+        },
+      });
+
+      if (!issue) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Auto-fixable compliance issue not found',
+        });
+      }
+
+      if (!issue.suggestedText) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'No suggested fix text available',
+        });
+      }
+
+      if (!issue.encounter?.soapNote) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'No SOAP note found to apply fix',
+        });
+      }
+
+      // Apply the fix to the appropriate section
+      const currentContent = issue.encounter.soapNote[applyToSection] || '';
+      const updatedContent = currentContent + '\n\n' + issue.suggestedText;
+
+      await ctx.prisma.sOAPNote.update({
+        where: { id: issue.encounter.soapNote.id },
+        data: {
+          [applyToSection]: updatedContent,
+        },
+      });
+
+      // Mark issue as resolved
+      await ctx.prisma.aIComplianceCheck.update({
+        where: { id: issueId },
+        data: {
+          resolved: true,
+          resolvedAt: new Date(),
+          resolvedBy: ctx.user.id,
+          resolution: 'Auto-fix applied',
+        },
+      });
+
+      await auditLog('AI_COMPLIANCE_AUTOFIX', 'AIComplianceCheck', {
+        entityId: issueId,
+        changes: {
+          section: applyToSection,
+          fixApplied: issue.suggestedText.substring(0, 100),
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { success: true, section: applyToSection };
+    }),
+
+  /**
+   * Check if encounter passes pre-billing compliance gate
+   */
+  checkPreBillingGate: providerProcedure
+    .input(z.object({ encounterId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const { encounterId } = input;
+
+      // Get unresolved compliance issues
+      const unresolvedIssues = await ctx.prisma.aIComplianceCheck.findMany({
+        where: {
+          encounterId,
+          organizationId: ctx.user.organizationId,
+          resolved: false,
+        },
+      });
+
+      const hasCritical = unresolvedIssues.some(i => i.severity === 'CRITICAL');
+      const errorCount = unresolvedIssues.filter(i => i.severity === 'ERROR').length;
+      const warningCount = unresolvedIssues.filter(i => i.severity === 'WARNING').length;
+
+      // Calculate risk score from unresolved issues
+      const auditRiskScore = unresolvedIssues.reduce((sum, issue) => {
+        return sum + (issue.auditRiskImpact || 0);
+      }, 0);
+
+      // Determine if billing should proceed
+      const canProceed = !hasCritical && errorCount === 0;
+      const requiresReview = errorCount > 0 || warningCount > 2 || auditRiskScore > 30;
+
+      return {
+        canProceed,
+        requiresReview,
+        blockedReason: hasCritical
+          ? 'Critical compliance issues must be resolved'
+          : errorCount > 0
+          ? 'Compliance errors should be addressed'
+          : null,
+        unresolvedCount: unresolvedIssues.length,
+        criticalCount: hasCritical ? unresolvedIssues.filter(i => i.severity === 'CRITICAL').length : 0,
+        errorCount,
+        warningCount,
+        auditRiskScore: Math.min(auditRiskScore, 100),
+      };
+    }),
+
+  /**
+   * Get compliance statistics for the organization
+   */
+  getComplianceStats: providerProcedure
+    .input(
+      z.object({
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+        providerId: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { startDate, endDate, providerId } = input;
+
+      const dateFilter = {
+        ...(startDate ? { createdAt: { gte: startDate } } : {}),
+        ...(endDate ? { createdAt: { lte: endDate } } : {}),
+      };
+
+      const encounterFilter = providerId
+        ? { encounter: { providerId } }
+        : {};
+
+      const [total, resolved, critical, errors, warnings, avgRisk] = await Promise.all([
+        ctx.prisma.aIComplianceCheck.count({
+          where: {
+            organizationId: ctx.user.organizationId,
+            ...dateFilter,
+            ...encounterFilter,
+          },
+        }),
+        ctx.prisma.aIComplianceCheck.count({
+          where: {
+            organizationId: ctx.user.organizationId,
+            resolved: true,
+            ...dateFilter,
+            ...encounterFilter,
+          },
+        }),
+        ctx.prisma.aIComplianceCheck.count({
+          where: {
+            organizationId: ctx.user.organizationId,
+            severity: 'CRITICAL',
+            ...dateFilter,
+            ...encounterFilter,
+          },
+        }),
+        ctx.prisma.aIComplianceCheck.count({
+          where: {
+            organizationId: ctx.user.organizationId,
+            severity: 'ERROR',
+            ...dateFilter,
+            ...encounterFilter,
+          },
+        }),
+        ctx.prisma.aIComplianceCheck.count({
+          where: {
+            organizationId: ctx.user.organizationId,
+            severity: 'WARNING',
+            ...dateFilter,
+            ...encounterFilter,
+          },
+        }),
+        ctx.prisma.aIComplianceCheck.aggregate({
+          where: {
+            organizationId: ctx.user.organizationId,
+            auditRiskImpact: { not: null },
+            ...dateFilter,
+            ...encounterFilter,
+          },
+          _avg: { auditRiskImpact: true },
+        }),
+      ]);
+
+      // Get most common issue types
+      const commonIssues = await ctx.prisma.aIComplianceCheck.groupBy({
+        by: ['issueType'],
+        where: {
+          organizationId: ctx.user.organizationId,
+          ...dateFilter,
+          ...encounterFilter,
+        },
+        _count: { issueType: true },
+        orderBy: { _count: { issueType: 'desc' } },
+        take: 5,
+      });
+
+      const resolutionRate = total > 0 ? ((resolved / total) * 100).toFixed(1) : '0';
+
+      return {
+        totalIssues: total,
+        resolvedIssues: resolved,
+        resolutionRate: `${resolutionRate}%`,
+        criticalCount: critical,
+        errorCount: errors,
+        warningCount: warnings,
+        averageAuditRisk: avgRisk._avg.auditRiskImpact || 0,
+        commonIssueTypes: commonIssues.map(ci => ({
+          type: ci.issueType,
+          count: ci._count.issueType,
+        })),
+      };
+    }),
+
+  /**
+   * Get compliance tips based on common issues
+   */
+  getComplianceTips: providerProcedure
+    .input(z.object({ encounterType: z.string().optional() }))
+    .query(async ({ ctx, input }) => {
+      const { encounterType } = input;
+
+      // Get recent compliance issues for this organization
+      const recentIssues = await ctx.prisma.aIComplianceCheck.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          createdAt: {
+            gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // Last 30 days
+          },
+          ...(encounterType
+            ? {
+                encounter: {
+                  encounterType,
+                },
+              }
+            : {}),
+        },
+        select: {
+          issueType: true,
+          suggestion: true,
+          severity: true,
+        },
+      });
+
+      // Aggregate and deduplicate tips
+      const tipMap = new Map<string, { count: number; suggestion: string; severity: string }>();
+      for (const issue of recentIssues) {
+        if (issue.suggestion) {
+          const existing = tipMap.get(issue.issueType);
+          if (existing) {
+            existing.count++;
+          } else {
+            tipMap.set(issue.issueType, {
+              count: 1,
+              suggestion: issue.suggestion,
+              severity: issue.severity,
+            });
+          }
+        }
+      }
+
+      // Sort by frequency and return top tips
+      const tips = Array.from(tipMap.entries())
+        .sort((a, b) => b[1].count - a[1].count)
+        .slice(0, 10)
+        .map(([issueType, data]) => ({
+          issueType,
+          frequency: data.count,
+          tip: data.suggestion,
+          severity: data.severity,
+        }));
+
+      // Add general tips based on encounter type
+      const generalTips = getGeneralComplianceTips(encounterType || 'FOLLOW_UP');
+
+      return {
+        organizationTips: tips,
+        generalTips,
+      };
+    }),
 });
 
 // ============================================
@@ -2568,4 +3179,631 @@ function applyProviderStyle(
   result.matchScore = totalPreferences > 0 ? appliedCount / totalPreferences : 0;
 
   return result;
+}
+
+// ============================================
+// Compliance Types and Constants
+// ============================================
+
+interface ComplianceIssue {
+  issueType: string;
+  severity: 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL';
+  title: string;
+  description: string;
+  soapSection?: string;
+  fieldPath?: string;
+  requirementSource?: string;
+  requirementCode?: string;
+  payerSpecific?: string;
+  suggestion?: string;
+  exampleFix?: string;
+  autoFixable: boolean;
+  suggestedText?: string;
+  auditRiskImpact?: number;
+  denialRisk?: number;
+}
+
+// Required elements by encounter type for chiropractic documentation
+const REQUIRED_ELEMENTS: Record<string, {
+  subjective: string[];
+  objective: string[];
+  assessment: string[];
+  plan: string[];
+}> = {
+  INITIAL_EVAL: {
+    subjective: ['chief complaint', 'history', 'duration', 'pain level', 'mechanism of injury'],
+    objective: ['examination findings', 'range of motion', 'palpation', 'neurological', 'orthopedic tests'],
+    assessment: ['diagnosis', 'prognosis', 'medical necessity'],
+    plan: ['treatment plan', 'frequency', 'duration', 'goals'],
+  },
+  FOLLOW_UP: {
+    subjective: ['progress', 'pain level', 'functional status'],
+    objective: ['examination findings', 'range of motion', 'palpation'],
+    assessment: ['response to treatment', 'modified assessment'],
+    plan: ['continued treatment', 'modifications', 'progress notes'],
+  },
+  RE_EVALUATION: {
+    subjective: ['progress since initial', 'current complaints', 'functional changes'],
+    objective: ['comparative findings', 'range of motion', 'outcome measures'],
+    assessment: ['progress assessment', 'continued necessity'],
+    plan: ['updated goals', 'revised plan', 'discharge criteria'],
+  },
+  DISCHARGE: {
+    subjective: ['final status', 'patient satisfaction', 'residual symptoms'],
+    objective: ['final examination', 'outcome measurements'],
+    assessment: ['treatment outcomes', 'goal achievement'],
+    plan: ['home exercise program', 'maintenance recommendations', 'follow-up'],
+  },
+};
+
+// Medical necessity keywords that should be present
+const MEDICAL_NECESSITY_KEYWORDS = [
+  'medical necessity',
+  'medically necessary',
+  'functional limitation',
+  'functional deficit',
+  'daily activities',
+  'activities of daily living',
+  'adl',
+  'work restriction',
+  'disability',
+  'impairment',
+  'pain prevents',
+  'unable to',
+  'difficulty with',
+  'limited in',
+  'improvement expected',
+  'prognosis',
+];
+
+// Payer-specific requirements
+const PAYER_REQUIREMENTS: Record<string, {
+  name: string;
+  requirements: {
+    element: string;
+    section: string;
+    description: string;
+    isCritical: boolean;
+  }[];
+}> = {
+  MEDICARE: {
+    name: 'Medicare',
+    requirements: [
+      { element: 'subluxation', section: 'assessment', description: 'Must document subluxation with specific level', isCritical: true },
+      { element: 'medical necessity', section: 'assessment', description: 'Must establish medical necessity for CMT', isCritical: true },
+      { element: 'functional improvement', section: 'objective', description: 'Must document functional improvement or plateau', isCritical: true },
+      { element: 'active treatment', section: 'plan', description: 'Must be active corrective treatment, not maintenance', isCritical: true },
+      { element: 'x-ray findings', section: 'objective', description: 'X-ray findings must support subluxation (if applicable)', isCritical: false },
+    ],
+  },
+  BLUE_CROSS: {
+    name: 'Blue Cross Blue Shield',
+    requirements: [
+      { element: 'diagnosis codes', section: 'assessment', description: 'Must include specific ICD-10 codes', isCritical: true },
+      { element: 'treatment goals', section: 'plan', description: 'Must include measurable treatment goals', isCritical: true },
+      { element: 'prior auth', section: 'plan', description: 'May require prior authorization after initial visits', isCritical: false },
+    ],
+  },
+  UNITED: {
+    name: 'United Healthcare',
+    requirements: [
+      { element: 'outcome measures', section: 'objective', description: 'Must include standardized outcome measures', isCritical: true },
+      { element: 'visit limits', section: 'plan', description: 'Document awareness of visit limits', isCritical: false },
+    ],
+  },
+  AETNA: {
+    name: 'Aetna',
+    requirements: [
+      { element: 'treatment frequency', section: 'plan', description: 'Must justify treatment frequency', isCritical: true },
+      { element: 'duration', section: 'plan', description: 'Must specify expected treatment duration', isCritical: true },
+    ],
+  },
+  WORKERS_COMP: {
+    name: 'Workers Compensation',
+    requirements: [
+      { element: 'mechanism of injury', section: 'subjective', description: 'Must document work-related mechanism of injury', isCritical: true },
+      { element: 'work status', section: 'plan', description: 'Must document work restrictions and return to work plan', isCritical: true },
+      { element: 'causation', section: 'assessment', description: 'Must establish causal relationship to work injury', isCritical: true },
+      { element: 'maximum medical improvement', section: 'assessment', description: 'Must address MMI if applicable', isCritical: false },
+    ],
+  },
+  AUTO_PIP: {
+    name: 'Auto/PIP Insurance',
+    requirements: [
+      { element: 'accident details', section: 'subjective', description: 'Must document accident mechanism and date', isCritical: true },
+      { element: 'causation', section: 'assessment', description: 'Must establish injuries are accident-related', isCritical: true },
+      { element: 'functional impact', section: 'objective', description: 'Must document functional limitations from accident', isCritical: true },
+    ],
+  },
+};
+
+// Audit risk factors
+const AUDIT_RISK_FACTORS = {
+  missingElements: 10,
+  vagueDiagnosis: 15,
+  insufficientMedicalNecessity: 20,
+  missingOutcomeMeasures: 10,
+  frequencyNotJustified: 15,
+  clonedNote: 25,
+  missingGoals: 10,
+  highCodeComplexity: 15,
+  missingSignature: 5,
+};
+
+// ============================================
+// Compliance Helper Functions
+// ============================================
+
+/**
+ * Check for required elements in SOAP note
+ */
+function checkRequiredElements(
+  soapContent: { subjective?: string | null; objective?: string | null; assessment?: string | null; plan?: string | null },
+  requiredElements: { subjective: string[]; objective: string[]; assessment: string[]; plan: string[] },
+  encounterType: string
+): ComplianceIssue[] {
+  const issues: ComplianceIssue[] = [];
+
+  const sections: Array<'subjective' | 'objective' | 'assessment' | 'plan'> = ['subjective', 'objective', 'assessment', 'plan'];
+
+  for (const section of sections) {
+    const content = soapContent[section]?.toLowerCase() || '';
+    const required = requiredElements[section] || [];
+
+    // Check if section is empty
+    if (!content || content.trim().length < 10) {
+      issues.push({
+        issueType: 'MISSING_SECTION',
+        severity: section === 'assessment' || section === 'plan' ? 'ERROR' : 'WARNING',
+        title: `Missing ${section.charAt(0).toUpperCase() + section.slice(1)} Section`,
+        description: `The ${section} section is missing or too brief for a ${encounterType.replace(/_/g, ' ').toLowerCase()} encounter.`,
+        soapSection: section,
+        requirementSource: 'CMS Documentation Guidelines',
+        suggestion: `Add detailed ${section} documentation including: ${required.join(', ')}.`,
+        autoFixable: false,
+        auditRiskImpact: 15,
+        denialRisk: section === 'assessment' ? 0.6 : 0.3,
+      });
+      continue;
+    }
+
+    // Check for required elements within section
+    for (const element of required) {
+      const elementVariations = getElementVariations(element);
+      const found = elementVariations.some(variation => content.includes(variation.toLowerCase()));
+
+      if (!found) {
+        issues.push({
+          issueType: 'MISSING_ELEMENT',
+          severity: isElementCritical(element, encounterType) ? 'ERROR' : 'WARNING',
+          title: `Missing: ${element.charAt(0).toUpperCase() + element.slice(1)}`,
+          description: `The ${section} section should document ${element} for a ${encounterType.replace(/_/g, ' ').toLowerCase()} encounter.`,
+          soapSection: section,
+          fieldPath: element,
+          requirementSource: 'CMS Documentation Guidelines',
+          suggestion: getSuggestionForElement(element, section),
+          exampleFix: getExampleForElement(element),
+          autoFixable: false,
+          auditRiskImpact: isElementCritical(element, encounterType) ? 15 : 8,
+          denialRisk: isElementCritical(element, encounterType) ? 0.4 : 0.2,
+        });
+      }
+    }
+  }
+
+  return issues;
+}
+
+/**
+ * Check medical necessity documentation
+ */
+function checkMedicalNecessity(
+  soapContent: { subjective?: string | null; objective?: string | null; assessment?: string | null; plan?: string | null },
+  encounterType: string
+): ComplianceIssue[] {
+  const issues: ComplianceIssue[] = [];
+  const fullContent = Object.values(soapContent).filter(Boolean).join(' ').toLowerCase();
+
+  // Check for medical necessity keywords
+  const foundKeywords = MEDICAL_NECESSITY_KEYWORDS.filter(kw => fullContent.includes(kw.toLowerCase()));
+
+  if (foundKeywords.length === 0) {
+    issues.push({
+      issueType: 'MEDICAL_NECESSITY',
+      severity: 'CRITICAL',
+      title: 'Missing Medical Necessity Documentation',
+      description: 'The note does not clearly establish medical necessity for treatment. This is required for insurance reimbursement.',
+      requirementSource: 'CMS/Payer Guidelines',
+      suggestion: 'Document specific functional limitations, impact on daily activities, and expected improvement with treatment.',
+      exampleFix: 'Example: "Patient reports difficulty with daily activities including dressing, driving, and work duties due to cervical pain. Treatment is medically necessary to restore function and reduce disability."',
+      autoFixable: true,
+      suggestedText: 'Treatment is medically necessary to address functional limitations affecting activities of daily living. Patient demonstrates objective deficits that are expected to improve with continued care.',
+      auditRiskImpact: 25,
+      denialRisk: 0.7,
+    });
+  } else if (foundKeywords.length < 2) {
+    issues.push({
+      issueType: 'MEDICAL_NECESSITY',
+      severity: 'WARNING',
+      title: 'Weak Medical Necessity Documentation',
+      description: 'Medical necessity documentation could be strengthened with additional functional impact details.',
+      requirementSource: 'CMS/Payer Guidelines',
+      suggestion: 'Add more specific functional limitations and treatment goals.',
+      autoFixable: false,
+      auditRiskImpact: 10,
+      denialRisk: 0.3,
+    });
+  }
+
+  // Check for functional goals if this is not a discharge
+  if (encounterType !== 'DISCHARGE') {
+    const goalKeywords = ['goal', 'objective', 'target', 'aim', 'improve', 'restore', 'return to'];
+    const hasGoals = goalKeywords.some(kw => fullContent.includes(kw));
+
+    if (!hasGoals) {
+      issues.push({
+        issueType: 'MISSING_GOALS',
+        severity: 'ERROR',
+        title: 'Missing Treatment Goals',
+        description: 'The note should include specific, measurable treatment goals.',
+        soapSection: 'plan',
+        requirementSource: 'CMS Documentation Guidelines',
+        suggestion: 'Add measurable goals such as: "Goal: Reduce pain from 7/10 to 3/10 and restore cervical ROM to 80% of normal within 4 weeks."',
+        autoFixable: true,
+        suggestedText: 'Treatment Goals:\n- Reduce pain to functional level (≤3/10)\n- Restore normal range of motion\n- Return to full work/ADL activities',
+        auditRiskImpact: 12,
+        denialRisk: 0.4,
+      });
+    }
+  }
+
+  return issues;
+}
+
+/**
+ * Check payer-specific requirements
+ */
+function checkPayerRequirements(
+  soapContent: { subjective?: string | null; objective?: string | null; assessment?: string | null; plan?: string | null },
+  payerType: string
+): ComplianceIssue[] {
+  const issues: ComplianceIssue[] = [];
+  const payerReqs = PAYER_REQUIREMENTS[payerType];
+
+  if (!payerReqs) {
+    return issues;
+  }
+
+  const sectionContent: Record<string, string> = {
+    subjective: (soapContent.subjective || '').toLowerCase(),
+    objective: (soapContent.objective || '').toLowerCase(),
+    assessment: (soapContent.assessment || '').toLowerCase(),
+    plan: (soapContent.plan || '').toLowerCase(),
+  };
+
+  for (const req of payerReqs.requirements) {
+    const content = sectionContent[req.section] || '';
+    const elementVariations = getElementVariations(req.element);
+    const found = elementVariations.some(variation => content.includes(variation.toLowerCase()));
+
+    if (!found) {
+      issues.push({
+        issueType: 'PAYER_REQUIREMENT',
+        severity: req.isCritical ? 'CRITICAL' : 'WARNING',
+        title: `${payerReqs.name}: Missing ${req.element}`,
+        description: req.description,
+        soapSection: req.section,
+        requirementSource: payerReqs.name,
+        payerSpecific: payerType,
+        suggestion: `Add documentation of ${req.element} in the ${req.section} section for ${payerReqs.name} compliance.`,
+        autoFixable: false,
+        auditRiskImpact: req.isCritical ? 20 : 10,
+        denialRisk: req.isCritical ? 0.6 : 0.3,
+      });
+    }
+  }
+
+  return issues;
+}
+
+/**
+ * Check for cloned/duplicate note indicators
+ */
+async function checkForClonedNote(
+  prisma: unknown,
+  encounter: { id: string; patientId: string; organizationId: string; providerId?: string | null },
+  soapContent: { subjective?: string | null; objective?: string | null; assessment?: string | null; plan?: string | null }
+): Promise<ComplianceIssue[]> {
+  const issues: ComplianceIssue[] = [];
+
+  try {
+    // Get recent SOAP notes for the same patient
+    const db = prisma as { sOAPNote: { findMany: (args: unknown) => Promise<Array<{ id: string; subjective?: string | null; objective?: string | null; assessment?: string | null; plan?: string | null; encounter: { id: string } }>> } };
+    const recentNotes = await db.sOAPNote.findMany({
+      where: {
+        encounter: {
+          patientId: encounter.patientId,
+          organizationId: encounter.organizationId,
+          id: { not: encounter.id },
+        },
+      },
+      orderBy: { createdAt: 'desc' as const },
+      take: 5,
+      select: {
+        id: true,
+        subjective: true,
+        objective: true,
+        assessment: true,
+        plan: true,
+        encounter: { select: { id: true } },
+      },
+    });
+
+    // Check for high similarity with recent notes
+    for (const note of recentNotes) {
+      const currentObjective = (soapContent.objective || '').trim();
+      const previousObjective = (note.objective || '').trim();
+
+      // Simple similarity check (exact match or very similar)
+      if (currentObjective.length > 50 && previousObjective.length > 50) {
+        const similarity = calculateSimilarity(currentObjective, previousObjective);
+
+        if (similarity > 0.85) {
+          issues.push({
+            issueType: 'CLONED_NOTE',
+            severity: 'WARNING',
+            title: 'Possible Cloned Documentation',
+            description: `The objective section appears very similar (${Math.round(similarity * 100)}% match) to a previous encounter note. This may indicate cloned documentation.`,
+            soapSection: 'objective',
+            requirementSource: 'OIG Audit Guidelines',
+            suggestion: 'Ensure documentation is unique to this encounter and reflects current findings. Modify cloned sections to reflect visit-specific observations.',
+            autoFixable: false,
+            auditRiskImpact: 25,
+            denialRisk: 0.5,
+          });
+          break; // Only flag once
+        }
+      }
+    }
+  } catch (error) {
+    // If comparison fails, don't add an issue
+    console.error('Cloned note check error:', error);
+  }
+
+  return issues;
+}
+
+/**
+ * Check if documentation supports billing codes
+ */
+function checkCodeDocumentation(
+  soapContent: { subjective?: string | null; objective?: string | null; assessment?: string | null; plan?: string | null },
+  codes: Array<{ suggestedCode: string; codeType: string; codeDescription?: string | null }>
+): ComplianceIssue[] {
+  const issues: ComplianceIssue[] = [];
+  const fullContent = Object.values(soapContent).filter(Boolean).join(' ').toLowerCase();
+
+  // Check CMT codes against documentation
+  const cmtCodes = codes.filter(c => ['98940', '98941', '98942'].includes(c.suggestedCode));
+
+  for (const code of cmtCodes) {
+    // Check if spinal regions are documented
+    const regionCount = countSpinalRegions(fullContent);
+
+    if (code.suggestedCode === '98942' && regionCount < 5) {
+      issues.push({
+        issueType: 'CODE_DOCUMENTATION',
+        severity: 'ERROR',
+        title: 'Insufficient Documentation for 98942',
+        description: `Code 98942 (5+ regions CMT) requires documentation of at least 5 spinal regions. Only ${regionCount} regions documented.`,
+        requirementSource: 'CPT Guidelines',
+        suggestion: `Document all spinal regions treated. Consider using 98941 (3-4 regions) or 98940 (1-2 regions) if fewer regions were treated.`,
+        autoFixable: false,
+        auditRiskImpact: 20,
+        denialRisk: 0.5,
+      });
+    } else if (code.suggestedCode === '98941' && regionCount < 3) {
+      issues.push({
+        issueType: 'CODE_DOCUMENTATION',
+        severity: 'ERROR',
+        title: 'Insufficient Documentation for 98941',
+        description: `Code 98941 (3-4 regions CMT) requires documentation of at least 3 spinal regions. Only ${regionCount} regions documented.`,
+        requirementSource: 'CPT Guidelines',
+        suggestion: `Document all spinal regions treated. Consider using 98940 (1-2 regions) if fewer regions were treated.`,
+        autoFixable: false,
+        auditRiskImpact: 15,
+        denialRisk: 0.4,
+      });
+    }
+  }
+
+  // Check E/M codes against documentation complexity
+  const emCodes = codes.filter(c => c.suggestedCode.startsWith('992'));
+
+  for (const code of emCodes) {
+    if (['99214', '99215'].includes(code.suggestedCode)) {
+      // Higher level E/M codes require more complex documentation
+      const wordCount = fullContent.split(/\s+/).length;
+      const hasHistory = fullContent.includes('history') || fullContent.includes('hx');
+      const hasExam = fullContent.includes('examination') || fullContent.includes('exam') || fullContent.includes('findings');
+      const hasMDM = fullContent.includes('diagnosis') || fullContent.includes('assessment') || fullContent.includes('differential');
+
+      if (wordCount < 200 || !hasHistory || !hasExam || !hasMDM) {
+        issues.push({
+          issueType: 'CODE_DOCUMENTATION',
+          severity: 'WARNING',
+          title: `Documentation May Not Support ${code.suggestedCode}`,
+          description: `Higher-level E/M code ${code.suggestedCode} typically requires comprehensive documentation including detailed history, examination, and medical decision-making.`,
+          requirementSource: 'CPT E/M Guidelines',
+          suggestion: 'Ensure documentation includes: detailed history of present illness, comprehensive examination findings, and documented medical decision-making complexity.',
+          autoFixable: false,
+          auditRiskImpact: 15,
+          denialRisk: 0.35,
+        });
+      }
+    }
+  }
+
+  return issues;
+}
+
+/**
+ * Map AI severity to our severity type
+ */
+function mapAISeverity(severity: string): 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL' {
+  switch (severity.toLowerCase()) {
+    case 'error':
+    case 'critical':
+      return 'ERROR';
+    case 'warning':
+      return 'WARNING';
+    default:
+      return 'INFO';
+  }
+}
+
+/**
+ * Calculate compliance score based on issues
+ */
+function calculateComplianceScore(issues: ComplianceIssue[]): number {
+  let score = 100;
+
+  for (const issue of issues) {
+    switch (issue.severity) {
+      case 'CRITICAL':
+        score -= 25;
+        break;
+      case 'ERROR':
+        score -= 15;
+        break;
+      case 'WARNING':
+        score -= 5;
+        break;
+      case 'INFO':
+        score -= 1;
+        break;
+    }
+  }
+
+  return Math.max(0, score);
+}
+
+/**
+ * Get variations of an element name for searching
+ */
+function getElementVariations(element: string): string[] {
+  const variations: Record<string, string[]> = {
+    'chief complaint': ['chief complaint', 'cc', 'presenting complaint', 'reason for visit'],
+    'history': ['history', 'hx', 'hpi', 'history of present illness'],
+    'pain level': ['pain level', 'pain scale', '/10', 'vas', 'nprs', 'numeric pain'],
+    'range of motion': ['range of motion', 'rom', 'motion', 'flexion', 'extension', 'rotation'],
+    'palpation': ['palpation', 'palpated', 'tenderness', 'spasm', 'trigger point'],
+    'diagnosis': ['diagnosis', 'dx', 'assessment', 'impression'],
+    'treatment plan': ['treatment plan', 'plan', 'recommendation', 'treatment'],
+    'goals': ['goal', 'objective', 'target', 'outcome'],
+    'subluxation': ['subluxation', 'segmental dysfunction', 'vertebral', 'spinal'],
+    'medical necessity': ['medical necessity', 'medically necessary', 'functional limitation'],
+    'mechanism of injury': ['mechanism of injury', 'moi', 'how injury occurred', 'accident', 'incident'],
+    'work status': ['work status', 'work restrictions', 'return to work', 'rtw', 'light duty'],
+    'outcome measures': ['outcome', 'oswestry', 'ndis', 'sf-36', 'dash', 'functional assessment'],
+  };
+
+  return variations[element.toLowerCase()] || [element];
+}
+
+/**
+ * Check if an element is critical for the encounter type
+ */
+function isElementCritical(element: string, encounterType: string): boolean {
+  const criticalElements: Record<string, string[]> = {
+    INITIAL_EVAL: ['chief complaint', 'diagnosis', 'treatment plan', 'medical necessity'],
+    FOLLOW_UP: ['progress', 'examination findings'],
+    RE_EVALUATION: ['progress assessment', 'outcome measures', 'continued necessity'],
+    DISCHARGE: ['treatment outcomes', 'goal achievement'],
+  };
+
+  const critical = criticalElements[encounterType] || [];
+  return critical.some(c => element.toLowerCase().includes(c.toLowerCase()));
+}
+
+/**
+ * Get suggestion for a missing element
+ */
+function getSuggestionForElement(element: string, section: string): string {
+  const suggestions: Record<string, string> = {
+    'chief complaint': 'Document the primary reason for the visit in the patient\'s own words.',
+    'pain level': 'Include numeric pain rating (0-10 scale) and location.',
+    'range of motion': 'Document specific ROM measurements with degrees and any limitations.',
+    'diagnosis': 'Include specific ICD-10 diagnoses that support medical necessity.',
+    'treatment plan': 'Detail specific treatments, frequency, and duration.',
+    'goals': 'Include measurable, time-bound treatment goals.',
+    'medical necessity': 'Document functional limitations and expected improvement.',
+  };
+
+  return suggestions[element.toLowerCase()] || `Add documentation of ${element} to the ${section} section.`;
+}
+
+/**
+ * Get example fix for a missing element
+ */
+function getExampleForElement(element: string): string {
+  const examples: Record<string, string> = {
+    'pain level': 'Example: "Pain: 7/10 at cervical spine, 5/10 at upper trapezius"',
+    'range of motion': 'Example: "Cervical ROM: Flexion 35° (N: 45°), Extension 30° (N: 45°), Rotation R 60°/L 55° (N: 80°)"',
+    'diagnosis': 'Example: "1. M54.2 - Cervicalgia 2. M99.01 - Segmental dysfunction, cervical"',
+    'goals': 'Example: "Goals: 1) Reduce pain to 3/10 within 4 weeks 2) Restore cervical ROM to 80% of normal"',
+  };
+
+  return examples[element.toLowerCase()] || '';
+}
+
+/**
+ * Calculate text similarity (simple Jaccard-like)
+ */
+function calculateSimilarity(text1: string, text2: string): number {
+  const words1 = new Set(text1.toLowerCase().split(/\s+/));
+  const words2 = new Set(text2.toLowerCase().split(/\s+/));
+
+  const intersection = new Set(Array.from(words1).filter(x => words2.has(x)));
+  const union = new Set([...Array.from(words1), ...Array.from(words2)]);
+
+  return intersection.size / union.size;
+}
+
+/**
+ * Get general compliance tips based on encounter type
+ */
+function getGeneralComplianceTips(encounterType: string): string[] {
+  const tips: Record<string, string[]> = {
+    INITIAL_EVAL: [
+      'Document complete history including onset, mechanism, duration, and aggravating/relieving factors',
+      'Include comprehensive examination findings with objective measurements',
+      'Establish medical necessity with clear functional limitations',
+      'Set specific, measurable treatment goals',
+      'Document diagnosis with appropriate ICD-10 specificity',
+    ],
+    FOLLOW_UP: [
+      'Compare findings to previous visit to show progress or lack thereof',
+      'Update pain levels and functional status each visit',
+      'Document patient response to treatment',
+      'Modify treatment plan if not progressing as expected',
+      'Include objective findings that support continued treatment',
+    ],
+    RE_EVALUATION: [
+      'Include outcome measure scores and compare to initial',
+      'Justify continued treatment with objective findings',
+      'Document progress toward goals and revise as needed',
+      'Consider discharge criteria and timeline',
+      'Address any new complaints or changes',
+    ],
+    DISCHARGE: [
+      'Document achievement of treatment goals',
+      'Include final outcome measurements',
+      'Provide home exercise program instructions',
+      'Give maintenance care recommendations',
+      'Document patient education provided',
+    ],
+  };
+
+  return tips[encounterType] || tips.FOLLOW_UP;
 }

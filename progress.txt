@@ -170,8 +170,85 @@
   ✓ Learn from provider acceptance patterns (adjusts confidence scores)
   ✓ Flag potential upcoding/downcoding (based on documentation analysis)
 
+### US-319: Compliance checking - COMPLETED
+- Extended `aiDoc` tRPC router with comprehensive compliance checking endpoints:
+  1. **checkCompliance** - Main entry point for compliance validation
+     - Takes encounter ID and optional draft note ID
+     - Supports payer-specific compliance rules (MEDICARE, BLUE_CROSS, UNITED, AETNA, WORKERS_COMP, AUTO_PIP)
+     - Runs multiple compliance check categories:
+       * Required element validation
+       * Medical necessity documentation
+       * Payer-specific requirements
+       * Cloned note detection
+       * Code documentation verification
+       * AI-powered compliance analysis
+     - Calculates compliance score (0-100) and audit risk score
+     - Supports pre-billing gate to block billing on critical issues
+     - Stores all issues in AIComplianceCheck model
+  2. **getComplianceIssues** - Get compliance issues for an encounter with filtering
+  3. **resolveComplianceIssue** - Mark an issue as resolved or dismissed
+  4. **applyComplianceFix** - Apply auto-fix suggestion to SOAP note
+  5. **checkPreBillingGate** - Check if encounter can proceed to billing
+  6. **getComplianceStats** - Organization-wide compliance statistics
+  7. **getComplianceTips** - Get compliance tips based on common issues
+
+- Implemented comprehensive compliance checking:
+  * **Required Element Validation** by encounter type (INITIAL_EVAL, FOLLOW_UP, RE_EVALUATION, DISCHARGE)
+    - Checks subjective, objective, assessment, and plan sections
+    - Validates presence of elements like chief complaint, ROM, diagnosis, treatment plan
+  * **Medical Necessity Documentation**
+    - Checks for functional limitation keywords
+    - Validates treatment goals presence
+    - Flags missing medical necessity documentation
+  * **Payer-Specific Requirements**
+    - Medicare: subluxation, medical necessity, functional improvement, active treatment
+    - Blue Cross: diagnosis codes, treatment goals, prior auth
+    - United: outcome measures, visit limits
+    - Aetna: treatment frequency, duration
+    - Workers Comp: mechanism of injury, work status, causation, MMI
+    - Auto/PIP: accident details, causation, functional impact
+  * **Cloned Note Detection**
+    - Compares current note to previous 5 notes for same patient
+    - Flags >85% similarity in objective section
+  * **Code Documentation Validation**
+    - Validates CMT codes (98940, 98941, 98942) against documented spinal regions
+    - Checks E/M codes against documentation complexity
+
+- Added helper functions:
+  - checkRequiredElements() - Validate required elements by encounter type
+  - checkMedicalNecessity() - Check medical necessity documentation
+  - checkPayerRequirements() - Validate payer-specific requirements
+  - checkForClonedNote() - Detect similar/cloned documentation
+  - checkCodeDocumentation() - Verify codes are supported by documentation
+  - mapAISeverity() - Convert AI severity to compliance severity
+  - calculateComplianceScore() - Calculate overall compliance score
+  - getElementVariations() - Get variations of element names for searching
+  - isElementCritical() - Determine if element is critical for encounter type
+  - getSuggestionForElement() - Get suggestion for missing element
+  - getExampleForElement() - Get example fix for missing element
+  - calculateSimilarity() - Calculate text similarity (Jaccard-like)
+  - getGeneralComplianceTips() - Get general tips by encounter type
+
+- Added compliance constants:
+  - REQUIRED_ELEMENTS - Required documentation elements by encounter type
+  - MEDICAL_NECESSITY_KEYWORDS - Keywords indicating medical necessity
+  - PAYER_REQUIREMENTS - Payer-specific documentation requirements
+  - AUDIT_RISK_FACTORS - Risk factor weights for audit risk scoring
+
+- Added audit actions:
+  - AI_COMPLIANCE_CHECK, AI_COMPLIANCE_RESOLVE, AI_COMPLIANCE_AUTOFIX
+
+- Features implemented per acceptance criteria:
+  ✓ aiDoc.checkCompliance - Validate note compliance
+  ✓ Medical necessity documentation check
+  ✓ Required element validation
+  ✓ Payer-specific requirements (6 payer types)
+  ✓ Audit risk scoring (0-100 scale)
+  ✓ Missing documentation alerts
+  ✓ Compliance tips and suggestions
+  ✓ Pre-billing compliance gate
+
 ### Remaining Stories:
-- US-319: Compliance checking
 - US-320: Provider preference learning
 - US-321: Documentation templates and macros
 - US-322: AI documentation assistant UI
@@ -190,4 +267,10 @@ Story: US-317 - AI SOAP note generation
 
 --- Iteration 4 completed at 2026-01-22 ---
 Story: US-318 - Intelligent code suggestion
+
+--- Iteration 4 completed at 2026-01-22 11:51:03 ---
+Story: US-318 - Intelligent code suggestion
+
+--- Iteration 5 completed at 2026-01-22 ---
+Story: US-319 - Compliance checking
 

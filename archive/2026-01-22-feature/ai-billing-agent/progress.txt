@@ -1,0 +1,587 @@
+# Ralph Autonomous Loop Progress
+
+## Current Epic: Epic 31 - AI Billing Agent
+
+## Completed Stories
+
+### US-308 - AI billing agent schema
+**Status**: COMPLETED
+**Date**: 2026-01-22
+
+**Implementation Summary**:
+Created comprehensive database models for the AI Billing Agent system in Epic 31.
+
+**Files Modified**:
+- `app/prisma/schema.prisma` - Added new enums, models, and relations
+
+**New Enums Created**:
+1. `BillingTaskType` - Task types (SUBMIT, FOLLOW_UP, APPEAL, CORRECT, POST, SCRUB, ELIGIBILITY, STATUS)
+2. `BillingTaskStatus` - Task statuses (QUEUED, IN_PROGRESS, COMPLETED, FAILED, SKIPPED, CANCELLED, NEEDS_REVIEW)
+3. `AIAppealStatus` - Appeal workflow states (DRAFT through ESCALATED)
+
+**New Models Created**:
+1. `AIBillingTask` - Core task tracking with type, claimId, status, attempts, result, priority, scheduling
+2. `AIBillingDecision` - Decision logging with decision, reasoning, confidence, alternatives, evidence
+3. `AIAppeal` - Comprehensive appeal tracking with content, deadlines, responses, financial tracking
+4. `AIBillingRule` - Configurable billing rules with conditions, actions, triggers, thresholds
+5. `AIBillingMetric` - Performance metrics for tasks, submissions, appeals, posting, AR tracking
+
+**Relations Added**:
+- Organization -> aiBillingTasks, aiBillingDecisions, aiAppeals, aiBillingRules, aiBillingMetrics
+- Claim -> aiBillingTasks, aiAppeals
+- Patient -> aiBillingTasks
+- InsurancePayer -> aiBillingTasks
+- Charge -> aiBillingTasks
+- AIBillingTask -> AIBillingDecision (one-to-many)
+
+**Validation**:
+- Prisma schema validates successfully
+- Prisma client generates successfully
+- Pre-existing TypeScript errors unrelated to this change
+
+### US-308 - Autonomous claim submission
+**Status**: COMPLETED
+**Date**: 2026-01-22
+
+**Implementation Summary**:
+Implemented autonomous claim submission system for AI billing agent with pre-submission validation, auto-correction, and configurable rules.
+
+**Files Created**:
+- `app/src/lib/ai-billing/claim-submitter.ts` - New ClaimSubmitter service class (~980 lines)
+
+**Files Modified**:
+- `app/src/lib/ai-billing/index.ts` - Added ClaimSubmitter exports and types
+- `app/src/server/routers/aiBilling.ts` - Added 8 new endpoints for claim submission
+- `app/src/lib/audit.ts` - Added AI_BILLING_SUBMIT audit action
+
+**ClaimSubmitter Service Features**:
+1. `submitClaims()` - Main batch submission with configurable options
+2. `processClaim()` - Process single claim with scrubbing and corrections
+3. `applyAutoCorrections()` - Apply 5 auto-correction rules:
+   - AT modifier for chiropractic spinal manipulation
+   - Modifier 25 for E/M with procedures
+   - Default place of service (11 - Office)
+   - Diagnosis pointer validation
+   - Service date validation
+4. `selectClaimsForSubmission()` - Select claims based on rules
+5. `createTaskRecord()` - Create AIBillingTask records for tracking
+6. `updateMetrics()` - Update AIBillingMetric for performance tracking
+7. `getSubmissionStats()` - Get submission statistics
+8. `getAutoSubmitRules()` / `saveAutoSubmitRule()` - Manage configurable rules
+9. `createFailureAlert()` - Alert on submission failures
+
+**New tRPC Endpoints**:
+1. `submitClaims` - Main batch submission mutation
+2. `getSubmissionStats` - Get statistics query
+3. `getClaimsReadyForSubmission` - Get submittable claims query
+4. `getAutoSubmitRules` - Get rules query
+5. `saveAutoSubmitRule` - Save rule mutation
+6. `deleteAutoSubmitRule` - Delete rule mutation
+7. `toggleAutoSubmitRule` - Toggle rule mutation
+8. `getSubmissionAlerts` - Get failure alerts query
+
+**Type Exports Added**:
+- ClaimSubmissionInput, ClaimSubmissionResult, ClaimCorrection
+- SubmitClaimsOutput, AutoSubmitRule, RuleCondition, SubmissionStats
+
+**Acceptance Criteria Met**:
+- ✅ aiBilling.submitClaims - Auto-submit ready claims
+- ✅ Pre-submission validation and scrubbing (uses ClaimScrubber)
+- ✅ Auto-correct common errors (5 correction rules)
+- ✅ Optimize code selection for reimbursement (via scrubbing)
+- ✅ Batch submission scheduling (via selectClaimsForSubmission)
+- ✅ Track submission success rate (via updateMetrics)
+- ✅ Alert on submission failures (via createFailureAlert)
+- ✅ Configurable auto-submit rules (via AIBillingRule model)
+
+**Validation**:
+- TypeScript compiles successfully for new files
+- Pre-existing TypeScript errors unrelated to this change
+
+### US-309 - Denial analysis and routing
+**Status**: COMPLETED
+**Date**: 2026-01-22
+
+**Implementation Summary**:
+Implemented comprehensive denial analysis and routing system with intelligent categorization, workflow routing, pattern analysis, and provider-level trending.
+
+**Files Created**:
+- `app/src/lib/ai-billing/denial-analyzer.ts` - New DenialAnalyzer service class (~1300 lines)
+
+**Files Modified**:
+- `app/src/lib/ai-billing/index.ts` - Added DenialAnalyzer exports and types
+- `app/src/server/routers/aiBilling.ts` - Added 7 new endpoints for denial analysis
+- `app/src/lib/audit.ts` - Added AI_BILLING_ANALYZE_DENIAL, AI_BILLING_ROUTE_DENIAL, AI_BILLING_DENIAL_OUTCOME audit actions
+
+**DenialAnalyzer Service Features**:
+1. `analyzeDenial()` - Main denial analysis with categorization, workflow routing, corrections, appeal recommendations
+2. `categorizeDenial()` - Map denial codes to 10+ categories:
+   - CODING, ELIGIBILITY, AUTHORIZATION, MEDICAL_NECESSITY
+   - DUPLICATE, TIMELY_FILING, BUNDLING, MODIFIER
+   - DOCUMENTATION, COORDINATION_OF_BENEFITS, CONTRACT, OTHER
+3. `determineCorrectable()` - Analyze if denial can be corrected or needs appeal
+4. `determineWorkflow()` - Route to appropriate workflow:
+   - CORRECT_AND_RESUBMIT, APPEAL, PATIENT_RESPONSIBILITY, WRITE_OFF, ESCALATE
+5. `generateCorrectionActions()` - Suggest specific corrections based on denial type
+6. `generateAppealRecommendation()` - Create appeal strategy with arguments and evidence
+7. `findRelatedDenials()` - Find similar denials for pattern analysis
+8. `routeDenial()` - Update denial status and route to workflow
+9. `getPatternAnalysis()` - Organization-level denial patterns with prevention opportunities
+10. `getProviderTrending()` - Provider-specific denial trends and rates
+11. `recordOutcome()` - Track denial resolution outcomes for learning
+
+**CARC Code Mapping**:
+- Maps 50+ Claim Adjustment Reason Codes (CARC) to denial categories
+- Supports standard codes like CO-4, CO-16, CO-18, CO-29, CO-50, CO-96, CO-109, etc.
+
+**New tRPC Endpoints**:
+1. `analyzeDenial` - Analyze denial reason and route (mutation)
+2. `routeDenial` - Update denial workflow status (mutation)
+3. `getDenialPatterns` - Get organization denial patterns (query)
+4. `recordDenialOutcome` - Record resolution outcome (mutation)
+5. `getDenialsPendingAnalysis` - Get unanalyzed denials (query)
+6. `getProviderDenialTrending` - Get provider-level denial trends (query)
+7. `getPreventionSuggestions` - Get denial prevention suggestions (query)
+
+**Type Exports Added**:
+- DenialCategory, DenialWorkflow, DenialAnalysisInput, DenialAnalysisOutput
+- CorrectionAction, AppealRecommendation, RelatedDenial
+- ProviderDenialTrend, RiskFactor, DenialPatternAnalysis
+
+**Acceptance Criteria Met**:
+- ✅ aiBilling.analyzeDenial - Analyze denial reason
+- ✅ Categorize denial type (coding, eligibility, authorization + 9 more)
+- ✅ Determine if correctable or needs appeal (via determineCorrectable)
+- ✅ Route to appropriate workflow (5 workflow types)
+- ✅ Learn from denial patterns (via getPatternAnalysis, findRelatedDenials)
+- ✅ Suggest prevention strategies (via getPreventionSuggestions)
+- ✅ Provider-level denial trending (via getProviderDenialTrending)
+
+**Validation**:
+- TypeScript compiles successfully for new files
+- Pre-existing TypeScript errors unrelated to this change
+
+### US-310 - Automated appeal generation
+**Status**: COMPLETED
+**Date**: 2026-01-22
+
+**Implementation Summary**:
+Implemented comprehensive automated appeal generation system with payer-specific templates, medical necessity extraction from clinical documentation, success rate tracking, and learning from successful appeals.
+
+**Files Created**:
+- `app/src/lib/ai-billing/automated-appeal-generator.ts` - New AutomatedAppealGenerator service class (~1400 lines)
+
+**Files Modified**:
+- `app/src/lib/ai-billing/index.ts` - Added AutomatedAppealGenerator exports and types
+- `app/src/server/routers/aiBilling.ts` - Added 8 new endpoints for automated appeal generation
+- `app/src/lib/audit.ts` - Added AI_BILLING_GENERATE_APPEAL, AI_BILLING_SUBMIT_APPEAL, AI_BILLING_APPEAL_OUTCOME, AI_BILLING_BATCH_APPEALS audit actions
+
+**AutomatedAppealGenerator Service Features**:
+1. `generateAppeal()` - Main automated appeal generation with full context extraction
+2. `getPayerTemplate()` - Get payer-specific appeal templates (Medicare, BCBS, UHC, Aetna, Cigna, Default)
+3. `buildAppealArguments()` - Build arguments from clinical documentation with learned patterns
+4. `extractMedicalNecessity()` - Extract medical necessity statement from SOAP notes
+5. `extractClinicalRationale()` - Extract clinical rationale from assessment/plan
+6. `buildClinicalSummary()` - Build clinical summary from encounter data
+7. `selectCitations()` - Select relevant medical/legal citations for the appeal
+8. `getRequiredDocuments()` - Determine required supporting documents
+9. `selectAttachments()` - Select available attachments for the appeal
+10. `calculateAppealDeadline()` - Calculate appeal deadline from denial date and payer rules
+11. `calculateSuccessLikelihood()` - Calculate success likelihood based on historical data
+12. `getLearnedPatterns()` - Learn from successful appeals for future improvements
+13. `submitAppeal()` - Update appeal status and record submission details
+14. `recordAppealOutcome()` - Record outcome for learning system
+15. `getAppealSuccessMetrics()` - Get detailed success metrics for reporting
+16. `getAppealsPendingSubmission()` - Get appeals pending submission with deadline tracking
+17. `batchGenerateAppeals()` - Batch generate appeals for multiple claims
+
+**Payer-Specific Templates**:
+- Medicare - 120-day filing, CMS-specific requirements
+- Blue Cross Blue Shield - 180-day filing, portal preferred
+- UnitedHealthcare - 180-day filing, reconsideration form
+- Aetna - 180-day filing, appeal form required
+- Cigna - 180-day filing, physician statement emphasis
+- Default - 60-day filing, standard format
+
+**Denial Code Strategies**:
+- Maps 10+ CARC codes to appeal strategies
+- Code 50, 96 - Medical necessity arguments
+- Code 29 - Timely filing arguments
+- Code 197 - Authorization arguments
+- Code 18 - Duplicate claim arguments
+- Code 97 - Bundling/unbundling arguments
+- Code 26 - Eligibility arguments
+- Code 4 - Coding arguments
+
+**New tRPC Endpoints**:
+1. `generateAutomatedAppeal` - Generate appeal for denied claim (mutation)
+2. `getAppealSuccessMetrics` - Get success metrics for reporting (query)
+3. `submitAutomatedAppeal` - Submit an appeal and update status (mutation)
+4. `recordAutomatedAppealOutcome` - Record outcome for learning (mutation)
+5. `getAppealsPendingSubmission` - Get pending appeals with deadlines (query)
+6. `batchGenerateAppeals` - Batch generate appeals (mutation)
+7. `getAIAppeals` - List AI appeals with filtering (query)
+8. `getAIAppeal` - Get single AI appeal by ID (query)
+
+**Type Exports Added**:
+- AppealType, AutomatedAppealInput, AutomatedAppealOutput
+- AppealAttachment, AppealSuccessMetrics, PayerAppealTemplate
+- LearnedAppealPattern
+
+**Acceptance Criteria Met**:
+- ✅ aiBilling.generateAppeal - Auto-generate appeal
+- ✅ Payer-specific appeal templates (6 payers + default)
+- ✅ Medical necessity arguments from notes (extracted from SOAP)
+- ✅ Supporting documentation selection (with required docs)
+- ✅ Clinical rationale from notes (assessment/plan extraction)
+- ✅ Compliance with appeal deadlines (calculated from payer rules)
+- ✅ Track appeal success rates (via getAppealSuccessMetrics)
+- ✅ Learn from successful appeals (via getLearnedPatterns)
+
+**Validation**:
+- TypeScript compiles successfully for new files
+- Pre-existing TypeScript errors unrelated to this change
+
+### US-311 - Claim follow-up automation
+**Status**: COMPLETED
+**Date**: 2026-01-22
+
+**Implementation Summary**:
+Implemented comprehensive claim follow-up automation system with automated status checks, stalled claim detection, escalation workflows, AR aging reports, and payer response time analysis.
+
+**Files Created**:
+- `app/src/lib/ai-billing/claim-follow-up-agent.ts` - New ClaimFollowUpAgent service class (~1100 lines)
+
+**Files Modified**:
+- `app/src/lib/ai-billing/index.ts` - Added ClaimFollowUpAgent exports and types
+- `app/src/server/routers/aiBilling.ts` - Added 8 new endpoints for claim follow-up automation
+- `app/src/lib/audit.ts` - Added AI_BILLING_FOLLOW_UP, AI_BILLING_BATCH_FOLLOW_UP, AI_BILLING_ESCALATE_CLAIMS, AI_BILLING_GET_AR_AGING audit actions
+
+**ClaimFollowUpAgent Service Features**:
+1. `followUp()` - Check single claim status and determine next action
+2. `batchFollowUp()` - Process multiple claims at once
+3. `getStalledClaims()` - Identify claims with no activity beyond threshold
+4. `getARAgingReport()` - Complete AR aging report with buckets (0-30, 31-60, 61-90, 91-120, 120+)
+5. `getPayerResponseAnalysis()` - Analyze payer response times with trends
+6. `escalateAgedClaims()` - Auto-escalate claims meeting criteria
+7. `getFollowUpSchedule()` - Get upcoming and overdue follow-ups
+8. `getClaimsNeedingFollowUp()` - Prioritized list based on urgency score
+
+**Follow-Up Actions Determined**:
+- CHECK_STATUS - Routine status check
+- CALL_PAYER - Direct payer contact needed
+- RESUBMIT - Correction and resubmission
+- ESCALATE - Supervisor review required
+- APPEAL - Appeal the denial
+- PATIENT_STATEMENT - Patient balance due
+- WRITE_OFF_REVIEW - Consider write-off
+- SECONDARY_CLAIM - Submit to secondary
+- WAIT - No action needed yet
+- CLOSE - Close the claim
+
+**AR Aging Buckets**:
+- 0-30 days, 31-60 days, 61-90 days, 91-120 days, 120+ days
+- Summary by payer with stalled claim counts
+- Average days in AR calculation
+
+**New tRPC Endpoints**:
+1. `followUp` - Follow up on single claim (mutation)
+2. `batchFollowUp` - Process multiple claims (mutation)
+3. `getStalledClaims` - Get stalled claims list (query)
+4. `getARAgingReport` - Get AR aging report (query)
+5. `getPayerResponseAnalysis` - Get payer response analysis (query)
+6. `escalateAgedClaims` - Escalate aged claims (mutation)
+7. `getFollowUpSchedule` - Get follow-up schedule (query)
+8. `getClaimsNeedingFollowUp` - Get prioritized claims list (query)
+
+**Type Exports Added**:
+- FollowUpAction, FollowUpPriority, FollowUpTaskStatus
+- FollowUpInput, FollowUpOutput, BatchFollowUpInput, BatchFollowUpOutput
+- StalledClaimCriteria, StalledClaim, FollowUpTask
+- ARAgingReport, ARAgingBucket, PayerARSummary
+- PayerResponseAnalysis, EscalationCriteria, EscalatedClaim
+
+**Acceptance Criteria Met**:
+- ✅ aiBilling.followUp - Check claim status (via followUp endpoint)
+- ✅ Automated status checks on schedule (via batchFollowUp, getFollowUpSchedule)
+- ✅ Identify stalled claims (via getStalledClaims with configurable thresholds)
+- ✅ Determine follow-up action needed (via determineFollowUpAction with 10 action types)
+- ✅ Generate follow-up tasks for staff (via createStaffTask with priority-based due dates)
+- ✅ Track days in AR (via calculateDaysInAR, getARAgingReport)
+- ✅ Escalate aged claims (via escalateAgedClaims with configurable criteria)
+- ✅ Payer response time analysis (via getPayerResponseAnalysis with trends and anomalies)
+
+**Validation**:
+- TypeScript compiles successfully for new files
+- Pre-existing TypeScript errors unrelated to this change
+
+### US-312 - Smart payment posting
+**Status**: COMPLETED
+**Date**: 2026-01-22
+
+**Implementation Summary**:
+Implemented comprehensive smart payment posting system with automated ERA processing, intelligent payment-to-claim matching, partial payment handling, adjustment code analysis, secondary claim triggering, and patient responsibility calculation.
+
+**Files Created**:
+- `app/src/lib/ai-billing/smart-payment-poster.ts` - New SmartPaymentPoster service class (~1470 lines)
+
+**Files Modified**:
+- `app/src/lib/ai-billing/index.ts` - Added SmartPaymentPoster exports and types
+- `app/src/server/routers/aiBilling.ts` - Added 7 new endpoints for smart payment posting
+- `app/src/lib/audit.ts` - Added AI_BILLING_PROCESS_ERA, AI_BILLING_MATCH_PAYMENT, AI_BILLING_MANUAL_POST, AI_BILLING_PARTIAL_PAYMENT, AI_BILLING_SECONDARY_CLAIM audit actions
+
+**SmartPaymentPoster Service Features**:
+1. `processERA()` - Main ERA processing with auto-post capability
+2. `processLineItem()` - Process individual remittance line items
+3. `matchPayment()` - Intelligent payment-to-claim matching with multiple criteria
+4. `handlePartialPayment()` - Handle partial payments and adjustments
+5. `analyzeAdjustments()` - Analyze CARC/RARC adjustment codes
+6. `triggerSecondaryClaim()` - Automatically trigger secondary insurance claims
+7. `calculatePatientResponsibility()` - Calculate patient responsibility from adjustments
+8. `updatePatientBalance()` - Update patient balance forward
+9. `getPostingMetrics()` - Get posting metrics for reporting
+10. `getUnpostedLineItems()` - Get unposted remittance line items with suggested matches
+11. `manualPost()` - Manual posting with user override capability
+12. `postPayment()` - Internal method for posting payment records
+
+**Adjustment Code Analysis**:
+- Contractual adjustment codes (45, 253, A2, P1, P2)
+- Patient responsibility codes (1, 2, 3) - Deductible, Coinsurance, Copay
+- Code-specific adjustment reasoning and flags
+- Underpayment detection for codes 45, 253
+
+**Matching Criteria**:
+- Patient name matching (Levenshtein distance)
+- Service date matching
+- CPT code matching
+- Payer claim number matching
+- Check/trace number matching
+- Amount tolerance matching (within $1 or 10%)
+
+**Posting Status Types**:
+- POSTED - Successfully posted
+- PARTIAL - Partial payment posted
+- PENDING_REVIEW - Requires manual review
+- FAILED - Posting failed
+- SKIPPED - Skipped per user request
+
+**Discrepancy Types**:
+- DUPLICATE_PAYMENT, OVERPAYMENT, UNDERPAYMENT
+- SERVICE_DATE_MISMATCH, CPT_MISMATCH
+- PATIENT_MISMATCH, AMOUNT_MISMATCH
+- CLAIM_NOT_FOUND, ALREADY_POSTED
+- CONTRACTUAL_VARIANCE
+
+**New tRPC Endpoints**:
+1. `processERA` - Process ERA and auto-post payments (mutation)
+2. `smartMatchPayment` - Match payment to claims intelligently (mutation)
+3. `manualPostPayment` - Manual post payment with user override (mutation)
+4. `getUnpostedLineItems` - Get unposted remittance line items (query)
+5. `getPostingMetrics` - Get posting metrics for reporting (query)
+6. `handlePartialPayment` - Handle partial payment for a charge (mutation)
+7. `triggerSecondaryClaim` - Trigger secondary claim after primary payment (mutation)
+
+**Type Exports Added**:
+- PostingStatus, DiscrepancyType, AdjustmentFlag
+- ERAProcessInput, ERAProcessOutput, LinePostingResult
+- PostingDiscrepancy, SmartPaymentMatchInput, SmartPaymentMatchOutput
+- MatchCandidate, PartialPaymentResult, AdjustmentAnalysis
+- AdjustmentCodeDetail, SecondaryClaimResult, PatientBalanceUpdate
+- PostingMetrics
+
+**Acceptance Criteria Met**:
+- ✅ aiBilling.processERA - Auto-post from ERA (via processERA endpoint)
+- ✅ Intelligent payment-to-claim matching (via matchPayment with multi-criteria)
+- ✅ Handle partial payments and adjustments (via handlePartialPayment)
+- ✅ Identify posting discrepancies (via identifyDiscrepancy with 10+ types)
+- ✅ Secondary claim triggering (via triggerSecondaryClaim with patient insurance lookup)
+- ✅ Patient responsibility calculation (via calculatePatientResponsibility)
+- ✅ Balance forward tracking (via updatePatientBalance)
+- ✅ Posting metrics for reporting (via getPostingMetrics)
+
+**Validation**:
+- TypeScript compiles successfully for new files
+- Pre-existing TypeScript errors unrelated to this change
+
+### US-313 - Billing optimization recommendations
+**Status**: COMPLETED
+**Date**: 2026-01-22
+
+**Implementation Summary**:
+Implemented comprehensive billing optimization advisor system with undercoding detection, modifier analysis, documentation gap identification, payer mix optimization, fee schedule analysis, contract negotiation insights, and revenue leakage identification.
+
+**Files Created**:
+- `app/src/lib/ai-billing/billing-optimization-advisor.ts` - New BillingOptimizationAdvisor service class (~1730 lines)
+
+**Files Modified**:
+- `app/src/lib/ai-billing/index.ts` - Added BillingOptimizationAdvisor exports and types
+- `app/src/server/routers/aiBilling.ts` - Added 8 new endpoints for billing optimization
+- `app/src/lib/audit.ts` - Added AI_BILLING_GET_RECOMMENDATIONS, AI_BILLING_REVIEW_RECOMMENDATION, AI_BILLING_APPLY_RECOMMENDATION, AI_BILLING_DISMISS_RECOMMENDATION, AI_BILLING_FEE_SCHEDULE_ANALYSIS, AI_BILLING_CONTRACT_INSIGHTS, AI_BILLING_REVENUE_LEAKAGE audit actions
+
+**BillingOptimizationAdvisor Service Features**:
+1. `getRecommendations()` - Main optimization recommendations with configurable types
+2. `analyzeUndercoding()` - Detect undercoding opportunities:
+   - CMT without evaluation codes
+   - E/M with procedures missing modifier 25
+   - Multiple regions without AT modifier
+   - High complexity without extended E/M
+3. `analyzeModifierOpportunities()` - Modifier optimization:
+   - AT modifier for active/corrective treatment
+   - 25 modifier for significant E/M services
+   - 59 modifier for distinct procedures
+   - GP modifier for physical therapy services
+4. `analyzeDocumentationGaps()` - Documentation completeness:
+   - Missing diagnoses for procedures
+   - Incomplete SOAP notes
+   - Time documentation for timed codes
+5. `analyzePayerMix()` - Payer mix analysis:
+   - Revenue breakdown by payer
+   - Denial rate by payer
+   - Credentialing recommendations
+6. `analyzeFeeSchedules()` - Fee schedule analysis:
+   - Comparison to Medicare rates
+   - Market rate analysis
+   - Fee optimization suggestions
+7. `analyzeContractNegotiation()` - Contract insights:
+   - Payment rate comparison
+   - Denial patterns by payer
+   - Negotiation leverage points
+8. `analyzeRevenueLeakage()` - Revenue leakage detection:
+   - Missed charges, unbilled services
+   - Coding errors, timely filing issues
+   - Credentialing gaps, contractual allowances
+
+**Optimization Types**:
+- UNDERCODING, MODIFIER, DOCUMENTATION, PAYER_MIX
+- FEE_SCHEDULE, CONTRACT_NEGOTIATION, REVENUE_LEAKAGE
+
+**Priority Levels**:
+- CRITICAL (>$5000 impact), HIGH (>$1000), MEDIUM (>$200), LOW
+
+**New tRPC Endpoints**:
+1. `getRecommendations` - Get billing optimization recommendations (query)
+2. `markRecommendationReviewed` - Mark recommendation as reviewed (mutation)
+3. `applyRecommendation` - Apply recommendation (mutation)
+4. `dismissRecommendation` - Dismiss recommendation (mutation)
+5. `getFeeScheduleAnalysis` - Get fee schedule analysis (query)
+6. `getContractInsights` - Get contract negotiation insights (query)
+7. `getRevenueLeakageAnalysis` - Get revenue leakage analysis (query)
+8. `getOptimizationSummary` - Get optimization summary for dashboard (query)
+
+**Type Exports Added**:
+- OptimizationType, OptimizationPriority, OptimizationStatus
+- OptimizationRecommendation, SuggestedAction, OptimizationEvidence
+- DataPoint, ComparisonData, TrendData, BenchmarkData
+- GetRecommendationsInput, GetRecommendationsOutput, OptimizationSummary
+- UndercodingOpportunity, ModifierOpportunity, DocumentationGap
+- PayerMixAnalysis, PayerMixItem, FeeScheduleAnalysis
+- FeeCodeAnalysis, FeeOptimization, ContractInsight
+- ContractCodeAnalysis, RevenueLeakage, LeakageCategory, LeakageItem
+
+**Acceptance Criteria Met**:
+- ✅ aiBilling.getRecommendations - Get optimization suggestions (via getRecommendations)
+- ✅ Identify undercoding opportunities (via analyzeUndercoding with 4 detection patterns)
+- ✅ Suggest modifier additions (via analyzeModifierOpportunities with 4 modifier types)
+- ✅ Flag documentation gaps (via analyzeDocumentationGaps with completeness checks)
+- ✅ Payer mix optimization (via analyzePayerMix with credentialing recommendations)
+- ✅ Fee schedule analysis (via analyzeFeeSchedules with Medicare/market comparison)
+- ✅ Contract negotiation insights (via analyzeContractNegotiation with leverage points)
+- ✅ Revenue leakage identification (via analyzeRevenueLeakage with 6 leakage categories)
+
+**Validation**:
+- TypeScript compiles successfully for new files
+- Pre-existing TypeScript errors unrelated to this change
+
+### US-314 - AI billing agent dashboard
+**Status**: COMPLETED
+**Date**: 2026-01-22
+
+**Implementation Summary**:
+Implemented comprehensive AI billing agent dashboard with real-time activity feed, claims processing metrics, denial/appeal tracking, revenue impact visualization, pending tasks queue, agent configuration management, performance comparison (AI vs manual), and ROI calculator.
+
+**Files Created**:
+- `app/src/components/ai-billing/AIAgentDashboard.tsx` - New dashboard component (~1050 lines)
+
+**Files Modified**:
+- `app/src/server/routers/aiBilling.ts` - Added 9 new dashboard endpoints
+- `app/src/lib/audit.ts` - Added AI_BILLING_UPDATE_RULE audit action
+- `app/src/components/ai-billing/index.ts` - Added AIAgentDashboard export
+- `app/src/app/(dashboard)/ai-billing/page.tsx` - Updated to use new AIAgentDashboard
+
+**New tRPC Endpoints**:
+1. `getAgentActivityFeed` - Real-time activity feed with task filtering
+2. `getClaimsProcessedMetrics` - Claims submission metrics by period
+3. `getDenialAppealTracking` - Denial/appeal tracking with category breakdown
+4. `getRevenueImpactData` - Revenue impact time series visualization
+5. `getPendingTasksQueue` - Pending tasks with priority sorting
+6. `getAgentConfiguration` - Agent rules and configuration
+7. `updateAgentRule` - Update agent automation rules
+8. `getPerformanceComparison` - AI vs manual performance comparison
+9. `getROICalculator` - Return on investment calculation
+
+**Dashboard Components**:
+1. `ActivityFeed` - Real-time task activity with filtering
+2. `ClaimsProcessedMetrics` - Claims submission statistics
+3. `DenialAppealTracking` - Appeal performance monitoring
+4. `RevenueImpact` - Financial impact visualization
+5. `PendingTasksQueue` - Task queue management
+6. `AgentConfiguration` - Rule configuration interface
+7. `PerformanceComparison` - AI vs manual metrics table
+8. `ROICalculator` - Investment return breakdown
+
+**Acceptance Criteria Met**:
+- ✅ AI agent activity feed (via ActivityFeed component with task filtering)
+- ✅ Claims processed metrics (via ClaimsProcessedMetrics with period selection)
+- ✅ Denial and appeal tracking (via DenialAppealTracking with category breakdown)
+- ✅ Revenue impact visualization (via RevenueImpact with time series)
+- ✅ Pending tasks queue (via PendingTasksQueue with priority sorting)
+- ✅ Agent configuration UI (via AgentConfiguration with rule toggling)
+- ✅ Performance comparison (via PerformanceComparison with AI vs manual)
+- ✅ ROI calculator (via ROICalculator with projections)
+
+**Validation**:
+- TypeScript compiles successfully for new files
+- Pre-existing TypeScript errors unrelated to this change
+
+## Epic 31 Complete!
+All 7 stories for Epic 31 - AI Billing Agent have been implemented:
+- US-308: AI billing agent schema + Autonomous claim submission
+- US-309: Denial analysis and routing
+- US-310: Automated appeal generation
+- US-311: Claim follow-up automation
+- US-312: Smart payment posting
+- US-313: Billing optimization recommendations
+- US-314: AI billing agent dashboard
+
+--- Iteration 1 completed at 2026-01-22 10:01:45 ---
+Story: US-308 - AI billing agent schema
+
+--- Iteration 2 completed at 2026-01-22 10:14:24 ---
+Story: US-308 - Autonomous claim submission
+
+
+--- Iteration 3 completed at 2026-01-22 10:24:06 ---
+Story: US-309 - Denial analysis and routing
+--- Iteration 3 completed at 2026-01-22 10:24:47 ---
+Story: US-309 - Denial analysis and routing
+
+--- Iteration 4 completed at 2026-01-22 10:37:11 ---
+Story: US-310 - Automated appeal generation
+
+--- Iteration 5 completed at 2026-01-22 ---
+Story: US-311 - Claim follow-up automation
+
+--- Iteration 5 completed at 2026-01-22 10:45:52 ---
+Story: US-311 - Claim follow-up automation
+
+--- Iteration 6 completed at 2026-01-22 ---
+Story: US-312 - Smart payment posting
+
+--- Iteration 6 completed at 2026-01-22 10:59:59 ---
+Story: US-312 - Smart payment posting
+
+--- Iteration 7 completed at 2026-01-22 ---
+Story: US-313 - Billing optimization recommendations
+--- Iteration 7 completed at 2026-01-22 11:14:41 ---
+Story: US-313 - Billing optimization recommendations
+
