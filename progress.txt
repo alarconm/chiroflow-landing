@@ -123,3 +123,54 @@ Story: US-232 - Education content schema
 --- Iteration 2 completed at 2026-01-22 ---
 Story: US-233 - Exercise library management
 
+--- Iteration 2 completed at 2026-01-22 03:52:04 ---
+Story: US-233 - Exercise library management
+
+## US-234: Exercise prescription - COMPLETED
+
+### Date: 2026-01-22
+
+### What was implemented:
+1. Created comprehensive prescription tRPC router (`app/src/server/routers/prescription.ts`) with:
+   - `prescription.list` - List prescriptions for a patient with filtering by status, encounter, treatment plan, diagnosis
+   - `prescription.get` - Get single prescription with full details including compliance stats
+   - `prescription.create` - Prescribe exercises to patient (provider only) with:
+     - Specify sets, reps, hold time, frequency
+     - Progression schedule (JSON array of weekly parameters)
+     - Special instructions and precautions
+     - Link to diagnosis, encounter, and treatment plan
+   - `prescription.update` - Modify prescription parameters (provider only)
+   - `prescription.discontinue` - End prescription with reason (provider only)
+
+2. Additional endpoints:
+   - `prescription.bulkCreate` - Create multiple prescriptions at once
+   - `prescription.getActiveForPatient` - Get active prescriptions for patient portal
+   - `prescription.advanceProgression` - Advance to next week of progression schedule
+   - `prescription.getSummary` - Get prescription counts and compliance stats for a patient
+
+3. Features implemented:
+   - Exercise defaults fallback (uses exercise.defaultSets/Reps/etc if not specified)
+   - Progression schedule support (auto-applies parameters when week advances)
+   - Compliance tracking (calculates completion rate from progress logs)
+   - Audit logging for all create/update/discontinue operations
+   - Organization-scoped access control
+   - Provider role verification for mutation operations
+
+4. Fixed TypeScript errors:
+   - Updated patient selection to use demographics relation (firstName, lastName, dateOfBirth via patient.demographics)
+   - Updated encounter selection to use encounterDate/encounterType fields
+   - Updated diagnosis selection to use icd10Code field
+   - Fixed diagnosis validation to use encounter relation instead of direct patientId
+
+### Files created:
+- app/src/server/routers/prescription.ts
+
+### Files modified:
+- app/src/server/routers/index.ts (added prescriptionRouter)
+
+### Verification:
+- TypeScript compilation passed with no errors
+
+--- Iteration 4 completed at 2026-01-22 ---
+Story: US-234 - Exercise prescription
+

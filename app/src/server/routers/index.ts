@@ -69,6 +69,7 @@ import { telehealthRouter } from './telehealth';
 import { imagingRouter } from './imaging';
 // Patient Education & Home Care (Epic 23)
 import { exerciseRouter } from './exercise';
+import { prescriptionRouter } from './prescription';
 
 export const appRouter = router({
   auth: authRouter,
@@ -141,6 +142,7 @@ export const appRouter = router({
   imaging: imagingRouter,
   // Patient Education & Home Care (Epic 23)
   exercise: exerciseRouter,
+  prescription: prescriptionRouter,
 });
 
 
