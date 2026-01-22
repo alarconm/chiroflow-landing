@@ -103,7 +103,7 @@
         "Balance forward automation"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-313",
@@ -120,7 +120,7 @@
         "Revenue leakage identification"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-314",

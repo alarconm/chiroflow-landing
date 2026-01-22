@@ -403,8 +403,96 @@ Implemented comprehensive smart payment posting system with automated ERA proces
 - TypeScript compiles successfully for new files
 - Pre-existing TypeScript errors unrelated to this change
 
+### US-313 - Billing optimization recommendations
+**Status**: COMPLETED
+**Date**: 2026-01-22
+
+**Implementation Summary**:
+Implemented comprehensive billing optimization advisor system with undercoding detection, modifier analysis, documentation gap identification, payer mix optimization, fee schedule analysis, contract negotiation insights, and revenue leakage identification.
+
+**Files Created**:
+- `app/src/lib/ai-billing/billing-optimization-advisor.ts` - New BillingOptimizationAdvisor service class (~1730 lines)
+
+**Files Modified**:
+- `app/src/lib/ai-billing/index.ts` - Added BillingOptimizationAdvisor exports and types
+- `app/src/server/routers/aiBilling.ts` - Added 8 new endpoints for billing optimization
+- `app/src/lib/audit.ts` - Added AI_BILLING_GET_RECOMMENDATIONS, AI_BILLING_REVIEW_RECOMMENDATION, AI_BILLING_APPLY_RECOMMENDATION, AI_BILLING_DISMISS_RECOMMENDATION, AI_BILLING_FEE_SCHEDULE_ANALYSIS, AI_BILLING_CONTRACT_INSIGHTS, AI_BILLING_REVENUE_LEAKAGE audit actions
+
+**BillingOptimizationAdvisor Service Features**:
+1. `getRecommendations()` - Main optimization recommendations with configurable types
+2. `analyzeUndercoding()` - Detect undercoding opportunities:
+   - CMT without evaluation codes
+   - E/M with procedures missing modifier 25
+   - Multiple regions without AT modifier
+   - High complexity without extended E/M
+3. `analyzeModifierOpportunities()` - Modifier optimization:
+   - AT modifier for active/corrective treatment
+   - 25 modifier for significant E/M services
+   - 59 modifier for distinct procedures
+   - GP modifier for physical therapy services
+4. `analyzeDocumentationGaps()` - Documentation completeness:
+   - Missing diagnoses for procedures
+   - Incomplete SOAP notes
+   - Time documentation for timed codes
+5. `analyzePayerMix()` - Payer mix analysis:
+   - Revenue breakdown by payer
+   - Denial rate by payer
+   - Credentialing recommendations
+6. `analyzeFeeSchedules()` - Fee schedule analysis:
+   - Comparison to Medicare rates
+   - Market rate analysis
+   - Fee optimization suggestions
+7. `analyzeContractNegotiation()` - Contract insights:
+   - Payment rate comparison
+   - Denial patterns by payer
+   - Negotiation leverage points
+8. `analyzeRevenueLeakage()` - Revenue leakage detection:
+   - Missed charges, unbilled services
+   - Coding errors, timely filing issues
+   - Credentialing gaps, contractual allowances
+
+**Optimization Types**:
+- UNDERCODING, MODIFIER, DOCUMENTATION, PAYER_MIX
+- FEE_SCHEDULE, CONTRACT_NEGOTIATION, REVENUE_LEAKAGE
+
+**Priority Levels**:
+- CRITICAL (>$5000 impact), HIGH (>$1000), MEDIUM (>$200), LOW
+
+**New tRPC Endpoints**:
+1. `getRecommendations` - Get billing optimization recommendations (query)
+2. `markRecommendationReviewed` - Mark recommendation as reviewed (mutation)
+3. `applyRecommendation` - Apply recommendation (mutation)
+4. `dismissRecommendation` - Dismiss recommendation (mutation)
+5. `getFeeScheduleAnalysis` - Get fee schedule analysis (query)
+6. `getContractInsights` - Get contract negotiation insights (query)
+7. `getRevenueLeakageAnalysis` - Get revenue leakage analysis (query)
+8. `getOptimizationSummary` - Get optimization summary for dashboard (query)
+
+**Type Exports Added**:
+- OptimizationType, OptimizationPriority, OptimizationStatus
+- OptimizationRecommendation, SuggestedAction, OptimizationEvidence
+- DataPoint, ComparisonData, TrendData, BenchmarkData
+- GetRecommendationsInput, GetRecommendationsOutput, OptimizationSummary
+- UndercodingOpportunity, ModifierOpportunity, DocumentationGap
+- PayerMixAnalysis, PayerMixItem, FeeScheduleAnalysis
+- FeeCodeAnalysis, FeeOptimization, ContractInsight
+- ContractCodeAnalysis, RevenueLeakage, LeakageCategory, LeakageItem
+
+**Acceptance Criteria Met**:
+- ✅ aiBilling.getRecommendations - Get optimization suggestions (via getRecommendations)
+- ✅ Identify undercoding opportunities (via analyzeUndercoding with 4 detection patterns)
+- ✅ Suggest modifier additions (via analyzeModifierOpportunities with 4 modifier types)
+- ✅ Flag documentation gaps (via analyzeDocumentationGaps with completeness checks)
+- ✅ Payer mix optimization (via analyzePayerMix with credentialing recommendations)
+- ✅ Fee schedule analysis (via analyzeFeeSchedules with Medicare/market comparison)
+- ✅ Contract negotiation insights (via analyzeContractNegotiation with leverage points)
+- ✅ Revenue leakage identification (via analyzeRevenueLeakage with 6 leakage categories)
+
+**Validation**:
+- TypeScript compiles successfully for new files
+- Pre-existing TypeScript errors unrelated to this change
+
 ## Next Stories to Implement
-- US-313 - Billing optimization recommendations
 - US-314 - AI billing agent dashboard
 --- Iteration 1 completed at 2026-01-22 10:01:45 ---
 Story: US-308 - AI billing agent schema
@@ -430,3 +518,8 @@ Story: US-311 - Claim follow-up automation
 --- Iteration 6 completed at 2026-01-22 ---
 Story: US-312 - Smart payment posting
 
+--- Iteration 6 completed at 2026-01-22 10:59:59 ---
+Story: US-312 - Smart payment posting
+
+--- Iteration 7 completed at 2026-01-22 ---
+Story: US-313 - Billing optimization recommendations

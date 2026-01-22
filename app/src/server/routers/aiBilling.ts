@@ -2921,4 +2921,331 @@ export const aiBillingRouter = router({
         });
       }
     }),
+
+  // ============================================
+  // US-313: Billing Optimization Recommendations
+  // ============================================
+
+  /**
+   * Get billing optimization recommendations
+   */
+  getRecommendations: billerProcedure
+    .input(
+      z.object({
+        types: z.array(z.enum([
+          'UNDERCODING',
+          'MODIFIER_OPPORTUNITY',
+          'DOCUMENTATION_GAP',
+          'PAYER_MIX',
+          'FEE_SCHEDULE',
+          'CONTRACT_NEGOTIATION',
+          'REVENUE_LEAKAGE',
+          'CODING_OPTIMIZATION',
+          'PROCEDURE_BUNDLING',
+          'TIMELY_FILING',
+        ])).optional(),
+        minPriority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional(),
+        minPotentialRevenue: z.number().optional(),
+        providerId: z.string().optional(),
+        payerId: z.string().optional(),
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+        limit: z.number().min(1).max(100).default(50),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      try {
+        const { BillingOptimizationAdvisor } = await import('@/lib/ai-billing');
+        const advisor = new BillingOptimizationAdvisor(ctx.prisma);
+        const result = await advisor.getRecommendations(ctx.user.organizationId, input);
+
+        await auditLog('AI_BILLING_GET_RECOMMENDATIONS', 'Recommendation', {
+          entityId: 'query',
+          changes: {
+            action: 'get_recommendations',
+            types: input.types,
+            count: result.recommendations.length,
+            totalPotentialRevenue: result.totalPotentialRevenue,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return result;
+      } catch (error) {
+        console.error('Failed to get billing recommendations:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to get billing recommendations',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Mark recommendation as reviewed
+   */
+  markRecommendationReviewed: billerProcedure
+    .input(
+      z.object({
+        recommendationId: z.string(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const { BillingOptimizationAdvisor } = await import('@/lib/ai-billing');
+        const advisor = new BillingOptimizationAdvisor(ctx.prisma);
+        await advisor.markReviewed(
+          ctx.user.organizationId,
+          input.recommendationId,
+          ctx.user.id,
+          input.notes
+        );
+
+        await auditLog('AI_BILLING_REVIEW_RECOMMENDATION', 'Recommendation', {
+          entityId: input.recommendationId,
+          changes: {
+            action: 'mark_reviewed',
+            notes: input.notes,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to mark recommendation as reviewed:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to mark recommendation as reviewed',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Apply recommendation action
+   */
+  applyRecommendation: billerProcedure
+    .input(
+      z.object({
+        recommendationId: z.string(),
+        actionIndex: z.number().default(0),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const { BillingOptimizationAdvisor } = await import('@/lib/ai-billing');
+        const advisor = new BillingOptimizationAdvisor(ctx.prisma);
+        const result = await advisor.applyRecommendation(
+          ctx.user.organizationId,
+          input.recommendationId,
+          ctx.user.id,
+          input.actionIndex
+        );
+
+        await auditLog('AI_BILLING_APPLY_RECOMMENDATION', 'Recommendation', {
+          entityId: input.recommendationId,
+          changes: {
+            action: 'apply',
+            actionIndex: input.actionIndex,
+            success: result.success,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return result;
+      } catch (error) {
+        console.error('Failed to apply recommendation:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to apply recommendation',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Dismiss recommendation
+   */
+  dismissRecommendation: billerProcedure
+    .input(
+      z.object({
+        recommendationId: z.string(),
+        reason: z.string().min(1),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const { BillingOptimizationAdvisor } = await import('@/lib/ai-billing');
+        const advisor = new BillingOptimizationAdvisor(ctx.prisma);
+        await advisor.dismissRecommendation(
+          ctx.user.organizationId,
+          input.recommendationId,
+          ctx.user.id,
+          input.reason
+        );
+
+        await auditLog('AI_BILLING_DISMISS_RECOMMENDATION', 'Recommendation', {
+          entityId: input.recommendationId,
+          changes: {
+            action: 'dismiss',
+            reason: input.reason,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to dismiss recommendation:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to dismiss recommendation',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Get fee schedule analysis
+   */
+  getFeeScheduleAnalysis: billerProcedure.query(async ({ ctx }) => {
+    try {
+      const { BillingOptimizationAdvisor } = await import('@/lib/ai-billing');
+      const advisor = new BillingOptimizationAdvisor(ctx.prisma);
+      const recommendations = await advisor.getRecommendations(ctx.user.organizationId, {
+        types: ['FEE_SCHEDULE'],
+      });
+
+      await auditLog('AI_BILLING_FEE_SCHEDULE_ANALYSIS', 'FeeSchedule', {
+        entityId: 'analysis',
+        changes: {
+          action: 'analyze',
+          count: recommendations.recommendations.length,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return recommendations;
+    } catch (error) {
+      console.error('Failed to get fee schedule analysis:', error);
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to get fee schedule analysis',
+        cause: error,
+      });
+    }
+  }),
+
+  /**
+   * Get contract negotiation insights
+   */
+  getContractInsights: billerProcedure
+    .input(
+      z.object({
+        payerId: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      try {
+        const { BillingOptimizationAdvisor } = await import('@/lib/ai-billing');
+        const advisor = new BillingOptimizationAdvisor(ctx.prisma);
+        const recommendations = await advisor.getRecommendations(ctx.user.organizationId, {
+          types: ['CONTRACT_NEGOTIATION'],
+          payerId: input.payerId,
+        });
+
+        await auditLog('AI_BILLING_CONTRACT_INSIGHTS', 'Contract', {
+          entityId: input.payerId || 'all',
+          changes: {
+            action: 'analyze',
+            count: recommendations.recommendations.length,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return recommendations;
+      } catch (error) {
+        console.error('Failed to get contract insights:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to get contract insights',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Get revenue leakage analysis
+   */
+  getRevenueLeakageAnalysis: billerProcedure
+    .input(
+      z.object({
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      try {
+        const { BillingOptimizationAdvisor } = await import('@/lib/ai-billing');
+        const advisor = new BillingOptimizationAdvisor(ctx.prisma);
+        const recommendations = await advisor.getRecommendations(ctx.user.organizationId, {
+          types: ['REVENUE_LEAKAGE'],
+          dateFrom: input.dateFrom,
+          dateTo: input.dateTo,
+        });
+
+        await auditLog('AI_BILLING_REVENUE_LEAKAGE', 'RevenueLeakage', {
+          entityId: 'analysis',
+          changes: {
+            action: 'analyze',
+            count: recommendations.recommendations.length,
+            totalPotentialRevenue: recommendations.totalPotentialRevenue,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return recommendations;
+      } catch (error) {
+        console.error('Failed to get revenue leakage analysis:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to get revenue leakage analysis',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Get optimization summary (dashboard data)
+   */
+  getOptimizationSummary: billerProcedure.query(async ({ ctx }) => {
+    try {
+      const { BillingOptimizationAdvisor } = await import('@/lib/ai-billing');
+      const advisor = new BillingOptimizationAdvisor(ctx.prisma);
+      const recommendations = await advisor.getRecommendations(ctx.user.organizationId, {
+        limit: 100,
+      });
+
+      return {
+        summary: recommendations.summary,
+        totalPotentialRevenue: recommendations.totalPotentialRevenue,
+        topOpportunities: recommendations.recommendations.slice(0, 10),
+        analysisDate: recommendations.analysisDate,
+      };
+    } catch (error) {
+      console.error('Failed to get optimization summary:', error);
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to get optimization summary',
+        cause: error,
+      });
+    }
+  }),
 });

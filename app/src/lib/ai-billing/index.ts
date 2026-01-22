@@ -18,6 +18,7 @@ export { DenialAnalyzer } from './denial-analyzer';
 export { AutomatedAppealGenerator } from './automated-appeal-generator';
 export { ClaimFollowUpAgent } from './claim-follow-up-agent';
 export { SmartPaymentPoster } from './smart-payment-poster';
+export { BillingOptimizationAdvisor } from './billing-optimization-advisor';
 
 // Convenience type re-exports for common usage
 export type {
@@ -121,3 +122,33 @@ export type {
   PatientBalanceUpdate,
   PostingMetrics,
 } from './smart-payment-poster';
+
+// Billing Optimization Advisor types (Epic 31: US-313)
+export type {
+  OptimizationType,
+  OptimizationPriority,
+  OptimizationStatus,
+  OptimizationRecommendation,
+  SuggestedAction,
+  OptimizationEvidence,
+  DataPoint,
+  ComparisonData,
+  TrendData,
+  BenchmarkData,
+  GetRecommendationsInput,
+  GetRecommendationsOutput,
+  OptimizationSummary,
+  UndercodingOpportunity,
+  ModifierOpportunity,
+  DocumentationGap,
+  PayerMixAnalysis,
+  PayerMixItem,
+  FeeScheduleAnalysis,
+  FeeCodeAnalysis,
+  FeeOptimization,
+  ContractInsight,
+  ContractCodeAnalysis,
+  RevenueLeakage,
+  LeakageCategory,
+  LeakageItem,
+} from './billing-optimization-advisor';
