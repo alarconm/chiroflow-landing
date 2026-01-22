@@ -19,7 +19,7 @@
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-209",
@@ -35,7 +35,7 @@
         "Batch upload for multiple views"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-210",
@@ -51,7 +51,7 @@
         "Use Google MediaPipe or similar pose estimation"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-211",
@@ -68,7 +68,7 @@
         "Generate deviation report with severity"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-212",
@@ -85,7 +85,7 @@
         "Visual ROM diagram"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-213",
@@ -101,7 +101,7 @@
         "Progress tracking over time"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-214",
@@ -117,7 +117,7 @@
         "Integration with treatment plan goals"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-215",
@@ -134,7 +134,7 @@
         "Patient education export"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }
