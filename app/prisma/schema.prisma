@@ -20,14 +20,14 @@ model Organization {
   updatedAt DateTime @updatedAt
 
   // Enterprise/Parent Company fields (Epic 25)
-  isEnterprise         Boolean  @default(false) // Is this a multi-location enterprise?
-  parentOrganizationId String?  // For sub-organizations (future use)
-  enterpriseSettings   Json     @default("{}") // Enterprise-level configuration
+  isEnterprise         Boolean @default(false) // Is this a multi-location enterprise?
+  parentOrganizationId String? // For sub-organizations (future use)
+  enterpriseSettings   Json    @default("{}") // Enterprise-level configuration
 
   // Primary contact
-  primaryContactName   String?
-  primaryContactEmail  String?
-  primaryContactPhone  String?
+  primaryContactName  String?
+  primaryContactEmail String?
+  primaryContactPhone String?
 
   // Relations
   users      User[]
@@ -36,7 +36,7 @@ model Organization {
   households Household[]
 
   // Multi-location relations (Epic 25)
-  locations  Location[]
+  locations Location[]
 
   // Scheduling relations
   providers        Provider[]
@@ -179,14 +179,14 @@ model Organization {
   remoteMonitoringAlerts      RemoteMonitoringAlert[]
 
   // Imaging & X-Ray Integration relations (Epic 22)
-  imagingStudies  ImagingStudy[]
-  imagingReports  ImagingReport[]
+  imagingStudies ImagingStudy[]
+  imagingReports ImagingReport[]
 
   // Patient Education & Home Care relations (Epic 23)
-  exercisePrescriptions    ExercisePrescription[]
-  prescribedArticles       PrescribedArticle[]
-  homeCareInstructions     HomeCareInstruction[]
-  patientExerciseProgress  PatientExerciseProgress[]
+  exercisePrescriptions   ExercisePrescription[]
+  prescribedArticles      PrescribedArticle[]
+  homeCareInstructions    HomeCareInstruction[]
+  patientExerciseProgress PatientExerciseProgress[]
 
   // Wearable & Device Integration relations (Epic 24)
   deviceConnections DeviceConnection[]
@@ -201,39 +201,46 @@ model Organization {
   patientLocationBalances PatientLocationBalance[]
 
   // Inter-Location Inventory relations (Epic 25 - US-254)
-  inventoryTransfers      InventoryTransfer[]
+  inventoryTransfers InventoryTransfer[]
 
   // Security & Compliance relations (Epic 26)
-  securityEvents     SecurityEvent[]
-  userSessions       UserSession[]
-  baaDocuments       BAADocument[]
-  encryptionKeys     EncryptionKey[]
-  securitySetting    SecuritySetting?
+  securityEvents  SecurityEvent[]
+  userSessions    UserSession[]
+  baaDocuments    BAADocument[]
+  encryptionKeys  EncryptionKey[]
+  securitySetting SecuritySetting?
 
   // Access Control Enhancement relations (US-262)
-  accessRequests       AccessRequest[]
-  emergencyAccessLogs  EmergencyAccessLog[]
-  permissionGrants     PermissionGrant[]
-  roleInheritances     RoleInheritance[]
+  accessRequests      AccessRequest[]
+  emergencyAccessLogs EmergencyAccessLog[]
+  permissionGrants    PermissionGrant[]
+  roleInheritances    RoleInheritance[]
 
   // Mobile Applications relations (Epic 27)
-  mobileDevices        MobileDevice[]
-  mobileRefreshTokens  MobileRefreshToken[]
-  mobileRateLimits     MobileRateLimit[]
-  offlineSyncQueues    OfflineSyncQueue[]
-  pushNotifications    PushNotification[]
+  mobileDevices           MobileDevice[]
+  mobileRefreshTokens     MobileRefreshToken[]
+  mobileRateLimits        MobileRateLimit[]
+  offlineSyncQueues       OfflineSyncQueue[]
+  pushNotifications       PushNotification[]
   notificationPreferences NotificationPreference[]
-  notificationLogs     NotificationLog[]
+  notificationLogs        NotificationLog[]
 
   // Mobile Patient Health relations (Epic 27 - US-269)
-  painDiaryEntries     PainDiaryEntry[]
-  progressPhotos       ProgressPhoto[]
-  patientGoals         PatientGoal[]
+  painDiaryEntries PainDiaryEntry[]
+  progressPhotos   ProgressPhoto[]
+  patientGoals     PatientGoal[]
 
   // Offline Mode relations (US-270)
-  offlineCaches        OfflineCache[]
-  syncConflicts        SyncConflict[]
-  deviceSyncStates     DeviceSyncState[]
+  offlineCaches    OfflineCache[]
+  syncConflicts    SyncConflict[]
+  deviceSyncStates DeviceSyncState[]
+
+  // AI Receptionist Agent relations (Epic 30)
+  aiReceptionistConversations AIReceptionistConversation[]
+  aiReceptionistActions       AIReceptionistAction[]
+  aiReceptionistEscalations   AIReceptionistEscalation[]
+  aiKnowledgeBaseEntries      AIKnowledgeBase[]
+  aiVoiceConfig               AIVoiceConfig?
 
   @@index([subdomain])
 }
@@ -275,38 +282,38 @@ model User {
   createdActivityGoals ActivityGoal[]
 
   // Multi-location relations (Epic 25)
-  locationAssignments      LocationStaff[]
-  crossLocationAccessLogs  CrossLocationAccessLog[]
+  locationAssignments     LocationStaff[]
+  crossLocationAccessLogs CrossLocationAccessLog[]
 
   // Inter-Location Inventory relations (Epic 25 - US-254)
-  transfersRequested       InventoryTransfer[]        @relation("TransferRequestedBy")
-  transfersApproved        InventoryTransfer[]        @relation("TransferApprovedBy")
-  transfersReceived        InventoryTransfer[]        @relation("TransferReceivedBy")
+  transfersRequested InventoryTransfer[] @relation("TransferRequestedBy")
+  transfersApproved  InventoryTransfer[] @relation("TransferApprovedBy")
+  transfersReceived  InventoryTransfer[] @relation("TransferReceivedBy")
 
   // Security & Compliance relations (Epic 26)
-  mfaConfigurations        MFAConfiguration[]
-  securityEvents           SecurityEvent[]
-  userSessions             UserSession[]
+  mfaConfigurations MFAConfiguration[]
+  securityEvents    SecurityEvent[]
+  userSessions      UserSession[]
 
   // Access Control Enhancement relations (US-262)
-  accessRequestsRequested  AccessRequest[]        @relation("AccessRequestRequester")
-  accessRequestsReviewed   AccessRequest[]        @relation("AccessRequestReviewer")
-  emergencyAccessLogs      EmergencyAccessLog[]
-  permissionGrants         PermissionGrant[]
-  permissionsGranted       PermissionGrant[]      @relation("PermissionGranter")
-  permissionsRevoked       PermissionGrant[]      @relation("PermissionRevoker")
-  roleInheritancesCreated  RoleInheritance[]
+  accessRequestsRequested AccessRequest[]      @relation("AccessRequestRequester")
+  accessRequestsReviewed  AccessRequest[]      @relation("AccessRequestReviewer")
+  emergencyAccessLogs     EmergencyAccessLog[]
+  permissionGrants        PermissionGrant[]
+  permissionsGranted      PermissionGrant[]    @relation("PermissionGranter")
+  permissionsRevoked      PermissionGrant[]    @relation("PermissionRevoker")
+  roleInheritancesCreated RoleInheritance[]
 
   // Mobile Applications relations (Epic 27)
-  mobileDevices            MobileDevice[]
-  mobileRefreshTokens      MobileRefreshToken[]
-  pushNotifications        PushNotification[]
-  notificationPreference   NotificationPreference?
-  notificationLogs         NotificationLog[]
+  mobileDevices          MobileDevice[]
+  mobileRefreshTokens    MobileRefreshToken[]
+  pushNotifications      PushNotification[]
+  notificationPreference NotificationPreference?
+  notificationLogs       NotificationLog[]
 
   // Offline Mode relations (US-270)
-  offlineCache             OfflineCache[]
-  deviceSyncStates         DeviceSyncState[]
+  offlineCache     OfflineCache[]
+  deviceSyncStates DeviceSyncState[]
 
   @@unique([email, organizationId])
   @@index([organizationId])
@@ -528,17 +535,20 @@ model Patient {
   activityGoals     ActivityGoal[]
 
   // Mobile Patient Health relations (Epic 27 - US-269)
-  painDiaryEntries  PainDiaryEntry[]
-  progressPhotos    ProgressPhoto[]
-  patientGoals      PatientGoal[]
+  painDiaryEntries PainDiaryEntry[]
+  progressPhotos   ProgressPhoto[]
+  patientGoals     PatientGoal[]
 
   // Multi-Location Enterprise relations (Epic 25)
-  homeLocationId                 String?   // Patient's home/primary location
-  homeLocation                   Location? @relation("PatientHomeLocation", fields: [homeLocationId], references: [id])
-  consentForCrossLocationSharing Boolean   @default(false) // Explicit consent for cross-location access
+  homeLocationId                 String? // Patient's home/primary location
+  homeLocation                   Location?                @relation("PatientHomeLocation", fields: [homeLocationId], references: [id])
+  consentForCrossLocationSharing Boolean                  @default(false) // Explicit consent for cross-location access
   crossLocationConsentDate       DateTime? // When consent was given/updated
   crossLocationAccessLogs        CrossLocationAccessLog[]
   balanceByLocation              PatientLocationBalance[]
+
+  // AI Receptionist relations (Epic 30)
+  aiReceptionistConversations AIReceptionistConversation[]
 
   @@unique([mrn, organizationId])
   @@index([organizationId])
@@ -890,7 +900,7 @@ model Provider {
   remoteMonitoringAlerts RemoteMonitoringAlert[]
 
   // Imaging & X-Ray Integration relations (Epic 22)
-  orderedImagingStudies ImagingStudy[] @relation("OrderingProvider")
+  orderedImagingStudies ImagingStudy[]  @relation("OrderingProvider")
   imagingReports        ImagingReport[]
 
   // Patient Education & Home Care relations (Epic 23)
@@ -972,12 +982,12 @@ model AppointmentType {
 
 // Location-specific availability for appointment types (Epic 25 - US-252)
 model AppointmentTypeLocation {
-  id        String   @id @default(cuid())
-  isEnabled Boolean  @default(true) // Whether this type is available at this location
+  id        String  @id @default(cuid())
+  isEnabled Boolean @default(true) // Whether this type is available at this location
 
   // Location-specific overrides
-  durationOverride Int?              // Override default duration for this location
-  priceOverride    Decimal?          @db.Decimal(10, 2) // Location-specific pricing
+  durationOverride Int? // Override default duration for this location
+  priceOverride    Decimal? @db.Decimal(10, 2) // Location-specific pricing
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -5402,7 +5412,7 @@ model Product {
   vendorProducts     VendorProduct[]
 
   // Inter-Location Inventory relations (Epic 25 - US-254)
-  transferItems      InventoryTransferItem[]
+  transferItems InventoryTransferItem[]
 
   @@unique([sku, organizationId])
   @@unique([barcode, organizationId])
@@ -5487,8 +5497,8 @@ model InventoryMovement {
   // Multi-location relation (Epic 25)
   locationId     String?
   location       Location? @relation(fields: [locationId], references: [id])
-  fromLocationId String?   // For inter-location transfers
-  toLocationId   String?   // For inter-location transfers
+  fromLocationId String? // For inter-location transfers
+  toLocationId   String? // For inter-location transfers
 
   @@index([organizationId])
   @@index([productId])
@@ -5545,7 +5555,7 @@ model Vendor {
   preferredFor   Product[]       @relation("PreferredVendor")
 
   // Security & Compliance relations (Epic 26)
-  baaDocuments   BAADocument[]
+  baaDocuments BAADocument[]
 
   @@unique([code, organizationId])
   @@index([organizationId])
@@ -8020,88 +8030,88 @@ model SessionRecording {
 
 // Types of remote monitoring submissions
 enum RemoteSubmissionType {
-  PHOTO        // Patient-submitted photos
-  VIDEO        // Patient-submitted videos
-  PAIN_DIARY   // Daily pain diary entries
-  EXERCISE     // Exercise completion/feedback
-  ACTIVITY     // Activity tracking data
+  PHOTO // Patient-submitted photos
+  VIDEO // Patient-submitted videos
+  PAIN_DIARY // Daily pain diary entries
+  EXERCISE // Exercise completion/feedback
+  ACTIVITY // Activity tracking data
   QUESTIONNAIRE // General questionnaire responses
 }
 
 // Status of remote submissions
 enum RemoteSubmissionStatus {
-  PENDING     // Awaiting provider review
-  REVIEWED    // Provider has reviewed
-  FLAGGED     // Needs follow-up
-  ARCHIVED    // No longer active
+  PENDING // Awaiting provider review
+  REVIEWED // Provider has reviewed
+  FLAGGED // Needs follow-up
+  ARCHIVED // No longer active
 }
 
 // Patient remote monitoring submission
 model RemoteMonitoringSubmission {
-  id               String                 @id @default(cuid())
-  submissionType   RemoteSubmissionType
-  status           RemoteSubmissionStatus @default(PENDING)
+  id             String                 @id @default(cuid())
+  submissionType RemoteSubmissionType
+  status         RemoteSubmissionStatus @default(PENDING)
 
   // Content
-  title            String?                // Optional title for the submission
-  description      String?     @db.Text   // Patient's description/notes
+  title       String? // Optional title for the submission
+  description String? @db.Text // Patient's description/notes
 
   // For media submissions (photos/videos)
-  mediaUrl         String?                // Encrypted storage URL
-  mediaKey         String?                // Encryption key reference
-  mediaMimeType    String?                // image/jpeg, video/mp4, etc.
-  mediaSize        Int?                   // File size in bytes
-  mediaDuration    Int?                   // Duration in seconds (for videos)
-  thumbnailUrl     String?                // Thumbnail for videos
+  mediaUrl      String? // Encrypted storage URL
+  mediaKey      String? // Encryption key reference
+  mediaMimeType String? // image/jpeg, video/mp4, etc.
+  mediaSize     Int? // File size in bytes
+  mediaDuration Int? // Duration in seconds (for videos)
+  thumbnailUrl  String? // Thumbnail for videos
 
   // For pain diary entries
-  painLevel        Int?                   // Pain level 0-10
-  painLocation     String?                // Body area affected
-  painNotes        String?     @db.Text   // Additional pain notes
+  painLevel    Int? // Pain level 0-10
+  painLocation String? // Body area affected
+  painNotes    String? @db.Text // Additional pain notes
 
   // For exercise submissions
-  exerciseId       String?                // Link to prescribed exercise
-  exerciseName     String?                // Name of exercise
-  exerciseDuration Int?                   // Duration in seconds
-  exerciseReps     Int?                   // Number of repetitions
-  exerciseSets     Int?                   // Number of sets completed
-  exerciseFeedback String?     @db.Text   // Patient feedback on exercise
+  exerciseId       String? // Link to prescribed exercise
+  exerciseName     String? // Name of exercise
+  exerciseDuration Int? // Duration in seconds
+  exerciseReps     Int? // Number of repetitions
+  exerciseSets     Int? // Number of sets completed
+  exerciseFeedback String? @db.Text // Patient feedback on exercise
 
   // For activity tracking
-  activityType     String?                // walking, steps, etc.
-  activityValue    Float?                 // Numeric value
-  activityUnit     String?                // steps, miles, minutes, etc.
-  activitySource   String?                // Device/app source
+  activityType   String? // walking, steps, etc.
+  activityValue  Float? // Numeric value
+  activityUnit   String? // steps, miles, minutes, etc.
+  activitySource String? // Device/app source
 
   // Questionnaire responses (JSON)
-  questionnaireResponses Json?            // Structured responses
+  questionnaireResponses Json? // Structured responses
 
   // Provider review
   reviewedAt       DateTime?
-  reviewedById     String?                // Provider who reviewed
-  reviewNotes      String?     @db.Text   // Provider's review notes
-  followUpRequired Boolean     @default(false)
-  followUpNotes    String?     @db.Text
+  reviewedById     String? // Provider who reviewed
+  reviewNotes      String?   @db.Text // Provider's review notes
+  followUpRequired Boolean   @default(false)
+  followUpNotes    String?   @db.Text
 
   // Timestamps
-  submittedAt      DateTime    @default(now())
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
+  submittedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   // Relations
-  patientId        String
-  patient          Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
-  encounterId      String?                // Optional link to encounter
-  encounter        Encounter?  @relation(fields: [encounterId], references: [id], onDelete: SetNull)
+  encounterId String? // Optional link to encounter
+  encounter   Encounter? @relation(fields: [encounterId], references: [id], onDelete: SetNull)
 
-  telehealthSessionId String?             // Optional link to telehealth session
+  telehealthSessionId String? // Optional link to telehealth session
 
-  organizationId   String
-  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   // Attachments (for multiple files per submission)
-  attachments      RemoteSubmissionAttachment[]
+  attachments RemoteSubmissionAttachment[]
 
   @@index([organizationId])
   @@index([patientId])
@@ -8114,51 +8124,51 @@ model RemoteMonitoringSubmission {
 
 // Attachments for remote monitoring submissions (for multi-file uploads)
 model RemoteSubmissionAttachment {
-  id            String   @id @default(cuid())
+  id String @id @default(cuid())
 
-  fileName      String                   // Original file name
-  fileUrl       String                   // Encrypted storage URL
-  fileKey       String?                  // Encryption key reference
-  mimeType      String                   // MIME type
-  fileSize      Int                      // Size in bytes
-  duration      Int?                     // Duration for videos (seconds)
-  thumbnailUrl  String?                  // Thumbnail for images/videos
+  fileName     String // Original file name
+  fileUrl      String // Encrypted storage URL
+  fileKey      String? // Encryption key reference
+  mimeType     String // MIME type
+  fileSize     Int // Size in bytes
+  duration     Int? // Duration for videos (seconds)
+  thumbnailUrl String? // Thumbnail for images/videos
 
-  createdAt     DateTime @default(now())
+  createdAt DateTime @default(now())
 
   // Relations
-  submissionId  String
-  submission    RemoteMonitoringSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  submissionId String
+  submission   RemoteMonitoringSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
 
   @@index([submissionId])
 }
 
 // Provider alerts for new submissions
 model RemoteMonitoringAlert {
-  id            String   @id @default(cuid())
+  id String @id @default(cuid())
 
-  alertType     String                   // new_submission, high_pain, missed_exercise, etc.
-  priority      String   @default("normal") // low, normal, high, urgent
-  message       String   @db.Text
+  alertType String // new_submission, high_pain, missed_exercise, etc.
+  priority  String @default("normal") // low, normal, high, urgent
+  message   String @db.Text
 
-  isRead        Boolean  @default(false)
-  readAt        DateTime?
+  isRead Boolean   @default(false)
+  readAt DateTime?
 
-  isDismissed   Boolean  @default(false)
+  isDismissed   Boolean   @default(false)
   dismissedAt   DateTime?
   dismissedById String?
 
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  patientId     String
-  patient       Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
-  submissionId  String?                  // Optional link to submission
+  submissionId String? // Optional link to submission
 
-  providerId    String                   // Provider to alert
-  provider      Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  providerId String // Provider to alert
+  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -8177,99 +8187,99 @@ model RemoteMonitoringAlert {
 
 // Imaging modality types
 enum ImagingModality {
-  XRAY        // Standard X-ray
-  MRI         // Magnetic Resonance Imaging
-  CT          // Computed Tomography
-  ULTRASOUND  // Ultrasound/Sonography
+  XRAY // Standard X-ray
+  MRI // Magnetic Resonance Imaging
+  CT // Computed Tomography
+  ULTRASOUND // Ultrasound/Sonography
 }
 
 // Imaging study status
 enum ImagingStudyStatus {
-  SCHEDULED   // Study scheduled but not performed
+  SCHEDULED // Study scheduled but not performed
   IN_PROGRESS // Study being performed
-  COMPLETED   // Study completed, images available
-  REPORTED    // Final report issued
-  CANCELLED   // Study cancelled
+  COMPLETED // Study completed, images available
+  REPORTED // Final report issued
+  CANCELLED // Study cancelled
 }
 
 // Annotation type for image markup
 enum ImagingAnnotationType {
-  ARROW       // Arrow pointing to area of interest
-  LINE        // Measurement line
-  TEXT        // Text label
-  CIRCLE      // Circle/ellipse highlight
-  RECTANGLE   // Rectangle highlight
-  ANGLE       // Angle measurement
-  COBB_ANGLE  // Cobb angle for scoliosis
-  FREEHAND    // Freeform drawing
+  ARROW // Arrow pointing to area of interest
+  LINE // Measurement line
+  TEXT // Text label
+  CIRCLE // Circle/ellipse highlight
+  RECTANGLE // Rectangle highlight
+  ANGLE // Angle measurement
+  COBB_ANGLE // Cobb angle for scoliosis
+  FREEHAND // Freeform drawing
 }
 
 // Measurement type for imaging
 enum ImagingMeasurementType {
-  LINEAR        // Linear distance measurement
-  ANGLE         // Angle measurement
-  COBB_ANGLE    // Cobb angle for scoliosis
-  CERVICAL_LORDOSIS   // Cervical lordosis angle
-  LUMBAR_LORDOSIS     // Lumbar lordosis angle
-  DISC_HEIGHT         // Disc space height
-  VERTEBRAL_HEIGHT    // Vertebral body height
-  ATLAS_PLANE         // Atlas plane line
-  AREA                // Area measurement
+  LINEAR // Linear distance measurement
+  ANGLE // Angle measurement
+  COBB_ANGLE // Cobb angle for scoliosis
+  CERVICAL_LORDOSIS // Cervical lordosis angle
+  LUMBAR_LORDOSIS // Lumbar lordosis angle
+  DISC_HEIGHT // Disc space height
+  VERTEBRAL_HEIGHT // Vertebral body height
+  ATLAS_PLANE // Atlas plane line
+  AREA // Area measurement
 }
 
 // Report status for imaging reports
 enum ImagingReportStatus {
-  DRAFT       // Report in progress
-  PENDING_REVIEW  // Awaiting review
-  FINAL       // Final report
-  AMENDED     // Report has been amended
-  ADDENDUM    // Addendum added
+  DRAFT // Report in progress
+  PENDING_REVIEW // Awaiting review
+  FINAL // Final report
+  AMENDED // Report has been amended
+  ADDENDUM // Addendum added
 }
 
 // Imaging study - represents a collection of images from one session
 model ImagingStudy {
-  id           String             @id @default(cuid())
-  studyDate    DateTime           // When the study was performed
-  modality     ImagingModality    // Type of imaging
-  bodyPart     String             // Body region imaged (e.g., "Cervical Spine", "Lumbar Spine")
-  status       ImagingStudyStatus @default(SCHEDULED)
+  id        String             @id @default(cuid())
+  studyDate DateTime // When the study was performed
+  modality  ImagingModality // Type of imaging
+  bodyPart  String // Body region imaged (e.g., "Cervical Spine", "Lumbar Spine")
+  status    ImagingStudyStatus @default(SCHEDULED)
 
   // Study identification
-  accessionNumber String?         // Unique study identifier
-  studyInstanceUid String?        // DICOM Study Instance UID
-  description     String?         // Study description
+  accessionNumber  String? // Unique study identifier
+  studyInstanceUid String? // DICOM Study Instance UID
+  description      String? // Study description
 
   // Clinical context
-  indication      String?         // Reason for study
-  clinicalHistory String?         @db.Text
+  indication      String? // Reason for study
+  clinicalHistory String? @db.Text
 
   // Technical info
-  equipment       String?         // Equipment/machine used
-  technician      String?         // Technician who performed study
+  equipment  String? // Equipment/machine used
+  technician String? // Technician who performed study
 
   // Metadata
-  numberOfImages  Int             @default(0)
+  numberOfImages Int @default(0)
 
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  patientId    String
-  patient      Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
-  orderingProviderId String?      // Provider who ordered the study
-  orderingProvider   Provider?    @relation("OrderingProvider", fields: [orderingProviderId], references: [id], onDelete: SetNull)
+  orderingProviderId String? // Provider who ordered the study
+  orderingProvider   Provider? @relation("OrderingProvider", fields: [orderingProviderId], references: [id], onDelete: SetNull)
 
   organizationId String
-  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   // Related records
-  images       ImagingImage[]
-  reports      ImagingReport[]
+  images  ImagingImage[]
+  reports ImagingReport[]
 
   // Link to encounter if applicable
-  encounterId  String?
-  encounter    Encounter?         @relation(fields: [encounterId], references: [id], onDelete: SetNull)
+  encounterId String?
+  encounter   Encounter? @relation(fields: [encounterId], references: [id], onDelete: SetNull)
 
   @@index([organizationId])
   @@index([patientId])
@@ -8281,45 +8291,45 @@ model ImagingStudy {
 
 // Individual image within a study
 model ImagingImage {
-  id              String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // Image identification
-  imageUrl        String            // URL to stored image (HIPAA-compliant storage)
-  thumbnailUrl    String?           // Compressed thumbnail for gallery view
-  originalUrl     String?           // Original uncompressed file URL
+  imageUrl     String // URL to stored image (HIPAA-compliant storage)
+  thumbnailUrl String? // Compressed thumbnail for gallery view
+  originalUrl  String? // Original uncompressed file URL
 
   // DICOM-specific fields
-  seriesNumber    Int?              // Series number within study
-  instanceNumber  Int?              // Instance number within series
-  seriesInstanceUid String?         // DICOM Series Instance UID
-  sopInstanceUid    String?         // DICOM SOP Instance UID
+  seriesNumber      Int? // Series number within study
+  instanceNumber    Int? // Instance number within series
+  seriesInstanceUid String? // DICOM Series Instance UID
+  sopInstanceUid    String? // DICOM SOP Instance UID
 
   // Image metadata
-  fileName        String?           // Original file name
-  fileSize        Int?              // File size in bytes
-  mimeType        String            @default("application/dicom") // image/jpeg, image/png, application/dicom
-  width           Int?              // Image width in pixels
-  height          Int?              // Image height in pixels
+  fileName String? // Original file name
+  fileSize Int? // File size in bytes
+  mimeType String  @default("application/dicom") // image/jpeg, image/png, application/dicom
+  width    Int? // Image width in pixels
+  height   Int? // Image height in pixels
 
   // DICOM window/level defaults
-  windowCenter    Float?            // Window center (DICOM)
-  windowWidth     Float?            // Window width (DICOM)
+  windowCenter Float? // Window center (DICOM)
+  windowWidth  Float? // Window width (DICOM)
 
   // View information
-  viewPosition    String?           // AP, PA, LAT, OBL, etc.
-  bodyPartExamined String?          // Specific body part
-  laterality      String?           // L, R, or bilateral
+  viewPosition     String? // AP, PA, LAT, OBL, etc.
+  bodyPartExamined String? // Specific body part
+  laterality       String? // L, R, or bilateral
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  studyId         String
-  study           ImagingStudy     @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  studyId String
+  study   ImagingStudy @relation(fields: [studyId], references: [id], onDelete: Cascade)
 
   // Annotations and measurements on this image
-  annotations     ImagingAnnotation[]
-  measurements    ImagingMeasurement[]
+  annotations  ImagingAnnotation[]
+  measurements ImagingMeasurement[]
 
   @@index([studyId])
   @@index([seriesNumber, instanceNumber])
@@ -8327,32 +8337,32 @@ model ImagingImage {
 
 // Annotation on an image (arrows, circles, text labels)
 model ImagingAnnotation {
-  id          String               @id @default(cuid())
-  type        ImagingAnnotationType // Type of annotation
+  id   String                @id @default(cuid())
+  type ImagingAnnotationType // Type of annotation
 
   // Position and shape (stored as JSON for flexibility)
-  coordinates Json                 // Start/end points, dimensions, etc.
+  coordinates Json // Start/end points, dimensions, etc.
 
   // Text content
-  text        String?              // Label text
+  text String? // Label text
 
   // Style properties
-  color       String?              @default("#FF0000") // Annotation color
-  lineWidth   Int?                 @default(2)
-  fontSize    Int?                 @default(14)
+  color     String? @default("#FF0000") // Annotation color
+  lineWidth Int?    @default(2)
+  fontSize  Int?    @default(14)
 
   // Visibility
-  isVisible   Boolean              @default(true)
-  layer       Int                  @default(0) // Stacking order
+  isVisible Boolean @default(true)
+  layer     Int     @default(0) // Stacking order
 
-  createdAt   DateTime             @default(now())
-  updatedAt   DateTime             @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  imageId     String
-  image       ImagingImage         @relation(fields: [imageId], references: [id], onDelete: Cascade)
+  imageId String
+  image   ImagingImage @relation(fields: [imageId], references: [id], onDelete: Cascade)
 
-  createdById String               // User who created the annotation
+  createdById String // User who created the annotation
 
   @@index([imageId])
   @@index([type])
@@ -8360,36 +8370,36 @@ model ImagingAnnotation {
 
 // Measurement on an image (angles, distances, Cobb angles)
 model ImagingMeasurement {
-  id          String                   @id @default(cuid())
-  type        ImagingMeasurementType   // Type of measurement
+  id   String                 @id @default(cuid())
+  type ImagingMeasurementType // Type of measurement
 
   // Measurement value
-  value       Float                    // Measured value
-  unit        String                   // Unit (degrees, mm, cm, etc.)
+  value Float // Measured value
+  unit  String // Unit (degrees, mm, cm, etc.)
 
   // Position (stored as JSON for flexibility)
-  coordinates Json                     // Points used for measurement
+  coordinates Json // Points used for measurement
 
   // Reference values for comparison
-  normalMin   Float?                   // Normal range minimum
-  normalMax   Float?                   // Normal range maximum
-  deviation   Float?                   // Deviation from normal (auto-calculated)
+  normalMin Float? // Normal range minimum
+  normalMax Float? // Normal range maximum
+  deviation Float? // Deviation from normal (auto-calculated)
 
   // Labeling
-  label       String?                  // Custom label
-  description String?                  // Description of finding
+  label       String? // Custom label
+  description String? // Description of finding
 
   // Style
-  color       String?                  @default("#00FF00")
+  color String? @default("#00FF00")
 
-  createdAt   DateTime                 @default(now())
-  updatedAt   DateTime                 @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  imageId     String
-  image       ImagingImage             @relation(fields: [imageId], references: [id], onDelete: Cascade)
+  imageId String
+  image   ImagingImage @relation(fields: [imageId], references: [id], onDelete: Cascade)
 
-  createdById String                   // User who created the measurement
+  createdById String // User who created the measurement
 
   @@index([imageId])
   @@index([type])
@@ -8397,51 +8407,51 @@ model ImagingMeasurement {
 
 // Imaging report - clinical interpretation of study
 model ImagingReport {
-  id          String              @id @default(cuid())
-  status      ImagingReportStatus @default(DRAFT)
+  id     String              @id @default(cuid())
+  status ImagingReportStatus @default(DRAFT)
 
   // Report content
-  findings    String              @db.Text   // Detailed findings
-  impression  String?             @db.Text   // Summary/conclusion
+  findings   String  @db.Text // Detailed findings
+  impression String? @db.Text // Summary/conclusion
 
   // Structured findings (optional, JSON for flexibility)
-  structuredFindings Json?        // Structured finding data
+  structuredFindings Json? // Structured finding data
 
   // Comparison
-  comparisonStudyId String?       // Prior study for comparison
-  comparisonNotes   String?       @db.Text
+  comparisonStudyId String? // Prior study for comparison
+  comparisonNotes   String? @db.Text
 
   // Recommendations
-  recommendations   String?       @db.Text
+  recommendations String? @db.Text
 
   // Clinical correlation
-  clinicalCorrelation String?     @db.Text
+  clinicalCorrelation String? @db.Text
 
   // Workflow
-  dictatedAt        DateTime?     // When report was dictated
-  transcribedAt     DateTime?     // When report was transcribed
-  signedAt          DateTime?     // When report was signed
-  amendedAt         DateTime?     // When report was amended
+  dictatedAt    DateTime? // When report was dictated
+  transcribedAt DateTime? // When report was transcribed
+  signedAt      DateTime? // When report was signed
+  amendedAt     DateTime? // When report was amended
 
   // Electronic signature
-  signatureData     String?       // Base64 signature image or hash
+  signatureData String? // Base64 signature image or hash
 
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  studyId     String
-  study       ImagingStudy        @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  studyId String
+  study   ImagingStudy @relation(fields: [studyId], references: [id], onDelete: Cascade)
 
-  reportedById String             // Provider who created the report
-  reportedBy   Provider           @relation(fields: [reportedById], references: [id], onDelete: Restrict)
+  reportedById String // Provider who created the report
+  reportedBy   Provider @relation(fields: [reportedById], references: [id], onDelete: Restrict)
 
   organizationId String
-  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   // Link to treatment plan for recommendations
   treatmentPlanId String?
-  treatmentPlan   TreatmentPlan?  @relation(fields: [treatmentPlanId], references: [id], onDelete: SetNull)
+  treatmentPlan   TreatmentPlan? @relation(fields: [treatmentPlanId], references: [id], onDelete: SetNull)
 
   @@index([organizationId])
   @@index([studyId])
@@ -8501,18 +8511,18 @@ enum HomeCareInstructionStatus {
 
 // Reading level for education content
 enum ReadingLevel {
-  SIMPLE       // 5th grade
-  STANDARD     // 8th grade
-  DETAILED     // 12th grade
+  SIMPLE // 5th grade
+  STANDARD // 8th grade
+  DETAILED // 12th grade
 }
 
 // Exercise category model
 model ExerciseCategory {
   id          String               @id @default(cuid())
-  name        String               // e.g., "Neck Stretches"
+  name        String // e.g., "Neck Stretches"
   type        ExerciseCategoryType // Stretching, Strengthening, etc.
   description String?              @db.Text
-  iconUrl     String?              // Icon for category
+  iconUrl     String? // Icon for category
   sortOrder   Int                  @default(0)
   isActive    Boolean              @default(true)
 
@@ -8528,38 +8538,38 @@ model ExerciseCategory {
 
 // Therapeutic exercise model
 model Exercise {
-  id           String             @id @default(cuid())
-  name         String             // e.g., "Chin Tucks"
-  description  String             @db.Text
-  instructions String             @db.Text // Step-by-step instructions
-  videoUrl     String?            // URL to demonstration video
-  imageUrl     String?            // Static image of exercise
-  thumbnailUrl String?            // Thumbnail for lists
+  id           String  @id @default(cuid())
+  name         String // e.g., "Chin Tucks"
+  description  String  @db.Text
+  instructions String  @db.Text // Step-by-step instructions
+  videoUrl     String? // URL to demonstration video
+  imageUrl     String? // Static image of exercise
+  thumbnailUrl String? // Thumbnail for lists
 
   // Classification
-  difficulty   ExerciseDifficulty @default(BEGINNER)
-  bodyRegion   BodyRegion         // Target area
-  targetMuscles String[]          // Specific muscles targeted
-  conditions    String[]          // Conditions this exercise helps
+  difficulty    ExerciseDifficulty @default(BEGINNER)
+  bodyRegion    BodyRegion // Target area
+  targetMuscles String[] // Specific muscles targeted
+  conditions    String[] // Conditions this exercise helps
 
   // Parameters
-  defaultSets     Int?            // Default number of sets
-  defaultReps     Int?            // Default number of reps
-  defaultHoldTime Int?            // Hold time in seconds
-  defaultFrequency String?        // e.g., "3x daily"
+  defaultSets      Int? // Default number of sets
+  defaultReps      Int? // Default number of reps
+  defaultHoldTime  Int? // Hold time in seconds
+  defaultFrequency String? // e.g., "3x daily"
 
   // Equipment
-  equipmentRequired String[]      // Equipment needed
-  modifications     String?       @db.Text // Modifications for different abilities
+  equipmentRequired String[] // Equipment needed
+  modifications     String?  @db.Text // Modifications for different abilities
 
   // Safety
-  contraindications String?       @db.Text // When NOT to do this exercise
-  precautions       String?       @db.Text // Safety precautions
+  contraindications String? @db.Text // When NOT to do this exercise
+  precautions       String? @db.Text // Safety precautions
 
   // Metadata
-  isCustom   Boolean  @default(false) // Custom exercise vs library
-  isActive   Boolean  @default(true)
-  createdBy  String?  // User ID who created (for custom)
+  isCustom  Boolean @default(false) // Custom exercise vs library
+  isActive  Boolean @default(true)
+  createdBy String? // User ID who created (for custom)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -8583,23 +8593,23 @@ model EducationArticle {
   title        String
   content      String       @db.Text // Full article content (HTML/Markdown)
   summary      String?      @db.Text // Brief summary
-  category     String       // e.g., "Conditions", "Prevention", "Lifestyle"
+  category     String // e.g., "Conditions", "Prevention", "Lifestyle"
   readingLevel ReadingLevel @default(STANDARD)
   language     String       @default("en")
 
   // Related conditions and keywords
-  relatedConditions String[]   // ICD-10 codes or condition names
-  keywords          String[]   // Search keywords
-  tags              String[]   // UI tags
+  relatedConditions String[] // ICD-10 codes or condition names
+  keywords          String[] // Search keywords
+  tags              String[] // UI tags
 
   // Media
-  featuredImageUrl String?     // Featured image
-  attachments      Json?       // Array of attachment URLs/metadata
+  featuredImageUrl String? // Featured image
+  attachments      Json? // Array of attachment URLs/metadata
 
   // Publishing
-  isPublished   Boolean   @default(false)
-  publishedAt   DateTime?
-  authorName    String?   // Display name of author
+  isPublished    Boolean   @default(false)
+  publishedAt    DateTime?
+  authorName     String? // Display name of author
   lastReviewedAt DateTime? // Medical review date
 
   // Metrics
@@ -8618,31 +8628,31 @@ model EducationArticle {
 
 // Exercise prescription - links patient to exercises
 model ExercisePrescription {
-  id        String             @id @default(cuid())
-  status    PrescriptionStatus @default(ACTIVE)
+  id     String             @id @default(cuid())
+  status PrescriptionStatus @default(ACTIVE)
 
   // Exercise parameters
-  sets         Int?        // Number of sets
-  reps         Int?        // Number of reps per set
-  holdTime     Int?        // Hold time in seconds
-  frequency    String?     // e.g., "3x daily", "Every 2 hours"
-  duration     String?     // e.g., "2 weeks", "Until follow-up"
+  sets      Int? // Number of sets
+  reps      Int? // Number of reps per set
+  holdTime  Int? // Hold time in seconds
+  frequency String? // e.g., "3x daily", "Every 2 hours"
+  duration  String? // e.g., "2 weeks", "Until follow-up"
 
   // Schedule
   startDate DateTime  @default(now())
   endDate   DateTime?
 
   // Instructions
-  specialInstructions String?  @db.Text // Modifications or notes
-  precautions         String?  @db.Text // Patient-specific precautions
+  specialInstructions String? @db.Text // Modifications or notes
+  precautions         String? @db.Text // Patient-specific precautions
 
   // Progression
-  progressionSchedule Json?    // Planned progression (sets/reps increases)
-  currentWeek         Int      @default(1) // Current week of progression
+  progressionSchedule Json? // Planned progression (sets/reps increases)
+  currentWeek         Int   @default(1) // Current week of progression
 
   // Metadata
-  prescribedAt DateTime @default(now())
-  discontinuedAt DateTime?
+  prescribedAt       DateTime  @default(now())
+  discontinuedAt     DateTime?
   discontinuedReason String?
 
   createdAt DateTime @default(now())
@@ -8655,18 +8665,18 @@ model ExercisePrescription {
   patientId String
   patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
-  prescriberId String   // Provider who prescribed
+  prescriberId String // Provider who prescribed
   prescriber   Provider @relation(fields: [prescriberId], references: [id])
 
   // Optional links
-  encounterId     String?       // Encounter where prescribed
-  encounter       Encounter?    @relation(fields: [encounterId], references: [id])
+  encounterId String? // Encounter where prescribed
+  encounter   Encounter? @relation(fields: [encounterId], references: [id])
 
-  treatmentPlanId String?       // Associated treatment plan
+  treatmentPlanId String? // Associated treatment plan
   treatmentPlan   TreatmentPlan? @relation(fields: [treatmentPlanId], references: [id])
 
-  diagnosisId     String?       // Associated diagnosis
-  diagnosis       Diagnosis?    @relation(fields: [diagnosisId], references: [id])
+  diagnosisId String? // Associated diagnosis
+  diagnosis   Diagnosis? @relation(fields: [diagnosisId], references: [id])
 
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -8683,10 +8693,10 @@ model ExercisePrescription {
 
 // Prescribed education article - links patient to articles
 model PrescribedArticle {
-  id        String   @id @default(cuid())
-  isRead    Boolean  @default(false)
-  readAt    DateTime?
-  assignedAt DateTime @default(now())
+  id         String    @id @default(cuid())
+  isRead     Boolean   @default(false)
+  readAt     DateTime?
+  assignedAt DateTime  @default(now())
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -8721,22 +8731,22 @@ model HomeCareInstruction {
   instructions String @db.Text // Main instructions (HTML/Markdown)
 
   // Specific protocols
-  iceProtocol    String? @db.Text // Ice therapy instructions
-  heatProtocol   String? @db.Text // Heat therapy instructions
-  activityMods   String? @db.Text // Activity modifications
-  ergonomicRecs  String? @db.Text // Ergonomic recommendations
-  warningSigns   String? @db.Text // Signs to watch for
-  followUpInstr  String? @db.Text // Follow-up instructions
+  iceProtocol   String? @db.Text // Ice therapy instructions
+  heatProtocol  String? @db.Text // Heat therapy instructions
+  activityMods  String? @db.Text // Activity modifications
+  ergonomicRecs String? @db.Text // Ergonomic recommendations
+  warningSigns  String? @db.Text // Signs to watch for
+  followUpInstr String? @db.Text // Follow-up instructions
 
   // Duration
-  durationDays  Int?      // How long to follow instructions
-  startDate     DateTime  @default(now())
-  endDate       DateTime?
+  durationDays Int? // How long to follow instructions
+  startDate    DateTime  @default(now())
+  endDate      DateTime?
 
   // Delivery
-  deliveredAt      DateTime?
-  deliveryMethod   String?    // email, portal, print
-  pdfUrl           String?    // Generated PDF URL
+  deliveredAt    DateTime?
+  deliveryMethod String? // email, portal, print
+  pdfUrl         String? // Generated PDF URL
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -8766,20 +8776,20 @@ model PatientExerciseProgress {
   completedAt DateTime @default(now())
 
   // What was done
-  setsCompleted Int?     // Actual sets completed
-  repsCompleted Int?     // Actual reps per set
-  holdTime      Int?     // Actual hold time in seconds
-  duration      Int?     // Total duration in minutes
+  setsCompleted Int? // Actual sets completed
+  repsCompleted Int? // Actual reps per set
+  holdTime      Int? // Actual hold time in seconds
+  duration      Int? // Total duration in minutes
 
   // Feedback
-  painBefore    Int?     // Pain level 0-10 before
-  painAfter     Int?     // Pain level 0-10 after
-  difficulty    Int?     // Perceived difficulty 1-5
-  notes         String?  @db.Text // Patient notes
+  painBefore Int? // Pain level 0-10 before
+  painAfter  Int? // Pain level 0-10 after
+  difficulty Int? // Perceived difficulty 1-5
+  notes      String? @db.Text // Patient notes
 
   // Session info
-  skipped       Boolean  @default(false) // Was this session skipped?
-  skipReason    String?  // Why skipped
+  skipped    Boolean @default(false) // Was this session skipped?
+  skipReason String? // Why skipped
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -8818,11 +8828,11 @@ enum DeviceType {
 
 // Connection status for devices
 enum DeviceConnectionStatus {
-  PENDING     // Authorization initiated but not completed
-  CONNECTED   // Successfully connected and syncing
-  EXPIRED     // Token expired, needs reauthorization
+  PENDING // Authorization initiated but not completed
+  CONNECTED // Successfully connected and syncing
+  EXPIRED // Token expired, needs reauthorization
   DISCONNECTED // User disconnected the device
-  ERROR       // Connection error
+  ERROR // Connection error
 }
 
 // Device/platform connections for patients
@@ -8833,25 +8843,25 @@ model DeviceConnection {
   updatedAt DateTime               @updatedAt
 
   // Device info
-  deviceType   DeviceType
-  deviceName   String?   // Friendly name (e.g., "John's Apple Watch")
-  deviceModel  String?   // Model info if available
+  deviceType  DeviceType
+  deviceName  String? // Friendly name (e.g., "John's Apple Watch")
+  deviceModel String? // Model info if available
 
   // OAuth/Authorization
-  connectionToken String?  @db.Text // Encrypted access token
-  refreshToken    String?  @db.Text // Encrypted refresh token
+  connectionToken String?   @db.Text // Encrypted access token
+  refreshToken    String?   @db.Text // Encrypted refresh token
   tokenExpiresAt  DateTime?
   scopes          String[] // Permissions granted
 
   // Sync settings
-  lastSyncAt     DateTime?
-  syncFrequency  Int       @default(60) // Minutes between syncs
-  syncEnabled    Boolean   @default(true)
+  lastSyncAt    DateTime?
+  syncFrequency Int       @default(60) // Minutes between syncs
+  syncEnabled   Boolean   @default(true)
 
   // Error tracking
-  lastError      String?   @db.Text
-  lastErrorAt    DateTime?
-  errorCount     Int       @default(0)
+  lastError   String?   @db.Text
+  lastErrorAt DateTime?
+  errorCount  Int       @default(0)
 
   // Relations
   patientId String
@@ -8881,14 +8891,14 @@ model ActivityData {
   updatedAt DateTime @updatedAt
 
   // Activity metrics
-  steps         Int?   // Total steps
+  steps         Int? // Total steps
   distance      Float? // Distance in meters
-  activeMinutes Int?   // Total active minutes
-  calories      Int?   // Calories burned
+  activeMinutes Int? // Total active minutes
+  calories      Int? // Calories burned
 
   // Detailed breakdown (JSON for flexibility)
-  hourlySteps   Json?  // Steps per hour { "0": 0, "1": 50, ... }
-  workouts      Json?  // Workout sessions [{ type, duration, calories, startTime }]
+  hourlySteps Json? // Steps per hour { "0": 0, "1": 50, ... }
+  workouts    Json? // Workout sessions [{ type, duration, calories, startTime }]
 
   // Source info
   sourceDevice String? // Which device provided this data
@@ -8917,25 +8927,25 @@ model SleepData {
   updatedAt DateTime @updatedAt
 
   // Sleep metrics
-  duration      Int?   // Total sleep duration in minutes
-  quality       Int?   // Sleep quality score 0-100
-  efficiency    Int?   // Sleep efficiency percentage
+  duration   Int? // Total sleep duration in minutes
+  quality    Int? // Sleep quality score 0-100
+  efficiency Int? // Sleep efficiency percentage
 
   // Sleep times
-  sleepStart    DateTime? // When user fell asleep
-  sleepEnd      DateTime? // When user woke up
-  timeToSleep   Int?      // Minutes to fall asleep
+  sleepStart  DateTime? // When user fell asleep
+  sleepEnd    DateTime? // When user woke up
+  timeToSleep Int? // Minutes to fall asleep
 
   // Sleep stages (in minutes)
-  stages        Json?  // { awake, light, deep, rem }
-  awakeMinutes  Int?
-  lightMinutes  Int?
-  deepMinutes   Int?
-  remMinutes    Int?
+  stages       Json? // { awake, light, deep, rem }
+  awakeMinutes Int?
+  lightMinutes Int?
+  deepMinutes  Int?
+  remMinutes   Int?
 
   // Disturbances
-  awakenings    Int?   // Number of times woke up
-  restlessness  Int?   // Restlessness score
+  awakenings   Int? // Number of times woke up
+  restlessness Int? // Restlessness score
 
   // Source info
   sourceDevice String?
@@ -8963,20 +8973,20 @@ model PostureData {
   createdAt DateTime @default(now())
 
   // Posture metrics
-  score           Int?     // Posture score 0-100
-  isAlert         Boolean  @default(false) // Was this a slouch alert?
-  alertType       String?  // Type of alert (slouch, hunched, etc.)
+  score     Int? // Posture score 0-100
+  isAlert   Boolean @default(false) // Was this a slouch alert?
+  alertType String? // Type of alert (slouch, hunched, etc.)
 
   // Position data
-  angle           Float?   // Spine angle in degrees
-  position        String?  // Sitting, standing, etc.
-  duration        Int?     // How long in this position (seconds)
+  angle    Float? // Spine angle in degrees
+  position String? // Sitting, standing, etc.
+  duration Int? // How long in this position (seconds)
 
   // Session tracking
-  sessionId       String?  // Group readings into sessions
+  sessionId String? // Group readings into sessions
 
   // Source info
-  sourceDevice    String?  // Which sensor provided this
+  sourceDevice String? // Which sensor provided this
 
   // Relations
   patientId String
@@ -8997,11 +9007,11 @@ model PostureData {
 
 // Heart rate data from wearables
 enum HeartRateType {
-  RESTING     // Resting heart rate
-  ACTIVE      // During activity
-  WORKOUT     // During workout
-  CONTINUOUS  // Continuous monitoring reading
-  SPOT_CHECK  // Manual spot check
+  RESTING // Resting heart rate
+  ACTIVE // During activity
+  WORKOUT // During workout
+  CONTINUOUS // Continuous monitoring reading
+  SPOT_CHECK // Manual spot check
 }
 
 model HeartRateData {
@@ -9010,14 +9020,14 @@ model HeartRateData {
   createdAt DateTime @default(now())
 
   // Heart rate metrics
-  bpm       Int           // Beats per minute
-  type      HeartRateType @default(CONTINUOUS)
+  bpm  Int // Beats per minute
+  type HeartRateType @default(CONTINUOUS)
 
   // Variability (if available)
-  hrv       Float?  // Heart rate variability (ms)
+  hrv Float? // Heart rate variability (ms)
 
   // Context
-  activityLevel String?  // What user was doing (resting, walking, etc.)
+  activityLevel String? // What user was doing (resting, walking, etc.)
 
   // Source info
   sourceDevice String?
@@ -9040,11 +9050,11 @@ model HeartRateData {
 
 // Goal types for activity tracking
 enum GoalType {
-  STEPS          // Daily step count goal
+  STEPS // Daily step count goal
   ACTIVE_MINUTES // Active minutes goal
   SLEEP_DURATION // Sleep duration goal
-  CALORIES       // Calories burned goal
-  DISTANCE       // Distance goal
+  CALORIES // Calories burned goal
+  DISTANCE // Distance goal
 }
 
 // Activity goal tracking model
@@ -9055,27 +9065,27 @@ model ActivityGoal {
 
   // Goal configuration
   goalType    GoalType
-  targetValue Int       // Target value (steps, minutes, etc.)
-  unit        String    // Unit of measurement (steps, minutes, hours, etc.)
+  targetValue Int // Target value (steps, minutes, etc.)
+  unit        String // Unit of measurement (steps, minutes, hours, etc.)
 
   // Goal status
-  isActive    Boolean   @default(true)
-  startDate   DateTime  @default(now()) // When goal becomes active
-  endDate     DateTime? // Optional end date for time-limited goals
+  isActive  Boolean   @default(true)
+  startDate DateTime  @default(now()) // When goal becomes active
+  endDate   DateTime? // Optional end date for time-limited goals
 
   // Alert preferences
-  alertOnAchieve     Boolean @default(true)  // Alert when goal is achieved
-  alertOnDecrease    Boolean @default(true)  // Alert on significant activity decrease
-  decreaseThreshold  Int     @default(30)    // Percentage decrease to trigger alert
+  alertOnAchieve    Boolean @default(true) // Alert when goal is achieved
+  alertOnDecrease   Boolean @default(true) // Alert on significant activity decrease
+  decreaseThreshold Int     @default(30) // Percentage decrease to trigger alert
 
   // Progress tracking
-  currentStreak      Int     @default(0)     // Days in a row goal was achieved
-  longestStreak      Int     @default(0)     // Best streak ever
-  lastAchievedAt     DateTime? // Last time goal was achieved
-  totalAchievements  Int     @default(0)     // Total times goal was achieved
+  currentStreak     Int       @default(0) // Days in a row goal was achieved
+  longestStreak     Int       @default(0) // Best streak ever
+  lastAchievedAt    DateTime? // Last time goal was achieved
+  totalAchievements Int       @default(0) // Total times goal was achieved
 
   // Notes
-  notes       String?   @db.Text // Provider notes about the goal
+  notes String? @db.Text // Provider notes about the goal
 
   // Relations
   patientId String
@@ -9085,7 +9095,7 @@ model ActivityGoal {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   createdById String
-  createdBy   User @relation(fields: [createdById], references: [id])
+  createdBy   User   @relation(fields: [createdById], references: [id])
 
   @@unique([patientId, goalType]) // One active goal per type per patient
   @@index([patientId])
@@ -9100,11 +9110,11 @@ model ActivityGoal {
 
 // Practice location within an organization
 model Location {
-  id        String   @id @default(cuid())
-  name      String   // Display name (e.g., "Downtown Clinic")
-  code      String   // Short code (e.g., "DT")
-  isActive  Boolean  @default(true)
-  isPrimary Boolean  @default(false) // Primary/headquarters location
+  id        String  @id @default(cuid())
+  name      String // Display name (e.g., "Downtown Clinic")
+  code      String // Short code (e.g., "DT")
+  isActive  Boolean @default(true)
+  isPrimary Boolean @default(false) // Primary/headquarters location
 
   // Address
   addressLine1 String
@@ -9112,20 +9122,20 @@ model Location {
   city         String
   state        String
   zipCode      String
-  country      String @default("US")
+  country      String  @default("US")
 
   // Contact
-  phone     String
-  fax       String?
-  email     String?
+  phone String
+  fax   String?
+  email String?
 
   // Timezone for scheduling
-  timezone  String @default("America/New_York")
+  timezone String @default("America/New_York")
 
   // Branding (optional location-specific)
-  logoUrl       String?
-  primaryColor  String?
-  accentColor   String?
+  logoUrl      String?
+  primaryColor String?
+  accentColor  String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -9145,19 +9155,19 @@ model Location {
   inventoryMovements InventoryMovement[]
 
   // Multi-Location Patient relations (Epic 25)
-  homePatients               Patient[]                @relation("PatientHomeLocation")
-  crossLocationAccessLogs    CrossLocationAccessLog[]
-  patientBalances            PatientLocationBalance[]
+  homePatients            Patient[]                @relation("PatientHomeLocation")
+  crossLocationAccessLogs CrossLocationAccessLog[]
+  patientBalances         PatientLocationBalance[]
 
   // Cross-Location Scheduling relations (Epic 25 - US-252)
-  rooms                      Room[]
-  resources                  Resource[]
+  rooms                       Room[]
+  resources                   Resource[]
   appointmentTypeAvailability AppointmentTypeLocation[]
 
   // Inter-Location Inventory relations (Epic 25 - US-254)
-  outgoingTransfers          InventoryTransfer[]        @relation("TransferFromLocation")
-  incomingTransfers          InventoryTransfer[]        @relation("TransferToLocation")
-  lowStockAlerts             LowStockAlert[]
+  outgoingTransfers InventoryTransfer[] @relation("TransferFromLocation")
+  incomingTransfers InventoryTransfer[] @relation("TransferToLocation")
+  lowStockAlerts    LowStockAlert[]
 
   @@unique([code, organizationId])
   @@index([organizationId])
@@ -9166,9 +9176,9 @@ model Location {
 
 // Staff assignment to location with role
 model LocationStaff {
-  id        String   @id @default(cuid())
-  isPrimary Boolean  @default(false) // Primary work location for this user
-  isActive  Boolean  @default(true)
+  id        String  @id @default(cuid())
+  isPrimary Boolean @default(false) // Primary work location for this user
+  isActive  Boolean @default(true)
 
   // Role override at this location (optional)
   roleOverride Role?
@@ -9181,8 +9191,8 @@ model LocationStaff {
   updatedAt DateTime @updatedAt
 
   // Relations
-  userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   locationId String
   location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
@@ -9195,20 +9205,20 @@ model LocationStaff {
 
 // Operating hours for a location
 model LocationHours {
-  id        String   @id @default(cuid())
-  dayOfWeek Int      // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-  isOpen    Boolean  @default(true)
+  id        String  @id @default(cuid())
+  dayOfWeek Int // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  isOpen    Boolean @default(true)
 
   // Regular hours
-  openTime  String?  // "09:00" in 24hr format
-  closeTime String?  // "17:00" in 24hr format
+  openTime  String? // "09:00" in 24hr format
+  closeTime String? // "17:00" in 24hr format
 
   // Break time (optional)
   breakStart String?
   breakEnd   String?
 
   // Override for specific dates
-  isHoliday     Boolean  @default(false)
+  isHoliday     Boolean   @default(false)
   holidayName   String?
   effectiveDate DateTime? // For specific date overrides
 
@@ -9226,37 +9236,37 @@ model LocationHours {
 
 // Location-specific settings
 model LocationSettings {
-  id        String @id @default(cuid())
+  id String @id @default(cuid())
 
   // Appointment settings
-  defaultAppointmentDuration Int @default(30)      // minutes
-  slotInterval               Int @default(15)      // minutes
-  bufferTime                 Int @default(0)       // minutes between appointments
+  defaultAppointmentDuration Int     @default(30) // minutes
+  slotInterval               Int     @default(15) // minutes
+  bufferTime                 Int     @default(0) // minutes between appointments
   allowOnlineBooking         Boolean @default(true)
   allowWalkIns               Boolean @default(true)
 
   // Scheduling constraints
-  maxAdvanceBookingDays      Int @default(90)
-  minAdvanceBookingHours     Int @default(24)
+  maxAdvanceBookingDays  Int @default(90)
+  minAdvanceBookingHours Int @default(24)
 
   // Patient settings
-  allowCrossLocationAccess   Boolean @default(true)
-  sharePatientRecords        Boolean @default(true)
+  allowCrossLocationAccess Boolean @default(true)
+  sharePatientRecords      Boolean @default(true)
 
   // Inventory settings
-  trackInventory             Boolean @default(true)
-  lowStockAlertEnabled       Boolean @default(true)
+  trackInventory       Boolean @default(true)
+  lowStockAlertEnabled Boolean @default(true)
 
   // Billing settings
-  billingSeparate            Boolean @default(false) // Separate billing per location
-  defaultFeeScheduleId       String?
+  billingSeparate      Boolean @default(false) // Separate billing per location
+  defaultFeeScheduleId String?
 
   // Communication settings
   appointmentReminderEnabled Boolean @default(true)
   reminderHoursBeforeAppt    Int     @default(24)
 
   // Custom settings JSON for extensibility
-  customSettings             Json    @default("{}")
+  customSettings Json @default("{}")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -9272,32 +9282,32 @@ model LocationSettings {
 
 // Access type for cross-location audit
 enum CrossLocationAccessType {
-  VIEW_RECORD      // Viewed patient record from another location
-  VIEW_ENCOUNTERS  // Viewed patient encounters
-  VIEW_BALANCE     // Viewed patient balance/financial info
-  VIEW_DOCUMENTS   // Viewed patient documents
+  VIEW_RECORD // Viewed patient record from another location
+  VIEW_ENCOUNTERS // Viewed patient encounters
+  VIEW_BALANCE // Viewed patient balance/financial info
+  VIEW_DOCUMENTS // Viewed patient documents
   CREATE_ENCOUNTER // Created encounter at non-home location
   CREATE_APPOINTMENT // Created appointment at non-home location
-  UPDATE_RECORD    // Updated patient info from another location
+  UPDATE_RECORD // Updated patient info from another location
 }
 
 // Audit log for cross-location patient access
 model CrossLocationAccessLog {
-  id        String                  @id @default(cuid())
-  accessedAt DateTime               @default(now())
+  id         String                  @id @default(cuid())
+  accessedAt DateTime                @default(now())
   accessType CrossLocationAccessType
 
   // What was accessed
-  entityType String  // Encounter, Appointment, Document, etc.
+  entityType String // Encounter, Appointment, Document, etc.
   entityId   String? // ID of the entity accessed
 
   // Access details
-  reason     String? // Optional reason for access
-  notes      String? // Optional notes
+  reason String? // Optional reason for access
+  notes  String? // Optional notes
 
   // IP and user agent for security audit
-  ipAddress  String?
-  userAgent  String?
+  ipAddress String?
+  userAgent String?
 
   // Relations
   patientId String
@@ -9328,14 +9338,14 @@ model PatientLocationBalance {
   updatedAt DateTime @updatedAt
 
   // Balance amounts
-  totalCharges    Decimal @default(0) @db.Decimal(10, 2)
-  totalPayments   Decimal @default(0) @db.Decimal(10, 2)
+  totalCharges     Decimal @default(0) @db.Decimal(10, 2)
+  totalPayments    Decimal @default(0) @db.Decimal(10, 2)
   totalAdjustments Decimal @default(0) @db.Decimal(10, 2)
-  currentBalance  Decimal @default(0) @db.Decimal(10, 2)
+  currentBalance   Decimal @default(0) @db.Decimal(10, 2)
 
   // Last activity
-  lastChargeDate   DateTime?
-  lastPaymentDate  DateTime?
+  lastChargeDate  DateTime?
+  lastPaymentDate DateTime?
 
   // Relations
   patientId String
@@ -9360,74 +9370,74 @@ model PatientLocationBalance {
 
 // Transfer request status
 enum TransferStatus {
-  PENDING     // Request created, awaiting approval
-  APPROVED    // Approved by destination location
-  REJECTED    // Rejected by destination location
-  IN_TRANSIT  // Items shipped, in transit
-  RECEIVED    // Items received at destination
-  CANCELLED   // Cancelled by requester
-  PARTIAL     // Partially received
+  PENDING // Request created, awaiting approval
+  APPROVED // Approved by destination location
+  REJECTED // Rejected by destination location
+  IN_TRANSIT // Items shipped, in transit
+  RECEIVED // Items received at destination
+  CANCELLED // Cancelled by requester
+  PARTIAL // Partially received
 }
 
 // Inventory transfer between locations
 model InventoryTransfer {
-  id            String         @id @default(cuid())
-  transferNumber String        // Auto-generated transfer number (TRN-001)
-  status        TransferStatus @default(PENDING)
+  id             String         @id @default(cuid())
+  transferNumber String // Auto-generated transfer number (TRN-001)
+  status         TransferStatus @default(PENDING)
 
   // Transfer details
-  requestedAt   DateTime       @default(now())
-  approvedAt    DateTime?
-  shippedAt     DateTime?
-  receivedAt    DateTime?
-  completedAt   DateTime?
+  requestedAt DateTime  @default(now())
+  approvedAt  DateTime?
+  shippedAt   DateTime?
+  receivedAt  DateTime?
+  completedAt DateTime?
 
   // Shipping info
   trackingNumber String?
-  shippingMethod String?       // "Internal courier", "UPS", etc.
-  shippingCost   Decimal?      @db.Decimal(10, 2)
+  shippingMethod String? // "Internal courier", "UPS", etc.
+  shippingCost   Decimal? @db.Decimal(10, 2)
 
   // Notes
-  requestNotes  String?        // Notes from requester
-  approvalNotes String?        // Notes from approver
-  receivingNotes String?       // Notes from receiver
+  requestNotes   String? // Notes from requester
+  approvalNotes  String? // Notes from approver
+  receivingNotes String? // Notes from receiver
 
   // Rejection reason
   rejectionReason String?
 
   // Priority for urgent transfers
-  priority      Int            @default(0) // 0 = normal, 1 = urgent, 2 = critical
+  priority Int @default(0) // 0 = normal, 1 = urgent, 2 = critical
 
   // Expected dates
-  expectedShipDate DateTime?
+  expectedShipDate    DateTime?
   expectedArrivalDate DateTime?
 
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations - People involved
   requestedById String
-  requestedBy   User           @relation("TransferRequestedBy", fields: [requestedById], references: [id])
+  requestedBy   User   @relation("TransferRequestedBy", fields: [requestedById], references: [id])
 
-  approvedById  String?
-  approvedBy    User?          @relation("TransferApprovedBy", fields: [approvedById], references: [id])
+  approvedById String?
+  approvedBy   User?   @relation("TransferApprovedBy", fields: [approvedById], references: [id])
 
-  receivedById  String?
-  receivedBy    User?          @relation("TransferReceivedBy", fields: [receivedById], references: [id])
+  receivedById String?
+  receivedBy   User?   @relation("TransferReceivedBy", fields: [receivedById], references: [id])
 
   // Relations - Locations
   fromLocationId String
-  fromLocation   Location      @relation("TransferFromLocation", fields: [fromLocationId], references: [id])
+  fromLocation   Location @relation("TransferFromLocation", fields: [fromLocationId], references: [id])
 
-  toLocationId   String
-  toLocation     Location      @relation("TransferToLocation", fields: [toLocationId], references: [id])
+  toLocationId String
+  toLocation   Location @relation("TransferToLocation", fields: [toLocationId], references: [id])
 
   // Multi-tenant relation
   organizationId String
-  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   // Transfer items
-  items          InventoryTransferItem[]
+  items InventoryTransferItem[]
 
   @@unique([transferNumber, organizationId])
   @@index([organizationId])
@@ -9440,33 +9450,33 @@ model InventoryTransfer {
 
 // Items in an inventory transfer
 model InventoryTransferItem {
-  id             String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // Quantities
-  requestedQty   Int      // Quantity requested
-  approvedQty    Int?     // Quantity approved (may differ from requested)
-  shippedQty     Int?     // Quantity actually shipped
-  receivedQty    Int?     // Quantity received (may differ due to damage/loss)
+  requestedQty Int // Quantity requested
+  approvedQty  Int? // Quantity approved (may differ from requested)
+  shippedQty   Int? // Quantity actually shipped
+  receivedQty  Int? // Quantity received (may differ due to damage/loss)
 
   // Cost tracking
-  unitCost       Decimal  @db.Decimal(10, 2)
-  totalCost      Decimal  @db.Decimal(10, 2) // Based on shipped or approved qty
+  unitCost  Decimal @db.Decimal(10, 2)
+  totalCost Decimal @db.Decimal(10, 2) // Based on shipped or approved qty
 
   // Notes
-  notes          String?
+  notes String?
 
   // Condition on receipt
-  conditionNotes String?  // Notes about condition when received
+  conditionNotes String? // Notes about condition when received
 
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  transferId     String
-  transfer       InventoryTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  transferId String
+  transfer   InventoryTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
 
-  productId      String
-  product        Product  @relation(fields: [productId], references: [id])
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
 
   @@index([transferId])
   @@index([productId])
@@ -9478,9 +9488,9 @@ model InventoryTransferItem {
 
 // MFA method types
 enum MFAMethod {
-  TOTP          // Time-based One-Time Password (Google Authenticator, etc.)
-  SMS           // SMS verification code
-  EMAIL         // Email verification code
+  TOTP // Time-based One-Time Password (Google Authenticator, etc.)
+  SMS // SMS verification code
+  EMAIL // Email verification code
 }
 
 // Security event types for comprehensive logging
@@ -9546,23 +9556,23 @@ enum EncryptionKeyStatus {
 
 // MFA Configuration for users
 model MFAConfiguration {
-  id               String    @id @default(cuid())
-  method           MFAMethod @default(TOTP)
-  secret           String    // Encrypted TOTP secret or phone/email for SMS/Email
-  verified         Boolean   @default(false)
-  verifiedAt       DateTime?
-  backupCodes      String[]  // Encrypted backup codes
-  backupCodesUsed  Int       @default(0)
-  lastUsedAt       DateTime?
-  failedAttempts   Int       @default(0)
-  lockedUntil      DateTime?
+  id              String    @id @default(cuid())
+  method          MFAMethod @default(TOTP)
+  secret          String // Encrypted TOTP secret or phone/email for SMS/Email
+  verified        Boolean   @default(false)
+  verifiedAt      DateTime?
+  backupCodes     String[] // Encrypted backup codes
+  backupCodesUsed Int       @default(0)
+  lastUsedAt      DateTime?
+  failedAttempts  Int       @default(0)
+  lockedUntil     DateTime?
 
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // User relation
-  userId           String
-  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([method])
@@ -9570,41 +9580,41 @@ model MFAConfiguration {
 
 // Security event logging for audit and compliance
 model SecurityEvent {
-  id               String            @id @default(cuid())
-  eventType        SecurityEventType
-  severity         String            @default("INFO") // INFO, WARNING, CRITICAL
-  description      String?           @db.Text
+  id          String            @id @default(cuid())
+  eventType   SecurityEventType
+  severity    String            @default("INFO") // INFO, WARNING, CRITICAL
+  description String?           @db.Text
 
   // Request context
-  ipAddress        String?
-  userAgent        String?           @db.Text
-  requestPath      String?
-  requestMethod    String?
+  ipAddress     String?
+  userAgent     String? @db.Text
+  requestPath   String?
+  requestMethod String?
 
   // Additional metadata
-  metadata         Json?             // Flexible field for event-specific data
+  metadata Json? // Flexible field for event-specific data
 
   // Geolocation (if available)
-  country          String?
-  city             String?
+  country String?
+  city    String?
 
   // Related entity (optional)
-  entityType       String?           // Patient, Claim, etc.
-  entityId         String?
+  entityType String? // Patient, Claim, etc.
+  entityId   String?
 
   // Result of event
-  success          Boolean           @default(true)
-  failureReason    String?
+  success       Boolean @default(true)
+  failureReason String?
 
-  createdAt        DateTime          @default(now())
+  createdAt DateTime @default(now())
 
   // User relation (nullable for unauthenticated events)
-  userId           String?
-  user             User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   // Multi-tenant relation
-  organizationId   String
-  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
   @@index([userId])
@@ -9616,47 +9626,47 @@ model SecurityEvent {
 
 // Enhanced user session tracking
 model UserSession {
-  id               String        @id @default(cuid())
-  sessionToken     String        @unique // Hashed session token
-  status           SessionStatus @default(ACTIVE)
+  id           String        @id @default(cuid())
+  sessionToken String        @unique // Hashed session token
+  status       SessionStatus @default(ACTIVE)
 
   // Device information
-  deviceFingerprint String?      // Hashed device fingerprint
-  deviceType       String?       // desktop, mobile, tablet
-  browser          String?
-  browserVersion   String?
-  os               String?
-  osVersion        String?
+  deviceFingerprint String? // Hashed device fingerprint
+  deviceType        String? // desktop, mobile, tablet
+  browser           String?
+  browserVersion    String?
+  os                String?
+  osVersion         String?
 
   // Location/network
-  ipAddress        String?
-  country          String?
-  city             String?
+  ipAddress String?
+  country   String?
+  city      String?
 
   // Session timing
-  expiresAt        DateTime
-  lastActivityAt   DateTime      @default(now())
-  idleTimeoutAt    DateTime?     // When session will idle-timeout
+  expiresAt      DateTime
+  lastActivityAt DateTime  @default(now())
+  idleTimeoutAt  DateTime? // When session will idle-timeout
 
   // Trust level
-  rememberDevice   Boolean       @default(false)
-  mfaVerified      Boolean       @default(false)
-  trustScore       Int           @default(100) // 0-100, decreases with suspicious activity
+  rememberDevice Boolean @default(false)
+  mfaVerified    Boolean @default(false)
+  trustScore     Int     @default(100) // 0-100, decreases with suspicious activity
 
   // Termination details
   terminatedAt     DateTime?
   terminatedReason String?
 
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // User relation
-  userId           String
-  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Multi-tenant relation
-  organizationId   String
-  organization     Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([organizationId])
@@ -9668,55 +9678,55 @@ model UserSession {
 
 // Business Associate Agreement tracking for HIPAA compliance
 model BAADocument {
-  id               String      @id @default(cuid())
-  status           BAAStatus   @default(DRAFT)
+  id     String    @id @default(cuid())
+  status BAAStatus @default(DRAFT)
 
   // Vendor information
-  vendorName       String
-  vendorContact    String?
-  vendorEmail      String?
-  vendorPhone      String?
-  vendorAddress    String?     @db.Text
+  vendorName    String
+  vendorContact String?
+  vendorEmail   String?
+  vendorPhone   String?
+  vendorAddress String? @db.Text
 
   // Agreement details
-  documentUrl      String?     // Link to stored document
-  documentHash     String?     // SHA-256 hash for integrity verification
-  version          String?     // Document version
+  documentUrl  String? // Link to stored document
+  documentHash String? // SHA-256 hash for integrity verification
+  version      String? // Document version
 
   // Key dates
-  signedDate       DateTime?
-  effectiveDate    DateTime?
-  expirationDate   DateTime?
-  renewalDate      DateTime?   // When to start renewal process
-  terminatedDate   DateTime?
+  signedDate        DateTime?
+  effectiveDate     DateTime?
+  expirationDate    DateTime?
+  renewalDate       DateTime? // When to start renewal process
+  terminatedDate    DateTime?
   terminationReason String?
 
   // Risk assessment
-  riskLevel        String?     // LOW, MEDIUM, HIGH, CRITICAL
+  riskLevel          String? // LOW, MEDIUM, HIGH, CRITICAL
   lastRiskAssessment DateTime?
-  riskNotes        String?     @db.Text
+  riskNotes          String?   @db.Text
 
   // Services covered
-  servicesCovered  String[]    // List of services covered by BAA
-  dataTypes        String[]    // Types of PHI shared (names, SSN, medical records, etc.)
+  servicesCovered String[] // List of services covered by BAA
+  dataTypes       String[] // Types of PHI shared (names, SSN, medical records, etc.)
 
   // Compliance notes
-  notes            String?     @db.Text
+  notes String? @db.Text
 
   // Renewal tracking
-  reminderSent     Boolean     @default(false)
-  reminderSentAt   DateTime?
+  reminderSent   Boolean   @default(false)
+  reminderSentAt DateTime?
 
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Multi-tenant relation
-  organizationId   String
-  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   // Optionally linked to a Vendor from inventory
-  vendorId         String?
-  vendor           Vendor?     @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  vendorId String?
+  vendor   Vendor? @relation(fields: [vendorId], references: [id], onDelete: SetNull)
 
   @@index([organizationId])
   @@index([status])
@@ -9726,38 +9736,38 @@ model BAADocument {
 
 // Encryption key management for field-level encryption
 model EncryptionKey {
-  id               String               @id @default(cuid())
-  keyIdentifier    String               @unique // Unique identifier for key reference
-  status           EncryptionKeyStatus  @default(ACTIVE)
+  id            String              @id @default(cuid())
+  keyIdentifier String              @unique // Unique identifier for key reference
+  status        EncryptionKeyStatus @default(ACTIVE)
 
   // Key metadata (never store actual key here - use HSM/KMS)
-  algorithm        String               @default("AES-256-GCM")
-  keyVersion       Int                  @default(1)
-  purpose          String               // PHI_ENCRYPTION, API_KEY_ENCRYPTION, etc.
+  algorithm  String @default("AES-256-GCM")
+  keyVersion Int    @default(1)
+  purpose    String // PHI_ENCRYPTION, API_KEY_ENCRYPTION, etc.
 
   // Key lifecycle
-  createdAt        DateTime             @default(now())
-  activatedAt      DateTime?
-  rotatedAt        DateTime?
-  retiredAt        DateTime?
-  expiresAt        DateTime?
+  createdAt   DateTime  @default(now())
+  activatedAt DateTime?
+  rotatedAt   DateTime?
+  retiredAt   DateTime?
+  expiresAt   DateTime?
 
   // Rotation tracking
-  rotationSchedule String?              // MONTHLY, QUARTERLY, YEARLY
+  rotationSchedule String? // MONTHLY, QUARTERLY, YEARLY
   nextRotationAt   DateTime?
-  previousKeyId    String?              // Reference to previous key version
+  previousKeyId    String? // Reference to previous key version
 
   // Access control
-  allowedUsers     String[]             // List of user IDs with access
-  allowedRoles     Role[]               // List of roles with access
+  allowedUsers String[] // List of user IDs with access
+  allowedRoles Role[] // List of roles with access
 
   // Audit
-  lastAccessedAt   DateTime?
-  accessCount      Int                  @default(0)
+  lastAccessedAt DateTime?
+  accessCount    Int       @default(0)
 
   // Multi-tenant relation
-  organizationId   String
-  organization     Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
   @@index([status])
@@ -9767,62 +9777,62 @@ model EncryptionKey {
 
 // Organization-level security settings/policies
 model SecuritySetting {
-  id               String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // Session policies
-  sessionTimeoutMinutes     Int      @default(60)    // Max session duration
-  idleTimeoutMinutes        Int      @default(15)    // Idle timeout before warning
-  maxConcurrentSessions     Int      @default(3)     // Max sessions per user
+  sessionTimeoutMinutes Int @default(60) // Max session duration
+  idleTimeoutMinutes    Int @default(15) // Idle timeout before warning
+  maxConcurrentSessions Int @default(3) // Max sessions per user
 
   // MFA policies
-  mfaRequired               Boolean  @default(false) // Require MFA for all users
-  mfaRequiredForRoles       Role[]                   // Roles that require MFA
-  mfaGracePeriodDays        Int      @default(7)     // Days to enable MFA before lockout
+  mfaRequired         Boolean @default(false) // Require MFA for all users
+  mfaRequiredForRoles Role[] // Roles that require MFA
+  mfaGracePeriodDays  Int     @default(7) // Days to enable MFA before lockout
 
   // Password policies
-  passwordMinLength         Int      @default(12)
-  passwordRequireUppercase  Boolean  @default(true)
-  passwordRequireLowercase  Boolean  @default(true)
-  passwordRequireNumbers    Boolean  @default(true)
-  passwordRequireSymbols    Boolean  @default(true)
-  passwordExpiryDays        Int      @default(90)    // 0 = never expires
-  passwordHistoryCount      Int      @default(5)     // Prevent reusing last N passwords
+  passwordMinLength        Int     @default(12)
+  passwordRequireUppercase Boolean @default(true)
+  passwordRequireLowercase Boolean @default(true)
+  passwordRequireNumbers   Boolean @default(true)
+  passwordRequireSymbols   Boolean @default(true)
+  passwordExpiryDays       Int     @default(90) // 0 = never expires
+  passwordHistoryCount     Int     @default(5) // Prevent reusing last N passwords
 
   // Login policies
-  maxLoginAttempts          Int      @default(5)
-  lockoutDurationMinutes    Int      @default(30)
+  maxLoginAttempts       Int @default(5)
+  lockoutDurationMinutes Int @default(30)
 
   // IP restrictions
-  ipWhitelistEnabled        Boolean  @default(false)
-  ipWhitelist               String[]                 // Allowed IPs/CIDRs
-  ipBlacklist               String[]                 // Blocked IPs/CIDRs
+  ipWhitelistEnabled Boolean  @default(false)
+  ipWhitelist        String[] // Allowed IPs/CIDRs
+  ipBlacklist        String[] // Blocked IPs/CIDRs
 
   // Time-based restrictions
-  accessHoursEnabled        Boolean  @default(false)
-  accessHoursStart          String?                  // e.g., "08:00"
-  accessHoursEnd            String?                  // e.g., "18:00"
-  accessHoursTimezone       String?                  // e.g., "America/Los_Angeles"
-  accessHoursDays           Int[]                    // Days of week (0=Sun, 1=Mon, etc.)
+  accessHoursEnabled  Boolean @default(false)
+  accessHoursStart    String? // e.g., "08:00"
+  accessHoursEnd      String? // e.g., "18:00"
+  accessHoursTimezone String? // e.g., "America/Los_Angeles"
+  accessHoursDays     Int[] // Days of week (0=Sun, 1=Mon, etc.)
 
   // Emergency access (break glass)
-  emergencyAccessEnabled    Boolean  @default(true)
-  emergencyAccessCode       String?                  // Encrypted emergency access code
-  emergencyAccessNotifyEmails String[]               // Emails to notify on emergency access
+  emergencyAccessEnabled      Boolean  @default(true)
+  emergencyAccessCode         String? // Encrypted emergency access code
+  emergencyAccessNotifyEmails String[] // Emails to notify on emergency access
 
   // Audit settings
-  auditRetentionDays        Int      @default(2555)  // ~7 years for HIPAA
-  detailedAuditLogging      Boolean  @default(true)
+  auditRetentionDays   Int     @default(2555) // ~7 years for HIPAA
+  detailedAuditLogging Boolean @default(true)
 
   // PHI access settings
-  requireReasonForPHIAccess Boolean  @default(false)
-  logAllPHIAccess           Boolean  @default(true)
+  requireReasonForPHIAccess Boolean @default(false)
+  logAllPHIAccess           Boolean @default(true)
 
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // One-to-one with Organization
-  organizationId   String   @unique
-  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }
 
 // ============================================
@@ -9840,47 +9850,47 @@ enum AccessRequestStatus {
 
 // Type of permission being requested
 enum PermissionType {
-  PATIENT_ACCESS      // Access to patient records
-  PHI_ACCESS          // Access to Protected Health Information
-  BILLING_ACCESS      // Access to billing/financial data
-  ADMIN_ACCESS        // Administrative access
-  LOCATION_ACCESS     // Access to a specific location
-  REPORT_ACCESS       // Access to reports/analytics
-  ROLE_ELEVATION      // Request for role change
-  EMERGENCY_ACCESS    // Break glass emergency access
+  PATIENT_ACCESS // Access to patient records
+  PHI_ACCESS // Access to Protected Health Information
+  BILLING_ACCESS // Access to billing/financial data
+  ADMIN_ACCESS // Administrative access
+  LOCATION_ACCESS // Access to a specific location
+  REPORT_ACCESS // Access to reports/analytics
+  ROLE_ELEVATION // Request for role change
+  EMERGENCY_ACCESS // Break glass emergency access
 }
 
 // Access request workflow - for requesting elevated permissions
 model AccessRequest {
-  id              String              @id @default(cuid())
+  id String @id @default(cuid())
 
   // Request details
-  requestedBy     String              // User ID requesting access
-  requestedByUser User                @relation("AccessRequestRequester", fields: [requestedBy], references: [id], onDelete: Cascade)
+  requestedBy     String // User ID requesting access
+  requestedByUser User           @relation("AccessRequestRequester", fields: [requestedBy], references: [id], onDelete: Cascade)
   permissionType  PermissionType
-  justification   String              // Required reason for access
-  targetResource  String?             // Specific resource (patient ID, location ID, etc.)
-  targetRole      Role?               // If requesting role elevation
+  justification   String // Required reason for access
+  targetResource  String? // Specific resource (patient ID, location ID, etc.)
+  targetRole      Role? // If requesting role elevation
 
   // Time-bounded access
-  requestedDuration Int?              // Duration in minutes (null = permanent)
-  validFrom       DateTime?           // When access should start
-  validUntil      DateTime?           // When access expires
+  requestedDuration Int? // Duration in minutes (null = permanent)
+  validFrom         DateTime? // When access should start
+  validUntil        DateTime? // When access expires
 
   // Workflow
-  status          AccessRequestStatus @default(PENDING)
-  reviewedBy      String?             // User ID who reviewed
-  reviewedByUser  User?               @relation("AccessRequestReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
-  reviewedAt      DateTime?
-  reviewNotes     String?             // Reviewer's notes/comments
+  status         AccessRequestStatus @default(PENDING)
+  reviewedBy     String? // User ID who reviewed
+  reviewedByUser User?               @relation("AccessRequestReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  reviewedAt     DateTime?
+  reviewNotes    String? // Reviewer's notes/comments
 
   // Audit
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Multi-tenant relation
-  organizationId  String
-  organization    Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
   @@index([requestedBy])
@@ -9890,31 +9900,31 @@ model AccessRequest {
 
 // Emergency access (break glass) log
 model EmergencyAccessLog {
-  id              String    @id @default(cuid())
+  id String @id @default(cuid())
 
   // Who used emergency access
-  userId          String
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Access details
-  reason          String    // Required justification
-  resourceAccessed String?  // What was accessed
-  ipAddress       String?
-  userAgent       String?
+  reason           String // Required justification
+  resourceAccessed String? // What was accessed
+  ipAddress        String?
+  userAgent        String?
 
   // Notification tracking
-  notificationsSent Boolean   @default(false)
+  notificationsSent Boolean  @default(false)
   notifiedEmails    String[]
 
   // Time tracking
-  accessedAt      DateTime  @default(now())
-  expiresAt       DateTime? // When emergency access expires
-  revokedAt       DateTime? // If manually revoked early
-  revokedBy       String?   // Who revoked it
+  accessedAt DateTime  @default(now())
+  expiresAt  DateTime? // When emergency access expires
+  revokedAt  DateTime? // If manually revoked early
+  revokedBy  String? // Who revoked it
 
   // Multi-tenant relation
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
   @@index([userId])
@@ -9923,40 +9933,40 @@ model EmergencyAccessLog {
 
 // Granular permission grants (beyond role-based)
 model PermissionGrant {
-  id              String    @id @default(cuid())
+  id String @id @default(cuid())
 
   // Who has the permission
-  userId          String
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // What permission
-  permissionType  PermissionType
-  resourceType    String?   // e.g., "Patient", "Location", "Report"
-  resourceId      String?   // Specific resource ID (null = all of type)
+  permissionType PermissionType
+  resourceType   String? // e.g., "Patient", "Location", "Report"
+  resourceId     String? // Specific resource ID (null = all of type)
 
   // Time bounds
-  validFrom       DateTime  @default(now())
-  validUntil      DateTime? // null = permanent
+  validFrom  DateTime  @default(now())
+  validUntil DateTime? // null = permanent
 
   // Who granted it
-  grantedBy       String
-  grantedByUser   User      @relation("PermissionGranter", fields: [grantedBy], references: [id], onDelete: Cascade)
-  grantedAt       DateTime  @default(now())
-  reason          String?   // Why permission was granted
+  grantedBy     String
+  grantedByUser User     @relation("PermissionGranter", fields: [grantedBy], references: [id], onDelete: Cascade)
+  grantedAt     DateTime @default(now())
+  reason        String? // Why permission was granted
 
   // Revocation
-  revokedAt       DateTime?
-  revokedBy       String?
-  revokedByUser   User?     @relation("PermissionRevoker", fields: [revokedBy], references: [id], onDelete: SetNull)
-  revokeReason    String?
+  revokedAt     DateTime?
+  revokedBy     String?
+  revokedByUser User?     @relation("PermissionRevoker", fields: [revokedBy], references: [id], onDelete: SetNull)
+  revokeReason  String?
 
   // Audit
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Multi-tenant relation
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
   @@index([userId])
@@ -9966,24 +9976,24 @@ model PermissionGrant {
 
 // Role inheritance configuration
 model RoleInheritance {
-  id              String    @id @default(cuid())
+  id String @id @default(cuid())
 
   // Parent role inherits from child role
-  parentRole      Role      // The role that gains permissions
-  childRole       Role      // The role whose permissions are inherited
+  parentRole Role // The role that gains permissions
+  childRole  Role // The role whose permissions are inherited
 
   // Configuration
-  isActive        Boolean   @default(true)
+  isActive Boolean @default(true)
 
   // Audit
-  createdBy       String
-  createdByUser   User      @relation(fields: [createdBy], references: [id], onDelete: Cascade)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdBy     String
+  createdByUser User     @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   // Multi-tenant relation (organization-specific inheritance)
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([parentRole, childRole, organizationId])
   @@index([organizationId])
@@ -10040,42 +10050,42 @@ enum NotificationDeliveryStatus {
 
 // Mobile device registration for authentication
 model MobileDevice {
-  id              String          @id @default(cuid())
+  id String @id @default(cuid())
 
   // Device identification
-  deviceId        String          // Unique device identifier
-  deviceName      String?         // User-friendly device name
-  platform        DevicePlatform
-  osVersion       String?
-  appVersion      String?
+  deviceId   String // Unique device identifier
+  deviceName String? // User-friendly device name
+  platform   DevicePlatform
+  osVersion  String?
+  appVersion String?
 
   // Push notification tokens
-  fcmToken        String?         // Firebase Cloud Messaging token
-  apnsToken       String?         // Apple Push Notification Service token
+  fcmToken  String? // Firebase Cloud Messaging token
+  apnsToken String? // Apple Push Notification Service token
 
   // Security
-  deviceFingerprint String?       // For fraud detection
-  isActive        Boolean         @default(true)
-  isTrusted       Boolean         @default(false) // Has passed additional verification
+  deviceFingerprint String? // For fraud detection
+  isActive          Boolean @default(true)
+  isTrusted         Boolean @default(false) // Has passed additional verification
 
   // Session tracking
-  lastActiveAt    DateTime        @default(now())
-  lastIpAddress   String?
+  lastActiveAt  DateTime @default(now())
+  lastIpAddress String?
 
   // Timestamps
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // User relation
-  userId          String
-  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Multi-tenant relation
-  organizationId  String
-  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   // Refresh tokens for this device
-  refreshTokens   MobileRefreshToken[]
+  refreshTokens MobileRefreshToken[]
 
   @@unique([deviceId, userId, organizationId])
   @@index([userId])
@@ -10087,38 +10097,38 @@ model MobileDevice {
 
 // Refresh tokens for JWT authentication
 model MobileRefreshToken {
-  id              String    @id @default(cuid())
+  id String @id @default(cuid())
 
   // Token data
-  tokenHash       String    @unique // Hashed refresh token
-  family          String    // Token family for rotation detection
-  generation      Int       @default(0) // Increments with each rotation
+  tokenHash  String @unique // Hashed refresh token
+  family     String // Token family for rotation detection
+  generation Int    @default(0) // Increments with each rotation
 
   // Validity
-  isRevoked       Boolean   @default(false)
-  revokedAt       DateTime?
-  revokedReason   String?
-  expiresAt       DateTime
+  isRevoked     Boolean   @default(false)
+  revokedAt     DateTime?
+  revokedReason String?
+  expiresAt     DateTime
 
   // Security metadata
-  issuedIp        String?
-  lastUsedIp      String?
-  lastUsedAt      DateTime?
+  issuedIp   String?
+  lastUsedIp String?
+  lastUsedAt DateTime?
 
   // Timestamps
-  createdAt       DateTime  @default(now())
+  createdAt DateTime @default(now())
 
   // User relation
-  userId          String
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Device relation (optional, token may outlive device registration)
-  mobileDeviceId  String?
-  mobileDevice    MobileDevice? @relation(fields: [mobileDeviceId], references: [id], onDelete: SetNull)
+  mobileDeviceId String?
+  mobileDevice   MobileDevice? @relation(fields: [mobileDeviceId], references: [id], onDelete: SetNull)
 
   // Multi-tenant relation
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([organizationId])
@@ -10129,26 +10139,26 @@ model MobileRefreshToken {
 
 // Rate limiting for mobile API endpoints
 model MobileRateLimit {
-  id              String    @id @default(cuid())
+  id String @id @default(cuid())
 
   // Rate limit key (can be user ID, device ID, or IP)
-  keyType         String    // "user", "device", "ip"
-  keyValue        String    // The actual key value
-  endpoint        String    // API endpoint being rate limited
+  keyType  String // "user", "device", "ip"
+  keyValue String // The actual key value
+  endpoint String // API endpoint being rate limited
 
   // Counters
-  requestCount    Int       @default(0)
-  windowStart     DateTime  @default(now())
+  requestCount     Int      @default(0)
+  windowStart      DateTime @default(now())
   windowDurationMs Int      @default(60000) // 1 minute default
 
   // Blocking
-  isBlocked       Boolean   @default(false)
-  blockedUntil    DateTime?
-  blockReason     String?
+  isBlocked    Boolean   @default(false)
+  blockedUntil DateTime?
+  blockReason  String?
 
   // Multi-tenant relation (optional for IP-based limits)
-  organizationId  String?
-  organization    Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([keyType, keyValue, endpoint, organizationId])
   @@index([keyType, keyValue])
@@ -10158,41 +10168,41 @@ model MobileRateLimit {
 
 // Offline sync queue for mobile apps
 model OfflineSyncQueue {
-  id              String          @id @default(cuid())
+  id String @id @default(cuid())
 
   // Operation details
-  operationType   SyncOperationType
-  entityType      String          // "appointment", "encounter", "note", etc.
-  entityId        String?         // ID of existing entity (for UPDATE/DELETE)
-  payload         Json            // The data to sync
+  operationType SyncOperationType
+  entityType    String // "appointment", "encounter", "note", etc.
+  entityId      String? // ID of existing entity (for UPDATE/DELETE)
+  payload       Json // The data to sync
 
   // Sync status
-  status          SyncStatus      @default(PENDING)
-  attempts        Int             @default(0)
-  lastAttemptAt   DateTime?
-  errorMessage    String?
+  status        SyncStatus @default(PENDING)
+  attempts      Int        @default(0)
+  lastAttemptAt DateTime?
+  errorMessage  String?
 
   // Conflict resolution
-  conflictData    Json?           // Server version if conflict detected
-  resolvedAt      DateTime?
-  resolvedBy      String?         // "client", "server", "manual"
+  conflictData Json? // Server version if conflict detected
+  resolvedAt   DateTime?
+  resolvedBy   String? // "client", "server", "manual"
 
   // Client tracking
-  clientId        String          // Client-generated ID for deduplication
-  deviceId        String?         // Which device created this
-  queuedAt        DateTime        @default(now())
-  syncedAt        DateTime?
+  clientId String // Client-generated ID for deduplication
+  deviceId String? // Which device created this
+  queuedAt DateTime  @default(now())
+  syncedAt DateTime?
 
   // API version for compatibility
-  apiVersion      String          @default("v1")
+  apiVersion String @default("v1")
 
   // Timestamps
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Multi-tenant relation
-  organizationId  String
-  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([clientId, organizationId])
   @@index([organizationId])
@@ -10203,45 +10213,45 @@ model OfflineSyncQueue {
 
 // Push notifications
 model PushNotification {
-  id              String                    @id @default(cuid())
+  id String @id @default(cuid())
 
   // Notification content
-  type            NotificationType
-  title           String
-  body            String
-  data            Json?                     // Additional payload
+  type  NotificationType
+  title String
+  body  String
+  data  Json? // Additional payload
 
   // Delivery tracking
-  deliveryStatus  NotificationDeliveryStatus @default(PENDING)
-  sentAt          DateTime?
-  deliveredAt     DateTime?
-  readAt          DateTime?
-  failedAt        DateTime?
-  failureReason   String?
+  deliveryStatus NotificationDeliveryStatus @default(PENDING)
+  sentAt         DateTime?
+  deliveredAt    DateTime?
+  readAt         DateTime?
+  failedAt       DateTime?
+  failureReason  String?
 
   // Targeting
-  platform        DevicePlatform?           // null = all platforms
-  fcmMessageId    String?                   // Firebase message ID
-  apnsMessageId   String?                   // APNS message ID
+  platform      DevicePlatform? // null = all platforms
+  fcmMessageId  String? // Firebase message ID
+  apnsMessageId String? // APNS message ID
 
   // Related entities
-  relatedEntityType String?                 // "appointment", "message", etc.
+  relatedEntityType String? // "appointment", "message", etc.
   relatedEntityId   String?
 
   // Scheduling
-  scheduledFor    DateTime?                 // For scheduled notifications
-  expiresAt       DateTime?                 // Don't deliver after this time
+  scheduledFor DateTime? // For scheduled notifications
+  expiresAt    DateTime? // Don't deliver after this time
 
   // Timestamps
-  createdAt       DateTime                  @default(now())
+  createdAt DateTime @default(now())
 
   // User relation
-  userId          String
-  user            User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Multi-tenant relation
-  organizationId  String
-  organization    Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([organizationId])
@@ -10253,7 +10263,7 @@ model PushNotification {
 
 // Notification preferences per user (US-265)
 model NotificationPreference {
-  id              String          @id @default(cuid())
+  id String @id @default(cuid())
 
   // Notification type preferences
   appointmentReminders     Boolean @default(true)
@@ -10266,79 +10276,79 @@ model NotificationPreference {
   marketingMessages        Boolean @default(false)
 
   // Quiet hours (don't send during these times)
-  quietHoursEnabled        Boolean @default(false)
-  quietHoursStart          String?  // HH:MM format
-  quietHoursEnd            String?  // HH:MM format
-  quietHoursTimezone       String?  // IANA timezone
+  quietHoursEnabled  Boolean @default(false)
+  quietHoursStart    String? // HH:MM format
+  quietHoursEnd      String? // HH:MM format
+  quietHoursTimezone String? // IANA timezone
 
   // Frequency settings
-  appointmentReminderTiming Int     @default(24)  // Hours before appointment
-  dailyDigest              Boolean @default(false)
-  digestTime               String? // HH:MM format for digest
+  appointmentReminderTiming Int     @default(24) // Hours before appointment
+  dailyDigest               Boolean @default(false)
+  digestTime                String? // HH:MM format for digest
 
   // Channel preferences (which channels to use)
-  pushEnabled              Boolean @default(true)
-  emailEnabled             Boolean @default(true)
-  smsEnabled               Boolean @default(true)
+  pushEnabled  Boolean @default(true)
+  emailEnabled Boolean @default(true)
+  smsEnabled   Boolean @default(true)
 
   // Timestamps
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // User relation
-  userId          String    @unique
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Multi-tenant relation
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
 }
 
 // Notification history/log for tracking sent notifications (US-265)
 model NotificationLog {
-  id              String                    @id @default(cuid())
+  id String @id @default(cuid())
 
   // Notification details
   notificationType NotificationType
-  title           String
-  body            String
-  data            Json?                     // Additional payload sent
+  title            String
+  body             String
+  data             Json? // Additional payload sent
 
   // Delivery details
-  channel         String                    // 'push', 'email', 'sms'
-  platform        DevicePlatform?           // For push: IOS, ANDROID
-  deviceId        String?                   // Device that received it
+  channel  String // 'push', 'email', 'sms'
+  platform DevicePlatform? // For push: IOS, ANDROID
+  deviceId String? // Device that received it
 
   // Status tracking
-  status          NotificationDeliveryStatus @default(PENDING)
-  sentAt          DateTime?
-  deliveredAt     DateTime?
-  readAt          DateTime?
-  failedAt        DateTime?
-  failureReason   String?
+  status        NotificationDeliveryStatus @default(PENDING)
+  sentAt        DateTime?
+  deliveredAt   DateTime?
+  readAt        DateTime?
+  failedAt      DateTime?
+  failureReason String?
 
   // External IDs
-  fcmMessageId    String?                   // Firebase message ID
-  apnsMessageId   String?                   // APNS message ID
-  externalId      String?                   // Any other external tracking ID
+  fcmMessageId  String? // Firebase message ID
+  apnsMessageId String? // APNS message ID
+  externalId    String? // Any other external tracking ID
 
   // Related entities
-  relatedEntityType String?
-  relatedEntityId   String?
-  pushNotificationId String?                // Link to PushNotification if applicable
+  relatedEntityType  String?
+  relatedEntityId    String?
+  pushNotificationId String? // Link to PushNotification if applicable
 
   // Timestamps
-  createdAt       DateTime                  @default(now())
+  createdAt DateTime @default(now())
 
   // User relation
-  userId          String
-  user            User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Multi-tenant relation
-  organizationId  String
-  organization    Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([organizationId])
@@ -10349,49 +10359,49 @@ model NotificationLog {
 
 // Mobile charting draft for offline documentation (US-267)
 model MobileChartingDraft {
-  id              String          @id @default(cuid())
+  id String @id @default(cuid())
 
   // Draft identification
-  draftType       String          // "soap", "diagnosis", "procedure", "body_diagram"
+  draftType String // "soap", "diagnosis", "procedure", "body_diagram"
 
   // Associated encounter (may be null if creating new)
-  encounterId     String?
-  appointmentId   String?         // Can create draft before encounter exists
-  patientId       String
+  encounterId   String?
+  appointmentId String? // Can create draft before encounter exists
+  patientId     String
 
   // Draft content
-  content         Json            // The draft data
+  content Json // The draft data
 
   // Voice-to-text transcript (if used)
-  voiceTranscript String?         @db.Text
+  voiceTranscript String? @db.Text
 
   // Photo attachments
-  photoUrls       String[]        // URLs to uploaded photos
+  photoUrls String[] // URLs to uploaded photos
 
   // Body diagram markings (for quick access)
   bodyDiagramType String?
   bodyMarkings    Json?
 
   // Sync status
-  status          SyncStatus      @default(PENDING)
-  lastSyncedAt    DateTime?
-  syncError       String?
+  status       SyncStatus @default(PENDING)
+  lastSyncedAt DateTime?
+  syncError    String?
 
   // Device tracking
-  deviceId        String
+  deviceId String
 
   // Auto-save timestamp
-  lastAutoSaveAt  DateTime        @default(now())
+  lastAutoSaveAt DateTime @default(now())
 
   // Timestamps
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Provider relation
-  providerId      String
+  providerId String
 
   // Multi-tenant relation
-  organizationId  String
+  organizationId String
 
   @@unique([deviceId, encounterId, draftType, organizationId])
   @@index([organizationId])
@@ -10404,29 +10414,29 @@ model MobileChartingDraft {
 
 // Common diagnosis codes for quick select (US-267)
 model CommonDiagnosis {
-  id              String          @id @default(cuid())
+  id String @id @default(cuid())
 
-  icd10Code       String
-  description     String
-  shortName       String?         // Quick display name
-  category        String?         // "cervical", "lumbar", "thoracic", etc.
+  icd10Code   String
+  description String
+  shortName   String? // Quick display name
+  category    String? // "cervical", "lumbar", "thoracic", etc.
 
   // Usage tracking
-  usageCount      Int             @default(0)
-  lastUsedAt      DateTime?
+  usageCount Int       @default(0)
+  lastUsedAt DateTime?
 
   // Provider-specific favorites
-  providerId      String?         // null = org-wide
+  providerId String? // null = org-wide
 
   // Sort order
-  sortOrder       Int             @default(0)
+  sortOrder Int @default(0)
 
   // Timestamps
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Multi-tenant relation
-  organizationId  String
+  organizationId String
 
   @@unique([icd10Code, providerId, organizationId])
   @@index([organizationId])
@@ -10437,33 +10447,33 @@ model CommonDiagnosis {
 
 // Common procedure codes for quick entry (US-267)
 model CommonProcedure {
-  id              String          @id @default(cuid())
+  id String @id @default(cuid())
 
-  cptCode         String
-  description     String
-  shortName       String?         // Quick display name
-  category        String?         // "adjustment", "exam", "therapy", etc.
+  cptCode     String
+  description String
+  shortName   String? // Quick display name
+  category    String? // "adjustment", "exam", "therapy", etc.
 
   // Default values for quick entry
-  defaultUnits    Int             @default(1)
+  defaultUnits     Int      @default(1)
   defaultModifiers String[]
 
   // Usage tracking
-  usageCount      Int             @default(0)
-  lastUsedAt      DateTime?
+  usageCount Int       @default(0)
+  lastUsedAt DateTime?
 
   // Provider-specific favorites
-  providerId      String?         // null = org-wide
+  providerId String? // null = org-wide
 
   // Sort order
-  sortOrder       Int             @default(0)
+  sortOrder Int @default(0)
 
   // Timestamps
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Multi-tenant relation
-  organizationId  String
+  organizationId String
 
   @@unique([cptCode, providerId, organizationId])
   @@index([organizationId])
@@ -10537,38 +10547,38 @@ enum PatientHealthGoalType {
 
 // Pain diary entry for daily symptom tracking
 model PainDiaryEntry {
-  id          String       @id @default(cuid())
-  entryDate   DateTime     @default(now()) // Date/time of entry
+  id        String   @id @default(cuid())
+  entryDate DateTime @default(now()) // Date/time of entry
 
   // Pain details
-  painLevel      Int          // 0-10 scale
-  bodyLocation   BodyLocation
-  bodyLocationOther String?   // If OTHER selected
-  painQuality    PainQuality[]
-  painQualityOther String?   // If OTHER included
+  painLevel         Int // 0-10 scale
+  bodyLocation      BodyLocation
+  bodyLocationOther String? // If OTHER selected
+  painQuality       PainQuality[]
+  painQualityOther  String? // If OTHER included
 
   // Triggers and factors
-  triggers       String[]     // What triggered/worsened pain
-  relievingFactors String[]   // What helped reduce pain
+  triggers         String[] // What triggered/worsened pain
+  relievingFactors String[] // What helped reduce pain
 
   // Impact on daily life
-  affectsWork     Boolean     @default(false)
-  affectsSleep    Boolean     @default(false)
-  affectsActivity Boolean     @default(false)
-  affectsMood     Boolean     @default(false)
+  affectsWork     Boolean @default(false)
+  affectsSleep    Boolean @default(false)
+  affectsActivity Boolean @default(false)
+  affectsMood     Boolean @default(false)
 
   // Additional context
-  duration       String?      // "constant", "intermittent", "brief"
-  medicationTaken String?     // Any medication taken
-  notes          String?      @db.Text
+  duration        String? // "constant", "intermittent", "brief"
+  medicationTaken String? // Any medication taken
+  notes           String? @db.Text
 
   // Timestamps
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  patientId      String
-  patient        Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -10592,41 +10602,41 @@ enum PhotoType {
 
 // Progress photos for visual tracking
 model ProgressPhoto {
-  id          String       @id @default(cuid())
+  id String @id @default(cuid())
 
   // Photo details
-  photoUrl    String       // URL to stored photo
-  thumbnailUrl String?     // Smaller thumbnail version
-  photoType   PhotoType
-  caption     String?
+  photoUrl     String // URL to stored photo
+  thumbnailUrl String? // Smaller thumbnail version
+  photoType    PhotoType
+  caption      String?
 
   // Metadata
-  takenAt     DateTime     @default(now()) // When photo was taken
-  angle       String?      // "front", "left-side", "right-side", "back"
-  bodyArea    BodyLocation?
+  takenAt  DateTime      @default(now()) // When photo was taken
+  angle    String? // "front", "left-side", "right-side", "back"
+  bodyArea BodyLocation?
 
   // Comparison tracking
-  isBaseline  Boolean      @default(false) // Is this a baseline photo?
+  isBaseline        Boolean @default(false) // Is this a baseline photo?
   comparisonGroupId String? // Group photos for side-by-side comparison
 
   // Notes
-  notes       String?      @db.Text
+  notes String? @db.Text
 
   // Provider review
-  reviewedAt  DateTime?
-  reviewedBy  String?      // Provider ID who reviewed
-  providerNotes String?    @db.Text
+  reviewedAt    DateTime?
+  reviewedBy    String? // Provider ID who reviewed
+  providerNotes String?   @db.Text
 
   // Timestamps
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  patientId   String
-  patient     Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
   organizationId String
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([patientId])
   @@index([takenAt])
@@ -10637,46 +10647,46 @@ model ProgressPhoto {
 
 // Patient health goals
 model PatientGoal {
-  id          String       @id @default(cuid())
+  id String @id @default(cuid())
 
   // Goal details
   title       String
-  description String?      @db.Text
+  description String?                 @db.Text
   goalType    PatientHealthGoalType
-  status      PatientHealthGoalStatus   @default(ACTIVE)
+  status      PatientHealthGoalStatus @default(ACTIVE)
 
   // Target and progress
-  targetValue   Float?     // Numeric target (e.g., pain level of 3)
-  targetUnit    String?    // Unit for target (e.g., "pain level", "days/week")
-  currentValue  Float?     // Current progress value
-  startValue    Float?     // Starting value for comparison
+  targetValue  Float? // Numeric target (e.g., pain level of 3)
+  targetUnit   String? // Unit for target (e.g., "pain level", "days/week")
+  currentValue Float? // Current progress value
+  startValue   Float? // Starting value for comparison
 
   // Timeline
-  startDate   DateTime     @default(now())
-  targetDate  DateTime?    // Goal completion target
+  startDate   DateTime  @default(now())
+  targetDate  DateTime? // Goal completion target
   completedAt DateTime?
 
   // Progress tracking
-  progressNotes Json?      // Array of progress updates [{date, value, note}]
+  progressNotes      Json? // Array of progress updates [{date, value, note}]
   lastProgressUpdate DateTime?
 
   // Milestones
-  milestones  Json?        // Array of milestones [{target, reached, date}]
+  milestones Json? // Array of milestones [{target, reached, date}]
 
   // Provider-assigned vs patient-created
   isProviderAssigned Boolean @default(false)
-  assignedBy  String?      // Provider ID if assigned
+  assignedBy         String? // Provider ID if assigned
 
   // Timestamps
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  patientId   String
-  patient     Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
   organizationId String
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([patientId])
   @@index([status])
@@ -10690,26 +10700,26 @@ model PatientGoal {
 
 // Offline cache for storing entity data locally
 model OfflineCache {
-  id          String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // Entity identification
-  entityType  String   // "patient", "appointment", "encounter", etc.
-  entityId    String   // ID of the cached entity
+  entityType String // "patient", "appointment", "encounter", etc.
+  entityId   String // ID of the cached entity
 
   // Cached data
-  data        Json     // The full entity data
-  version     Int      // Version number for conflict detection
+  data    Json // The full entity data
+  version Int // Version number for conflict detection
 
   // Cache metadata
-  cachedAt    DateTime @default(now())
-  expiresAt   DateTime // When this cache entry expires
+  cachedAt  DateTime @default(now())
+  expiresAt DateTime // When this cache entry expires
 
   // Device tracking
-  deviceId    String   // Which device has this cached
+  deviceId String // Which device has this cached
 
   // User relation (for multi-user devices)
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Multi-tenant relation
   organizationId String
@@ -10725,33 +10735,33 @@ model OfflineCache {
 
 // Sync conflict record for manual resolution
 model SyncConflict {
-  id          String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // Operation that caused conflict
-  syncQueueId String?  // Reference to OfflineSyncQueue
+  syncQueueId String? // Reference to OfflineSyncQueue
 
   // Entity details
-  entityType  String
-  entityId    String
+  entityType String
+  entityId   String
 
   // Conflict data
-  clientData  Json     // Data from client
-  serverData  Json     // Data from server
-  conflictType String  // "version_mismatch", "deleted_on_server", "updated_on_server"
+  clientData   Json // Data from client
+  serverData   Json // Data from server
+  conflictType String // "version_mismatch", "deleted_on_server", "updated_on_server"
 
   // Resolution
-  status      String   @default("pending") // "pending", "resolved_client", "resolved_server", "resolved_merge"
-  resolvedData Json?   // Final merged data if resolved
-  resolvedAt  DateTime?
-  resolvedBy  String?  // User ID who resolved
+  status       String    @default("pending") // "pending", "resolved_client", "resolved_server", "resolved_merge"
+  resolvedData Json? // Final merged data if resolved
+  resolvedAt   DateTime?
+  resolvedBy   String? // User ID who resolved
 
   // Device info
-  deviceId    String
+  deviceId String
 
   // Timestamps
-  detectedAt  DateTime @default(now())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  detectedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   // Multi-tenant relation
   organizationId String
@@ -10765,10 +10775,10 @@ model SyncConflict {
 
 // Device sync state for tracking what data each device has
 model DeviceSyncState {
-  id          String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // Device identification
-  deviceId    String
+  deviceId String
 
   // Sync watermarks (timestamps of last synced data per entity type)
   patientSyncedAt     DateTime?
@@ -10777,29 +10787,29 @@ model DeviceSyncState {
   scheduleSyncedAt    DateTime?
 
   // General sync tracking
-  lastFullSyncAt      DateTime?
+  lastFullSyncAt        DateTime?
   lastIncrementalSyncAt DateTime?
 
   // Sync stats
-  pendingOperations   Int      @default(0)
-  failedOperations    Int      @default(0)
-  conflictCount       Int      @default(0)
+  pendingOperations Int @default(0)
+  failedOperations  Int @default(0)
+  conflictCount     Int @default(0)
 
   // Connection tracking
-  isOnline            Boolean  @default(true)
-  lastOnlineAt        DateTime @default(now())
+  isOnline     Boolean  @default(true)
+  lastOnlineAt DateTime @default(now())
 
   // Cache stats
-  cacheSize           Int      @default(0) // Approximate size in bytes
-  cachedEntities      Int      @default(0) // Number of cached entities
+  cacheSize      Int @default(0) // Approximate size in bytes
+  cachedEntities Int @default(0) // Number of cached entities
 
   // Timestamps
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // User relation
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Multi-tenant relation
   organizationId String
@@ -10809,4 +10819,294 @@ model DeviceSyncState {
   @@index([organizationId])
   @@index([userId])
   @@index([deviceId])
+}
+
+// =============================================================================
+// EPIC 30: AI RECEPTIONIST AGENT
+// =============================================================================
+
+// Channel for AI receptionist conversations
+enum ConversationChannel {
+  PHONE
+  CHAT
+  SMS
+  EMAIL
+}
+
+// Status of AI receptionist conversations
+enum AIConversationStatus {
+  ACTIVE // Currently in progress
+  COMPLETED // Successfully resolved
+  ESCALATED // Handed off to human
+  ABANDONED // Patient disconnected
+  FAILED // System error
+}
+
+// Type of AI receptionist actions
+enum AIActionType {
+  BOOK_APPOINTMENT
+  RESCHEDULE_APPOINTMENT
+  CANCEL_APPOINTMENT
+  ANSWER_QUESTION
+  IDENTIFY_PATIENT
+  CREATE_PATIENT
+  VERIFY_INSURANCE
+  SEND_CONFIRMATION
+  TRANSFER_CALL
+  TAKE_MESSAGE
+  COLLECT_INFO
+}
+
+// Result status of AI actions
+enum AIActionResult {
+  SUCCESS
+  PARTIAL
+  FAILED
+  PENDING
+}
+
+// Escalation reason for AI conversations
+enum AIEscalationReason {
+  PATIENT_REQUEST // Patient asked for human
+  CLINICAL_QUESTION // Medical/clinical question
+  BILLING_DISPUTE // Billing issue
+  FRUSTRATION_DETECTED // AI detected frustration
+  URGENCY_DETECTED // Urgent matter
+  COMPLEX_REQUEST // Too complex for AI
+  REPEATED_FAILURE // Multiple failed attempts
+  LOW_CONFIDENCE // AI not confident in response
+  AFTER_HOURS_URGENT // Urgent after-hours call
+}
+
+// Knowledge base category for FAQ and practice information
+enum KnowledgeBaseCategory {
+  PRACTICE_INFO // Hours, location, parking
+  INSURANCE // Insurance and payment info
+  SERVICES // Treatments and services offered
+  PROVIDERS // Provider bios and specialties
+  APPOINTMENT_PREP // How to prepare for visits
+  NEW_PATIENT // New patient process
+  POLICIES // Office policies
+  EMERGENCY // Emergency procedures
+  CUSTOM // Custom practice-specific info
+}
+
+// AI Receptionist conversation
+model AIReceptionistConversation {
+  id      String               @id @default(cuid())
+  channel ConversationChannel
+  status  AIConversationStatus @default(ACTIVE)
+
+  // Call/conversation details
+  externalCallId String? // Twilio SID or other external ID
+  phoneNumber    String? // Caller phone number
+  duration       Int? // Duration in seconds
+
+  // Transcript and context
+  transcript Json? // Full conversation transcript
+  context    Json? // AI conversation context
+  metadata   Json? // Additional metadata (browser, device, etc.)
+
+  // Summary
+  summary        String?  @db.Text // AI-generated summary
+  resolvedTopics String[] // What was resolved
+
+  // Timing
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  // Recording consent
+  recordingConsent Boolean @default(false)
+  recordingUrl     String? // URL to recording if consented
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientId String?
+  patient   Patient? @relation(fields: [patientId], references: [id])
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Related records
+  actions    AIReceptionistAction[]
+  escalation AIReceptionistEscalation?
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([channel])
+  @@index([status])
+  @@index([startedAt])
+  @@index([phoneNumber])
+}
+
+// AI Receptionist action taken during conversation
+model AIReceptionistAction {
+  id         String       @id @default(cuid())
+  actionType AIActionType
+
+  // Action details
+  parameters    Json? // Input parameters for the action
+  result        AIActionResult @default(PENDING)
+  resultDetails Json? // Output/result details
+
+  // Confidence and reasoning
+  confidence Float? // 0-1 confidence score
+  reasoning  String? @db.Text // AI reasoning for taking this action
+
+  // Related entities created/modified
+  appointmentId String? // If appointment was created/modified
+  patientId     String? // If patient was created/identified
+
+  // Error handling
+  errorMessage String? @db.Text
+  retryCount   Int     @default(0)
+
+  // Timing
+  executedAt  DateTime  @default(now())
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  // Relations
+  conversationId String
+  conversation   AIReceptionistConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([conversationId])
+  @@index([actionType])
+  @@index([result])
+  @@index([executedAt])
+}
+
+// AI Receptionist escalation to human
+model AIReceptionistEscalation {
+  id     String             @id @default(cuid())
+  reason AIEscalationReason
+
+  // Escalation details
+  reasonDetails String? @db.Text // Additional context
+  urgencyLevel  Int     @default(1) // 1-5, 5 being most urgent
+
+  // Context handoff
+  contextSummary   String?  @db.Text // Summary for human staff
+  suggestedActions String[] // What AI suggests human should do
+
+  // Assignment
+  assignedToUserId String? // Staff member assigned
+
+  // Resolution
+  resolvedAt       DateTime?
+  resolutionNotes  String?   @db.Text
+  resolvedByUserId String? // Who resolved it
+
+  // Timing
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  conversationId String                     @unique
+  conversation   AIReceptionistConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([reason])
+  @@index([urgencyLevel])
+  @@index([assignedToUserId])
+  @@index([resolvedAt])
+}
+
+// AI Knowledge base for FAQ and practice information
+model AIKnowledgeBase {
+  id       String                @id @default(cuid())
+  category KnowledgeBaseCategory
+
+  // Content
+  question String   @db.Text // The question or topic
+  answer   String   @db.Text // The answer or response
+  keywords String[] // Keywords for matching
+
+  // Variations
+  variations String[] // Alternative phrasings of the question
+
+  // Usage tracking
+  timesUsed      Int       @default(0)
+  helpfulCount   Int       @default(0)
+  unhelpfulCount Int       @default(0)
+  lastUsedAt     DateTime?
+
+  // Status
+  isActive Boolean @default(true)
+  priority Int     @default(0) // Higher = more relevant
+
+  // Review
+  reviewedAt       DateTime?
+  reviewedByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([category])
+  @@index([isActive])
+  @@index([priority])
+}
+
+// AI Voice configuration for phone calls
+model AIVoiceConfig {
+  id String @id @default(cuid())
+
+  // Voice settings
+  voiceProvider String @default("openai") // openai, elevenlabs, etc.
+  voiceId       String @default("alloy") // Voice identifier
+  voiceSpeed    Float  @default(1.0) // Speaking speed multiplier
+  voicePitch    Float  @default(1.0) // Voice pitch adjustment
+
+  // Greeting and messages
+  greeting        String  @db.Text // Initial greeting message
+  holdMessage     String? @db.Text // Message when putting caller on hold
+  transferMessage String? @db.Text // Message before transferring
+  afterHoursMsg   String? @db.Text // After-hours greeting
+  emergencyMsg    String? @db.Text // Emergency instructions
+
+  // Hold settings
+  holdMusicUrl   String? // URL to hold music
+  maxHoldSeconds Int     @default(120)
+
+  // Call handling
+  maxCallDuration Int @default(900) // Max call length in seconds
+  silenceTimeout  Int @default(10) // Seconds of silence before prompting
+
+  // Business hours (stored as JSON for flexibility)
+  businessHours Json? // { monday: { open: "09:00", close: "17:00" }, ... }
+  timezone      String @default("America/Los_Angeles")
+
+  // Recording settings
+  recordByDefault     Boolean @default(false)
+  recordingDisclosure String? @db.Text // Disclosure message for recording
+
+  // Escalation settings
+  escalationPhone String? // Phone to transfer urgent calls to
+  escalationRules Json? // Rules for automatic escalation
+
+  // Language settings
+  primaryLanguage String   @default("en-US")
+  supportedLangs  String[] @default(["en-US"])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // One config per organization
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }
