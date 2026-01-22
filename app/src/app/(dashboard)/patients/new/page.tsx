@@ -63,8 +63,8 @@ export default function NewPatientPage() {
           </Button>
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Add New Patient</h1>
-          <p className="text-gray-500 mt-1">
+          <h1 className="text-2xl font-bold text-stone-900">Add New Patient</h1>
+          <p className="text-stone-500 mt-1">
             {step === 'demographics'
               ? 'Step 1 of 2: Enter patient demographics'
               : 'Step 2 of 2: Add contact information'}
@@ -76,12 +76,12 @@ export default function NewPatientPage() {
       <div className="flex items-center gap-2">
         <div
           className={`flex-1 h-2 rounded-full ${
-            step === 'demographics' ? 'bg-cyan-500' : 'bg-cyan-500'
+            step === 'demographics' ? 'bg-[#053e67]' : 'bg-[#053e67]'
           }`}
         />
         <div
           className={`flex-1 h-2 rounded-full ${
-            step === 'contact' ? 'bg-cyan-500' : 'bg-gray-200'
+            step === 'contact' ? 'bg-[#053e67]' : 'bg-stone-200'
           }`}
         />
       </div>
@@ -91,7 +91,7 @@ export default function NewPatientPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <UserPlus className="h-5 w-5 text-cyan-500" />
+              <UserPlus className="h-5 w-5 text-[#053e67]" />
               Patient Demographics
             </CardTitle>
             <CardDescription>

@@ -6,3 +6,4 @@ export {
   RequireRole,
   RequireMinimumRole,
 } from './usePermissions';
+export { useDebounce } from './useDebounce';

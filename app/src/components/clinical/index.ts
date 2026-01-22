@@ -1,0 +1,1 @@
+export { ClinicalHistoryView } from './ClinicalHistoryView';

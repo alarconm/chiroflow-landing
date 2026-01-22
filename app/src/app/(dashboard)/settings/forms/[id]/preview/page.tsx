@@ -233,7 +233,7 @@ export default function FormPreviewPage({ params }: { params: Promise<{ id: stri
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#053e67]/50"></div>
       </div>
     );
   }
@@ -331,7 +331,7 @@ export default function FormPreviewPage({ params }: { params: Promise<{ id: stri
 
             {visibleFields.length > 0 && (
               <div className="pt-4">
-                <Button className="w-full bg-gradient-to-r from-cyan-500 to-teal-500">
+                <Button className="w-full bg-gradient-to-r from-[#053e67]/50 to-[#053e67]">
                   Submit
                 </Button>
               </div>

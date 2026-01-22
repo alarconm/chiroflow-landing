@@ -34,6 +34,11 @@ export async function getTenantFromRequest(): Promise<string | null> {
     if (parts.length >= 2 && parts[1].includes('localhost')) {
       return parts[0];
     }
+
+    // Development mode: use "demo" as default tenant for localhost
+    if (process.env.NODE_ENV === 'development' && (host.includes('localhost') || host.includes('127.0.0.1'))) {
+      return 'demo';
+    }
   }
 
   return null;

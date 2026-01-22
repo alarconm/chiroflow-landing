@@ -1,0 +1,3414 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Multi-tenant organization (practice)
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  subdomain String   @unique
+  settings  Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  users      User[]
+  auditLogs  AuditLog[]
+  patients   Patient[]
+  households Household[]
+
+  // Scheduling relations
+  providers        Provider[]
+  appointmentTypes AppointmentType[]
+  rooms            Room[]
+  resources        Resource[]
+  appointments     Appointment[]
+  recurringSeries  RecurringSeries[]
+  scheduleBlocks   ScheduleBlock[]
+  waitlistEntries  WaitlistEntry[]
+
+  // Intake form relations
+  formTemplates   FormTemplate[]
+  formSubmissions FormSubmission[]
+  formDeliveries  FormDelivery[]
+
+  // Clinical/EHR relations
+  encounters          Encounter[]
+  treatmentPlans      TreatmentPlan[]
+  noteTemplates       NoteTemplate[]
+  assessmentTemplates AssessmentTemplate[]
+  outcomeAssessments  OutcomeAssessment[]
+  codeFavorites       CodeFavorite[]
+
+  // Billing relations
+  feeSchedules        FeeSchedule[]
+  charges             Charge[]
+  payments            Payment[]
+  claims              Claim[]
+
+  // Communication relations
+  messageTemplates    MessageTemplate[]
+  messages            Message[]
+  messageThreads      MessageThread[]
+  reminderRules       ReminderRule[]
+
+  // Payment Processing relations (Epic 10)
+  storedPaymentMethods StoredPaymentMethod[]
+  paymentTransactions  PaymentTransaction[]
+  paymentPlans         PaymentPlan[]
+  patientStatements    PatientStatement[]
+  autoPayEnrollments   AutoPayEnrollment[]
+  refunds              Refund[]
+
+  // Reporting & Analytics relations (Epic 15)
+  dashboardWidgets    DashboardWidget[]
+  savedReports        SavedReport[]
+  reportSchedules     ReportSchedule[]
+  kpiSnapshots        KPISnapshot[]
+  reportExports       ReportExport[]
+
+  // AI Scheduling relations (Epic 13)
+  overbookingRecommendations OverbookingRecommendation[]
+  schedulingGaps             SchedulingGap[]
+  providerUtilizations       ProviderUtilization[]
+  schedulingSuggestions      SchedulingSuggestion[]
+  recallSequences            RecallSequence[]
+
+  // AI Communication relations (Epic 12)
+  chatSessions               ChatSession[]
+  aiConversationContexts     AIConversationContext[]
+  recallCampaigns            RecallCampaign[]
+  reactivationCampaigns      ReactivationCampaign[]
+  patientFeedback            PatientFeedback[]
+
+  @@index([subdomain])
+}
+
+// User roles for RBAC
+enum Role {
+  OWNER // Full access, can delete organization
+  ADMIN // Full access except organization deletion
+  PROVIDER // Clinical access, can see all patients
+  STAFF // Front desk, limited patient access
+  BILLER // Billing and claims access only
+}
+
+// User account
+model User {
+  id           String    @id @default(cuid())
+  email        String
+  passwordHash String
+  firstName    String
+  lastName     String
+  role         Role      @default(STAFF)
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  auditLogs AuditLog[]
+  provider  Provider? // If user is a clinical provider
+
+  @@unique([email, organizationId])
+  @@index([organizationId])
+  @@index([email])
+}
+
+// Audit log for HIPAA compliance
+model AuditLog {
+  id         String   @id @default(cuid())
+  action     String // CREATE, UPDATE, DELETE, VIEW, LOGIN, LOGOUT, etc.
+  entityType String // User, Patient, Appointment, etc.
+  entityId   String? // ID of the affected entity
+  changes    Json? // Before/after state for mutations
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  // Relations
+  userId         String?
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+// ============================================
+// EPIC 02: PATIENT MANAGEMENT
+// ============================================
+
+// Patient status
+enum PatientStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+  DECEASED
+}
+
+// Gender options
+enum Gender {
+  MALE
+  FEMALE
+  NON_BINARY
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+// Contact preference
+enum ContactPreference {
+  EMAIL
+  PHONE
+  SMS
+  MAIL
+}
+
+// Insurance type
+enum InsuranceType {
+  PRIMARY
+  SECONDARY
+  TERTIARY
+}
+
+// Subscriber relationship to patient
+enum SubscriberRelationship {
+  SELF
+  SPOUSE
+  CHILD
+  OTHER
+}
+
+// Family relationship type
+enum FamilyRelationship {
+  SPOUSE
+  PARENT
+  CHILD
+  SIBLING
+  GUARDIAN
+  OTHER
+}
+
+// Document type
+enum DocumentType {
+  INSURANCE_CARD_FRONT
+  INSURANCE_CARD_BACK
+  PHOTO_ID
+  CONSENT_FORM
+  INTAKE_FORM
+  CLINICAL_NOTE
+  LAB_RESULT
+  IMAGING
+  REFERRAL
+  OTHER
+}
+
+// Core Patient model
+model Patient {
+  id         String        @id @default(cuid())
+  mrn        String // Medical Record Number (org-unique)
+  status     PatientStatus @default(ACTIVE)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  archivedAt DateTime?
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  demographics      PatientDemographics?
+  contacts          PatientContact[]
+  emergencyContacts EmergencyContact[]
+  insurances        PatientInsurance[]
+  documents         PatientDocument[]
+  householdMembers  HouseholdMember[]
+  mergeHistory      PatientMerge[]       @relation("MergedIntoPatient")
+  mergedFrom        PatientMerge[]       @relation("SourcePatient")
+
+  // Scheduling relations
+  appointments    Appointment[]
+  waitlistEntries WaitlistEntry[]
+
+  // Intake form relations
+  formSubmissions FormSubmission[]
+  formDeliveries  FormDelivery[]
+
+  // Clinical/EHR relations
+  encounters         Encounter[]
+  treatmentPlans     TreatmentPlan[]
+  outcomeAssessments OutcomeAssessment[]
+
+  // Billing relations
+  charges            Charge[]
+  payments           Payment[]
+  claims             Claim[]
+
+  // Communication relations
+  messages               Message[]
+  messageThreads         MessageThread[]
+  communicationPreference CommunicationPreference?
+
+  // Payment Processing relations (Epic 10)
+  storedPaymentMethods   StoredPaymentMethod[]
+  paymentTransactions    PaymentTransaction[]
+  paymentPlans           PaymentPlan[]
+  patientStatements      PatientStatement[]
+  autoPayEnrollments     AutoPayEnrollment[]
+  refunds                Refund[]
+
+  // AI Scheduling relations (Epic 13)
+  schedulingSuggestions  SchedulingSuggestion[]
+  recallEnrollments      RecallEnrollment[]
+
+  // AI Communication relations (Epic 12)
+  chatSessions               ChatSession[]
+  aiConversationContext      AIConversationContext?
+  recallCampaignPatients     RecallCampaignPatient[]
+  reactivationCampaignPatients ReactivationCampaignPatient[]
+  patientFeedback            PatientFeedback[]
+
+  @@unique([mrn, organizationId])
+  @@index([organizationId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Patient demographics (1:1 with Patient)
+model PatientDemographics {
+  id            String   @id @default(cuid())
+  firstName     String
+  middleName    String?
+  lastName      String
+  preferredName String?
+  dateOfBirth   DateTime
+  gender        Gender   @default(PREFER_NOT_TO_SAY)
+  pronouns      String?
+  ssn           String? // Encrypted, store last 4 for display
+  ssnLast4      String? // Last 4 digits for display
+  language      String   @default("en")
+  ethnicity     String?
+  race          String?
+  maritalStatus String?
+  occupation    String?
+  employer      String?
+  notes         String? // Internal notes
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  patientId String  @unique
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  // Search indexes for phonetic matching
+  firstNameSoundex String? // Soundex code for first name
+  lastNameSoundex  String? // Soundex code for last name
+
+  @@index([firstName, lastName])
+  @@index([dateOfBirth])
+  @@index([firstNameSoundex])
+  @@index([lastNameSoundex])
+}
+
+// Patient contact information (1:many - can have multiple addresses/phones)
+model PatientContact {
+  id                String            @id @default(cuid())
+  isPrimary         Boolean           @default(false)
+  contactPreference ContactPreference @default(PHONE)
+
+  // Address
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  zipCode      String?
+  country      String  @default("US")
+
+  // Phone
+  homePhone   String?
+  mobilePhone String?
+  workPhone   String?
+
+  // Email
+  email String?
+
+  // Opt-in preferences
+  allowSms       Boolean @default(true)
+  allowEmail     Boolean @default(true)
+  allowVoicemail Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@index([email])
+  @@index([mobilePhone])
+}
+
+// Emergency contacts
+model EmergencyContact {
+  id           String   @id @default(cuid())
+  name         String
+  relationship String
+  phone        String
+  altPhone     String?
+  isPrimary    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+}
+
+// Patient insurance information
+model PatientInsurance {
+  id       String        @id @default(cuid())
+  type     InsuranceType @default(PRIMARY)
+  isActive Boolean       @default(true)
+
+  // Insurance company info
+  payerName String
+  payerId   String? // Payer ID for EDI
+  planName  String?
+  planType  String? // PPO, HMO, EPO, etc.
+
+  // Policy details
+  policyNumber String
+  groupNumber  String?
+
+  // Subscriber info (may be different from patient)
+  subscriberRelationship SubscriberRelationship @default(SELF)
+  subscriberId           String?
+  subscriberFirstName    String?
+  subscriberLastName     String?
+  subscriberDob          DateTime?
+
+  // Coverage dates
+  effectiveDate   DateTime?
+  terminationDate DateTime?
+
+  // Benefits
+  copay          Decimal? @db.Decimal(10, 2)
+  deductible     Decimal? @db.Decimal(10, 2)
+  deductibleMet  Decimal? @db.Decimal(10, 2)
+  outOfPocketMax Decimal? @db.Decimal(10, 2)
+  outOfPocketMet Decimal? @db.Decimal(10, 2)
+
+  // Verification
+  verifiedAt        DateTime?
+  verifiedBy        String?
+  verificationNotes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  // Link to InsurancePayer if in system
+  insurancePayerId String?
+  insurancePayer   InsurancePayer? @relation(fields: [insurancePayerId], references: [id])
+
+  // Billing relations
+  claims    Claim[]
+
+  @@index([patientId])
+  @@index([type])
+  @@index([payerName])
+  @@index([insurancePayerId])
+}
+
+// Patient documents
+model PatientDocument {
+  id          String       @id @default(cuid())
+  type        DocumentType
+  fileName    String
+  fileSize    Int // Size in bytes
+  mimeType    String
+  storageKey  String // S3 key or local path
+  description String?
+
+  // Upload info
+  uploadedById String
+  uploadedAt   DateTime @default(now())
+
+  // Access control
+  isConfidential Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@index([type])
+  @@index([uploadedAt])
+}
+
+// Household for family linking
+model Household {
+  id        String   @id @default(cuid())
+  name      String? // Optional household name
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  members HouseholdMember[]
+
+  @@index([organizationId])
+}
+
+// Household membership (links patients to households)
+model HouseholdMember {
+  id            String             @id @default(cuid())
+  relationship  FamilyRelationship
+  isHeadOfHouse Boolean            @default(false)
+  isGuarantor   Boolean            @default(false) // Responsible for billing
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  // Relations
+  patientId   String
+  patient     Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  householdId String
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  @@unique([patientId, householdId])
+  @@index([householdId])
+  @@index([patientId])
+}
+
+// Patient merge tracking
+model PatientMerge {
+  id             String   @id @default(cuid())
+  mergedAt       DateTime @default(now())
+  mergedBy       String // User ID who performed merge
+  reason         String? // Why merge was performed
+  sourceSnapshot Json // Snapshot of source patient before merge
+  fieldsKept     Json // Which fields were kept from source
+
+  // Relations
+  sourcePatientId String
+  sourcePatient   Patient @relation("SourcePatient", fields: [sourcePatientId], references: [id])
+  targetPatientId String
+  targetPatient   Patient @relation("MergedIntoPatient", fields: [targetPatientId], references: [id])
+
+  @@index([sourcePatientId])
+  @@index([targetPatientId])
+  @@index([mergedAt])
+}
+
+// ============================================
+// EPIC 03: SCHEDULING ENGINE
+// ============================================
+
+// Appointment status workflow
+enum AppointmentStatus {
+  SCHEDULED // Booked but not confirmed
+  CONFIRMED // Patient confirmed attendance
+  CHECKED_IN // Patient arrived
+  IN_PROGRESS // Currently being seen
+  COMPLETED // Visit finished
+  CANCELLED // Cancelled by patient or staff
+  NO_SHOW // Patient didn't arrive
+  RESCHEDULED // Moved to different time
+}
+
+// Recurring frequency
+enum RecurringFrequency {
+  WEEKLY
+  BI_WEEKLY
+  MONTHLY
+}
+
+// Schedule block types (non-patient time)
+enum BlockType {
+  LUNCH
+  MEETING
+  ADMIN
+  PERSONAL
+  BREAK
+  TRAINING
+  OTHER
+}
+
+// Waitlist priority
+enum WaitlistPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+// Day of week for recurring schedules
+enum DayOfWeek {
+  SUNDAY
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+}
+
+// Provider profile (extends User for clinical staff)
+model Provider {
+  id            String   @id @default(cuid())
+  title         String? // Dr., DC, etc.
+  specialty     String? // Chiropractic, PT, etc.
+  npiNumber     String? // National Provider Identifier
+  licenseNumber String?
+  color         String   @default("#3B82F6") // Calendar color
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  bio           String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Link to user account
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  schedules           ProviderSchedule[]
+  exceptions          ProviderException[]
+  appointments        Appointment[]
+  scheduleBlocks      ScheduleBlock[]
+  waitlistPreferences WaitlistEntry[]
+
+  // Clinical/EHR relations
+  encounters     Encounter[]
+  treatmentPlans TreatmentPlan[]
+
+  // Billing relations
+  charges        Charge[]
+
+  // AI Scheduling relations (Epic 13)
+  overbookingRecommendations OverbookingRecommendation[]
+  schedulingGaps             SchedulingGap[]
+  utilizations               ProviderUtilization[]
+  schedulingSuggestions      SchedulingSuggestion[]
+
+  @@index([organizationId])
+  @@index([isActive])
+}
+
+// Provider weekly recurring schedule
+model ProviderSchedule {
+  id        String    @id @default(cuid())
+  dayOfWeek DayOfWeek
+  startTime String // "09:00" format (24hr)
+  endTime   String // "17:00" format (24hr)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // Relations
+  providerId String
+  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId])
+  @@index([dayOfWeek])
+}
+
+// Provider one-off schedule exceptions
+model ProviderException {
+  id          String   @id @default(cuid())
+  date        DateTime @db.Date
+  isAvailable Boolean  @default(false) // false = off, true = custom hours
+  startTime   String? // Override start time if available
+  endTime     String? // Override end time if available
+  reason      String? // Vacation, sick, etc.
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  providerId String
+  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, date])
+  @@index([date])
+}
+
+// Appointment types (New Patient, Follow-up, etc.)
+model AppointmentType {
+  id           String   @id @default(cuid())
+  name         String // "New Patient Exam"
+  code         String? // Short code "NPE"
+  description  String?
+  duration     Int // Duration in minutes
+  color        String   @default("#10B981") // Display color
+  requiresRoom Boolean  @default(true)
+  isActive     Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  defaultPrice Decimal? @db.Decimal(10, 2)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  appointments    Appointment[]
+  waitlistEntries WaitlistEntry[]
+
+  @@unique([code, organizationId])
+  @@index([organizationId])
+  @@index([isActive])
+}
+
+// Treatment rooms
+model Room {
+  id          String   @id @default(cuid())
+  name        String // "Room 1", "Adjustment Bay A"
+  description String?
+  capacity    Int      @default(1)
+  equipment   String[] // List of equipment in room
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  color       String   @default("#6366F1")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  appointments Appointment[]
+
+  @@index([organizationId])
+  @@index([isActive])
+}
+
+// Shared resources (equipment that needs scheduling)
+model Resource {
+  id          String   @id @default(cuid())
+  name        String // "X-Ray Machine", "TENS Unit"
+  type        String? // Category
+  description String?
+  quantity    Int      @default(1) // How many available
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  appointments AppointmentResource[]
+
+  @@index([organizationId])
+  @@index([isActive])
+}
+
+// Recurring appointment series
+model RecurringSeries {
+  id             String             @id @default(cuid())
+  frequency      RecurringFrequency
+  endDate        DateTime? // Series end date
+  maxOccurrences Int? // Or max number of appointments
+  notes          String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  appointments Appointment[]
+
+  @@index([organizationId])
+}
+
+// Core Appointment model
+model Appointment {
+  id             String            @id @default(cuid())
+  startTime      DateTime
+  endTime        DateTime
+  status         AppointmentStatus @default(SCHEDULED)
+  notes          String? // Staff notes
+  patientNotes   String? // Patient-provided notes
+  chiefComplaint String? // Reason for visit
+
+  // Confirmation tracking
+  confirmedAt DateTime?
+  confirmedBy String? // User ID or "PATIENT"
+
+  // Check-in tracking
+  checkedInAt DateTime?
+  checkedInBy String?
+
+  // Completion tracking
+  completedAt DateTime?
+  completedBy String?
+
+  // Cancellation tracking
+  cancelledAt  DateTime?
+  cancelledBy  String?
+  cancelReason String?
+
+  // Billing reference
+  chargeAmount Decimal? @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String? // User ID who created
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id])
+
+  providerId String
+  provider   Provider @relation(fields: [providerId], references: [id])
+
+  appointmentTypeId String
+  appointmentType   AppointmentType @relation(fields: [appointmentTypeId], references: [id])
+
+  roomId String?
+  room   Room?   @relation(fields: [roomId], references: [id])
+
+  recurringSeriesId String?
+  recurringSeries   RecurringSeries? @relation(fields: [recurringSeriesId], references: [id])
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  resources AppointmentResource[]
+
+  // Clinical/EHR relation
+  encounter Encounter?
+
+  // Communication relations
+  messages  Message[]
+
+  // AI Scheduling relations (Epic 13)
+  noShowPrediction NoShowPrediction?
+
+  @@index([organizationId])
+  @@index([startTime])
+  @@index([endTime])
+  @@index([status])
+  @@index([patientId])
+  @@index([providerId])
+  @@index([roomId])
+  @@index([appointmentTypeId])
+  @@index([recurringSeriesId])
+  // Composite index for calendar queries
+  @@index([organizationId, startTime, endTime])
+  @@index([providerId, startTime, endTime])
+}
+
+// Join table for appointment resources
+model AppointmentResource {
+  id        String   @id @default(cuid())
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+
+  // Relations
+  appointmentId String
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  resourceId String
+  resource   Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([appointmentId, resourceId])
+  @@index([resourceId])
+}
+
+// Schedule blocks (non-patient time)
+model ScheduleBlock {
+  id             String    @id @default(cuid())
+  title          String // "Lunch", "Staff Meeting"
+  blockType      BlockType
+  startTime      DateTime
+  endTime        DateTime
+  isRecurring    Boolean   @default(false)
+  recurrenceRule String? // iCal RRULE format for complex recurrence
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // Provider-specific or org-wide
+  providerId String?
+  provider   Provider? @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([providerId])
+  @@index([startTime])
+  @@index([endTime])
+}
+
+// Waitlist for patients wanting appointments
+model WaitlistEntry {
+  id       String           @id @default(cuid())
+  priority WaitlistPriority @default(NORMAL)
+  notes    String?
+
+  // Time preferences
+  preferredDays      DayOfWeek[] // Preferred days of week
+  preferredTimeStart String? // Earliest acceptable time "09:00"
+  preferredTimeEnd   String? // Latest acceptable time "17:00"
+
+  // Status
+  isActive    Boolean   @default(true)
+  expiresAt   DateTime? // Auto-expire date
+  scheduledAt DateTime? // When they were scheduled
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id])
+
+  appointmentTypeId String
+  appointmentType   AppointmentType @relation(fields: [appointmentTypeId], references: [id])
+
+  preferredProviderId String?
+  preferredProvider   Provider? @relation(fields: [preferredProviderId], references: [id])
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([isActive])
+  @@index([priority])
+  @@index([patientId])
+  @@index([createdAt])
+}
+
+// ============================================
+// EPIC 05: EHR & SOAP NOTES
+// ============================================
+
+// Encounter status workflow
+enum EncounterStatus {
+  SCHEDULED // Linked to appointment, not started
+  IN_PROGRESS // Provider is charting
+  COMPLETED // Chart complete, not signed
+  SIGNED // Signed and locked
+  AMENDED // Has addendums
+}
+
+// Encounter type
+enum EncounterType {
+  INITIAL_EVAL // First visit
+  FOLLOW_UP // Regular visit
+  RE_EVALUATION // Progress assessment
+  DISCHARGE // Final visit
+  MAINTENANCE // Wellness/maintenance
+  ACUTE // Acute injury visit
+  WORKERS_COMP // WC case
+  PERSONAL_INJURY // PI case
+}
+
+// Diagnosis status
+enum DiagnosisStatus {
+  ACTIVE
+  RESOLVED
+  CHRONIC
+  RECURRENT
+}
+
+// Treatment plan status
+enum TreatmentPlanStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  DISCONTINUED
+  EXPIRED
+}
+
+// Goal status
+enum GoalStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  ACHIEVED
+  PARTIALLY_ACHIEVED
+  NOT_ACHIEVED
+}
+
+// Assessment type for outcome measures
+enum AssessmentType {
+  ODI // Oswestry Disability Index
+  NDI // Neck Disability Index
+  VAS_PAIN // Visual Analog Scale
+  NPRS // Numeric Pain Rating Scale
+  FABQ // Fear-Avoidance Beliefs
+  DASH // Disabilities of Arm Shoulder Hand
+  SF36 // Short Form 36
+  CUSTOM // Custom questionnaire
+}
+
+// Clinical encounter (visit documentation container)
+model Encounter {
+  id             String          @id @default(cuid())
+  encounterDate  DateTime        @default(now())
+  status         EncounterStatus @default(IN_PROGRESS)
+  encounterType  EncounterType   @default(FOLLOW_UP)
+  chiefComplaint String?
+  location       String? // Location of service
+
+  // Timestamps
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  signedAt    DateTime?
+  signedBy    String? // Provider user ID who signed
+
+  // Visit metrics
+  visitNumber Int? // Visit # in treatment plan
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String? // User ID who created
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id])
+
+  providerId String
+  provider   Provider @relation(fields: [providerId], references: [id])
+
+  appointmentId String?      @unique
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
+
+  treatmentPlanId String?
+  treatmentPlan   TreatmentPlan? @relation(fields: [treatmentPlanId], references: [id])
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  soapNote     SOAPNote?
+  diagnoses    Diagnosis[]
+  procedures   Procedure[]
+  assessments  OutcomeAssessment[]
+  bodyDiagrams BodyDiagram[]
+  addendums    NoteAddendum[]
+
+  // Billing relations
+  charges      Charge[]
+  claims       Claim[]
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([providerId])
+  @@index([encounterDate])
+  @@index([status])
+  @@index([appointmentId])
+  @@index([treatmentPlanId])
+}
+
+// SOAP Note (1:1 with Encounter)
+model SOAPNote {
+  id         String  @id @default(cuid())
+  subjective String? @db.Text // S - Patient's complaints
+  objective  String? @db.Text // O - Provider's findings
+  assessment String? @db.Text // A - Provider's assessment
+  plan       String? @db.Text // P - Treatment plan
+
+  // Structured content (optional JSON for template-based entry)
+  subjectiveJson Json?
+  objectiveJson  Json?
+  assessmentJson Json?
+  planJson       Json?
+
+  // Template used
+  templateId String?
+  template   NoteTemplate? @relation(fields: [templateId], references: [id])
+
+  // Version tracking
+  version  Int       @default(1)
+  isLocked Boolean   @default(false)
+  lockedAt DateTime?
+  lockedBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  encounterId String    @unique
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+
+  @@index([templateId])
+}
+
+// Addendum for locked notes
+model NoteAddendum {
+  id      String  @id @default(cuid())
+  content String  @db.Text
+  reason  String? // Why addendum was needed
+
+  // Who added it
+  addedBy   String
+  addedAt   DateTime  @default(now())
+  signedAt  DateTime?
+  signature String? // Base64 or reference
+
+  createdAt DateTime @default(now())
+
+  // Relations
+  encounterId String
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+
+  @@index([encounterId])
+  @@index([addedAt])
+}
+
+// Note template for SOAP notes
+model NoteTemplate {
+  id          String        @id @default(cuid())
+  name        String // "Initial Evaluation", "Follow-up"
+  description String?
+  category    EncounterType // Which type of visit this is for
+
+  // Template content (JSON structure)
+  subjectiveTemplate Json? // Default S content
+  objectiveTemplate  Json? // Default O content
+  assessmentTemplate Json? // Default A content
+  planTemplate       Json? // Default P content
+
+  // Template macros/variables
+  variables Json? // Available variables like {{patient.name}}
+
+  isActive  Boolean @default(true)
+  isSystem  Boolean @default(false) // System templates can't be deleted
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Multi-tenant relation (null = system template)
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  soapNotes SOAPNote[]
+
+  @@index([organizationId])
+  @@index([category])
+  @@index([isActive])
+}
+
+// Diagnosis (ICD-10) on encounter
+model Diagnosis {
+  id          String          @id @default(cuid())
+  icd10Code   String // ICD-10 code
+  description String // Diagnosis description
+  isPrimary   Boolean         @default(false)
+  status      DiagnosisStatus @default(ACTIVE)
+
+  // Clinical info
+  onsetDate    DateTime?
+  resolvedDate DateTime?
+  notes        String?
+  bodySite     String? // Left knee, cervical spine, etc.
+  laterality   String? // Left, Right, Bilateral
+
+  // Sequencing for claims
+  sequence Int @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  encounterId String
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+
+  @@index([encounterId])
+  @@index([icd10Code])
+  @@index([status])
+}
+
+// Procedure (CPT) on encounter
+model Procedure {
+  id          String  @id @default(cuid())
+  cptCode     String // CPT code
+  description String // Procedure description
+  units       Int     @default(1)
+  modifier1   String? // Modifier 1 (e.g., 59, 25)
+  modifier2   String?
+  modifier3   String?
+  modifier4   String?
+  notes       String?
+
+  // Pricing
+  chargeAmount  Decimal? @db.Decimal(10, 2)
+  allowedAmount Decimal? @db.Decimal(10, 2)
+
+  // Rendering provider if different
+  renderingProviderId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  encounterId String
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+
+  // Linked diagnoses for this procedure (diagnosis pointers)
+  diagnosisPointers Json? // Array of diagnosis sequence numbers
+
+  @@index([encounterId])
+  @@index([cptCode])
+}
+
+// Treatment plan (spans multiple visits)
+model TreatmentPlan {
+  id          String              @id @default(cuid())
+  name        String // "Lumbar Rehabilitation Program"
+  description String?
+  status      TreatmentPlanStatus @default(DRAFT)
+
+  // Duration
+  startDate       DateTime  @default(now())
+  endDate         DateTime?
+  plannedVisits   Int? // Total visits planned
+  completedVisits Int       @default(0)
+  frequency       String? // "2x/week", "3x/week for 4 weeks"
+  duration        String? // "6 weeks"
+
+  // Clinical goals (summary)
+  shortTermGoals String? @db.Text
+  longTermGoals  String? @db.Text
+
+  // Approval tracking
+  approvedAt DateTime?
+  approvedBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id])
+
+  providerId String
+  provider   Provider @relation(fields: [providerId], references: [id])
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  goals      TreatmentGoal[]
+  encounters Encounter[]
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([status])
+  @@index([startDate])
+}
+
+// Individual goals within treatment plan
+model TreatmentGoal {
+  id          String     @id @default(cuid())
+  description String
+  targetDate  DateTime?
+  status      GoalStatus @default(NOT_STARTED)
+
+  // Measurable criteria
+  metric        String? // "Pain level", "Range of motion"
+  baselineValue String? // Starting value
+  targetValue   String? // Goal value
+  currentValue  String? // Current progress
+  unit          String? // "degrees", "1-10 scale"
+
+  // Progress notes
+  notes    String? @db.Text
+  progress Int     @default(0) // 0-100 percentage
+
+  achievedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  treatmentPlanId String
+  treatmentPlan   TreatmentPlan @relation(fields: [treatmentPlanId], references: [id], onDelete: Cascade)
+
+  @@index([treatmentPlanId])
+  @@index([status])
+}
+
+// Outcome assessment (standardized questionnaires)
+model OutcomeAssessment {
+  id             String         @id @default(cuid())
+  assessmentType AssessmentType
+  templateId     String? // Custom assessment template
+
+  // Scoring
+  rawScore       Decimal? @db.Decimal(10, 2)
+  percentScore   Decimal? @db.Decimal(5, 2) // 0-100
+  maxPossible    Decimal? @db.Decimal(10, 2)
+  interpretation String? // "Minimal disability", "Moderate"
+
+  // Raw answers
+  answers Json? // Array of { questionId, answer, score }
+
+  // Comparison
+  previousScore Decimal? @db.Decimal(10, 2)
+  changeScore   Decimal? @db.Decimal(10, 2)
+  changePercent Decimal? @db.Decimal(5, 2)
+
+  administeredAt DateTime  @default(now())
+  completedAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  encounterId String
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id])
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([assessmentType])
+  @@index([administeredAt])
+}
+
+// Assessment template for custom questionnaires
+model AssessmentTemplate {
+  id             String         @id @default(cuid())
+  name           String // "Modified Oswestry"
+  assessmentType AssessmentType @default(CUSTOM)
+  description    String?
+
+  // Questions structure
+  questions Json // Array of { id, text, type, options, scoring }
+
+  // Scoring configuration
+  scoringMethod  String? // "sum", "average", "weighted"
+  maxScore       Decimal? @db.Decimal(10, 2)
+  interpretation Json? // Ranges and their meanings
+
+  isActive Boolean @default(true)
+  isSystem Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Multi-tenant relation (null = system template)
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([assessmentType])
+  @@index([isActive])
+}
+
+// Body diagram markings
+model BodyDiagram {
+  id          String @id @default(cuid())
+  diagramType String // "body_front", "body_back", "spine", "cervical"
+
+  // Markings data
+  markings Json // Array of { x, y, type, label, color }
+
+  // Types: pain, tenderness, subluxation, adjustment, inflammation
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  encounterId String
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+
+  @@index([encounterId])
+  @@index([diagramType])
+}
+
+// ICD-10 Code lookup table (reference data)
+model ICD10Code {
+  id          String  @id @default(cuid())
+  code        String  @unique
+  description String
+  category    String? // M54.5 -> M54
+  chapter     String? // Musculoskeletal
+
+  // Common in chiropractic
+  isChiroCommon Boolean @default(false)
+
+  // Searchable
+  searchTerms String[] // Additional search terms
+
+  @@index([code])
+  @@index([description])
+  @@index([isChiroCommon])
+}
+
+// CPT Code lookup table (reference data)
+model CPTCode {
+  id          String  @id @default(cuid())
+  code        String  @unique
+  description String
+  shortDesc   String? // Short description
+  category    String? // E/M, Chiro Manipulation, etc.
+
+  // Time units
+  timeMinutes Int?
+
+  // Common in chiropractic
+  isChiroCommon Boolean @default(false)
+
+  // Relative value units (for pricing)
+  rvuWork        Decimal? @db.Decimal(10, 4)
+  rvuPractice    Decimal? @db.Decimal(10, 4)
+  rvuMalpractice Decimal? @db.Decimal(10, 4)
+
+  @@index([code])
+  @@index([description])
+  @@index([isChiroCommon])
+}
+
+// Organization code favorites
+model CodeFavorite {
+  id          String @id @default(cuid())
+  codeType    String // "icd10" or "cpt"
+  code        String
+  description String
+  sortOrder   Int    @default(0)
+
+  createdAt DateTime @default(now())
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, codeType, code])
+  @@index([organizationId])
+  @@index([codeType])
+}
+
+// ============================================
+// EPIC 04: DIGITAL INTAKE SYSTEM
+// ============================================
+
+// Form field types
+enum FormFieldType {
+  TEXT
+  TEXTAREA
+  SELECT
+  RADIO
+  CHECKBOX
+  CHECKBOX_GROUP
+  DATE
+  TIME
+  DATETIME
+  PHONE
+  EMAIL
+  SSN
+  NUMBER
+  CURRENCY
+  SIGNATURE
+  FILE
+  HEADING
+  PARAGRAPH
+  DIVIDER
+}
+
+// Form submission status
+enum FormSubmissionStatus {
+  DRAFT // Started but not submitted
+  PENDING // Submitted, awaiting review
+  COMPLETED // Reviewed and accepted
+  REJECTED // Rejected, needs resubmission
+  EXPIRED // Form link expired
+}
+
+// Form delivery method
+enum FormDeliveryMethod {
+  EMAIL
+  SMS
+  KIOSK
+  PORTAL
+  IN_PERSON
+}
+
+// Form template (reusable form structure)
+model FormTemplate {
+  id          String  @id @default(cuid())
+  name        String // "New Patient Health History"
+  description String?
+  version     Int     @default(1)
+  isActive    Boolean @default(true)
+  isSystem    Boolean @default(false) // System templates can't be deleted
+  isDraft     Boolean @default(true) // Draft until published
+
+  // Auto-population config
+  patientMapping Json? // Map fields to patient demographics
+
+  // Expiration settings
+  expiresInDays Int? // Form expires N days after sent
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  publishedAt DateTime?
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  sections    FormSection[]
+  fields      FormField[]
+  submissions FormSubmission[]
+  deliveries  FormDelivery[]
+
+  @@index([organizationId])
+  @@index([isActive])
+  @@index([isSystem])
+}
+
+// Form section (grouping of fields)
+model FormSection {
+  id            String  @id @default(cuid())
+  title         String // "Personal Information"
+  description   String?
+  order         Int     @default(0)
+  isCollapsible Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  templateId String
+  template   FormTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  fields FormField[]
+
+  @@index([templateId])
+  @@index([order])
+}
+
+// Form field definition
+model FormField {
+  id          String        @id @default(cuid())
+  fieldType   FormFieldType
+  label       String // Display label
+  name        String // Field name for data storage
+  placeholder String?
+  helpText    String?
+  order       Int           @default(0)
+
+  // Validation
+  isRequired     Boolean  @default(false)
+  minLength      Int?
+  maxLength      Int?
+  minValue       Decimal? @db.Decimal(10, 2)
+  maxValue       Decimal? @db.Decimal(10, 2)
+  pattern        String? // Regex pattern
+  patternMessage String? // Custom error message
+
+  // Select/Radio/Checkbox options
+  options Json? // Array of { value, label }
+
+  // Conditional display
+  conditionalOn    String? // Field name to check
+  conditionalValue String? // Value that must match
+  conditionalOp    String? // equals, not_equals, contains, etc.
+
+  // Patient mapping
+  mapsToPatient String? // Demographics field this maps to
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  templateId String
+  template   FormTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  sectionId String?
+  section   FormSection? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+
+  responses FormResponse[]
+
+  @@index([templateId])
+  @@index([sectionId])
+  @@index([order])
+}
+
+// Form submission (patient's filled form)
+model FormSubmission {
+  id          String               @id @default(cuid())
+  status      FormSubmissionStatus @default(PENDING)
+  accessToken String               @unique @default(cuid()) // Unique URL token
+
+  // Submission source
+  source    FormDeliveryMethod @default(PORTAL)
+  ipAddress String?
+  userAgent String?
+
+  // Timestamps
+  startedAt   DateTime  @default(now())
+  submittedAt DateTime?
+  reviewedAt  DateTime?
+  reviewedBy  String? // User ID
+
+  // Review notes
+  staffNotes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  templateId String
+  template   FormTemplate @relation(fields: [templateId], references: [id])
+
+  patientId String?
+  patient   Patient? @relation(fields: [patientId], references: [id])
+
+  // Form delivery that triggered this submission
+  deliveryId String?
+  delivery   FormDelivery? @relation(fields: [deliveryId], references: [id])
+
+  // Linked appointment (if form was for specific visit)
+  appointmentId String?
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  responses  FormResponse[]
+  signatures ESignature[]
+
+  @@index([organizationId])
+  @@index([templateId])
+  @@index([patientId])
+  @@index([status])
+  @@index([accessToken])
+  @@index([submittedAt])
+}
+
+// Individual field response
+model FormResponse {
+  id        String  @id @default(cuid())
+  value     String? // String representation of value
+  valueJson Json? // Complex values (file metadata, arrays)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  submissionId String
+  submission   FormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  fieldId String
+  field   FormField @relation(fields: [fieldId], references: [id])
+
+  @@unique([submissionId, fieldId])
+  @@index([fieldId])
+}
+
+// Electronic signature
+model ESignature {
+  id            String   @id @default(cuid())
+  signatureData String   @db.Text // Base64 encoded image
+  signedAt      DateTime @default(now())
+
+  // Legal compliance
+  ipAddress   String?
+  userAgent   String?
+  consentText String? // Text shown before signing
+
+  // Signer info (may differ from patient for guardians)
+  signerName   String?
+  signerEmail  String?
+  relationship String? // "Self", "Parent", "Guardian"
+
+  createdAt DateTime @default(now())
+
+  // Relations
+  submissionId String
+  submission   FormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+  @@index([signedAt])
+}
+
+// Form delivery tracking
+model FormDelivery {
+  id     String             @id @default(cuid())
+  method FormDeliveryMethod
+
+  // Delivery details
+  sentTo       String? // Email or phone number
+  scheduledFor DateTime? // If scheduled for future
+  sentAt       DateTime?
+  openedAt     DateTime?
+  completedAt  DateTime?
+
+  // Status tracking
+  sendStatus String? // pending, sent, failed, bounced
+  sendError  String? // Error message if failed
+
+  // Reminder tracking
+  reminderSentAt DateTime?
+  reminderCount  Int       @default(0)
+  maxReminders   Int       @default(2)
+  nextReminderAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  templateId String
+  template   FormTemplate @relation(fields: [templateId], references: [id])
+
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id])
+
+  // Resulting submissions
+  submissions FormSubmission[]
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([templateId])
+  @@index([patientId])
+  @@index([sentAt])
+  @@index([completedAt])
+}
+
+// ============================================
+// BILLING & CLAIMS MODELS
+// ============================================
+
+// Charge status enum
+enum ChargeStatus {
+  PENDING     // Not yet billed
+  BILLED      // Included on a claim
+  PAID        // Payment received
+  ADJUSTED    // Written off or adjusted
+  VOID        // Voided/cancelled
+}
+
+// Payment method enum
+enum PaymentMethod {
+  CASH
+  CHECK
+  CREDIT_CARD
+  DEBIT_CARD
+  ACH
+  INSURANCE
+  OTHER
+}
+
+// Claim status enum
+enum ClaimStatus {
+  DRAFT       // Being created
+  READY       // Ready for submission
+  SUBMITTED   // Sent to payer
+  ACCEPTED    // Acknowledged by payer
+  REJECTED    // Rejected by payer (fixable)
+  PAID        // Payment received
+  DENIED      // Denied by payer
+  APPEALED    // Appeal submitted
+  VOID        // Cancelled
+}
+
+// Place of service codes (common ones for chiropractic)
+enum PlaceOfService {
+  OFFICE          // 11
+  HOME            // 12
+  TELEHEALTH      // 02
+  URGENT_CARE     // 20
+  INPATIENT       // 21
+  OUTPATIENT      // 22
+  EMERGENCY       // 23
+  OTHER           // 99
+}
+
+// Insurance Payer (the insurance companies)
+model InsurancePayer {
+  id               String  @id @default(cuid())
+  name             String  // Aetna, Blue Cross, etc.
+  payerId          String? @unique // Payer ID for EDI (e.g., 60054)
+  electronicPayerId String? // Electronic payer ID if different
+
+  // Contact info
+  address1         String?
+  address2         String?
+  city             String?
+  state            String?
+  zip              String?
+  phone            String?
+  fax              String?
+  website          String?
+
+  // Submission settings
+  claimSubmissionMethod String @default("electronic") // electronic, paper, portal
+  acceptsEdi       Boolean @default(true)
+  timelyFilingDays Int     @default(90) // Days to submit claim
+
+  // Notes
+  notes            String?
+
+  isActive         Boolean @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  patientInsurances PatientInsurance[]
+  claims           Claim[]
+
+  @@index([name])
+  @@index([payerId])
+}
+
+// Fee Schedule (defines prices for CPT codes)
+model FeeSchedule {
+  id            String   @id @default(cuid())
+  name          String   // "Standard", "Cash Pay", "Medicare"
+  description   String?
+  isDefault     Boolean  @default(false)
+  effectiveDate DateTime @default(now())
+  endDate       DateTime?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  items         FeeScheduleItem[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@index([isDefault])
+}
+
+// Fee Schedule Item (individual CPT code pricing)
+model FeeScheduleItem {
+  id            String  @id @default(cuid())
+  cptCode       String
+  description   String? // Override description
+  fee           Decimal @db.Decimal(10, 2) // Billed amount
+  allowedAmount Decimal? @db.Decimal(10, 2) // Expected reimbursement
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  feeScheduleId String
+  feeSchedule   FeeSchedule @relation(fields: [feeScheduleId], references: [id], onDelete: Cascade)
+
+  @@unique([feeScheduleId, cptCode])
+  @@index([cptCode])
+}
+
+// Charge (billable service/procedure)
+model Charge {
+  id            String       @id @default(cuid())
+  chargeDate    DateTime     @default(now())
+  serviceDate   DateTime     // Date service was rendered
+
+  // Procedure info
+  cptCode       String
+  description   String
+  modifiers     String[]     // -25, -59, etc.
+  units         Int          @default(1)
+
+  // Diagnosis pointers (reference to encounter diagnoses)
+  diagnosisPointers Int[]    // 1, 2, 3, 4 - positions in claim
+  icd10Codes    String[]     // Actual codes for reference
+
+  // Pricing
+  fee           Decimal      @db.Decimal(10, 2) // Billed amount
+  adjustments   Decimal      @db.Decimal(10, 2) @default(0) // Write-offs
+  payments      Decimal      @db.Decimal(10, 2) @default(0) // Total payments received
+  balance       Decimal      @db.Decimal(10, 2) // Remaining balance
+
+  // Status
+  status        ChargeStatus @default(PENDING)
+  voidReason    String?
+  voidedAt      DateTime?
+  voidedBy      String?
+
+  // Place of service
+  placeOfService PlaceOfService @default(OFFICE)
+
+  // Notes
+  notes         String?
+  internalNotes String?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  patientId     String
+  patient       Patient @relation(fields: [patientId], references: [id])
+
+  encounterId   String?
+  encounter     Encounter? @relation(fields: [encounterId], references: [id])
+
+  procedureId   String? // Link to encounter procedure if applicable
+
+  providerId    String?
+  provider      Provider? @relation(fields: [providerId], references: [id])
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Related
+  paymentAllocations PaymentAllocation[]
+  claimLines    ClaimLine[]
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([encounterId])
+  @@index([status])
+  @@index([serviceDate])
+  @@index([chargeDate])
+}
+
+// Payment (patient or insurance payment)
+model Payment {
+  id              String        @id @default(cuid())
+  paymentDate     DateTime      @default(now())
+  postedDate      DateTime      @default(now())
+
+  // Payment details
+  amount          Decimal       @db.Decimal(10, 2)
+  paymentMethod   PaymentMethod
+  referenceNumber String?       // Check number, transaction ID, etc.
+
+  // Payer info
+  payerType       String        @default("patient") // patient, insurance, other
+  payerName       String?       // Insurance company name if applicable
+
+  // For insurance payments
+  checkNumber     String?
+  checkDate       DateTime?
+  eobDate         DateTime?
+
+  // Unapplied amount (credit balance)
+  unappliedAmount Decimal       @db.Decimal(10, 2) @default(0)
+
+  // Status
+  isVoid          Boolean       @default(false)
+  voidReason      String?
+  voidedAt        DateTime?
+  voidedBy        String?
+
+  // Notes
+  notes           String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  patientId       String
+  patient         Patient @relation(fields: [patientId], references: [id])
+
+  // Multi-tenant relation
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Applied to charges
+  allocations     PaymentAllocation[]
+
+  // If from insurance claim
+  claimId         String?
+  claim           Claim? @relation(fields: [claimId], references: [id])
+
+  // Link to payment transaction (Epic 10)
+  paymentTransaction PaymentTransaction?
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([paymentDate])
+  @@index([paymentMethod])
+}
+
+// Payment Allocation (how payment is applied to charges)
+model PaymentAllocation {
+  id          String   @id @default(cuid())
+  amount      Decimal  @db.Decimal(10, 2)
+  allocatedAt DateTime @default(now())
+
+  // Relations
+  paymentId   String
+  payment     Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  chargeId    String
+  charge      Charge @relation(fields: [chargeId], references: [id])
+
+  @@index([paymentId])
+  @@index([chargeId])
+}
+
+// Insurance Claim
+model Claim {
+  id              String      @id @default(cuid())
+  claimNumber     String?     // Internal claim number
+  payerClaimNumber String?    // Payer-assigned claim number
+
+  // Dates
+  createdDate     DateTime    @default(now())
+  submittedDate   DateTime?
+  acceptedDate    DateTime?
+  paidDate        DateTime?
+
+  // Status
+  status          ClaimStatus @default(DRAFT)
+  statusMessage   String?     // Rejection/denial reason
+
+  // Claim totals
+  totalCharges    Decimal     @db.Decimal(10, 2) @default(0)
+  totalAllowed    Decimal     @db.Decimal(10, 2) @default(0)
+  totalPaid       Decimal     @db.Decimal(10, 2) @default(0)
+  totalAdjusted   Decimal     @db.Decimal(10, 2) @default(0)
+  patientResponsibility Decimal @db.Decimal(10, 2) @default(0)
+
+  // Claim type
+  claimType       String      @default("professional") // professional, institutional
+  isSecondary     Boolean     @default(false)
+  originalClaimId String?     // If this is a corrected claim
+
+  // Submission info
+  submissionMethod String?    // electronic, paper, portal
+  batchId         String?     // EDI batch identifier
+
+  // Provider info (snapshot at time of claim)
+  billingProviderId String?
+  billingNpi      String?
+  renderingNpi    String?
+  facilityNpi     String?
+
+  // Notes
+  notes           String?
+  internalNotes   String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  patientId       String
+  patient         Patient @relation(fields: [patientId], references: [id])
+
+  encounterId     String?
+  encounter       Encounter? @relation(fields: [encounterId], references: [id])
+
+  insurancePolicyId String?
+  insurancePolicy PatientInsurance? @relation(fields: [insurancePolicyId], references: [id])
+
+  payerId         String?
+  payer           InsurancePayer? @relation(fields: [payerId], references: [id])
+
+  // Multi-tenant relation
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Related
+  claimLines      ClaimLine[]
+  payments        Payment[]
+  claimNotes      ClaimNote[]
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([status])
+  @@index([submittedDate])
+  @@index([payerId])
+}
+
+// Claim Line (individual service on a claim)
+model ClaimLine {
+  id              String   @id @default(cuid())
+  lineNumber      Int      // Sequence on claim
+
+  // Service info
+  serviceDateFrom DateTime
+  serviceDateTo   DateTime
+  placeOfService  PlaceOfService @default(OFFICE)
+
+  // Procedure
+  cptCode         String
+  modifiers       String[]
+  description     String
+  units           Int      @default(1)
+
+  // Diagnosis pointers (1-4, reference to claim diagnoses)
+  diagnosisPointers Int[]
+
+  // Amounts
+  chargedAmount   Decimal  @db.Decimal(10, 2)
+  allowedAmount   Decimal  @db.Decimal(10, 2) @default(0)
+  paidAmount      Decimal  @db.Decimal(10, 2) @default(0)
+  adjustedAmount  Decimal  @db.Decimal(10, 2) @default(0)
+  patientAmount   Decimal  @db.Decimal(10, 2) @default(0) // Copay/coinsurance
+
+  // Adjudication
+  adjudicationDate DateTime?
+  adjustmentReasonCodes String[] // CARC codes
+  remarkCodes     String[]       // RARC codes
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  claimId         String
+  claim           Claim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  chargeId        String?
+  charge          Charge? @relation(fields: [chargeId], references: [id])
+
+  @@index([claimId])
+  @@index([chargeId])
+}
+
+// Claim Note (history/activity on claim)
+model ClaimNote {
+  id          String   @id @default(cuid())
+  noteType    String   // status_change, submission, rejection, appeal, etc.
+  note        String
+  createdAt   DateTime @default(now())
+
+  // Who made the note
+  userId      String?
+
+  // Relations
+  claimId     String
+  claim       Claim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  @@index([claimId])
+  @@index([createdAt])
+}
+
+// ============================================
+// EPIC 10: PAYMENT PROCESSING
+// ============================================
+
+// Card type enum
+enum CardType {
+  CREDIT
+  DEBIT
+  HSA
+  FSA
+}
+
+// Card brand enum
+enum CardBrand {
+  VISA
+  MASTERCARD
+  AMEX
+  DISCOVER
+  OTHER
+}
+
+// Payment transaction status
+enum PaymentTransactionStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  VOIDED
+}
+
+// Payment plan status
+enum PaymentPlanStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+  DEFAULTED
+  PAUSED
+}
+
+// Installment status
+enum InstallmentStatus {
+  SCHEDULED
+  PENDING
+  PAID
+  FAILED
+  SKIPPED
+}
+
+// Statement status
+enum StatementStatus {
+  DRAFT
+  SENT
+  VIEWED
+  PAID
+  OVERDUE
+}
+
+// Auto-pay frequency
+enum AutoPayFrequency {
+  WEEKLY
+  BI_WEEKLY
+  MONTHLY
+  ON_STATEMENT
+}
+
+// Stored payment method (tokenized card info - NEVER store raw card numbers)
+model StoredPaymentMethod {
+  id              String    @id @default(cuid())
+
+  // Card identification (tokenized - from payment processor)
+  paymentToken    String    // Stripe payment method ID or similar
+  last4           String    // Last 4 digits for display
+  cardBrand       CardBrand
+  cardType        CardType  @default(CREDIT)
+  expiryMonth     Int       // 1-12
+  expiryYear      Int       // 4-digit year
+
+  // Cardholder info
+  cardholderName  String
+  billingZip      String?
+
+  // Settings
+  isDefault       Boolean   @default(false)
+  isActive        Boolean   @default(true)
+  nickname        String?   // "Personal Visa", "HSA Card"
+
+  // Audit
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  lastUsedAt      DateTime?
+
+  // Relations
+  patientId       String
+  patient         Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  // Multi-tenant relation
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Transactions made with this card
+  transactions    PaymentTransaction[]
+  autoPayEnrollments AutoPayEnrollment[]
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([isActive])
+}
+
+// Payment transaction (actual card charges)
+model PaymentTransaction {
+  id              String                   @id @default(cuid())
+
+  // Transaction details
+  amount          Decimal                  @db.Decimal(10, 2)
+  currency        String                   @default("USD")
+  status          PaymentTransactionStatus @default(PENDING)
+
+  // Processor info
+  processorId     String?                  // Stripe charge ID, etc.
+  processorResponse Json?                  // Full response from processor
+
+  // Error info (if failed)
+  errorCode       String?
+  errorMessage    String?
+  declineCode     String?
+
+  // For refunds
+  isRefund        Boolean                  @default(false)
+  originalTransactionId String?
+  originalTransaction PaymentTransaction?  @relation("RefundRelation", fields: [originalTransactionId], references: [id])
+  refunds         PaymentTransaction[]     @relation("RefundRelation")
+  refundReason    String?
+
+  // Timestamps
+  processedAt     DateTime?
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+
+  // Relations
+  patientId       String
+  patient         Patient @relation(fields: [patientId], references: [id])
+
+  paymentMethodId String?
+  paymentMethod   StoredPaymentMethod? @relation(fields: [paymentMethodId], references: [id])
+
+  // Link to existing Payment model for allocation
+  paymentId       String?                  @unique
+  payment         Payment? @relation(fields: [paymentId], references: [id])
+
+  // If part of a payment plan
+  installmentId   String?                  @unique
+  installment     PaymentPlanInstallment? @relation(fields: [installmentId], references: [id])
+
+  // Multi-tenant relation
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([processorId])
+}
+
+// Payment plan for installment payments
+model PaymentPlan {
+  id              String            @id @default(cuid())
+  name            String?           // "6-Month Payment Plan"
+
+  // Plan details
+  totalAmount     Decimal           @db.Decimal(10, 2)
+  downPayment     Decimal           @db.Decimal(10, 2) @default(0)
+  numberOfInstallments Int
+  installmentAmount Decimal         @db.Decimal(10, 2)
+  frequency       AutoPayFrequency  @default(MONTHLY)
+
+  // Interest/fees (optional)
+  interestRate    Decimal?          @db.Decimal(5, 2) // Annual percentage
+  setupFee        Decimal?          @db.Decimal(10, 2)
+
+  // Status
+  status          PaymentPlanStatus @default(ACTIVE)
+
+  // Progress
+  amountPaid      Decimal           @db.Decimal(10, 2) @default(0)
+  amountRemaining Decimal           @db.Decimal(10, 2)
+  installmentsPaid Int              @default(0)
+
+  // Schedule
+  startDate       DateTime
+  nextDueDate     DateTime?
+  endDate         DateTime?
+
+  // Notes
+  notes           String?
+  termsAcceptedAt DateTime?
+
+  // Timestamps
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  cancelledAt     DateTime?
+  cancelReason    String?
+
+  // Relations
+  patientId       String
+  patient         Patient @relation(fields: [patientId], references: [id])
+
+  // Multi-tenant relation
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Installments
+  installments    PaymentPlanInstallment[]
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([status])
+  @@index([nextDueDate])
+}
+
+// Individual installment in a payment plan
+model PaymentPlanInstallment {
+  id              String            @id @default(cuid())
+  installmentNumber Int             // 1, 2, 3, etc.
+
+  // Amount
+  amount          Decimal           @db.Decimal(10, 2)
+
+  // Schedule
+  dueDate         DateTime
+
+  // Status
+  status          InstallmentStatus @default(SCHEDULED)
+  paidAt          DateTime?
+  paidAmount      Decimal?          @db.Decimal(10, 2)
+
+  // Retry tracking
+  attemptCount    Int               @default(0)
+  lastAttemptAt   DateTime?
+  nextRetryAt     DateTime?
+
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  // Relations
+  paymentPlanId   String
+  paymentPlan     PaymentPlan @relation(fields: [paymentPlanId], references: [id], onDelete: Cascade)
+
+  // Transaction that paid this installment
+  transaction     PaymentTransaction?
+
+  @@index([paymentPlanId])
+  @@index([dueDate])
+  @@index([status])
+}
+
+// Patient statement
+model PatientStatement {
+  id              String          @id @default(cuid())
+  statementNumber String          // STM-2024-001
+
+  // Period covered
+  statementDate   DateTime        @default(now())
+  periodStart     DateTime
+  periodEnd       DateTime
+
+  // Amounts
+  previousBalance Decimal         @db.Decimal(10, 2) @default(0)
+  newCharges      Decimal         @db.Decimal(10, 2) @default(0)
+  payments        Decimal         @db.Decimal(10, 2) @default(0)
+  adjustments     Decimal         @db.Decimal(10, 2) @default(0)
+  totalDue        Decimal         @db.Decimal(10, 2)
+  minimumDue      Decimal?        @db.Decimal(10, 2)
+
+  // Due date
+  dueDate         DateTime
+
+  // Status
+  status          StatementStatus @default(DRAFT)
+
+  // Content snapshot (for historical accuracy)
+  chargeDetails   Json?           // Array of charges included
+  paymentDetails  Json?           // Array of payments in period
+
+  // Delivery
+  sentAt          DateTime?
+  sentVia         String?         // email, mail, portal
+  sentTo          String?         // Email or address
+  viewedAt        DateTime?
+
+  // PDF storage
+  pdfStorageKey   String?
+
+  // Notes
+  notes           String?
+  messageToPatient String?
+
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relations
+  patientId       String
+  patient         Patient @relation(fields: [patientId], references: [id])
+
+  // Multi-tenant relation
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, statementNumber])
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([status])
+  @@index([statementDate])
+  @@index([dueDate])
+}
+
+// Auto-pay enrollment
+model AutoPayEnrollment {
+  id              String           @id @default(cuid())
+
+  // Settings
+  frequency       AutoPayFrequency @default(ON_STATEMENT)
+  maxAmount       Decimal?         @db.Decimal(10, 2) // Optional limit per charge
+
+  // Schedule (for non-statement frequencies)
+  dayOfWeek       Int?             // 0-6 for weekly
+  dayOfMonth      Int?             // 1-28 for monthly
+
+  // Status
+  isActive        Boolean          @default(true)
+
+  // Next scheduled
+  nextChargeDate  DateTime?
+
+  // Consent
+  consentedAt     DateTime         @default(now())
+  consentIp       String?
+  termsVersion    String?
+
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  cancelledAt     DateTime?
+
+  // Relations
+  patientId       String
+  patient         Patient @relation(fields: [patientId], references: [id])
+
+  paymentMethodId String
+  paymentMethod   StoredPaymentMethod @relation(fields: [paymentMethodId], references: [id])
+
+  // Multi-tenant relation
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([patientId, organizationId]) // One enrollment per patient per org
+  @@index([organizationId])
+  @@index([isActive])
+  @@index([nextChargeDate])
+}
+
+// Refund tracking (extends PaymentTransaction for detailed tracking)
+model Refund {
+  id              String    @id @default(cuid())
+
+  // Amount
+  amount          Decimal   @db.Decimal(10, 2)
+
+  // Reason
+  reason          String
+  reasonCategory  String?   // duplicate, patient_request, service_not_rendered, etc.
+
+  // Status
+  status          PaymentTransactionStatus @default(PENDING)
+
+  // Processor info
+  processorRefundId String?
+
+  // Original payment reference
+  originalPaymentId String
+  originalTransactionId String?
+
+  // Approval (if required)
+  requiresApproval Boolean  @default(false)
+  approvedAt       DateTime?
+  approvedBy       String?
+
+  // Timestamps
+  processedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Who initiated
+  initiatedBy     String    // User ID
+
+  // Relations
+  patientId       String
+  patient         Patient @relation(fields: [patientId], references: [id])
+
+  // Multi-tenant relation
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ============================================
+// EPIC 11: PATIENT COMMUNICATION HUB
+// ============================================
+
+// Communication channel type
+enum CommunicationChannel {
+  SMS
+  EMAIL
+  VOICE
+  PORTAL
+  IN_APP
+}
+
+// Message status
+enum MessageStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+  READ
+  BOUNCED
+}
+
+// Message direction
+enum MessageDirection {
+  OUTBOUND  // Practice to patient
+  INBOUND   // Patient to practice
+}
+
+// Communication type/purpose
+enum CommunicationType {
+  APPOINTMENT_REMINDER
+  APPOINTMENT_CONFIRMATION
+  APPOINTMENT_CANCELLATION
+  APPOINTMENT_RESCHEDULE
+  FORM_REQUEST
+  PAYMENT_REMINDER
+  BIRTHDAY
+  RECALL
+  MARKETING
+  GENERAL
+  CUSTOM
+}
+
+// Message template
+model MessageTemplate {
+  id          String            @id @default(cuid())
+  name        String
+  description String?
+  type        CommunicationType
+  channel     CommunicationChannel
+
+  // Content
+  subject     String?           // For email
+  body        String            @db.Text
+
+  // Template variables (e.g., {{patient.firstName}}, {{appointment.date}})
+  variables   Json?             // List of available variables
+
+  // Settings
+  isActive    Boolean           @default(true)
+  isSystem    Boolean           @default(false) // System templates can't be deleted
+
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  // Multi-tenant relation (null = system template)
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  messages    Message[]
+  reminderRules ReminderRule[]
+
+  @@index([organizationId])
+  @@index([type])
+  @@index([channel])
+  @@index([isActive])
+}
+
+// Individual message/communication
+model Message {
+  id          String            @id @default(cuid())
+
+  // Routing
+  channel     CommunicationChannel
+  direction   MessageDirection  @default(OUTBOUND)
+  type        CommunicationType @default(GENERAL)
+
+  // Content
+  subject     String?           // For email
+  body        String            @db.Text
+
+  // Delivery info
+  recipient   String            // Phone number or email
+  sender      String?           // From number or email
+
+  // Status tracking
+  status      MessageStatus     @default(PENDING)
+  statusMessage String?         // Error message if failed
+
+  // External tracking
+  externalId  String?           // Twilio SID, email message ID, etc.
+
+  // Timestamps
+  scheduledAt DateTime?         // For scheduled messages
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  readAt      DateTime?
+
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  // Relations
+  patientId   String?
+  patient     Patient? @relation(fields: [patientId], references: [id])
+
+  appointmentId String?
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
+
+  templateId  String?
+  template    MessageTemplate? @relation(fields: [templateId], references: [id])
+
+  // For threaded conversations
+  threadId    String?
+  thread      MessageThread? @relation(fields: [threadId], references: [id])
+
+  // Who sent (for outbound) or received (for inbound review)
+  userId      String?
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([appointmentId])
+  @@index([status])
+  @@index([channel])
+  @@index([direction])
+  @@index([scheduledAt])
+  @@index([createdAt])
+  @@index([threadId])
+}
+
+// Message thread for conversations
+model MessageThread {
+  id          String    @id @default(cuid())
+  subject     String?
+
+  // Status
+  isOpen      Boolean   @default(true)
+  lastMessageAt DateTime @default(now())
+
+  // Unread tracking
+  unreadCount Int       @default(0)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  patientId   String
+  patient     Patient @relation(fields: [patientId], references: [id])
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Messages in thread
+  messages    Message[]
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([isOpen])
+  @@index([lastMessageAt])
+}
+
+// Patient communication preferences
+model CommunicationPreference {
+  id          String   @id @default(cuid())
+
+  // Channel preferences
+  allowSms    Boolean  @default(true)
+  allowEmail  Boolean  @default(true)
+  allowVoice  Boolean  @default(false)
+  allowPortal Boolean  @default(true)
+
+  // Preferred channel for different types
+  preferredChannel CommunicationChannel @default(SMS)
+
+  // Time preferences
+  preferredTimeStart String? // "09:00"
+  preferredTimeEnd   String? // "17:00"
+  timezone           String  @default("America/Los_Angeles")
+
+  // Opt-outs
+  optOutMarketing Boolean @default(false)
+  optOutReminders Boolean @default(false)
+
+  // Language
+  language    String   @default("en")
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  patientId   String   @unique
+  patient     Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+}
+
+// Reminder rules/automation
+model ReminderRule {
+  id          String            @id @default(cuid())
+  name        String
+  description String?
+
+  // Trigger
+  triggerType String            // appointment_scheduled, X_before_appointment, etc.
+  triggerValue Int?             // Minutes/hours/days before
+  triggerUnit  String?          // minutes, hours, days
+
+  // Channel and template
+  channel     CommunicationChannel
+  templateId  String
+  template    MessageTemplate @relation(fields: [templateId], references: [id])
+
+  // Conditions
+  appointmentTypes String[]     // Empty = all types
+
+  // Settings
+  isActive    Boolean           @default(true)
+  sendTime    String?           // Specific time to send (e.g., "09:00")
+
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([isActive])
+}
+
+// ============================================
+// EPIC 15: REPORTING & ANALYTICS
+// ============================================
+
+// Widget type enum
+enum WidgetType {
+  METRIC      // Single number display
+  CHART_LINE  // Line chart
+  CHART_BAR   // Bar chart
+  CHART_PIE   // Pie chart
+  TABLE       // Data table
+  LIST        // Simple list
+  TREND       // Metric with trend
+}
+
+// Report type enum
+enum ReportType {
+  DASHBOARD          // Dashboard overview
+  PROVIDER_PRODUCTION // Provider production report
+  COLLECTIONS        // Collections report
+  AR_AGING           // AR aging report
+  KPI_SUMMARY        // KPI summary
+  CUSTOM             // Custom report
+}
+
+// Report export format
+enum ExportFormat {
+  PDF
+  CSV
+  EXCEL
+  JSON
+}
+
+// Report schedule frequency
+enum ScheduleFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+}
+
+// Dashboard widget configuration
+model DashboardWidget {
+  id          String     @id @default(cuid())
+  name        String
+  widgetType  WidgetType
+
+  // Configuration
+  config      Json       // Widget-specific configuration
+  dataSource  String     // Which data to display
+  filters     Json?      // Default filters
+
+  // Layout
+  position    Int        @default(0) // Order on dashboard
+  width       Int        @default(1) // 1-4 grid columns
+  height      Int        @default(1) // 1-4 grid rows
+
+  // Settings
+  isActive    Boolean    @default(true)
+  refreshRate Int?       // Auto-refresh in seconds
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // User who created/owns this widget
+  userId      String
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([isActive])
+}
+
+// Saved report configuration
+model SavedReport {
+  id          String     @id @default(cuid())
+  name        String
+  description String?
+  reportType  ReportType
+
+  // Report configuration
+  config      Json       // Report-specific configuration
+  filters     Json?      // Saved filters
+  columns     Json?      // Selected columns for display
+  sortBy      String?    // Sort field
+  sortOrder   String?    // asc or desc
+
+  // Sharing
+  isShared    Boolean    @default(false) // Visible to all users in org
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // User who created this report
+  userId      String
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  schedules   ReportSchedule[]
+  exports     ReportExport[]
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([reportType])
+}
+
+// Scheduled report delivery
+model ReportSchedule {
+  id          String            @id @default(cuid())
+  name        String
+
+  // Schedule configuration
+  frequency   ScheduleFrequency
+  dayOfWeek   Int?              // 0-6 for weekly (Sunday=0)
+  dayOfMonth  Int?              // 1-31 for monthly
+  timeOfDay   String            @default("08:00") // HH:mm format
+  timezone    String            @default("America/Los_Angeles")
+
+  // Export settings
+  exportFormat ExportFormat     @default(PDF)
+
+  // Delivery
+  recipients  String[]          // Email addresses
+  subject     String?           // Email subject
+  message     String?           // Email body text
+
+  // Status
+  isActive    Boolean           @default(true)
+  lastRunAt   DateTime?
+  nextRunAt   DateTime?
+  lastStatus  String?           // success, error
+  lastError   String?
+
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  // User who created the schedule
+  userId      String
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Linked saved report
+  savedReportId String
+  savedReport   SavedReport @relation(fields: [savedReportId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([isActive])
+  @@index([nextRunAt])
+}
+
+// KPI snapshot for historical tracking
+model KPISnapshot {
+  id              String   @id @default(cuid())
+  snapshotDate    DateTime @default(now())
+  periodType      String   // daily, weekly, monthly
+  periodStart     DateTime
+  periodEnd       DateTime
+
+  // Visit metrics
+  totalVisits     Int      @default(0)
+  completedVisits Int      @default(0)
+  cancelledVisits Int      @default(0)
+  noShowVisits    Int      @default(0)
+  newPatients     Int      @default(0)
+
+  // Financial metrics
+  totalCharges    Decimal  @db.Decimal(12, 2) @default(0)
+  totalPayments   Decimal  @db.Decimal(12, 2) @default(0)
+  totalAdjustments Decimal @db.Decimal(12, 2) @default(0)
+  totalAR         Decimal  @db.Decimal(12, 2) @default(0)
+
+  // Calculated KPIs
+  collectionRate     Decimal? @db.Decimal(5, 2) // Percentage
+  noShowRate         Decimal? @db.Decimal(5, 2) // Percentage
+  patientRetention   Decimal? @db.Decimal(5, 2) // Percentage
+  avgVisitValue      Decimal? @db.Decimal(10, 2)
+  avgDaysToCollect   Decimal? @db.Decimal(5, 1)
+
+  // AR aging breakdown
+  arCurrent          Decimal? @db.Decimal(12, 2)
+  ar30Days           Decimal? @db.Decimal(12, 2)
+  ar60Days           Decimal? @db.Decimal(12, 2)
+  ar90Days           Decimal? @db.Decimal(12, 2)
+  ar120PlusDays      Decimal? @db.Decimal(12, 2)
+
+  // Claims metrics
+  claimsSubmitted    Int      @default(0)
+  claimsPaid         Int      @default(0)
+  claimsDenied       Int      @default(0)
+  cleanClaimRate     Decimal? @db.Decimal(5, 2)
+
+  // Raw data snapshot for detailed analysis
+  metadata    Json?
+
+  createdAt   DateTime @default(now())
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, periodType, periodStart])
+  @@index([organizationId])
+  @@index([snapshotDate])
+  @@index([periodType])
+  @@index([periodStart])
+}
+
+// Report export tracking
+model ReportExport {
+  id            String       @id @default(cuid())
+
+  // Export details
+  reportType    ReportType
+  exportFormat  ExportFormat
+  fileName      String
+  fileSize      Int?         // Size in bytes
+  storageKey    String?      // S3 key or local path
+
+  // Parameters used
+  parameters    Json?        // Date range, filters, etc.
+
+  // Status
+  status        String       @default("pending") // pending, processing, completed, failed
+  error         String?
+
+  // Timestamps
+  requestedAt   DateTime     @default(now())
+  completedAt   DateTime?
+  expiresAt     DateTime?    // When the file will be deleted
+
+  // User who requested
+  userId        String
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Optional link to saved report
+  savedReportId String?
+  savedReport   SavedReport? @relation(fields: [savedReportId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([status])
+  @@index([requestedAt])
+}
+
+// ============================================
+// EPIC 13: AI SCHEDULING AGENT
+// ============================================
+
+// Risk level for no-show prediction
+enum NoShowRiskLevel {
+  LOW
+  MODERATE
+  HIGH
+  VERY_HIGH
+}
+
+// Overbooking recommendation status
+enum OverbookingStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
+
+// Recall sequence status
+enum RecallStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+// Recall step type
+enum RecallStepType {
+  EMAIL
+  SMS
+  PHONE_CALL
+  LETTER
+}
+
+// Scheduling suggestion type
+enum SuggestionType {
+  OPTIMAL_TIME
+  GAP_FILL
+  WAITLIST_MATCH
+  RESCHEDULE
+  RECALL
+}
+
+// No-show prediction for appointments
+model NoShowPrediction {
+  id              String         @id @default(cuid())
+  probability     Float          // 0.0 to 1.0
+  riskLevel       NoShowRiskLevel
+
+  // Factors contributing to prediction
+  factors         Json           // { dayOfWeek: 0.15, timeSlot: 0.1, patientHistory: 0.3, ... }
+
+  // Model info
+  modelVersion    String         @default("1.0")
+  confidenceScore Float?         // Model confidence in prediction
+
+  // Outcome tracking (for model improvement)
+  actualOutcome   String?        // ATTENDED, NO_SHOW, CANCELLED
+  wasAccurate     Boolean?       // Was the prediction correct?
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  // Relations
+  appointmentId   String         @unique
+  appointment     Appointment    @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@index([riskLevel])
+  @@index([createdAt])
+}
+
+// Overbooking recommendations
+model OverbookingRecommendation {
+  id              String           @id @default(cuid())
+  status          OverbookingStatus @default(PENDING)
+
+  // Recommendation details
+  suggestedDate   DateTime
+  suggestedTime   String           // "09:00" format
+  reason          String           // Why this overbooking is recommended
+  riskAssessment  Float            // Expected no-show probability for existing appointments
+  expectedValue   Float?           // Expected additional revenue
+
+  // Decision tracking
+  decidedAt       DateTime?
+  decidedBy       String?          // User ID
+  declineReason   String?
+
+  // If accepted, link to the created appointment
+  bookedAppointmentId String?
+
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  expiresAt       DateTime?        // Recommendation expires after this time
+
+  // Relations
+  providerId      String
+  provider        Provider         @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  // Multi-tenant relation
+  organizationId  String
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([providerId])
+  @@index([status])
+  @@index([suggestedDate])
+}
+
+// Detected schedule gaps
+model SchedulingGap {
+  id              String    @id @default(cuid())
+
+  // Gap details
+  gapStart        DateTime
+  gapEnd          DateTime
+  durationMinutes Int
+
+  // Gap type and priority
+  gapType         String    // CANCELLATION, NATURAL, BETWEEN_BLOCKS
+  fillPriority    Int       @default(0) // Higher = more important to fill
+
+  // Potential value if filled
+  estimatedValue  Float?    // Estimated revenue if gap is filled
+
+  // Status
+  isFilled        Boolean   @default(false)
+  filledAt        DateTime?
+  filledAppointmentId String?
+
+  // Analysis
+  suggestedActions Json?    // Array of suggested ways to fill
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  providerId      String
+  provider        Provider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  // Multi-tenant relation
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([providerId])
+  @@index([gapStart])
+  @@index([isFilled])
+}
+
+// Provider utilization metrics
+model ProviderUtilization {
+  id                String   @id @default(cuid())
+  date              DateTime @db.Date
+
+  // Core metrics
+  availableMinutes  Int      // Total available time
+  bookedMinutes     Int      // Time with appointments
+  utilizedMinutes   Int      // Actual patient time (attended)
+
+  // Calculated rates (stored for quick queries)
+  bookingRate       Float    // bookedMinutes / availableMinutes
+  utilizationRate   Float    // utilizedMinutes / bookedMinutes
+  overallRate       Float    // utilizedMinutes / availableMinutes
+
+  // Appointment breakdown
+  scheduledCount    Int      @default(0)
+  completedCount    Int      @default(0)
+  noShowCount       Int      @default(0)
+  cancelledCount    Int      @default(0)
+
+  // Revenue metrics (optional)
+  potentialRevenue  Float?   // If all slots were filled
+  actualRevenue     Float?   // Actual revenue generated
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  providerId        String
+  provider          Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  // Multi-tenant relation
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, date])
+  @@index([organizationId])
+  @@index([date])
+}
+
+// AI scheduling suggestions
+model SchedulingSuggestion {
+  id              String         @id @default(cuid())
+  suggestionType  SuggestionType
+
+  // Suggestion details
+  title           String
+  description     String
+  priority        Int            @default(0) // Higher = more important
+
+  // Suggested action
+  suggestedDate   DateTime?
+  suggestedTime   String?        // "09:00" format
+  suggestedProviderId String?
+
+  // Context data
+  contextData     Json?          // Additional context (patient preferences, etc.)
+
+  // Scoring
+  confidenceScore Float?         // AI confidence in suggestion
+  expectedBenefit Float?         // Expected value/benefit
+
+  // Status tracking
+  isActioned      Boolean        @default(false)
+  actionedAt      DateTime?
+  actionedBy      String?
+  actionResult    String?        // ACCEPTED, DECLINED, EXPIRED
+
+  // Expiration
+  expiresAt       DateTime?
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  // Relations (optional - may be for patient, provider, or general)
+  patientId       String?
+  patient         Patient?       @relation(fields: [patientId], references: [id])
+
+  providerId      String?
+  provider        Provider?      @relation(fields: [providerId], references: [id])
+
+  // Multi-tenant relation
+  organizationId  String
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([suggestionType])
+  @@index([isActioned])
+  @@index([createdAt])
+}
+
+// Automated recall sequences
+model RecallSequence {
+  id              String       @id @default(cuid())
+  name            String
+  description     String?
+
+  // Targeting
+  appointmentTypes String[]    // Which appointment types trigger this recall
+  daysSinceLastVisit Int       // Trigger after X days since last visit
+
+  // Status
+  status          RecallStatus @default(ACTIVE)
+
+  // Settings
+  maxAttempts     Int          @default(3)
+  stopOnSchedule  Boolean      @default(true) // Stop if patient schedules
+
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  // Multi-tenant relation
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  steps           RecallSequenceStep[]
+  enrollments     RecallEnrollment[]
+
+  @@index([organizationId])
+  @@index([status])
+}
+
+// Steps within a recall sequence
+model RecallSequenceStep {
+  id              String         @id @default(cuid())
+  stepNumber      Int            // Order in sequence
+
+  // Step configuration
+  stepType        RecallStepType
+  daysFromStart   Int            // Days from enrollment to send this step
+
+  // Message template
+  templateId      String?
+  template        MessageTemplate? @relation(fields: [templateId], references: [id])
+
+  // Custom message (if no template)
+  subject         String?
+  body            String?
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  // Relations
+  sequenceId      String
+  sequence        RecallSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+
+  // Execution records
+  executions      RecallStepExecution[]
+
+  @@unique([sequenceId, stepNumber])
+  @@index([sequenceId])
+}
+
+// Patient enrollment in recall sequence
+model RecallEnrollment {
+  id              String       @id @default(cuid())
+
+  // Enrollment details
+  enrolledAt      DateTime     @default(now())
+  lastStepNumber  Int          @default(0) // Last completed step
+  nextStepDue     DateTime?    // When next step should be sent
+
+  // Status
+  status          RecallStatus @default(ACTIVE)
+  completedAt     DateTime?
+  completedReason String?      // SCHEDULED, MAX_ATTEMPTS, OPTED_OUT, MANUAL
+
+  // Outcome tracking
+  didSchedule     Boolean      @default(false)
+  scheduledAppointmentId String?
+
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  // Relations
+  patientId       String
+  patient         Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  sequenceId      String
+  sequence        RecallSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+
+  // Execution records
+  executions      RecallStepExecution[]
+
+  @@unique([patientId, sequenceId])
+  @@index([status])
+  @@index([nextStepDue])
+}
+
+// Record of executed recall steps
+model RecallStepExecution {
+  id              String    @id @default(cuid())
+
+  // Execution details
+  executedAt      DateTime  @default(now())
+  success         Boolean
+  errorMessage    String?
+
+  // Message tracking
+  messageId       String?   // Link to Message if sent
+
+  // Relations
+  enrollmentId    String
+  enrollment      RecallEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+  stepId          String
+  step            RecallSequenceStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  @@index([enrollmentId])
+  @@index([executedAt])
+}

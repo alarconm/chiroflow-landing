@@ -1,0 +1,140 @@
+{
+  "branch": "feature/ai-practice-growth",
+  "title": "Epic 37: AI Practice Growth Agent",
+  "description": "AI agent that drives practice growth through intelligent marketing, lead nurturing, reputation management, and referral optimization. Automates patient acquisition and retention.",
+  "epic": "37-ai-practice-growth",
+  "dependencies": ["18-marketing", "11-patient-communication"],
+  "userStories": [
+    {
+      "id": "US-355",
+      "title": "AI practice growth schema",
+      "description": "Create database models for growth automation.",
+      "acceptanceCriteria": [
+        "Lead model with source, status, score, contactInfo, assignedTo",
+        "LeadActivity model with leadId, activityType, date, notes",
+        "ReviewRequest model with patientId, platform, sentDate, completedDate",
+        "GrowthCampaign model with name, type, target, status, results",
+        "ReferralOpportunity model with patientId, score, outreachDate",
+        "Prisma migrations run successfully"
+      ],
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-356",
+      "title": "Intelligent lead management",
+      "description": "AI manages and scores incoming leads.",
+      "acceptanceCriteria": [
+        "aiGrowth.scoreLead - Calculate lead quality score",
+        "Auto-capture leads from website, calls, referrals",
+        "Lead source tracking",
+        "Conversion probability prediction",
+        "Priority ranking for follow-up",
+        "Auto-assign to appropriate staff",
+        "Lead nurturing sequence trigger",
+        "Conversion tracking"
+      ],
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-357",
+      "title": "Automated lead nurturing",
+      "description": "AI nurtures leads through conversion.",
+      "acceptanceCriteria": [
+        "aiGrowth.nurtureLead - Automated follow-up",
+        "Personalized email sequences",
+        "SMS follow-up campaigns",
+        "Content delivery based on interest",
+        "Optimal timing for outreach",
+        "Handle responses automatically",
+        "Escalate hot leads to staff",
+        "Track engagement and adjust"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-358",
+      "title": "Reputation management",
+      "description": "AI manages online reputation and reviews.",
+      "acceptanceCriteria": [
+        "aiGrowth.requestReview - Smart review requests",
+        "Identify satisfied patients for review ask",
+        "Multi-platform review requests (Google, Yelp, Facebook)",
+        "Optimal timing after positive experiences",
+        "Monitor review platforms",
+        "Alert on negative reviews",
+        "Generate review response suggestions",
+        "Track reputation scores"
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-359",
+      "title": "Referral optimization",
+      "description": "AI maximizes referral generation.",
+      "acceptanceCriteria": [
+        "aiGrowth.identifyReferrers - Find referral candidates",
+        "NPS scoring for referral likelihood",
+        "Automated referral program promotion",
+        "Track referral sources",
+        "Thank referring patients automatically",
+        "Referral incentive management",
+        "Provider referral relationship nurturing"
+      ],
+      "priority": 5,
+      "passes": false
+    },
+    {
+      "id": "US-360",
+      "title": "Patient reactivation",
+      "description": "AI reactivates lapsed patients.",
+      "acceptanceCriteria": [
+        "aiGrowth.reactivate - Win back lapsed patients",
+        "Identify reactivation candidates",
+        "Personalized reactivation messaging",
+        "Special offers for returning patients",
+        "Track reactivation success",
+        "Optimal timing for outreach",
+        "Reason for lapse analysis"
+      ],
+      "priority": 6,
+      "passes": false
+    },
+    {
+      "id": "US-361",
+      "title": "Marketing campaign automation",
+      "description": "AI creates and optimizes marketing campaigns.",
+      "acceptanceCriteria": [
+        "aiGrowth.createCampaign - Generate campaign",
+        "Audience segmentation",
+        "Content generation assistance",
+        "Multi-channel campaign execution",
+        "A/B testing automation",
+        "Performance optimization",
+        "ROI tracking and reporting"
+      ],
+      "priority": 7,
+      "passes": false
+    },
+    {
+      "id": "US-362",
+      "title": "Practice growth dashboard",
+      "description": "Dashboard for growth activities and metrics.",
+      "acceptanceCriteria": [
+        "Lead pipeline visualization",
+        "Conversion funnel metrics",
+        "Reputation score trending",
+        "Referral source analysis",
+        "Campaign performance",
+        "Growth KPIs",
+        "ROI by marketing channel",
+        "Patient acquisition cost"
+      ],
+      "priority": 8,
+      "passes": false
+    }
+  ]
+}

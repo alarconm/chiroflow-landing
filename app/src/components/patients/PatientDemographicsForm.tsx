@@ -72,7 +72,6 @@ const genderOptions = [
 
 // Common pronouns
 const pronounOptions = [
-  { value: '', label: 'Select pronouns' },
   { value: 'he/him', label: 'He/Him' },
   { value: 'she/her', label: 'She/Her' },
   { value: 'they/them', label: 'They/Them' },
@@ -83,7 +82,6 @@ const pronounOptions = [
 
 // Marital status options
 const maritalStatusOptions = [
-  { value: '', label: 'Select status' },
   { value: 'single', label: 'Single' },
   { value: 'married', label: 'Married' },
   { value: 'divorced', label: 'Divorced' },
@@ -191,7 +189,7 @@ export function PatientDemographicsForm({
       <Card>
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center gap-2 text-lg">
-            <User className="h-5 w-5 text-cyan-500" />
+            <User className="h-5 w-5 text-[#053e67]/50" />
             Personal Information
           </CardTitle>
         </CardHeader>
@@ -453,7 +451,7 @@ export function PatientDemographicsForm({
       <Card>
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Heart className="h-5 w-5 text-cyan-500" />
+            <Heart className="h-5 w-5 text-[#053e67]/50" />
             Additional Information
           </CardTitle>
         </CardHeader>
@@ -554,7 +552,7 @@ export function PatientDemographicsForm({
         <Button
           type="submit"
           disabled={isLoading}
-          className="bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600"
+          className="bg-gradient-to-r from-[#053e67]/50 to-[#053e67] hover:from-[#053e67] hover:to-[#053e67]/90"
         >
           {isLoading
             ? 'Saving...'

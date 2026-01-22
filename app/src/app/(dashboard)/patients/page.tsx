@@ -45,7 +45,7 @@ type PatientStatus = 'ACTIVE' | 'INACTIVE' | 'ARCHIVED' | 'DECEASED';
 const statusColors: Record<PatientStatus, string> = {
   ACTIVE: 'bg-green-100 text-green-800',
   INACTIVE: 'bg-yellow-100 text-yellow-800',
-  ARCHIVED: 'bg-gray-100 text-gray-800',
+  ARCHIVED: 'bg-stone-100 text-gray-800',
   DECEASED: 'bg-red-100 text-red-800',
 };
 
@@ -120,8 +120,8 @@ export default function PatientsPage() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Patients</h1>
-          <p className="text-gray-500 mt-1">
+          <h1 className="text-2xl font-bold text-stone-900">Patients</h1>
+          <p className="text-stone-500 mt-1">
             Manage your patient database
           </p>
         </div>
@@ -138,7 +138,7 @@ export default function PatientsPage() {
             </kbd>
           </Button>
           <Link href="/patients/new">
-            <Button className="bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600">
+            <Button className="bg-[#053e67] hover:bg-[#053e67] text-white">
               <Plus className="h-4 w-4 mr-2" />
               Add Patient
             </Button>
@@ -152,7 +152,7 @@ export default function PatientsPage() {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
             {/* Search */}
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-stone-400" />
               <Input
                 placeholder="Search by name, MRN, phone, or email..."
                 value={search}
@@ -212,11 +212,11 @@ export default function PatientsPage() {
         <CardContent>
           {isLoading ? (
             <div className="flex items-center justify-center py-10">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500" />
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#053e67]" />
             </div>
           ) : !data?.patients.length ? (
             <div className="text-center py-10">
-              <p className="text-gray-500">No patients found</p>
+              <p className="text-stone-500">No patients found</p>
               <Link href="/patients/new">
                 <Button variant="outline" className="mt-4">
                   <Plus className="h-4 w-4 mr-2" />
@@ -233,7 +233,7 @@ export default function PatientsPage() {
                       <th className="pb-3 font-medium">
                         <button
                           onClick={() => handleSort('name')}
-                          className="flex items-center gap-1 hover:text-cyan-600"
+                          className="flex items-center gap-1 hover:text-[#053e67]"
                         >
                           Name
                           <ArrowUpDown className="h-3 w-3" />
@@ -242,7 +242,7 @@ export default function PatientsPage() {
                       <th className="pb-3 font-medium">
                         <button
                           onClick={() => handleSort('mrn')}
-                          className="flex items-center gap-1 hover:text-cyan-600"
+                          className="flex items-center gap-1 hover:text-[#053e67]"
                         >
                           MRN
                           <ArrowUpDown className="h-3 w-3" />
@@ -251,7 +251,7 @@ export default function PatientsPage() {
                       <th className="pb-3 font-medium">
                         <button
                           onClick={() => handleSort('dateOfBirth')}
-                          className="flex items-center gap-1 hover:text-cyan-600"
+                          className="flex items-center gap-1 hover:text-[#053e67]"
                         >
                           DOB / Age
                           <ArrowUpDown className="h-3 w-3" />
@@ -266,30 +266,30 @@ export default function PatientsPage() {
                     {data.patients.map((patient) => (
                       <tr
                         key={patient.id}
-                        className="border-b last:border-0 hover:bg-gray-50 cursor-pointer"
+                        className="border-b last:border-0 hover:bg-stone-50 cursor-pointer"
                         onClick={() => router.push(`/patients/${patient.id}`)}
                       >
                         <td className="py-4">
                           <div>
-                            <p className="font-medium text-gray-900">
+                            <p className="font-medium text-stone-900">
                               {patient.lastName}, {patient.firstName}
                             </p>
                             {patient.preferredName && (
-                              <p className="text-sm text-gray-500">
+                              <p className="text-sm text-stone-500">
                                 &quot;{patient.preferredName}&quot;
                               </p>
                             )}
                           </div>
                         </td>
                         <td className="py-4">
-                          <code className="text-sm bg-gray-100 px-2 py-1 rounded">
+                          <code className="text-sm bg-stone-100 px-2 py-1 rounded">
                             {patient.mrn}
                           </code>
                         </td>
                         <td className="py-4">
                           <div>
                             <p className="text-sm">{formatDOB(patient.dateOfBirth)}</p>
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-stone-500">
                               {calculateAge(patient.dateOfBirth)} years
                             </p>
                           </div>
@@ -362,7 +362,7 @@ export default function PatientsPage() {
 
               {/* Pagination */}
               <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-stone-500">
                   Showing {page * pageSize + 1} to{' '}
                   {Math.min((page + 1) * pageSize, data.total)} of {data.total}
                 </p>

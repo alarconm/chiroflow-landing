@@ -399,7 +399,7 @@ export function AppointmentDialog({
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">No room</SelectItem>
+                <SelectItem value="__none__">No room</SelectItem>
                 {rooms?.map((room) => (
                   <SelectItem key={room.id} value={room.id}>
                     <div className="flex items-center gap-2">
@@ -447,7 +447,7 @@ export function AppointmentDialog({
             <Button
               type="submit"
               disabled={isLoading}
-              className="bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600"
+              className="bg-gradient-to-r from-[#053e67]/50 to-[#053e67] hover:from-[#053e67] hover:to-[#053e67]/90"
             >
               {isLoading
                 ? 'Saving...'

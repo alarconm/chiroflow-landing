@@ -133,6 +133,7 @@ const hasPermissions = (permissions: Action[], requireAll = false) =>
 export const adminProcedure = t.procedure.use(hasMinRole('ADMIN'));
 export const ownerProcedure = t.procedure.use(hasRoles(['OWNER']));
 export const providerProcedure = t.procedure.use(hasMinRole('PROVIDER'));
+export const billerProcedure = t.procedure.use(hasRoles(['OWNER', 'ADMIN', 'BILLER']));
 
 // Permission-based procedure factory
 export const permissionProcedure = (permissions: Action[], requireAll = false) =>

@@ -1,0 +1,224 @@
+{
+  "branch": "feature/billing-claims",
+  "title": "Epic 07: Billing & Claims Core",
+  "description": "Revenue cycle management foundation for ChiroFlow - superbill generation, charge capture, fee schedules, patient ledgers, insurance management, and claim generation. This epic enables the financial backbone of the practice.",
+  "epic": "07-billing-claims",
+  "dependencies": ["02-patient-management", "05-ehr-soap-notes"],
+  "userStories": [
+    {
+      "id": "US-057",
+      "title": "Billing database schema",
+      "description": "Extend Prisma schema with models for billing, charges, payments, insurance, fee schedules, and claims.",
+      "acceptanceCriteria": [
+        "InsurancePolicy model with id, patientId, payerId, memberId, groupNumber, subscriberInfo, copay, deductible, effectiveDate, terminationDate",
+        "InsurancePayer model with id, name, payerId, address, phone, electronicPayerId, claimSubmissionMethod",
+        "FeeSchedule model with id, organizationId, name, isDefault, effectiveDate",
+        "FeeScheduleItem model with id, feeScheduleId, cptCode, fee, allowedAmount",
+        "Charge model with id, encounterId, patientId, cptCode, icd10Codes, units, fee, adjustments, status",
+        "Payment model with id, patientId, amount, paymentMethod, referenceNumber, appliedTo, postedDate",
+        "PatientLedger view combining charges, payments, adjustments",
+        "Claim model with id, patientId, encounterId, insurancePolicyId, status, claimNumber, submittedDate, paidDate",
+        "ClaimLine model with id, claimId, chargeId, lineNumber, serviceDateFrom, serviceDateTo",
+        "Prisma migrations run successfully"
+      ],
+      "priority": 1,
+      "passes": true
+    },
+    {
+      "id": "US-058",
+      "title": "Insurance payer management",
+      "description": "Create API for managing insurance payers (the companies) and their submission requirements.",
+      "acceptanceCriteria": [
+        "payer.create - Add new insurance payer with electronic IDs",
+        "payer.update - Modify payer details",
+        "payer.list - List all payers with search/filter",
+        "payer.get - Get payer details with submission requirements",
+        "payer.delete - Soft delete payer",
+        "Seed common payers (Medicare, Medicaid, major insurers)",
+        "Support for primary/secondary/tertiary payer order"
+      ],
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-059",
+      "title": "Patient insurance policy management",
+      "description": "Create API for managing patient insurance policies and eligibility information.",
+      "acceptanceCriteria": [
+        "insurancePolicy.create - Add insurance policy to patient",
+        "insurancePolicy.update - Modify policy details",
+        "insurancePolicy.list - List patient's insurance policies",
+        "insurancePolicy.get - Get policy with payer details",
+        "insurancePolicy.delete - Remove policy from patient",
+        "insurancePolicy.setPrimary - Set primary/secondary order",
+        "Support for subscriber vs dependent relationships",
+        "Store copay, deductible, coinsurance amounts"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-060",
+      "title": "Fee schedule management",
+      "description": "Create API for managing fee schedules that define pricing for CPT codes.",
+      "acceptanceCriteria": [
+        "feeSchedule.create - Create new fee schedule",
+        "feeSchedule.update - Modify fee schedule details",
+        "feeSchedule.list - List organization fee schedules",
+        "feeSchedule.get - Get fee schedule with all items",
+        "feeSchedule.delete - Delete fee schedule",
+        "feeSchedule.setDefault - Set as organization default",
+        "feeScheduleItem.upsert - Add/update fee for CPT code",
+        "feeScheduleItem.bulkImport - Import fees from CSV",
+        "Support multiple fee schedules (Cash, Insurance A, Insurance B)"
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-061",
+      "title": "Charge capture from encounters",
+      "description": "Create API for capturing charges from clinical encounters. Link procedures to billable charges.",
+      "acceptanceCriteria": [
+        "charge.createFromEncounter - Generate charges from encounter procedures",
+        "charge.create - Manual charge entry",
+        "charge.update - Modify charge details (units, fee, modifiers)",
+        "charge.list - List charges by patient, date range, status",
+        "charge.get - Get charge with linked encounter/procedure",
+        "charge.void - Void a charge with reason",
+        "Auto-calculate fee from fee schedule",
+        "Support for modifiers (-25, -59, etc.)",
+        "Charge status: PENDING, BILLED, PAID, ADJUSTED, VOID"
+      ],
+      "priority": 5,
+      "passes": false
+    },
+    {
+      "id": "US-062",
+      "title": "Superbill generation",
+      "description": "Generate superbills (encounter forms) for patient checkout and billing reference.",
+      "acceptanceCriteria": [
+        "superbill.generate - Create superbill from encounter",
+        "superbill.get - Get superbill with all details",
+        "superbill.list - List superbills by date range",
+        "Include patient demographics",
+        "Include diagnoses (ICD-10) with order",
+        "Include procedures (CPT) with fees",
+        "Include provider information and NPI",
+        "Include insurance information",
+        "PDF generation for printing",
+        "Support for walkout statement (patient portion)"
+      ],
+      "priority": 6,
+      "passes": false
+    },
+    {
+      "id": "US-063",
+      "title": "Payment posting",
+      "description": "Create API for posting patient and insurance payments to charges.",
+      "acceptanceCriteria": [
+        "payment.create - Post new payment",
+        "payment.update - Modify payment details",
+        "payment.list - List payments by patient, date range",
+        "payment.get - Get payment with allocations",
+        "payment.void - Void payment with reason",
+        "payment.apply - Apply payment to specific charges",
+        "payment.unapply - Remove payment from charges",
+        "Support payment methods: Cash, Check, Credit Card, Insurance",
+        "Auto-allocation option (oldest first)",
+        "Overpayment handling (credit balance)"
+      ],
+      "priority": 7,
+      "passes": false
+    },
+    {
+      "id": "US-064",
+      "title": "Patient ledger and statements",
+      "description": "Create patient financial ledger view and statement generation.",
+      "acceptanceCriteria": [
+        "ledger.getByPatient - Get complete patient ledger",
+        "ledger.getBalance - Get current patient balance",
+        "ledger.getTransactions - Get transactions with pagination",
+        "statement.generate - Generate patient statement PDF",
+        "statement.list - List generated statements",
+        "Include running balance calculation",
+        "Show charges, payments, adjustments chronologically",
+        "Support date range filtering",
+        "Statement includes payment instructions and aging"
+      ],
+      "priority": 8,
+      "passes": false
+    },
+    {
+      "id": "US-065",
+      "title": "Claim creation and management",
+      "description": "Create API for generating and managing insurance claims.",
+      "acceptanceCriteria": [
+        "claim.create - Create claim from charges",
+        "claim.update - Modify claim details",
+        "claim.list - List claims by status, payer, date",
+        "claim.get - Get claim with all lines and history",
+        "claim.submit - Mark claim as submitted",
+        "claim.addNote - Add note to claim",
+        "claim.void - Void claim with reason",
+        "Claim status: DRAFT, READY, SUBMITTED, ACCEPTED, REJECTED, PAID, DENIED",
+        "Support primary and secondary claims",
+        "Claim validation before submission"
+      ],
+      "priority": 9,
+      "passes": false
+    },
+    {
+      "id": "US-066",
+      "title": "CMS-1500 claim form generation",
+      "description": "Generate CMS-1500 (HCFA) claim forms for paper and electronic submission.",
+      "acceptanceCriteria": [
+        "claim.generateCMS1500 - Generate CMS-1500 data structure",
+        "claim.getCMS1500PDF - Generate printable CMS-1500 PDF",
+        "All 33 boxes populated correctly",
+        "Support for primary and secondary payer",
+        "Include provider NPI and taxonomy",
+        "Include facility information",
+        "Diagnosis pointer mapping",
+        "Modifier handling",
+        "Place of service codes"
+      ],
+      "priority": 10,
+      "passes": false
+    },
+    {
+      "id": "US-067",
+      "title": "Billing dashboard and reports",
+      "description": "Create billing dashboard UI with key metrics and reports.",
+      "acceptanceCriteria": [
+        "Dashboard at /billing with summary metrics",
+        "Today's charges and collections",
+        "Unbilled encounters list",
+        "Claims pending submission",
+        "AR aging summary (0-30, 31-60, 61-90, 90+)",
+        "Recent payments list",
+        "Quick actions: Post Payment, Create Claim, Generate Statement",
+        "Filter by date range and provider"
+      ],
+      "priority": 11,
+      "passes": false
+    },
+    {
+      "id": "US-068",
+      "title": "Patient billing UI",
+      "description": "Create patient-level billing interface for managing charges and payments.",
+      "acceptanceCriteria": [
+        "Patient billing tab at /patients/[id]?tab=billing",
+        "Insurance policies section with add/edit",
+        "Charges list with status indicators",
+        "Payments list with allocation details",
+        "Current balance prominently displayed",
+        "Quick actions: Add Charge, Post Payment, Generate Statement",
+        "Claims associated with patient",
+        "Ledger transaction history"
+      ],
+      "priority": 12,
+      "passes": false
+    }
+  ]
+}

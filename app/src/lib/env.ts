@@ -33,6 +33,8 @@ const envSchema = z.object({
 
   // Optional: AI/ML features
   OPENAI_API_KEY: z.string().optional(),
+  ANTHROPIC_API_KEY: z.string().optional(),
+  GOOGLE_AI_API_KEY: z.string().optional(),
 });
 
 // Parse and validate environment variables
@@ -56,6 +58,8 @@ function validateEnv() {
     SENTRY_DSN: process.env.SENTRY_DSN,
     ANALYTICS_ID: process.env.ANALYTICS_ID,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    GOOGLE_AI_API_KEY: process.env.GOOGLE_AI_API_KEY,
   });
 
   if (!result.success) {
@@ -95,4 +99,12 @@ export const hasS3Config = Boolean(
 );
 
 // Helper to check if AI features are enabled
-export const hasAIConfig = Boolean(env.OPENAI_API_KEY);
+export const hasAIConfig = Boolean(env.ANTHROPIC_API_KEY || env.OPENAI_API_KEY || env.GOOGLE_AI_API_KEY);
+
+// Helper to check which AI provider is available (priority: Claude > Gemini > OpenAI)
+export const getAIProvider = (): 'anthropic' | 'google' | 'openai' | 'mock' => {
+  if (env.ANTHROPIC_API_KEY) return 'anthropic';
+  if (env.GOOGLE_AI_API_KEY) return 'google';
+  if (env.OPENAI_API_KEY) return 'openai';
+  return 'mock';
+};

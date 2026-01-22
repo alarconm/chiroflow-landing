@@ -92,7 +92,7 @@ export function PatientMergeCompare({
   if (error || !data) {
     return (
       <div className="text-center py-10">
-        <AlertTriangle className="h-10 w-10 text-amber-500 mx-auto mb-3" />
+        <AlertTriangle className="h-10 w-10 text-blue-500 mx-auto mb-3" />
         <p className="text-muted-foreground">Failed to load patient comparison</p>
         <Button variant="outline" onClick={onClose} className="mt-4">
           Close
@@ -143,7 +143,7 @@ export function PatientMergeCompare({
       <Card className={cn(
         'flex-1',
         isTarget && 'border-green-500 border-2',
-        isSource && 'border-amber-500 border-2'
+        isSource && 'border-blue-500 border-2'
       )}>
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
@@ -153,7 +153,7 @@ export function PatientMergeCompare({
             {isTarget ? (
               <Badge className="bg-green-500">Keep</Badge>
             ) : isSource ? (
-              <Badge variant="outline" className="border-amber-500 text-amber-600">
+              <Badge variant="outline" className="border-blue-500 text-[#053e67]">
                 Archive
               </Badge>
             ) : null}
@@ -260,11 +260,11 @@ export function PatientMergeCompare({
       </div>
 
       {/* Warning */}
-      <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-        <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+      <div className="flex items-start gap-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <AlertTriangle className="h-5 w-5 text-[#053e67] mt-0.5 flex-shrink-0" />
         <div className="text-sm">
-          <p className="font-medium text-amber-800">Merge is Irreversible</p>
-          <p className="text-amber-700">
+          <p className="font-medium text-blue-800">Merge is Irreversible</p>
+          <p className="text-[#053e67]">
             The source patient will be archived after merge. All appointments, billing, and
             clinical data will be transferred to the target patient.
           </p>
@@ -352,7 +352,7 @@ export function PatientMergeCompare({
         </Button>
         <Button
           onClick={() => setShowConfirm(true)}
-          className="bg-amber-500 hover:bg-amber-600"
+          className="bg-blue-500 hover:bg-[#053e67]"
         >
           Review & Merge
         </Button>
@@ -379,7 +379,7 @@ export function PatientMergeCompare({
                 <span className="text-muted-foreground">({targetPatient.mrn})</span>
               </div>
               <div className="flex items-center gap-2">
-                <Badge variant="outline" className="border-amber-500 text-amber-600">
+                <Badge variant="outline" className="border-blue-500 text-[#053e67]">
                   Archive
                 </Badge>
                 <span className="font-medium">
@@ -413,7 +413,7 @@ export function PatientMergeCompare({
             <Button
               onClick={handleMerge}
               disabled={mergeMutation.isPending || !mergeReason.trim()}
-              className="bg-amber-500 hover:bg-amber-600"
+              className="bg-blue-500 hover:bg-[#053e67]"
             >
               {mergeMutation.isPending ? (
                 <>

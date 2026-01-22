@@ -20,6 +20,7 @@ import {
   Archive,
   Undo,
   Plus,
+  Stethoscope,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -36,12 +37,13 @@ import { trpc } from '@/trpc/client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { DocumentList } from '@/components/patients';
+import { ClinicalHistoryView } from '@/components/clinical';
 import { usePermissions } from '@/hooks';
 
 const statusColors: Record<string, string> = {
   ACTIVE: 'bg-green-100 text-green-800 border-green-200',
   INACTIVE: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-  ARCHIVED: 'bg-gray-100 text-gray-800 border-gray-200',
+  ARCHIVED: 'bg-stone-100 text-stone-800 border-stone-200',
   DECEASED: 'bg-red-100 text-red-800 border-red-200',
 };
 
@@ -88,7 +90,7 @@ export default function PatientDetailPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500" />
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#053e67]" />
       </div>
     );
   }
@@ -96,7 +98,7 @@ export default function PatientDetailPage() {
   if (!patient) {
     return (
       <div className="text-center py-10">
-        <p className="text-gray-500">Patient not found</p>
+        <p className="text-stone-500">Patient not found</p>
         <Link href="/patients">
           <Button variant="outline" className="mt-4">
             <ArrowLeft className="h-4 w-4 mr-2" />
@@ -127,8 +129,8 @@ export default function PatientDetailPage() {
           </Link>
           <div>
             {/* Breadcrumb */}
-            <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
-              <Link href="/patients" className="hover:text-cyan-600">
+            <div className="flex items-center gap-2 text-sm text-stone-500 mb-1">
+              <Link href="/patients" className="hover:text-[#053e67]">
                 Patients
               </Link>
               <span>/</span>
@@ -136,10 +138,10 @@ export default function PatientDetailPage() {
             </div>
             {/* Name and status */}
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-gray-900">
+              <h1 className="text-2xl font-bold text-stone-900">
                 {patient.demographics?.lastName}, {patient.demographics?.firstName}
                 {patient.demographics?.preferredName && (
-                  <span className="font-normal text-gray-500">
+                  <span className="font-normal text-stone-500">
                     {' '}
                     ({patient.demographics.preferredName})
                   </span>
@@ -150,7 +152,7 @@ export default function PatientDetailPage() {
               </Badge>
             </div>
             {/* Quick info */}
-            <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
+            <div className="flex items-center gap-4 mt-1 text-sm text-stone-500">
               <span>MRN: {patient.mrn}</span>
               {age !== null && <span>{age} years old</span>}
               {patient.demographics?.gender && (
@@ -213,13 +215,17 @@ export default function PatientDetailPage() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="clinical" className="flex items-center gap-1">
+            <Stethoscope className="h-4 w-4" />
+            Clinical
+          </TabsTrigger>
           <TabsTrigger value="demographics">Demographics</TabsTrigger>
           <TabsTrigger value="insurance">Insurance</TabsTrigger>
           <TabsTrigger value="documents">Documents</TabsTrigger>
           <TabsTrigger value="family">Family</TabsTrigger>
-          <TabsTrigger value="history">History</TabsTrigger>
+          <TabsTrigger value="history">Activity</TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
@@ -229,7 +235,7 @@ export default function PatientDetailPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <User className="h-5 w-5 text-cyan-500" />
+                  <User className="h-5 w-5 text-[#053e67]" />
                   Contact Information
                 </CardTitle>
               </CardHeader>
@@ -238,27 +244,27 @@ export default function PatientDetailPage() {
                   <>
                     {primaryContact.mobilePhone && (
                       <div className="flex items-center gap-3">
-                        <Phone className="h-4 w-4 text-gray-400" />
+                        <Phone className="h-4 w-4 text-stone-400" />
                         <span>{primaryContact.mobilePhone}</span>
                         <Badge variant="secondary" className="text-xs">Mobile</Badge>
                       </div>
                     )}
                     {primaryContact.homePhone && (
                       <div className="flex items-center gap-3">
-                        <Phone className="h-4 w-4 text-gray-400" />
+                        <Phone className="h-4 w-4 text-stone-400" />
                         <span>{primaryContact.homePhone}</span>
                         <Badge variant="secondary" className="text-xs">Home</Badge>
                       </div>
                     )}
                     {primaryContact.email && (
                       <div className="flex items-center gap-3">
-                        <Mail className="h-4 w-4 text-gray-400" />
+                        <Mail className="h-4 w-4 text-stone-400" />
                         <span>{primaryContact.email}</span>
                       </div>
                     )}
                     {primaryContact.addressLine1 && (
                       <div className="flex items-start gap-3">
-                        <MapPin className="h-4 w-4 text-gray-400 mt-0.5" />
+                        <MapPin className="h-4 w-4 text-stone-400 mt-0.5" />
                         <div>
                           <p>{primaryContact.addressLine1}</p>
                           {primaryContact.addressLine2 && (
@@ -273,7 +279,7 @@ export default function PatientDetailPage() {
                     )}
                   </>
                 ) : (
-                  <p className="text-gray-500">No contact information on file</p>
+                  <p className="text-stone-500">No contact information on file</p>
                 )}
               </CardContent>
             </Card>
@@ -282,7 +288,7 @@ export default function PatientDetailPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <Shield className="h-5 w-5 text-cyan-500" />
+                  <Shield className="h-5 w-5 text-[#053e67]" />
                   Insurance
                 </CardTitle>
               </CardHeader>
@@ -290,20 +296,20 @@ export default function PatientDetailPage() {
                 {primaryInsurance ? (
                   <div className="space-y-3">
                     <div>
-                      <p className="text-sm text-gray-500">Primary Insurance</p>
+                      <p className="text-sm text-stone-500">Primary Insurance</p>
                       <p className="font-medium">{primaryInsurance.payerName}</p>
                       <p className="text-sm">Policy: {primaryInsurance.policyNumber}</p>
                     </div>
                     {secondaryInsurance && (
                       <div className="pt-3 border-t">
-                        <p className="text-sm text-gray-500">Secondary Insurance</p>
+                        <p className="text-sm text-stone-500">Secondary Insurance</p>
                         <p className="font-medium">{secondaryInsurance.payerName}</p>
                         <p className="text-sm">Policy: {secondaryInsurance.policyNumber}</p>
                       </div>
                     )}
                   </div>
                 ) : (
-                  <p className="text-gray-500">No insurance on file</p>
+                  <p className="text-stone-500">No insurance on file</p>
                 )}
               </CardContent>
             </Card>
@@ -312,7 +318,7 @@ export default function PatientDetailPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <Phone className="h-5 w-5 text-cyan-500" />
+                  <Phone className="h-5 w-5 text-[#053e67]" />
                   Emergency Contacts
                 </CardTitle>
               </CardHeader>
@@ -323,14 +329,14 @@ export default function PatientDetailPage() {
                       <div key={contact.id} className="flex items-center justify-between">
                         <div>
                           <p className="font-medium">{contact.name}</p>
-                          <p className="text-sm text-gray-500">{contact.relationship}</p>
+                          <p className="text-sm text-stone-500">{contact.relationship}</p>
                         </div>
                         <p className="text-sm">{contact.phone}</p>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-gray-500">No emergency contacts on file</p>
+                  <p className="text-stone-500">No emergency contacts on file</p>
                 )}
               </CardContent>
             </Card>
@@ -339,7 +345,7 @@ export default function PatientDetailPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <Users className="h-5 w-5 text-cyan-500" />
+                  <Users className="h-5 w-5 text-[#053e67]" />
                   Family Members
                 </CardTitle>
               </CardHeader>
@@ -352,14 +358,14 @@ export default function PatientDetailPage() {
                         <Link
                           key={member.id}
                           href={`/patients/${member.patientId}`}
-                          className="flex items-center justify-between hover:bg-gray-50 p-2 rounded -mx-2"
+                          className="flex items-center justify-between hover:bg-stone-50 p-2 rounded -mx-2"
                         >
                           <div>
                             <p className="font-medium">
                               {member.patient.demographics?.firstName}{' '}
                               {member.patient.demographics?.lastName}
                             </p>
-                            <p className="text-sm text-gray-500 capitalize">
+                            <p className="text-sm text-stone-500 capitalize">
                               {member.relationship.toLowerCase()}
                             </p>
                           </div>
@@ -370,11 +376,16 @@ export default function PatientDetailPage() {
                       ))}
                   </div>
                 ) : (
-                  <p className="text-gray-500">No family members linked</p>
+                  <p className="text-stone-500">No family members linked</p>
                 )}
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        {/* Clinical Tab */}
+        <TabsContent value="clinical">
+          <ClinicalHistoryView patientId={patientId} />
         </TabsContent>
 
         {/* Demographics Tab */}
@@ -390,7 +401,7 @@ export default function PatientDetailPage() {
               <div className="grid gap-6 md:grid-cols-2">
                 <div className="space-y-4">
                   <div>
-                    <p className="text-sm text-gray-500">Full Name</p>
+                    <p className="text-sm text-stone-500">Full Name</p>
                     <p className="font-medium">
                       {patient.demographics?.firstName}{' '}
                       {patient.demographics?.middleName}{' '}
@@ -398,13 +409,13 @@ export default function PatientDetailPage() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-500">Preferred Name</p>
+                    <p className="text-sm text-stone-500">Preferred Name</p>
                     <p className="font-medium">
                       {patient.demographics?.preferredName || '-'}
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-500">Date of Birth</p>
+                    <p className="text-sm text-stone-500">Date of Birth</p>
                     <p className="font-medium">
                       {patient.demographics?.dateOfBirth
                         ? format(new Date(patient.demographics.dateOfBirth), 'MMMM d, yyyy')
@@ -413,13 +424,13 @@ export default function PatientDetailPage() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-500">Gender</p>
+                    <p className="text-sm text-stone-500">Gender</p>
                     <p className="font-medium capitalize">
                       {patient.demographics?.gender?.toLowerCase().replace('_', ' ') || '-'}
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-500">Pronouns</p>
+                    <p className="text-sm text-stone-500">Pronouns</p>
                     <p className="font-medium">
                       {patient.demographics?.pronouns || '-'}
                     </p>
@@ -427,7 +438,7 @@ export default function PatientDetailPage() {
                 </div>
                 <div className="space-y-4">
                   <div>
-                    <p className="text-sm text-gray-500">SSN (Last 4)</p>
+                    <p className="text-sm text-stone-500">SSN (Last 4)</p>
                     <p className="font-medium">
                       {patient.demographics?.ssnLast4
                         ? `***-**-${patient.demographics.ssnLast4}`
@@ -435,25 +446,25 @@ export default function PatientDetailPage() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-500">Language</p>
+                    <p className="text-sm text-stone-500">Language</p>
                     <p className="font-medium">
                       {patient.demographics?.language?.toUpperCase() || '-'}
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-500">Marital Status</p>
+                    <p className="text-sm text-stone-500">Marital Status</p>
                     <p className="font-medium capitalize">
                       {patient.demographics?.maritalStatus || '-'}
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-500">Occupation</p>
+                    <p className="text-sm text-stone-500">Occupation</p>
                     <p className="font-medium">
                       {patient.demographics?.occupation || '-'}
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-500">Employer</p>
+                    <p className="text-sm text-stone-500">Employer</p>
                     <p className="font-medium">
                       {patient.demographics?.employer || '-'}
                     </p>
@@ -487,34 +498,34 @@ export default function PatientDetailPage() {
                   <CardContent>
                     <div className="grid gap-4 md:grid-cols-3">
                       <div>
-                        <p className="text-sm text-gray-500">Insurance Company</p>
+                        <p className="text-sm text-stone-500">Insurance Company</p>
                         <p className="font-medium">{insurance.payerName}</p>
                       </div>
                       <div>
-                        <p className="text-sm text-gray-500">Plan Name</p>
+                        <p className="text-sm text-stone-500">Plan Name</p>
                         <p className="font-medium">{insurance.planName || '-'}</p>
                       </div>
                       <div>
-                        <p className="text-sm text-gray-500">Plan Type</p>
+                        <p className="text-sm text-stone-500">Plan Type</p>
                         <p className="font-medium">{insurance.planType || '-'}</p>
                       </div>
                       <div>
-                        <p className="text-sm text-gray-500">Policy Number</p>
+                        <p className="text-sm text-stone-500">Policy Number</p>
                         <p className="font-medium">{insurance.policyNumber}</p>
                       </div>
                       <div>
-                        <p className="text-sm text-gray-500">Group Number</p>
+                        <p className="text-sm text-stone-500">Group Number</p>
                         <p className="font-medium">{insurance.groupNumber || '-'}</p>
                       </div>
                       <div>
-                        <p className="text-sm text-gray-500">Subscriber Relationship</p>
+                        <p className="text-sm text-stone-500">Subscriber Relationship</p>
                         <p className="font-medium capitalize">
                           {insurance.subscriberRelationship.toLowerCase()}
                         </p>
                       </div>
                       {insurance.copay && (
                         <div>
-                          <p className="text-sm text-gray-500">Copay</p>
+                          <p className="text-sm text-stone-500">Copay</p>
                           <p className="font-medium">
                             ${parseFloat(insurance.copay.toString()).toFixed(2)}
                           </p>
@@ -522,7 +533,7 @@ export default function PatientDetailPage() {
                       )}
                       {insurance.deductible && (
                         <div>
-                          <p className="text-sm text-gray-500">Deductible</p>
+                          <p className="text-sm text-stone-500">Deductible</p>
                           <p className="font-medium">
                             ${parseFloat(insurance.deductible.toString()).toFixed(2)}
                           </p>
@@ -535,8 +546,8 @@ export default function PatientDetailPage() {
           ) : (
             <Card>
               <CardContent className="py-10 text-center">
-                <Shield className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500 mb-4">No insurance on file</p>
+                <Shield className="h-10 w-10 text-stone-300 mx-auto mb-3" />
+                <p className="text-stone-500 mb-4">No insurance on file</p>
                 <Button variant="outline">
                   <Plus className="h-4 w-4 mr-2" />
                   Add Insurance
@@ -551,7 +562,7 @@ export default function PatientDetailPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5 text-cyan-500" />
+                <FileText className="h-5 w-5 text-[#053e67]" />
                 Documents
               </CardTitle>
               <CardDescription>
@@ -569,7 +580,7 @@ export default function PatientDetailPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5 text-cyan-500" />
+                <Users className="h-5 w-5 text-[#053e67]" />
                 Family / Household
               </CardTitle>
               <CardDescription>
@@ -579,8 +590,8 @@ export default function PatientDetailPage() {
             <CardContent>
               {household?.members && household.members.length > 0 ? (
                 <div className="space-y-4">
-                  <div className="p-4 bg-gray-50 rounded-lg">
-                    <p className="text-sm text-gray-500">Household Name</p>
+                  <div className="p-4 bg-stone-50 rounded-lg">
+                    <p className="text-sm text-stone-500">Household Name</p>
                     <p className="font-medium">{household.name || 'Unnamed Household'}</p>
                   </div>
                   <div className="divide-y">
@@ -590,19 +601,19 @@ export default function PatientDetailPage() {
                         className="flex items-center justify-between py-3"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
-                            <User className="h-5 w-5 text-gray-500" />
+                          <div className="h-10 w-10 rounded-full bg-stone-200 flex items-center justify-center">
+                            <User className="h-5 w-5 text-stone-500" />
                           </div>
                           <div>
                             <Link
                               href={`/patients/${member.patientId}`}
-                              className="font-medium hover:text-cyan-600"
+                              className="font-medium hover:text-[#053e67]"
                             >
                               {member.patient.demographics?.firstName}{' '}
                               {member.patient.demographics?.lastName}
                               {member.patientId === patientId && ' (Current)'}
                             </Link>
-                            <p className="text-sm text-gray-500 capitalize">
+                            <p className="text-sm text-stone-500 capitalize">
                               {member.relationship.toLowerCase()}
                             </p>
                           </div>
@@ -621,8 +632,8 @@ export default function PatientDetailPage() {
                 </div>
               ) : (
                 <div className="py-10 text-center">
-                  <Users className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-                  <p className="text-gray-500 mb-4">
+                  <Users className="h-10 w-10 text-stone-300 mx-auto mb-3" />
+                  <p className="text-stone-500 mb-4">
                     No family members linked to this patient
                   </p>
                   <Button variant="outline">
@@ -640,7 +651,7 @@ export default function PatientDetailPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Clock className="h-5 w-5 text-cyan-500" />
+                <Clock className="h-5 w-5 text-[#053e67]" />
                 Activity History
               </CardTitle>
               <CardDescription>
@@ -649,8 +660,8 @@ export default function PatientDetailPage() {
             </CardHeader>
             <CardContent>
               <div className="py-10 text-center">
-                <Clock className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500">
+                <Clock className="h-10 w-10 text-stone-300 mx-auto mb-3" />
+                <p className="text-stone-500">
                   Activity history will be displayed here
                 </p>
               </div>

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { format, addDays, subDays, startOfWeek, endOfWeek, addWeeks, subWeeks, startOfMonth, endOfMonth } from 'date-fns';
 import {
   ChevronLeft,
@@ -53,6 +54,9 @@ import type { AppointmentStatus } from '@prisma/client';
 type ViewMode = 'day' | 'week' | 'month';
 
 export default function SchedulePage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
   const [date, setDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [selectedProviderIds, setSelectedProviderIds] = useState<string[]>([]);
@@ -60,6 +64,15 @@ export default function SchedulePage() {
   const [selectedSlotTime, setSelectedSlotTime] = useState<Date | undefined>();
   const [selectedSlotProvider, setSelectedSlotProvider] = useState<string | undefined>();
   const [editingAppointmentId, setEditingAppointmentId] = useState<string | undefined>();
+
+  // Auto-open dialog if ?new=true is in URL
+  useEffect(() => {
+    if (searchParams.get('new') === 'true') {
+      setDialogOpen(true);
+      // Clear the query param to avoid re-opening on refresh
+      router.replace('/schedule', { scroll: false });
+    }
+  }, [searchParams, router]);
 
   // Get date range based on view mode
   const dateRange = useMemo(() => {
@@ -271,8 +284,8 @@ export default function SchedulePage() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Schedule</h1>
-          <p className="text-gray-500 mt-1">
+          <h1 className="text-2xl font-bold text-stone-900">Schedule</h1>
+          <p className="text-stone-500 mt-1">
             Manage appointments and provider calendars
           </p>
         </div>
@@ -283,7 +296,7 @@ export default function SchedulePage() {
             setEditingAppointmentId(undefined);
             setDialogOpen(true);
           }}
-          className="bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600"
+          className="bg-[#053e67] hover:bg-[#053e67] text-white"
         >
           <Plus className="h-4 w-4 mr-2" />
           New Appointment
@@ -404,7 +417,7 @@ export default function SchedulePage() {
         <CardContent className="p-0 h-full">
           {isLoading ? (
             <div className="flex items-center justify-center h-full">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500" />
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#053e67]" />
             </div>
           ) : viewMode === 'day' ? (
             <CalendarDayView

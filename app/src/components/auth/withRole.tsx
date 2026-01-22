@@ -37,7 +37,7 @@ function Unauthorized() {
         </p>
         <button
           onClick={() => router.back()}
-          className="px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition-colors"
+          className="px-4 py-2 bg-[#053e67]/50 text-white rounded-lg hover:bg-[#053e67] transition-colors"
         >
           Go Back
         </button>
@@ -51,7 +51,7 @@ function Loading() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#053e67]/50 mx-auto"></div>
         <p className="mt-4 text-gray-500">Checking permissions...</p>
       </div>
     </div>

@@ -27,9 +27,9 @@ interface CalendarMonthViewProps {
 }
 
 const statusColors: Record<string, string> = {
-  SCHEDULED: 'bg-blue-100 text-blue-700',
+  SCHEDULED: 'bg-blue-100 text-[#053e67]',
   CONFIRMED: 'bg-green-100 text-green-700',
-  CHECKED_IN: 'bg-amber-100 text-amber-700',
+  CHECKED_IN: 'bg-blue-100 text-[#053e67]',
   IN_PROGRESS: 'bg-purple-100 text-purple-700',
   COMPLETED: 'bg-gray-100 text-gray-500',
   CANCELLED: 'bg-red-100 text-red-400',
@@ -125,7 +125,7 @@ export function CalendarMonthView({
                     className={cn(
                       'min-h-[120px] border-r last:border-r-0 p-1 cursor-pointer hover:bg-muted/30 transition-colors',
                       !isCurrentMonth && 'bg-muted/20',
-                      isTodayDate && 'bg-cyan-50'
+                      isTodayDate && 'bg-[#053e67]/5'
                     )}
                     onClick={() => onDayClick?.(day)}
                   >
@@ -136,7 +136,7 @@ export function CalendarMonthView({
                           'text-sm font-medium',
                           !isCurrentMonth && 'text-muted-foreground',
                           isTodayDate &&
-                            'bg-cyan-500 text-white rounded-full w-6 h-6 flex items-center justify-center'
+                            'bg-[#053e67]/50 text-white rounded-full w-6 h-6 flex items-center justify-center'
                         )}
                       >
                         {format(day, 'd')}
@@ -146,7 +146,7 @@ export function CalendarMonthView({
                           variant="secondary"
                           className={cn(
                             'text-[10px] px-1 py-0',
-                            stats.active > 5 && 'bg-amber-100 text-amber-700',
+                            stats.active > 5 && 'bg-blue-100 text-[#053e67]',
                             stats.active > 10 && 'bg-red-100 text-red-700'
                           )}
                         >

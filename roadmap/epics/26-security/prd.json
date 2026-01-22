@@ -1,0 +1,139 @@
+{
+  "branch": "feature/security",
+  "title": "Epic 26: Advanced Security & Compliance",
+  "description": "Enterprise-grade security features including MFA, encryption at rest, session management, audit compliance, BAA management, and security monitoring. Essential for HIPAA compliance.",
+  "epic": "26-security",
+  "dependencies": ["01-platform-foundation"],
+  "userStories": [
+    {
+      "id": "US-256",
+      "title": "Security schema",
+      "description": "Create database models for security features.",
+      "acceptanceCriteria": [
+        "MFAConfiguration model with userId, method, secret, verified",
+        "SecurityEvent model with userId, eventType, ipAddress, userAgent, timestamp",
+        "Session model with enhanced tracking fields",
+        "BAADocument model with vendorId, signedDate, expirationDate, documentUrl",
+        "EncryptionKey model for key rotation tracking",
+        "SecuritySetting model for organization security policies",
+        "Prisma migrations run successfully"
+      ],
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-257",
+      "title": "Multi-factor authentication",
+      "description": "Implement MFA for enhanced account security.",
+      "acceptanceCriteria": [
+        "security.setupMFA - Configure MFA for user",
+        "TOTP authenticator app support (Google Authenticator)",
+        "SMS verification code option",
+        "MFA verification at login",
+        "Backup codes generation",
+        "MFA requirement policy (all users, admins only)",
+        "Recovery flow for lost MFA device",
+        "Remember device option"
+      ],
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-258",
+      "title": "Field-level encryption",
+      "description": "Encrypt sensitive data at rest in database.",
+      "acceptanceCriteria": [
+        "Encrypt SSN fields",
+        "Encrypt payment credentials",
+        "Encrypt API keys and secrets",
+        "Encryption key management",
+        "Key rotation capability",
+        "Decrypt on read with access control",
+        "Audit access to encrypted fields"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-259",
+      "title": "Session security",
+      "description": "Enhanced session management and security.",
+      "acceptanceCriteria": [
+        "Configurable session timeout",
+        "Idle timeout with warning",
+        "Concurrent session limit",
+        "Force logout from all devices",
+        "Session activity logging",
+        "IP-based session validation",
+        "Device fingerprinting"
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-260",
+      "title": "Security event logging",
+      "description": "Comprehensive security event logging and monitoring.",
+      "acceptanceCriteria": [
+        "Log all authentication events",
+        "Log permission changes",
+        "Log PHI access events",
+        "Log configuration changes",
+        "Failed login attempt tracking",
+        "Suspicious activity detection",
+        "Security event dashboard"
+      ],
+      "priority": 5,
+      "passes": false
+    },
+    {
+      "id": "US-261",
+      "title": "BAA management",
+      "description": "Manage Business Associate Agreements for compliance.",
+      "acceptanceCriteria": [
+        "baa.create - Record BAA with vendor",
+        "baa.list - List all BAAs",
+        "BAA expiration tracking",
+        "Renewal reminders",
+        "Document storage",
+        "Vendor risk assessment",
+        "BAA compliance dashboard"
+      ],
+      "priority": 6,
+      "passes": false
+    },
+    {
+      "id": "US-262",
+      "title": "Access control enhancements",
+      "description": "Enhanced role-based access control features.",
+      "acceptanceCriteria": [
+        "IP whitelist/blacklist",
+        "Time-based access restrictions",
+        "Emergency access override (break glass)",
+        "Granular permission management",
+        "Role inheritance",
+        "Permission audit report",
+        "Access request workflow"
+      ],
+      "priority": 7,
+      "passes": false
+    },
+    {
+      "id": "US-263",
+      "title": "Security dashboard UI",
+      "description": "Security administration dashboard.",
+      "acceptanceCriteria": [
+        "Security dashboard at /admin/security",
+        "MFA management interface",
+        "Active sessions view",
+        "Security event log viewer",
+        "BAA management interface",
+        "Security policy configuration",
+        "Compliance status indicators",
+        "Security reports"
+      ],
+      "priority": 8,
+      "passes": false
+    }
+  ]
+}

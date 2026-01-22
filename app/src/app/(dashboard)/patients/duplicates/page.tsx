@@ -116,7 +116,7 @@ export default function PatientDuplicatesPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-amber-500" />
+            <AlertTriangle className="h-5 w-5 text-blue-500" />
             Potential Duplicates
           </CardTitle>
           <CardDescription>
@@ -144,7 +144,7 @@ export default function PatientDuplicatesPage() {
                   className="border rounded-lg p-4 hover:border-primary/50 transition-colors"
                 >
                   <div className="flex items-center gap-2 mb-3">
-                    <Badge variant="outline" className="text-amber-600 border-amber-200">
+                    <Badge variant="outline" className="text-[#053e67] border-blue-200">
                       {group.reason}
                     </Badge>
                     <span className="text-sm text-muted-foreground">

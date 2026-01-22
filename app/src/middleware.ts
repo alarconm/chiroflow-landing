@@ -25,6 +25,11 @@ function extractTenantFromHost(host: string | null): string | null {
   const hostWithoutPort = host.split(':')[0];
   const parts = hostWithoutPort.split('.');
 
+  // Development mode: default to "demo" tenant for localhost
+  if (hostWithoutPort === 'localhost' || hostWithoutPort === '127.0.0.1') {
+    return 'demo';
+  }
+
   // Check for subdomain patterns
   // e.g., demo.chiroflow.app -> demo
   // e.g., demo.localhost -> demo

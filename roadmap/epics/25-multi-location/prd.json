@@ -1,0 +1,137 @@
+{
+  "branch": "feature/multi-location",
+  "title": "Epic 25: Multi-Location Enterprise",
+  "description": "Enterprise features for multi-location chiropractic practices including centralized management, cross-location visibility, consolidated reporting, and inter-location workflows.",
+  "epic": "25-multi-location",
+  "dependencies": ["01-platform-foundation"],
+  "userStories": [
+    {
+      "id": "US-248",
+      "title": "Multi-location schema",
+      "description": "Extend schema for multi-location support.",
+      "acceptanceCriteria": [
+        "Location model with organizationId, name, address, phone, timezone",
+        "Add locationId to Appointment, Encounter, Inventory models",
+        "LocationStaff model linking users to locations with roles",
+        "LocationHours model for per-location operating hours",
+        "LocationSettings model for location-specific configuration",
+        "Organization model enhanced for parent company",
+        "Prisma migrations run successfully"
+      ],
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-249",
+      "title": "Location management",
+      "description": "CRUD operations for managing practice locations.",
+      "acceptanceCriteria": [
+        "location.create - Add new location",
+        "location.update - Modify location details",
+        "location.list - List all organization locations",
+        "location.get - Get location with settings",
+        "location.deactivate - Soft delete location",
+        "Location-specific branding options",
+        "Address validation"
+      ],
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-250",
+      "title": "Staff location assignment",
+      "description": "Assign staff members to locations with specific roles.",
+      "acceptanceCriteria": [
+        "locationStaff.assign - Assign user to location",
+        "locationStaff.remove - Remove user from location",
+        "locationStaff.list - List staff at location",
+        "Support multi-location assignment for floating staff",
+        "Location-specific role overrides",
+        "Primary location designation",
+        "Schedule visibility by assigned locations"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-251",
+      "title": "Cross-location patient access",
+      "description": "Enable patient records to be accessible across locations.",
+      "acceptanceCriteria": [
+        "Patient records visible at all locations",
+        "Location of service recorded on encounters",
+        "Patient home location designation",
+        "Visit history shows location",
+        "Balance tracking by location option",
+        "Consent for cross-location sharing",
+        "Audit trail for cross-location access"
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-252",
+      "title": "Cross-location scheduling",
+      "description": "Schedule appointments across any location.",
+      "acceptanceCriteria": [
+        "Location selector in appointment booking",
+        "Provider availability by location",
+        "Resource availability by location",
+        "Patient can book at any location",
+        "Transfer appointment between locations",
+        "Multi-location availability view",
+        "Location-specific appointment types"
+      ],
+      "priority": 5,
+      "passes": false
+    },
+    {
+      "id": "US-253",
+      "title": "Consolidated reporting",
+      "description": "Enterprise reporting across all locations.",
+      "acceptanceCriteria": [
+        "reports.getEnterprise - All-location aggregated reports",
+        "Filter reports by location",
+        "Compare locations side-by-side",
+        "Roll-up financial reports",
+        "Multi-location AR aging",
+        "Provider productivity by location",
+        "Patient volume by location",
+        "Export enterprise reports"
+      ],
+      "priority": 6,
+      "passes": false
+    },
+    {
+      "id": "US-254",
+      "title": "Inter-location inventory",
+      "description": "Manage inventory transfers between locations.",
+      "acceptanceCriteria": [
+        "inventory.transfer - Transfer stock between locations",
+        "Transfer request and approval workflow",
+        "Track inventory by location",
+        "Low stock alerts per location",
+        "Consolidated inventory value report",
+        "Inter-location transfer history"
+      ],
+      "priority": 7,
+      "passes": false
+    },
+    {
+      "id": "US-255",
+      "title": "Enterprise dashboard UI",
+      "description": "Dashboard for enterprise-wide visibility.",
+      "acceptanceCriteria": [
+        "Enterprise dashboard at /enterprise",
+        "Location switcher in navigation",
+        "All-locations overview metrics",
+        "Location comparison charts",
+        "Quick access to location dashboards",
+        "Enterprise settings management",
+        "Location health status indicators"
+      ],
+      "priority": 8,
+      "passes": false
+    }
+  ]
+}

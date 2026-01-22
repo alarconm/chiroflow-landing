@@ -1,0 +1,128 @@
+{
+  "branch": "feature/payment-processing",
+  "title": "Epic 10: Payment Processing",
+  "description": "Integrated payment processing with Stripe/Square for card payments, payment plans, and automated billing. Supports multiple payment methods and reconciliation.",
+  "epic": "10-payment-processing",
+  "dependencies": ["07-billing-claims"],
+  "userStories": [
+    {
+      "id": "US-085",
+      "title": "Payment processor configuration schema",
+      "description": "Create database models for payment processor connections and transaction tracking.",
+      "acceptanceCriteria": [
+        "PaymentProcessor model with name, type (stripe/square), apiKey (encrypted), webhookSecret",
+        "PaymentTransaction model with patientId, amount, processorId, status, transactionId",
+        "PaymentMethod model with patientId, type (card/bank), last4, expiryDate, isDefault",
+        "PaymentPlan model with patientId, totalAmount, installments, frequency, startDate",
+        "PaymentPlanPayment model linking payments to plans",
+        "Prisma migrations run successfully"
+      ],
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-086",
+      "title": "Payment processor abstraction layer",
+      "description": "Create provider interface for different payment processor integrations.",
+      "acceptanceCriteria": [
+        "PaymentProvider interface with charge, refund, createCustomer, savePaymentMethod",
+        "StripeProvider implementing the interface",
+        "MockPaymentProvider for development and testing",
+        "Environment-based provider selection",
+        "Secure credential handling with encryption"
+      ],
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-087",
+      "title": "Card payment processing",
+      "description": "Process credit/debit card payments through integrated payment processor.",
+      "acceptanceCriteria": [
+        "payment.processCard - Charge a card for patient balance",
+        "Secure card entry using Stripe Elements or equivalent",
+        "Store payment method for future use (with patient consent)",
+        "Handle declined cards gracefully with clear error messages",
+        "Create ledger entry and receipt on successful payment",
+        "Email receipt to patient automatically"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-088",
+      "title": "Refund processing",
+      "description": "Process refunds through payment processor with proper accounting.",
+      "acceptanceCriteria": [
+        "payment.processRefund - Refund full or partial amount",
+        "Require reason for refund",
+        "Create reversing ledger entry",
+        "Update patient balance",
+        "Email refund confirmation to patient",
+        "Audit trail for all refunds"
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-089",
+      "title": "Payment plans creation and management",
+      "description": "Create and manage payment plans for patients with outstanding balances.",
+      "acceptanceCriteria": [
+        "payment.createPlan - Create payment plan with installments",
+        "Support weekly, bi-weekly, monthly frequencies",
+        "Calculate installment amounts automatically",
+        "payment.getPlanStatus - View plan progress and remaining balance",
+        "payment.modifyPlan - Adjust plan terms",
+        "Track missed payments"
+      ],
+      "priority": 5,
+      "passes": false
+    },
+    {
+      "id": "US-090",
+      "title": "Automated payment plan billing",
+      "description": "Automatically charge payment plan installments on schedule.",
+      "acceptanceCriteria": [
+        "Scheduled job to process due installments",
+        "Retry failed payments with configurable attempts",
+        "Send payment reminder before due date",
+        "Send confirmation on successful payment",
+        "Alert staff on failed payments",
+        "Handle plan completion"
+      ],
+      "priority": 6,
+      "passes": false
+    },
+    {
+      "id": "US-091",
+      "title": "Payment webhook handling",
+      "description": "Handle webhooks from payment processor for real-time updates.",
+      "acceptanceCriteria": [
+        "Webhook endpoint for payment processor events",
+        "Handle payment.succeeded, payment.failed events",
+        "Handle refund events",
+        "Handle dispute/chargeback events",
+        "Webhook signature verification for security",
+        "Idempotent webhook processing"
+      ],
+      "priority": 7,
+      "passes": false
+    },
+    {
+      "id": "US-092",
+      "title": "Payment dashboard UI",
+      "description": "Create UI for processing payments and managing payment settings.",
+      "acceptanceCriteria": [
+        "Payment terminal component for taking payments",
+        "Saved payment methods display and management",
+        "Payment plan creation wizard",
+        "Payment history with filtering and export",
+        "Refund interface with reason selection",
+        "Payment processor configuration in settings"
+      ],
+      "priority": 8,
+      "passes": false
+    }
+  ]
+}

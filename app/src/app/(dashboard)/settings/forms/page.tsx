@@ -94,7 +94,7 @@ export default function FormsPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#053e67]/50"></div>
       </div>
     );
   }
@@ -109,7 +109,7 @@ export default function FormsPage() {
           </p>
         </div>
         {canEdit && (
-          <Button asChild className="bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600">
+          <Button asChild className="bg-gradient-to-r from-[#053e67]/50 to-[#053e67] hover:from-[#053e67] hover:to-[#053e67]/90">
             <Link href="/settings/forms/new">
               <Plus className="h-4 w-4 mr-2" />
               New Template
@@ -174,7 +174,7 @@ export default function FormsPage() {
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-2">
-                    <FileText className="h-5 w-5 text-cyan-500" />
+                    <FileText className="h-5 w-5 text-[#053e67]/50" />
                     <CardTitle className="text-base">{template.name}</CardTitle>
                   </div>
                   {canEdit && (
@@ -246,7 +246,7 @@ export default function FormsPage() {
                       </Badge>
                     )}
                     {template.isSystem && (
-                      <Badge variant="outline" className="text-cyan-600 border-cyan-300">
+                      <Badge variant="outline" className="text-[#053e67] border-[#053e67]/30">
                         System
                       </Badge>
                     )}

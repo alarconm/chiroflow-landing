@@ -165,7 +165,7 @@ export default function SubmissionsPage() {
         <CardContent>
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-cyan-500" />
+              <Loader2 className="h-8 w-8 animate-spin text-[#053e67]/50" />
             </div>
           ) : filteredSubmissions && filteredSubmissions.length > 0 ? (
             <>
@@ -185,8 +185,8 @@ export default function SubmissionsPage() {
                     <TableRow key={submission.id}>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <div className="h-8 w-8 rounded-full bg-cyan-100 flex items-center justify-center">
-                            <User className="h-4 w-4 text-cyan-600" />
+                          <div className="h-8 w-8 rounded-full bg-[#053e67]/10 flex items-center justify-center">
+                            <User className="h-4 w-4 text-[#053e67]" />
                           </div>
                           <div>
                             <p className="font-medium">

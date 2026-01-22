@@ -29,7 +29,7 @@ interface CalendarWeekViewProps {
 const statusColors: Record<string, string> = {
   SCHEDULED: 'bg-blue-500',
   CONFIRMED: 'bg-green-500',
-  CHECKED_IN: 'bg-amber-500',
+  CHECKED_IN: 'bg-blue-500',
   IN_PROGRESS: 'bg-purple-500',
   COMPLETED: 'bg-gray-400',
   CANCELLED: 'bg-red-300',
@@ -119,7 +119,7 @@ export function CalendarWeekView({
             key={day.toISOString()}
             className={cn(
               'flex-1 min-w-[100px] border-r last:border-r-0 px-2 py-2 text-center cursor-pointer hover:bg-muted/50 transition-colors',
-              isToday(day) && 'bg-cyan-50'
+              isToday(day) && 'bg-[#053e67]/5'
             )}
             onClick={() => onDayClick?.(day)}
           >
@@ -129,7 +129,7 @@ export function CalendarWeekView({
             <div
               className={cn(
                 'text-lg font-medium',
-                isToday(day) && 'text-cyan-600'
+                isToday(day) && 'text-[#053e67]'
               )}
             >
               {format(day, 'd')}
@@ -163,7 +163,7 @@ export function CalendarWeekView({
                 key={day.toISOString()}
                 className={cn(
                   'flex-1 min-w-[100px] border-r last:border-r-0 relative',
-                  isToday(day) && 'bg-cyan-50/30'
+                  isToday(day) && 'bg-[#053e67]/5/30'
                 )}
                 onClick={() => onDayClick?.(day)}
               >

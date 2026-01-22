@@ -1,0 +1,143 @@
+{
+  "branch": "feature/ai-predictive-analytics",
+  "title": "Epic 40: AI Predictive Analytics Agent",
+  "description": "AI agent that continuously analyzes practice data to predict future trends, patient behaviors, and business outcomes. Enables proactive decision-making through forecasting and pattern recognition.",
+  "epic": "40-ai-predictive-analytics",
+  "dependencies": ["15-reporting"],
+  "userStories": [
+    {
+      "id": "US-379",
+      "title": "Predictive analytics schema",
+      "description": "Create database models for predictive analytics.",
+      "acceptanceCriteria": [
+        "Prediction model with type, targetId, prediction, confidence, actualOutcome",
+        "PatientRiskScore model with patientId, riskType, score, factors, date",
+        "DemandForecast model with date, appointmentType, predictedVolume, actual",
+        "ChurnPrediction model with patientId, churnProbability, factors, intervention",
+        "TrendAnalysis model with metricType, trend, seasonality, forecast",
+        "Prisma migrations run successfully"
+      ],
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-380",
+      "title": "Patient churn prediction",
+      "description": "Predict which patients are likely to stop coming.",
+      "acceptanceCriteria": [
+        "aiPredict.predictChurn - Identify churn risk",
+        "Behavioral signals analysis",
+        "Visit pattern changes",
+        "Engagement score decline",
+        "Churn probability scoring",
+        "Churn risk factors identification",
+        "Recommended retention actions",
+        "Track prediction accuracy"
+      ],
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-381",
+      "title": "Demand forecasting",
+      "description": "Predict future appointment demand.",
+      "acceptanceCriteria": [
+        "aiPredict.forecastDemand - Predict volume",
+        "Daily/weekly/monthly forecasts",
+        "By appointment type",
+        "By provider",
+        "Seasonal pattern recognition",
+        "Event impact modeling",
+        "Staffing recommendations",
+        "Capacity planning insights"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-382",
+      "title": "No-show prediction",
+      "description": "Predict appointment no-shows for proactive management.",
+      "acceptanceCriteria": [
+        "aiPredict.predictNoShow - Identify no-show risk",
+        "Patient history analysis",
+        "Appointment characteristics",
+        "Weather and external factors",
+        "No-show probability score",
+        "Recommended interventions",
+        "Overbooking suggestions",
+        "Confirmation strategy optimization"
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-383",
+      "title": "Revenue forecasting",
+      "description": "Predict future revenue with confidence intervals.",
+      "acceptanceCriteria": [
+        "aiPredict.forecastRevenue - Project revenue",
+        "Collections forecast",
+        "AR recovery predictions",
+        "New patient revenue impact",
+        "Scenario modeling",
+        "Confidence intervals",
+        "Variance analysis",
+        "Goal attainment probability"
+      ],
+      "priority": 5,
+      "passes": false
+    },
+    {
+      "id": "US-384",
+      "title": "Treatment outcome prediction",
+      "description": "Predict patient treatment outcomes.",
+      "acceptanceCriteria": [
+        "aiPredict.predictOutcome - Forecast clinical outcome",
+        "Response to treatment prediction",
+        "Time to improvement estimate",
+        "Risk of non-response",
+        "Optimal treatment duration",
+        "Factors affecting outcome",
+        "Similar patient comparison",
+        "Outcome tracking validation"
+      ],
+      "priority": 6,
+      "passes": false
+    },
+    {
+      "id": "US-385",
+      "title": "Trend detection and alerts",
+      "description": "Detect emerging trends and anomalies.",
+      "acceptanceCriteria": [
+        "aiPredict.detectTrends - Find patterns",
+        "Revenue trend analysis",
+        "Patient volume trends",
+        "Payer mix shifts",
+        "Anomaly detection",
+        "Early warning alerts",
+        "Trend explanation",
+        "Recommended actions"
+      ],
+      "priority": 7,
+      "passes": false
+    },
+    {
+      "id": "US-386",
+      "title": "Predictive analytics dashboard",
+      "description": "Dashboard for predictive insights.",
+      "acceptanceCriteria": [
+        "Churn risk patient list",
+        "Demand forecast visualization",
+        "Revenue projection charts",
+        "No-show risk calendar overlay",
+        "Trend indicators",
+        "Prediction accuracy metrics",
+        "Actionable insight cards",
+        "Scenario comparison tool"
+      ],
+      "priority": 8,
+      "passes": false
+    }
+  ]
+}

@@ -1,0 +1,138 @@
+{
+  "branch": "feature/ai-insurance-agent",
+  "title": "Epic 34: AI Insurance Agent",
+  "description": "Autonomous AI agent that handles insurance verification, benefits explanation, prior authorization, and insurance-related patient communication. Eliminates manual insurance verification work.",
+  "epic": "34-ai-insurance-agent",
+  "dependencies": ["07-billing-claims", "08-clearinghouse"],
+  "userStories": [
+    {
+      "id": "US-331",
+      "title": "AI insurance agent schema",
+      "description": "Create database models for AI insurance activities.",
+      "acceptanceCriteria": [
+        "AIEligibilityCheck model with patientId, insuranceId, result, date",
+        "AIBenefitsSummary model with patientId, benefits, copay, deductible, coverage",
+        "AIPriorAuth model with patientId, procedureCode, status, authNumber, expiration",
+        "AIInsuranceTask model with type, status, attempts, result",
+        "InsuranceConversation model for patient benefit discussions",
+        "Prisma migrations run successfully"
+      ],
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-332",
+      "title": "Automated eligibility verification",
+      "description": "AI agent that automatically verifies insurance eligibility.",
+      "acceptanceCriteria": [
+        "aiInsurance.verifyEligibility - Auto-verify insurance",
+        "Real-time 270/271 transaction processing",
+        "Batch verification for upcoming appointments",
+        "Parse and interpret eligibility responses",
+        "Flag coverage issues",
+        "Store verification for reference",
+        "Re-verify on scheduled intervals",
+        "Alert on eligibility changes"
+      ],
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-333",
+      "title": "Benefits interpretation",
+      "description": "AI interprets insurance benefits into plain language.",
+      "acceptanceCriteria": [
+        "aiInsurance.interpretBenefits - Parse benefits",
+        "Extract chiropractic-specific coverage",
+        "Identify visit limits and remaining visits",
+        "Calculate patient responsibility estimates",
+        "Identify deductible status",
+        "Explain coverage in plain language",
+        "Generate patient-friendly benefits summary"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-334",
+      "title": "Prior authorization automation",
+      "description": "AI manages prior authorization requests.",
+      "acceptanceCriteria": [
+        "aiInsurance.requestAuth - Submit prior auth",
+        "Identify procedures requiring authorization",
+        "Generate clinical documentation for auth",
+        "Submit to payer portal or fax",
+        "Track authorization status",
+        "Alert on auth expiration",
+        "Re-authorization automation",
+        "Auth denial appeal support"
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-335",
+      "title": "Insurance issue resolution",
+      "description": "AI resolves common insurance issues automatically.",
+      "acceptanceCriteria": [
+        "aiInsurance.resolveIssue - Fix insurance problems",
+        "Identify coverage termination",
+        "Suggest alternative coverage options",
+        "Handle coordination of benefits",
+        "Address coverage gaps",
+        "Route complex issues to staff",
+        "Document resolution steps"
+      ],
+      "priority": 5,
+      "passes": false
+    },
+    {
+      "id": "US-336",
+      "title": "Patient insurance communication",
+      "description": "AI explains insurance to patients via preferred channel.",
+      "acceptanceCriteria": [
+        "aiInsurance.explainToPatient - Communicate benefits",
+        "Answer patient insurance questions",
+        "Explain out-of-pocket costs",
+        "Discuss payment options",
+        "Send benefits summary via email/portal",
+        "Handle objections about coverage",
+        "Escalate complex questions"
+      ],
+      "priority": 6,
+      "passes": false
+    },
+    {
+      "id": "US-337",
+      "title": "Insurance analytics",
+      "description": "Analytics on insurance verification and authorization.",
+      "acceptanceCriteria": [
+        "Verification success rates by payer",
+        "Authorization approval rates",
+        "Time to authorization metrics",
+        "Coverage denial patterns",
+        "Payer responsiveness ranking",
+        "Cost avoidance from auto-verification",
+        "Staff time savings metrics"
+      ],
+      "priority": 7,
+      "passes": false
+    },
+    {
+      "id": "US-338",
+      "title": "AI insurance agent dashboard",
+      "description": "Dashboard for insurance agent activities.",
+      "acceptanceCriteria": [
+        "Verification queue and results",
+        "Prior authorization tracking",
+        "Coverage issues requiring attention",
+        "Patient communication history",
+        "Payer performance metrics",
+        "Automation success rates",
+        "Manual intervention needed queue"
+      ],
+      "priority": 8,
+      "passes": false
+    }
+  ]
+}

@@ -1,0 +1,211 @@
+{
+  "branch": "feature/ehr-soap-notes",
+  "title": "Epic 05: EHR & SOAP Notes",
+  "description": "Clinical documentation system for ChiroFlow - SOAP notes, customizable templates, body diagrams, treatment plans, progress notes, and outcome assessments. This epic enables clinical charting and visit documentation.",
+  "epic": "05-ehr-soap-notes",
+  "dependencies": ["02-patient-management", "03-scheduling-engine"],
+  "userStories": [
+    {
+      "id": "US-045",
+      "title": "Clinical documentation database schema",
+      "description": "Extend Prisma schema with models for Encounter, SOAPNote, Diagnosis, Procedure, TreatmentPlan, ProgressNote, OutcomeAssessment, and NoteTemplate. Include proper relationships to Patient, Provider, and Appointment.",
+      "acceptanceCriteria": [
+        "Encounter model with id, patientId, providerId, appointmentId, date, status, type, chiefComplaint, timestamps",
+        "SOAPNote model with id, encounterId, subjective, objective, assessment, plan, timestamps",
+        "Diagnosis model with id, encounterId, icd10Code, description, isPrimary, onsetDate, status",
+        "Procedure model with id, encounterId, cptCode, description, units, modifier, notes",
+        "TreatmentPlan model with id, patientId, name, goals, frequency, duration, status, startDate, endDate",
+        "NoteTemplate model with id, organizationId, name, type, content (JSON), isDefault, isActive",
+        "OutcomeAssessment model with id, encounterId, type, score, maxScore, answers (JSON)",
+        "Prisma migrations run successfully",
+        "Seed script creates sample templates"
+      ],
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-046",
+      "title": "Encounter management API",
+      "description": "Create tRPC router for encounter CRUD operations. Encounters represent clinical visits and link SOAP notes, diagnoses, and procedures together.",
+      "acceptanceCriteria": [
+        "encounter.create - Create encounter from appointment or standalone",
+        "encounter.get - Get encounter with related SOAP note, diagnoses, procedures",
+        "encounter.update - Update encounter status and details",
+        "encounter.list - List encounters by patient, provider, or date range",
+        "encounter.getByAppointment - Get encounter linked to specific appointment",
+        "Automatic audit logging for all operations",
+        "Protected routes require authentication",
+        "Multi-tenant scoping on all queries"
+      ],
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-047",
+      "title": "SOAP note API with templates",
+      "description": "Create tRPC procedures for SOAP note creation and editing. Support customizable templates that can pre-populate content.",
+      "acceptanceCriteria": [
+        "soapNote.create - Create SOAP note linked to encounter",
+        "soapNote.update - Update any section of SOAP note",
+        "soapNote.getTemplates - List available SOAP templates",
+        "soapNote.applyTemplate - Apply template to populate SOAP sections",
+        "soapNote.lock - Lock note from editing (after sign-off)",
+        "soapNote.addAddendum - Add addendum to locked note",
+        "Support for structured and free-text content",
+        "Version history tracking for changes"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-048",
+      "title": "Note template builder",
+      "description": "Create API and UI for building reusable SOAP note templates. Templates can include default text, macros, and structured fields.",
+      "acceptanceCriteria": [
+        "noteTemplate.create - Create new template with JSON structure",
+        "noteTemplate.update - Modify template content and settings",
+        "noteTemplate.list - List templates by type and organization",
+        "noteTemplate.delete - Soft delete template",
+        "noteTemplate.duplicate - Clone existing template",
+        "Support for template variables (patient name, date, etc.)",
+        "Template categories: Initial Eval, Follow-up, Re-eval, Discharge",
+        "Organization-specific and system default templates"
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-049",
+      "title": "Diagnosis and procedure management",
+      "description": "Create API for managing diagnoses (ICD-10) and procedures (CPT) on encounters. Support code lookup and favorites.",
+      "acceptanceCriteria": [
+        "diagnosis.add - Add diagnosis to encounter with ICD-10 code",
+        "diagnosis.update - Update diagnosis details",
+        "diagnosis.remove - Remove diagnosis from encounter",
+        "procedure.add - Add procedure to encounter with CPT code",
+        "procedure.update - Update procedure units, modifiers",
+        "procedure.remove - Remove procedure from encounter",
+        "Code search with fuzzy matching on code and description",
+        "Organization favorites list for common codes"
+      ],
+      "priority": 5,
+      "passes": false
+    },
+    {
+      "id": "US-050",
+      "title": "Treatment plan management",
+      "description": "Create API for treatment plans that span multiple visits. Include goals, frequency, and progress tracking.",
+      "acceptanceCriteria": [
+        "treatmentPlan.create - Create treatment plan for patient",
+        "treatmentPlan.update - Modify plan details and goals",
+        "treatmentPlan.addGoal - Add goal with measurable criteria",
+        "treatmentPlan.updateProgress - Update goal progress",
+        "treatmentPlan.complete - Mark plan as completed",
+        "treatmentPlan.list - List active and historical plans",
+        "Link treatment plans to encounters/visits",
+        "Track visits remaining vs visits planned"
+      ],
+      "priority": 6,
+      "passes": false
+    },
+    {
+      "id": "US-051",
+      "title": "Outcome assessment tools",
+      "description": "Implement standardized outcome assessment questionnaires (PROMs). Support common chiropractic assessments.",
+      "acceptanceCriteria": [
+        "assessment.getAvailable - List available assessment types",
+        "assessment.administer - Start assessment for patient",
+        "assessment.submit - Submit completed assessment with scoring",
+        "assessment.getHistory - Get assessment history for patient",
+        "assessment.compare - Compare scores over time",
+        "Pre-built assessments: ODI, NDI, VAS Pain Scale, Oswestry",
+        "Custom assessment builder",
+        "Automatic scoring with interpretation"
+      ],
+      "priority": 7,
+      "passes": false
+    },
+    {
+      "id": "US-052",
+      "title": "Body diagram and spine chart components",
+      "description": "Create interactive body diagrams for documenting pain locations, subluxations, and treatment areas.",
+      "acceptanceCriteria": [
+        "Full body anterior/posterior diagram component",
+        "Spine diagram (cervical, thoracic, lumbar, sacral)",
+        "Click/touch to mark areas of concern",
+        "Different markers for pain, tenderness, subluxation",
+        "Save markings as JSON data with coordinates",
+        "Load and display previous visit markings",
+        "Export diagram as image for reports"
+      ],
+      "priority": 8,
+      "passes": false
+    },
+    {
+      "id": "US-053",
+      "title": "Clinical encounter UI",
+      "description": "Build the main clinical documentation interface. Tabbed layout with SOAP sections, diagnoses, procedures, and plans.",
+      "acceptanceCriteria": [
+        "Encounter detail page at /patients/[id]/encounters/[encounterId]",
+        "Tabbed interface: SOAP, Diagnoses, Procedures, Plan, Assessments",
+        "Auto-save as user types (debounced)",
+        "Quick code search with keyboard shortcuts",
+        "Previous encounter comparison view",
+        "Sign and lock functionality",
+        "Print-friendly encounter summary",
+        "Mobile-responsive for tablet use"
+      ],
+      "priority": 9,
+      "passes": false
+    },
+    {
+      "id": "US-054",
+      "title": "Patient clinical history view",
+      "description": "Create a comprehensive view of patient's clinical history including encounters, plans, and assessments.",
+      "acceptanceCriteria": [
+        "Timeline view of all encounters",
+        "Filter by encounter type, provider, date range",
+        "Treatment plan progress visualization",
+        "Assessment score trends chart",
+        "Diagnosis history with onset dates",
+        "Quick navigation to any past encounter",
+        "Export clinical summary PDF"
+      ],
+      "priority": 10,
+      "passes": false
+    },
+    {
+      "id": "US-055",
+      "title": "Provider workqueue and charting dashboard",
+      "description": "Build a dashboard for providers to see their pending charts, incomplete notes, and daily schedule with charting status.",
+      "acceptanceCriteria": [
+        "Provider dashboard at /dashboard/clinical",
+        "Today's appointments with charting status",
+        "Incomplete/unsigned notes list",
+        "Quick start charting from appointment",
+        "Batch sign multiple notes",
+        "Days since visit without chart alerts",
+        "Provider-specific chart statistics"
+      ],
+      "priority": 11,
+      "passes": false
+    },
+    {
+      "id": "US-056",
+      "title": "Pre-built chiropractic SOAP templates",
+      "description": "Create default SOAP note templates specific to chiropractic care including initial evaluation, maintenance, and re-evaluation templates.",
+      "acceptanceCriteria": [
+        "Initial Evaluation template with comprehensive sections",
+        "Follow-up/Maintenance visit template",
+        "Re-evaluation template with progress comparisons",
+        "Acute injury template",
+        "Workers comp template with required fields",
+        "PI (Personal Injury) template",
+        "Templates include common chiro terminology",
+        "Editable by practice administrators"
+      ],
+      "priority": 12,
+      "passes": false
+    }
+  ]
+}

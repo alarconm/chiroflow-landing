@@ -164,7 +164,7 @@ function SortableField({
       ref={setNodeRef}
       style={style}
       className={`group flex items-center gap-2 p-3 bg-white border rounded-lg cursor-pointer transition-all ${
-        isSelected ? 'ring-2 ring-cyan-500 border-cyan-500' : 'hover:border-gray-300'
+        isSelected ? 'ring-2 ring-[#053e67]/50 border-[#053e67]/50' : 'hover:border-gray-300'
       }`}
       onClick={onSelect}
     >
@@ -263,7 +263,7 @@ function FieldEditor({
       <SheetContent className="w-[400px] sm:w-[540px] overflow-y-auto">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
-            {fieldType && <fieldType.icon className="h-5 w-5 text-cyan-500" />}
+            {fieldType && <fieldType.icon className="h-5 w-5 text-[#053e67]/50" />}
             Edit {fieldType?.label || 'Field'}
           </SheetTitle>
           <SheetDescription>Configure the field properties and validation rules.</SheetDescription>
@@ -434,7 +434,7 @@ function FieldEditor({
                   <SelectValue placeholder="Always show" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Always show</SelectItem>
+                  <SelectItem value="__always__">Always show</SelectItem>
                   {allFields
                     .filter((f) => f.id !== field.id && !['HEADING', 'PARAGRAPH', 'DIVIDER'].includes(f.fieldType))
                     .map((f) => (
@@ -790,7 +790,7 @@ export default function FormBuilderPage({ params }: { params: Promise<{ id: stri
   if (!isNew && isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#053e67]/50"></div>
       </div>
     );
   }
@@ -855,7 +855,7 @@ export default function FormBuilderPage({ params }: { params: Promise<{ id: stri
               {!isNew && !template?.publishedAt && (
                 <Button
                   onClick={() => setShowPublishDialog(true)}
-                  className="bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600"
+                  className="bg-gradient-to-r from-[#053e67]/50 to-[#053e67] hover:from-[#053e67] hover:to-[#053e67]/90"
                   disabled={hasChanges}
                 >
                   <Send className="h-4 w-4 mr-2" />
@@ -968,7 +968,7 @@ export default function FormBuilderPage({ params }: { params: Promise<{ id: stri
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => publishMutation.mutate({ id: resolvedParams.id })}
-              className="bg-gradient-to-r from-cyan-500 to-teal-500"
+              className="bg-gradient-to-r from-[#053e67]/50 to-[#053e67]"
             >
               Publish
             </AlertDialogAction>

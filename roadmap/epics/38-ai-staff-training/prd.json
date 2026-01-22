@@ -1,0 +1,143 @@
+{
+  "branch": "feature/ai-staff-training",
+  "title": "Epic 38: AI Staff Training Agent",
+  "description": "AI-powered staff training system with interactive video practice sessions, real-time feedback, onboarding workflows, script training, compliance education, and performance coaching. Staff practice customer interactions with AI over video to develop skills.",
+  "epic": "38-ai-staff-training",
+  "dependencies": ["01-platform-foundation"],
+  "userStories": [
+    {
+      "id": "US-363",
+      "title": "AI training agent schema",
+      "description": "Create database models for AI-powered training.",
+      "acceptanceCriteria": [
+        "TrainingModule model with name, type, content, duration, requiredFor",
+        "TrainingProgress model with userId, moduleId, status, score, completedDate",
+        "PracticeSession model with userId, scenarioId, recordingUrl, feedback, score",
+        "TrainingScenario model with name, type, script, expectedOutcomes",
+        "StaffCertification model with userId, certType, earnedDate, expirationDate",
+        "PerformanceFeedback model with sessionId, category, feedback, suggestions",
+        "Prisma migrations run successfully"
+      ],
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-364",
+      "title": "Video practice sessions",
+      "description": "Interactive video sessions where staff practice with AI customer service scenarios.",
+      "acceptanceCriteria": [
+        "aiTraining.startPractice - Begin video practice session",
+        "AI plays role of patient/caller in video",
+        "Real-time voice conversation with AI",
+        "Various scenario types (scheduling, billing questions, complaints)",
+        "AI follows scripted scenarios with variations",
+        "Record session for review",
+        "Difficulty levels (beginner, intermediate, advanced)",
+        "Realistic patient personas and emotions"
+      ],
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-365",
+      "title": "Real-time practice feedback",
+      "description": "AI provides feedback during and after practice sessions.",
+      "acceptanceCriteria": [
+        "aiTraining.analyzePractice - Evaluate practice session",
+        "Tone and empathy assessment",
+        "Script adherence scoring",
+        "Response timing evaluation",
+        "Identify missed opportunities",
+        "Suggest alternative responses",
+        "Compare to ideal handling",
+        "Highlight strengths and areas for improvement"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-366",
+      "title": "Onboarding workflows",
+      "description": "Automated new employee onboarding with AI guidance.",
+      "acceptanceCriteria": [
+        "aiTraining.startOnboarding - Begin onboarding journey",
+        "Role-specific onboarding paths",
+        "System training modules",
+        "Policy and procedure training",
+        "Practice scenarios for each skill",
+        "Progress tracking and checkpoints",
+        "Manager notifications on completion",
+        "Time-to-competency tracking"
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-367",
+      "title": "Script training and practice",
+      "description": "Train staff on phone scripts and patient communication.",
+      "acceptanceCriteria": [
+        "aiTraining.practiceScript - Practice specific scripts",
+        "Scheduling call scripts",
+        "Insurance explanation scripts",
+        "Billing inquiry scripts",
+        "Complaint handling scripts",
+        "AI evaluates script adherence",
+        "Personalization within script guidance",
+        "Track script mastery levels"
+      ],
+      "priority": 5,
+      "passes": false
+    },
+    {
+      "id": "US-368",
+      "title": "Compliance training",
+      "description": "Required compliance training with tracking.",
+      "acceptanceCriteria": [
+        "HIPAA training module with quiz",
+        "Billing compliance training",
+        "Safety training modules",
+        "Annual renewal requirements",
+        "Certification tracking",
+        "Expiration alerts",
+        "Compliance training reports",
+        "Auto-assign required training"
+      ],
+      "priority": 6,
+      "passes": false
+    },
+    {
+      "id": "US-369",
+      "title": "Performance coaching",
+      "description": "AI provides ongoing performance coaching based on real interactions.",
+      "acceptanceCriteria": [
+        "aiTraining.coachFromCall - Analyze real calls for coaching",
+        "Identify coaching opportunities from actual patient interactions",
+        "Generate personalized improvement plans",
+        "Track improvement over time",
+        "Micro-learning suggestions",
+        "Peer comparison (anonymized)",
+        "Goal setting and tracking"
+      ],
+      "priority": 7,
+      "passes": false
+    },
+    {
+      "id": "US-370",
+      "title": "Training dashboard",
+      "description": "Dashboard for training management and progress.",
+      "acceptanceCriteria": [
+        "Staff training progress overview",
+        "Practice session history with scores",
+        "Certification status board",
+        "Onboarding pipeline",
+        "Training content library",
+        "Performance improvement trends",
+        "Manager assignment tools",
+        "Training completion reports"
+      ],
+      "priority": 8,
+      "passes": false
+    }
+  ]
+}

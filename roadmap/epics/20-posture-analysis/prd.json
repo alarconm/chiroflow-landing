@@ -1,0 +1,140 @@
+{
+  "branch": "feature/posture-analysis",
+  "title": "Epic 20: AI Posture & Movement Analysis",
+  "description": "AI-powered posture analysis from photos, range of motion tracking, functional movement assessments, and biomechanical analysis. Uses computer vision to identify postural deviations automatically.",
+  "epic": "20-posture-analysis",
+  "dependencies": ["19-chiropractic-clinical"],
+  "userStories": [
+    {
+      "id": "US-208",
+      "title": "Posture analysis schema",
+      "description": "Create database models for posture and movement analysis.",
+      "acceptanceCriteria": [
+        "PostureAssessment model with patientId, date, images, findings, measurements",
+        "PostureImage model with imageUrl, view (anterior/posterior/lateral), landmarks",
+        "PostureLandmark model with x, y coordinates for body landmarks",
+        "PostureDeviation model with type, severity, measurement, normal range",
+        "RangeOfMotion model with joint, movement, degrees, normal, restricted",
+        "FunctionalMovement model with test name, score, notes",
+        "Prisma migrations run successfully"
+      ],
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-209",
+      "title": "Photo capture and upload",
+      "description": "Capture or upload patient photos for posture analysis.",
+      "acceptanceCriteria": [
+        "posture.uploadImage - Upload posture photo",
+        "Camera capture component for in-office photos",
+        "Support anterior, posterior, lateral views",
+        "Standardized positioning guide overlay",
+        "Image cropping and orientation correction",
+        "HIPAA-compliant image storage",
+        "Batch upload for multiple views"
+      ],
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-210",
+      "title": "AI landmark detection",
+      "description": "Use AI to automatically detect body landmarks in posture photos.",
+      "acceptanceCriteria": [
+        "posture.analyzeLandmarks - AI detection of body landmarks",
+        "Detect key points: ears, shoulders, hips, knees, ankles, spine",
+        "Calculate angles and deviations from landmarks",
+        "Manual landmark adjustment if AI is incorrect",
+        "Confidence score for each detection",
+        "Support for clothed and unclothed analysis",
+        "Use Google MediaPipe or similar pose estimation"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-211",
+      "title": "Postural deviation analysis",
+      "description": "Analyze and document postural deviations from landmarks.",
+      "acceptanceCriteria": [
+        "posture.analyzeDeviations - Calculate deviations from ideal",
+        "Head forward posture measurement (degrees)",
+        "Shoulder level difference (mm/inches)",
+        "Hip level difference",
+        "Scoliotic curves detection",
+        "Kyphosis/lordosis assessment",
+        "Weight distribution analysis",
+        "Generate deviation report with severity"
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-212",
+      "title": "Range of motion tracking",
+      "description": "Document and track range of motion measurements.",
+      "acceptanceCriteria": [
+        "rom.create - Record ROM measurement",
+        "rom.list - List patient ROM history",
+        "rom.compare - Compare ROM across visits",
+        "Support all spinal regions (cervical, thoracic, lumbar)",
+        "Support extremity joints",
+        "Normal range reference values",
+        "Percentage of normal calculation",
+        "Visual ROM diagram"
+      ],
+      "priority": 5,
+      "passes": false
+    },
+    {
+      "id": "US-213",
+      "title": "Functional movement screen",
+      "description": "Document functional movement assessments and scores.",
+      "acceptanceCriteria": [
+        "fms.create - Record FMS assessment",
+        "Support standard FMS tests (deep squat, hurdle step, lunge, etc.)",
+        "Scoring system (0-3 per test)",
+        "Asymmetry flagging",
+        "Movement pattern analysis",
+        "Exercise recommendations based on deficits",
+        "Progress tracking over time"
+      ],
+      "priority": 6,
+      "passes": false
+    },
+    {
+      "id": "US-214",
+      "title": "Posture comparison reports",
+      "description": "Generate comparison reports showing posture changes over time.",
+      "acceptanceCriteria": [
+        "posture.generateReport - Create comparison report",
+        "Side-by-side image comparison",
+        "Measurement change tracking",
+        "Progress visualization charts",
+        "Before/after overlay option",
+        "PDF export for patient",
+        "Integration with treatment plan goals"
+      ],
+      "priority": 7,
+      "passes": false
+    },
+    {
+      "id": "US-215",
+      "title": "Posture analysis UI",
+      "description": "Create comprehensive UI for posture analysis workflow.",
+      "acceptanceCriteria": [
+        "Posture analysis page at /patients/[id]/posture",
+        "Photo capture/upload interface",
+        "Landmark visualization overlay",
+        "Deviation measurement display",
+        "ROM entry and tracking",
+        "FMS scoring interface",
+        "Historical comparison view",
+        "Patient education export"
+      ],
+      "priority": 8,
+      "passes": false
+    }
+  ]
+}

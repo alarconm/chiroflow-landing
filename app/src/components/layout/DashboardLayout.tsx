@@ -13,7 +13,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-stone-50">
       {/* Desktop sidebar */}
       <div className="hidden lg:block">
         <Sidebar />

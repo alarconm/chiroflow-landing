@@ -131,7 +131,7 @@ export default function SettingsPage() {
   if (orgLoading || permissionsLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#053e67]/50"></div>
       </div>
     );
   }
@@ -148,7 +148,7 @@ export default function SettingsPage() {
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-cyan-500" />
+              <Building2 className="h-5 w-5 text-[#053e67]/50" />
               <CardTitle>Organization Profile</CardTitle>
             </div>
             <CardDescription>
@@ -185,7 +185,7 @@ export default function SettingsPage() {
         <Card className="mt-6">
           <CardHeader>
             <div className="flex items-center gap-2">
-              <MapPin className="h-5 w-5 text-cyan-500" />
+              <MapPin className="h-5 w-5 text-[#053e67]/50" />
               <CardTitle>Practice Address</CardTitle>
             </div>
             <CardDescription>Where patients can find your practice.</CardDescription>
@@ -240,7 +240,7 @@ export default function SettingsPage() {
         <Card className="mt-6">
           <CardHeader>
             <div className="flex items-center gap-2">
-              <Phone className="h-5 w-5 text-cyan-500" />
+              <Phone className="h-5 w-5 text-[#053e67]/50" />
               <CardTitle>Contact & Preferences</CardTitle>
             </div>
             <CardDescription>Contact information and system preferences.</CardDescription>
@@ -312,7 +312,7 @@ export default function SettingsPage() {
             <Button
               type="submit"
               disabled={!hasChanges || updateOrg.isPending}
-              className="bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600"
+              className="bg-gradient-to-r from-[#053e67]/50 to-[#053e67] hover:from-[#053e67] hover:to-[#053e67]/90"
             >
               {updateOrg.isPending ? 'Saving...' : 'Save Changes'}
             </Button>

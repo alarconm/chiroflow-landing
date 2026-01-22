@@ -102,9 +102,9 @@ interface CalendarDayViewProps {
 }
 
 const statusColors: Record<AppointmentStatus, { bg: string; text: string; border: string }> = {
-  SCHEDULED: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
+  SCHEDULED: { bg: 'bg-blue-50', text: 'text-[#053e67]', border: 'border-blue-200' },
   CONFIRMED: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200' },
-  CHECKED_IN: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
+  CHECKED_IN: { bg: 'bg-blue-50', text: 'text-[#053e67]', border: 'border-blue-200' },
   IN_PROGRESS: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
   COMPLETED: { bg: 'bg-gray-50', text: 'text-gray-500', border: 'border-gray-200' },
   CANCELLED: { bg: 'bg-red-50', text: 'text-red-400', border: 'border-red-200' },

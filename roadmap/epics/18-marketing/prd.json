@@ -1,0 +1,129 @@
+{
+  "branch": "feature/marketing",
+  "title": "Epic 18: Marketing & Referrals",
+  "description": "Marketing automation, referral tracking, and patient engagement tools. Helps grow the practice through automated campaigns and referral programs.",
+  "epic": "18-marketing",
+  "dependencies": ["01-platform-foundation", "06-patient-communication"],
+  "userStories": [
+    {
+      "id": "US-117",
+      "title": "Marketing and referral schema",
+      "description": "Create database models for marketing campaigns and referral tracking.",
+      "acceptanceCriteria": [
+        "ReferralSource model with name, type (provider/patient/web/other), contactInfo",
+        "PatientReferral model linking patient to referral source",
+        "Campaign model with name, type, startDate, endDate, content",
+        "CampaignRecipient model tracking who received campaign",
+        "CampaignResponse model tracking opens, clicks, conversions",
+        "Prisma migrations run successfully"
+      ],
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-118",
+      "title": "Referral source tracking",
+      "description": "Track where new patients come from for ROI analysis.",
+      "acceptanceCriteria": [
+        "marketing.createReferralSource - Add referral source",
+        "marketing.assignReferral - Link patient to referral source",
+        "Capture referral source at patient intake",
+        "marketing.getReferralStats - Patients by source with revenue",
+        "Provider referral tracking with thank you triggers",
+        "Web tracking parameter support (UTM codes)"
+      ],
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-119",
+      "title": "Patient referral program",
+      "description": "Enable existing patients to refer new patients with incentives.",
+      "acceptanceCriteria": [
+        "Generate unique referral code per patient",
+        "Referral landing page with patient code",
+        "Track referral code usage at new patient intake",
+        "Credit referring patient when referral completes first visit",
+        "Configurable reward (discount, credit, gift)",
+        "Referral leaderboard for gamification"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-120",
+      "title": "Email campaign builder",
+      "description": "Create and send marketing email campaigns to patient lists.",
+      "acceptanceCriteria": [
+        "marketing.createCampaign - Create email campaign",
+        "Email template builder with merge fields",
+        "Patient list segmentation (active, inactive, by diagnosis, etc.)",
+        "marketing.sendCampaign - Send to selected list",
+        "Schedule campaign for future date",
+        "Respect unsubscribe preferences"
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-121",
+      "title": "Campaign analytics",
+      "description": "Track email campaign performance metrics.",
+      "acceptanceCriteria": [
+        "Track email opens with pixel tracking",
+        "Track link clicks",
+        "Calculate conversion (recipient becomes appointment)",
+        "marketing.getCampaignStats - Open rate, click rate, conversions",
+        "A/B testing support for subject lines",
+        "Campaign comparison reporting"
+      ],
+      "priority": 5,
+      "passes": false
+    },
+    {
+      "id": "US-122",
+      "title": "Reactivation campaigns",
+      "description": "Automated campaigns to re-engage inactive patients.",
+      "acceptanceCriteria": [
+        "Define inactive patient criteria (no visit in X days)",
+        "marketing.getInactivePatients - List patients matching criteria",
+        "Automated reactivation email sequence",
+        "Track reactivation success rate",
+        "Configurable triggers and timing",
+        "Easy opt-out from reactivation campaigns"
+      ],
+      "priority": 6,
+      "passes": false
+    },
+    {
+      "id": "US-123",
+      "title": "Review and reputation management",
+      "description": "Solicit and manage online reviews from patients.",
+      "acceptanceCriteria": [
+        "Send review request after appointment",
+        "Configurable delay after visit",
+        "Direct links to Google, Yelp, Facebook reviews",
+        "Track review request sends and completion",
+        "Happy patient filter (only ask satisfied patients)",
+        "Review stats dashboard"
+      ],
+      "priority": 7,
+      "passes": false
+    },
+    {
+      "id": "US-124",
+      "title": "Marketing dashboard UI",
+      "description": "Create UI for marketing management and analytics.",
+      "acceptanceCriteria": [
+        "Marketing dashboard at /marketing with overview stats",
+        "Referral source management interface",
+        "Campaign builder with preview",
+        "Campaign list with performance metrics",
+        "Patient referral program management",
+        "Referral and marketing ROI reporting"
+      ],
+      "priority": 8,
+      "passes": false
+    }
+  ]
+}

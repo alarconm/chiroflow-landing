@@ -1,0 +1,139 @@
+{
+  "branch": "feature/wearables",
+  "title": "Epic 24: Wearable & Device Integration",
+  "description": "Integration with wearable devices and health platforms to collect activity data, posture monitoring, sleep quality, and other health metrics for comprehensive patient monitoring.",
+  "epic": "24-wearables",
+  "dependencies": ["02-patient-management"],
+  "userStories": [
+    {
+      "id": "US-240",
+      "title": "Device integration schema",
+      "description": "Create database models for device data and connections.",
+      "acceptanceCriteria": [
+        "DeviceConnection model with patientId, deviceType, connectionToken, status",
+        "ActivityData model with patientId, date, steps, activeMinutes, calories",
+        "SleepData model with patientId, date, duration, quality, stages",
+        "PostureData model with patientId, timestamp, score, alerts",
+        "HeartRateData model with patientId, timestamp, bpm, type",
+        "DeviceType enum (AppleHealth, GoogleFit, Fitbit, Whoop, PostureSensor)",
+        "Prisma migrations run successfully"
+      ],
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-241",
+      "title": "Apple Health integration",
+      "description": "Connect and sync data from Apple Health.",
+      "acceptanceCriteria": [
+        "devices.connectAppleHealth - Initiate Apple Health connection",
+        "OAuth flow for authorization",
+        "Sync activity data (steps, distance, calories)",
+        "Sync sleep data",
+        "Sync workout sessions",
+        "devices.syncAppleHealth - Manual sync trigger",
+        "Background sync scheduling",
+        "Data mapping to internal models"
+      ],
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-242",
+      "title": "Google Fit integration",
+      "description": "Connect and sync data from Google Fit.",
+      "acceptanceCriteria": [
+        "devices.connectGoogleFit - Initiate Google Fit connection",
+        "OAuth2 flow for authorization",
+        "Sync activity data",
+        "Sync sleep data",
+        "Sync heart rate data",
+        "devices.syncGoogleFit - Manual sync trigger",
+        "Real-time data subscription",
+        "Handle token refresh"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-243",
+      "title": "Posture sensor integration",
+      "description": "Integrate with posture monitoring devices.",
+      "acceptanceCriteria": [
+        "Support Upright Go device",
+        "Support generic posture sensors via API",
+        "Real-time posture score tracking",
+        "Slouch alert history",
+        "Daily posture summary",
+        "Correlate posture data with symptoms",
+        "Alert provider on poor posture trends"
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-244",
+      "title": "Activity correlation analysis",
+      "description": "Correlate activity data with patient symptoms and outcomes.",
+      "acceptanceCriteria": [
+        "devices.analyzeCorrelation - Analyze activity vs symptoms",
+        "Identify activity patterns before pain flares",
+        "Sleep quality vs pain correlation",
+        "Activity level vs recovery correlation",
+        "Generate insights for provider",
+        "Patient-facing activity recommendations",
+        "Trend visualization"
+      ],
+      "priority": 5,
+      "passes": false
+    },
+    {
+      "id": "US-245",
+      "title": "Activity goals and alerts",
+      "description": "Set activity goals and alerts for patients.",
+      "acceptanceCriteria": [
+        "devices.setGoal - Set daily activity goals",
+        "Step count goals",
+        "Active minutes goals",
+        "Sleep duration goals",
+        "Alert on goal achievement",
+        "Alert on significant decrease in activity",
+        "Weekly progress reports"
+      ],
+      "priority": 6,
+      "passes": false
+    },
+    {
+      "id": "US-246",
+      "title": "Device data dashboard",
+      "description": "Dashboard for viewing connected device data.",
+      "acceptanceCriteria": [
+        "Patient wearable data tab",
+        "Activity trend charts",
+        "Sleep quality visualization",
+        "Posture score history",
+        "Device connection management",
+        "Data sync status",
+        "Integration in patient summary"
+      ],
+      "priority": 7,
+      "passes": false
+    },
+    {
+      "id": "US-247",
+      "title": "Device connection portal",
+      "description": "Patient portal interface for connecting devices.",
+      "acceptanceCriteria": [
+        "Connect Devices page in portal",
+        "Step-by-step connection guides",
+        "Authorization flow handling",
+        "Connection status display",
+        "Disconnect option",
+        "Data sharing preferences",
+        "Privacy explanation"
+      ],
+      "priority": 8,
+      "passes": false
+    }
+  ]
+}

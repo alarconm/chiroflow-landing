@@ -1,0 +1,139 @@
+{
+  "branch": "feature/ai-care-coordinator",
+  "title": "Epic 33: AI Care Coordinator Agent",
+  "description": "Autonomous AI agent that manages patient care coordination - treatment plan adherence, appointment reminders, follow-up scheduling, care gap identification, and patient engagement throughout their care journey.",
+  "epic": "33-ai-care-coordinator",
+  "dependencies": ["05-ehr-soap-notes", "11-patient-communication"],
+  "userStories": [
+    {
+      "id": "US-323",
+      "title": "AI care coordinator schema",
+      "description": "Create database models for AI care coordination activities.",
+      "acceptanceCriteria": [
+        "CareGap model with patientId, gapType, dueDate, status, resolvedDate",
+        "CareOutreach model with patientId, type, sentDate, response, outcome",
+        "PatientEngagementScore model with patientId, score, factors, date",
+        "CareJourney model with patientId, journeyType, stage, milestones",
+        "CareCoordinatorAction model with patientId, actionType, result",
+        "Prisma migrations run successfully"
+      ],
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-324",
+      "title": "Treatment plan monitoring",
+      "description": "AI monitors treatment plan adherence and progress.",
+      "acceptanceCriteria": [
+        "aiCare.monitorPlan - Track treatment plan progress",
+        "Visit frequency compliance tracking",
+        "Outcome measure trending",
+        "Alert on missed appointments",
+        "Identify patients falling behind plan",
+        "Progress milestone tracking",
+        "Auto-adjust outreach based on adherence",
+        "Provider notifications for at-risk patients"
+      ],
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-325",
+      "title": "Intelligent appointment reminders",
+      "description": "Context-aware appointment reminders and confirmations.",
+      "acceptanceCriteria": [
+        "aiCare.sendReminders - Send smart reminders",
+        "Personalized reminder messages",
+        "Optimal timing based on patient behavior",
+        "Include relevant preparation instructions",
+        "Handle confirmation responses",
+        "Auto-reschedule from replies",
+        "No-show risk adjustment",
+        "Multi-channel delivery"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-326",
+      "title": "Proactive follow-up scheduling",
+      "description": "AI proactively schedules follow-up appointments.",
+      "acceptanceCriteria": [
+        "aiCare.scheduleFollowUp - Book next appointment",
+        "Recommend follow-up timing based on condition",
+        "Auto-schedule at checkout with patient consent",
+        "Waitlist management for preferred times",
+        "Recall scheduling for maintenance care",
+        "Handle patient scheduling preferences",
+        "Optimize provider schedule utilization"
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-327",
+      "title": "Care gap identification",
+      "description": "Identify gaps in patient care and trigger outreach.",
+      "acceptanceCriteria": [
+        "aiCare.identifyGaps - Find care gaps",
+        "Overdue for follow-up detection",
+        "Incomplete treatment plan detection",
+        "Missing outcome assessments",
+        "Lapsed patients identification",
+        "Condition-specific care gaps",
+        "Prioritize gaps by severity",
+        "Auto-generate outreach tasks"
+      ],
+      "priority": 5,
+      "passes": false
+    },
+    {
+      "id": "US-328",
+      "title": "Patient engagement scoring",
+      "description": "Calculate and track patient engagement levels.",
+      "acceptanceCriteria": [
+        "aiCare.calculateEngagement - Compute engagement score",
+        "Factors: visit attendance, portal usage, communication response",
+        "Exercise compliance tracking",
+        "Engagement trend analysis",
+        "Segment patients by engagement level",
+        "Trigger interventions for low engagement",
+        "Engagement improvement recommendations"
+      ],
+      "priority": 6,
+      "passes": false
+    },
+    {
+      "id": "US-329",
+      "title": "Care journey automation",
+      "description": "Automated patient journey workflows.",
+      "acceptanceCriteria": [
+        "New patient onboarding journey",
+        "Active care journey milestones",
+        "Maintenance/wellness journey",
+        "Re-engagement journey for lapsed",
+        "Journey stage progression logic",
+        "Personalized communication at each stage",
+        "Journey completion tracking"
+      ],
+      "priority": 7,
+      "passes": false
+    },
+    {
+      "id": "US-330",
+      "title": "AI care coordinator dashboard",
+      "description": "Dashboard for care coordination activities.",
+      "acceptanceCriteria": [
+        "Care gaps overview",
+        "Patient engagement heatmap",
+        "Treatment plan compliance metrics",
+        "Outreach queue and history",
+        "Journey stage distribution",
+        "At-risk patient alerts",
+        "Care coordinator performance metrics"
+      ],
+      "priority": 8,
+      "passes": false
+    }
+  ]
+}

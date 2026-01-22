@@ -212,7 +212,7 @@ export function DocumentList({ patientId, canDelete = false }: DocumentListProps
                     </Badge>
                     {doc.isConfidential && (
                       <span title="Confidential">
-                        <Shield className="h-3 w-3 text-amber-500" />
+                        <Shield className="h-3 w-3 text-blue-500" />
                       </span>
                     )}
                   </div>

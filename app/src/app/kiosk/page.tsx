@@ -300,7 +300,7 @@ function KioskContent() {
       <div className="min-h-screen bg-gradient-to-br from-blue-900 to-indigo-900 text-white flex items-center justify-center p-4">
         <Card className="bg-white/10 backdrop-blur-sm border-white/20 max-w-md w-full">
           <CardHeader className="text-center">
-            <AlertCircle className="h-12 w-12 mx-auto text-amber-400 mb-4" />
+            <AlertCircle className="h-12 w-12 mx-auto text-blue-400 mb-4" />
             <CardTitle className="text-2xl text-white">Kiosk Not Configured</CardTitle>
           </CardHeader>
           <CardContent className="text-center space-y-4">

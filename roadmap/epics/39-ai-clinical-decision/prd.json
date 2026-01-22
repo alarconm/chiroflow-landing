@@ -1,0 +1,140 @@
+{
+  "branch": "feature/ai-clinical-decision",
+  "title": "Epic 39: AI Clinical Decision Support Agent",
+  "description": "AI agent that provides real-time clinical decision support including diagnosis suggestions, treatment recommendations, contraindication alerts, and evidence-based care guidance. Enhances clinical outcomes through intelligent assistance.",
+  "epic": "39-ai-clinical-decision",
+  "dependencies": ["05-ehr-soap-notes", "19-chiropractic-clinical"],
+  "userStories": [
+    {
+      "id": "US-371",
+      "title": "AI clinical decision schema",
+      "description": "Create database models for clinical decision support.",
+      "acceptanceCriteria": [
+        "ClinicalAlert model with patientId, alertType, severity, message, acknowledged",
+        "DiagnosisSuggestion model with encounterId, suggestedCode, confidence, reasoning",
+        "TreatmentRecommendation model with patientId, condition, recommendation, evidence",
+        "Contraindication model with patientId, procedure, reason, source",
+        "ClinicalGuideline model with condition, recommendations, evidence, source",
+        "Prisma migrations run successfully"
+      ],
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-372",
+      "title": "Diagnosis suggestion",
+      "description": "AI suggests diagnoses based on symptoms and findings.",
+      "acceptanceCriteria": [
+        "aiClinical.suggestDiagnosis - Get diagnosis suggestions",
+        "Analyze subjective complaints",
+        "Consider examination findings",
+        "Differential diagnosis list",
+        "Confidence scoring",
+        "Supporting evidence from findings",
+        "Red flag identification",
+        "Learn from provider selections"
+      ],
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-373",
+      "title": "Treatment recommendations",
+      "description": "AI recommends treatment approaches based on diagnosis.",
+      "acceptanceCriteria": [
+        "aiClinical.recommendTreatment - Get treatment suggestions",
+        "Evidence-based treatment options",
+        "Chiropractic technique suggestions",
+        "Treatment frequency recommendations",
+        "Expected outcomes and timeline",
+        "Alternative approaches",
+        "Consider patient preferences",
+        "Citation to clinical guidelines"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-374",
+      "title": "Contraindication alerts",
+      "description": "Real-time alerts for treatment contraindications.",
+      "acceptanceCriteria": [
+        "aiClinical.checkContraindications - Verify safety",
+        "Patient condition contraindications",
+        "Medication interactions",
+        "Age-specific precautions",
+        "Recent surgery/trauma alerts",
+        "Red flag symptom warnings",
+        "Alert severity levels",
+        "Override with documentation"
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-375",
+      "title": "Clinical guidelines integration",
+      "description": "Access and apply clinical practice guidelines.",
+      "acceptanceCriteria": [
+        "aiClinical.getGuidelines - Retrieve relevant guidelines",
+        "Chiropractic clinical guidelines",
+        "Condition-specific protocols",
+        "Evidence grading display",
+        "Guideline-based care suggestions",
+        "Track guideline adherence",
+        "Update alerts for new guidelines"
+      ],
+      "priority": 5,
+      "passes": false
+    },
+    {
+      "id": "US-376",
+      "title": "Outcome prediction",
+      "description": "AI predicts patient outcomes based on similar cases.",
+      "acceptanceCriteria": [
+        "aiClinical.predictOutcome - Forecast treatment outcome",
+        "Similar case analysis",
+        "Expected improvement timeline",
+        "Factors affecting prognosis",
+        "Treatment response likelihood",
+        "Risk of chronicity",
+        "Patient communication of expectations"
+      ],
+      "priority": 6,
+      "passes": false
+    },
+    {
+      "id": "US-377",
+      "title": "Referral recommendations",
+      "description": "AI suggests when referral is appropriate.",
+      "acceptanceCriteria": [
+        "aiClinical.suggestReferral - Evaluate referral need",
+        "Red flag detection for immediate referral",
+        "Non-responding patient identification",
+        "Appropriate specialist suggestion",
+        "Referral urgency level",
+        "Generate referral letter draft",
+        "Track referral outcomes"
+      ],
+      "priority": 7,
+      "passes": false
+    },
+    {
+      "id": "US-378",
+      "title": "Clinical decision support UI",
+      "description": "Interface for clinical decision support features.",
+      "acceptanceCriteria": [
+        "Alert panel in encounter workflow",
+        "Diagnosis suggestion sidebar",
+        "Treatment recommendation display",
+        "Guideline quick reference",
+        "Contraindication warnings",
+        "One-click acceptance of suggestions",
+        "Override documentation",
+        "Evidence and reasoning display"
+      ],
+      "priority": 8,
+      "passes": false
+    }
+  ]
+}

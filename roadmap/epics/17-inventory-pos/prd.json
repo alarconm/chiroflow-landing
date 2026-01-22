@@ -1,0 +1,131 @@
+{
+  "branch": "feature/inventory-pos",
+  "title": "Epic 17: Inventory & Point of Sale",
+  "description": "Product inventory management and point of sale for retail items like supplements, braces, and therapeutic products. Integrates with billing and patient records.",
+  "epic": "17-inventory-pos",
+  "dependencies": ["07-billing-claims", "10-payment-processing"],
+  "userStories": [
+    {
+      "id": "US-109",
+      "title": "Inventory schema",
+      "description": "Create database models for product inventory management.",
+      "acceptanceCriteria": [
+        "ProductCategory model with name, description",
+        "Product model with name, sku, categoryId, description, price, cost, taxable",
+        "InventoryItem model with productId, quantity, location, reorderPoint, reorderQuantity",
+        "InventoryAdjustment model for tracking quantity changes",
+        "Vendor model with name, contact, email, phone",
+        "PurchaseOrder model for ordering from vendors",
+        "Prisma migrations run successfully"
+      ],
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-110",
+      "title": "Product catalog management",
+      "description": "CRUD operations for managing product catalog.",
+      "acceptanceCriteria": [
+        "inventory.createProduct - Add new product with details",
+        "inventory.updateProduct - Edit product information",
+        "inventory.listProducts - List with filtering and search",
+        "inventory.getProduct - Get product details",
+        "inventory.deactivateProduct - Soft delete product",
+        "Category management for organizing products"
+      ],
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-111",
+      "title": "Inventory tracking",
+      "description": "Track inventory quantities and movements.",
+      "acceptanceCriteria": [
+        "inventory.adjustQuantity - Manual quantity adjustment with reason",
+        "inventory.receiveStock - Add stock from purchase order",
+        "inventory.getLowStock - List items below reorder point",
+        "inventory.getInventoryValue - Calculate total inventory value",
+        "Automatic quantity reduction on sale",
+        "Quantity history with timestamps and reasons"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-112",
+      "title": "Purchase order management",
+      "description": "Create and manage purchase orders for restocking.",
+      "acceptanceCriteria": [
+        "inventory.createPurchaseOrder - Create PO with line items",
+        "inventory.submitPurchaseOrder - Submit to vendor",
+        "inventory.receivePurchaseOrder - Mark received and update inventory",
+        "PO status tracking (draft, submitted, partial, received)",
+        "Generate suggested PO from low stock items",
+        "PO history and reporting"
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-113",
+      "title": "Point of sale transaction",
+      "description": "Process retail sales with integrated payment.",
+      "acceptanceCriteria": [
+        "pos.createTransaction - Start new sale",
+        "pos.addItem - Add product to sale with quantity",
+        "pos.removeItem - Remove item from sale",
+        "pos.applyDiscount - Apply percentage or fixed discount",
+        "pos.calculateTotals - Subtotal, tax, total calculation",
+        "pos.completeTransaction - Process payment and finalize",
+        "Link sale to patient record if applicable"
+      ],
+      "priority": 5,
+      "passes": false
+    },
+    {
+      "id": "US-114",
+      "title": "POS payment integration",
+      "description": "Integrate POS with payment processing for retail transactions.",
+      "acceptanceCriteria": [
+        "Cash payment handling with change calculation",
+        "Card payment through payment processor",
+        "Split payment support (part cash, part card)",
+        "Apply to patient balance option",
+        "Receipt generation (print and email)",
+        "Void and refund capabilities"
+      ],
+      "priority": 6,
+      "passes": false
+    },
+    {
+      "id": "US-115",
+      "title": "Inventory reports",
+      "description": "Generate reports on inventory and sales.",
+      "acceptanceCriteria": [
+        "Inventory valuation report",
+        "Product sales report by date range",
+        "Low stock report",
+        "Reorder suggestions report",
+        "Vendor purchase history",
+        "Profit margin analysis by product"
+      ],
+      "priority": 7,
+      "passes": false
+    },
+    {
+      "id": "US-116",
+      "title": "Inventory and POS UI",
+      "description": "Create UI for inventory management and point of sale.",
+      "acceptanceCriteria": [
+        "Inventory dashboard at /inventory showing stock levels",
+        "Product catalog management interface",
+        "POS terminal interface at /pos for quick sales",
+        "Barcode scanner support for product lookup",
+        "Purchase order creation and tracking interface",
+        "Inventory adjustment interface with reason codes"
+      ],
+      "priority": 8,
+      "passes": false
+    }
+  ]
+}

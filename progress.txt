@@ -731,3 +731,70 @@ Date: 2026-01-21T21:30:00Z
 - Balance is recalculated automatically when fee or units change
 - Internal notes field used for adjustment history tracking
 
+--- Iteration 4 completed at 2026-01-21 19:57:19 ---
+Story: US-061 - Charge capture from encounters
+
+--- Iteration 5 started at 2026-01-21 ---
+Story: US-062 - Superbill generation
+
+## Story: US-062 - Superbill generation
+Date: 2026-01-21
+
+### What I Did
+- Verified existing superbill router already had most functionality implemented
+- Added `getPDF` endpoint for print-ready, PDF-optimized superbill data structure
+- Added `SUPERBILL_PDF_GENERATE` audit action for tracking PDF generation
+- Build compiles successfully with no errors
+
+### Router Procedures (Existing + New)
+- superbill.generate - Create superbill from encounter (already implemented)
+- superbill.get - Get superbill with all details (already implemented)
+- superbill.list - List superbills by date range (already implemented)
+- **superbill.getPDF** - NEW: Get PDF-optimized superbill data structure for printing
+- superbill.getWalkoutStatement - Get patient walkout statement (already implemented)
+
+### New getPDF Endpoint Features
+- **Document header**: Title, superbill number, generation date
+- **Practice info**: Name, address, phone, fax, tax ID, group NPI
+- **Provider info**: Name, title, NPI, license number, credentials, signature placeholder
+- **Patient info**: Demographics, address, phone, email, MRN
+- **Primary insurance**: Payer details, policy/group numbers, subscriber info, copay, deductible
+- **Secondary insurance**: Basic payer and policy info
+- **Visit info**: Date, type, chief complaint, visit number, place of service
+- **Diagnoses**: ICD-10 codes with letter pointers (A, B, C, D) for CMS-1500 format
+- **Procedures**: CPT codes with modifiers, units, fees, diagnosis pointer mapping
+- **Financial summary**: Total fees, copay, estimated patient responsibility
+- **Print settings**: Paper size, orientation, margins, font size
+
+### CMS-1500 Alignment
+The PDF data structure is organized to align with standard CMS-1500 form boxes:
+- Box 2, 3, 5: Patient information
+- Box 21: Diagnoses with letter pointers
+- Box 24: Services/Procedures with fees
+- Box 24J: Provider NPI
+- Box 31: Provider signature
+- Box 32, 33: Practice/Facility information
+
+### Files Changed
+- app/src/server/routers/superbill.ts (added ~180 lines for getPDF endpoint)
+- app/src/lib/audit.ts (added SUPERBILL_PDF_GENERATE action)
+
+### Build Status
+- ✓ Build compiles successfully
+- ✓ TypeScript checks pass
+
+### Acceptance Criteria Status
+1. ✓ superbill.generate - Create superbill from encounter
+2. ✓ superbill.get - Get superbill with all details
+3. ✓ superbill.list - List superbills by date range
+4. ✓ Include patient demographics
+5. ✓ Include diagnoses (ICD-10) with order
+6. ✓ Include procedures (CPT) with fees
+7. ✓ Include provider information and NPI
+8. ✓ Include insurance information
+9. ✓ PDF generation for printing (getPDF endpoint)
+10. ✓ Support for walkout statement (patient portion)
+
+--- Iteration 5 completed at 2026-01-21 ---
+Story: US-062 - Superbill generation
+

@@ -1,0 +1,141 @@
+{
+  "branch": "feature/ai-documentation-agent",
+  "title": "Epic 32: AI Documentation Agent",
+  "description": "Real-time AI documentation assistant that listens to patient encounters, generates SOAP notes, suggests diagnosis and procedure codes, ensures compliance, and learns provider preferences.",
+  "epic": "32-ai-documentation-agent",
+  "dependencies": ["05-ehr-soap-notes", "06-ai-documentation"],
+  "userStories": [
+    {
+      "id": "US-315",
+      "title": "AI documentation agent schema",
+      "description": "Create database models for AI documentation activities.",
+      "acceptanceCriteria": [
+        "AITranscription model with encounterId, audioUrl, transcript, duration",
+        "AIDraftNote model with encounterId, soapContent, confidence, status",
+        "AICodeSuggestion model with encounterId, codes, reasoning, accepted",
+        "AIComplianceCheck model with noteId, issues, severity, resolved",
+        "ProviderPreference model for learning provider documentation style",
+        "Prisma migrations run successfully"
+      ],
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-316",
+      "title": "Real-time encounter transcription",
+      "description": "Live transcription of patient encounters with speaker diarization.",
+      "acceptanceCriteria": [
+        "aiDoc.startTranscription - Begin live transcription",
+        "Whisper API or Deepgram integration",
+        "Speaker identification (provider vs patient)",
+        "Real-time transcript display",
+        "Handle medical terminology accurately",
+        "Support ambient listening mode",
+        "aiDoc.stopTranscription - End and save",
+        "Transcript editing capability"
+      ],
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-317",
+      "title": "AI SOAP note generation",
+      "description": "Generate complete SOAP notes from encounter transcription.",
+      "acceptanceCriteria": [
+        "aiDoc.generateSOAP - Create SOAP from transcript",
+        "Extract subjective complaints and history",
+        "Document objective findings mentioned",
+        "Generate assessment based on findings",
+        "Recommend treatment plan",
+        "Match provider's documentation style",
+        "Include all required elements",
+        "Editable draft for provider review"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-318",
+      "title": "Intelligent code suggestion",
+      "description": "AI suggests diagnosis and procedure codes based on documentation.",
+      "acceptanceCriteria": [
+        "aiDoc.suggestCodes - Get code recommendations",
+        "ICD-10 diagnosis code suggestions",
+        "CPT procedure code suggestions",
+        "Modifier recommendations",
+        "Code specificity optimization",
+        "Show reasoning for each suggestion",
+        "Learn from provider acceptance patterns",
+        "Flag potential upcoding/downcoding"
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-319",
+      "title": "Compliance checking",
+      "description": "Real-time compliance checking of documentation.",
+      "acceptanceCriteria": [
+        "aiDoc.checkCompliance - Validate note compliance",
+        "Medical necessity documentation check",
+        "Required element validation",
+        "Payer-specific requirements",
+        "Audit risk scoring",
+        "Missing documentation alerts",
+        "Compliance tips and suggestions",
+        "Pre-billing compliance gate"
+      ],
+      "priority": 5,
+      "passes": false
+    },
+    {
+      "id": "US-320",
+      "title": "Provider preference learning",
+      "description": "Learn and apply provider documentation preferences.",
+      "acceptanceCriteria": [
+        "Track provider edits to AI drafts",
+        "Learn terminology preferences",
+        "Learn documentation depth preferences",
+        "Template preference tracking",
+        "Phrase and wording preferences",
+        "Apply preferences to future drafts",
+        "Provider-specific model fine-tuning"
+      ],
+      "priority": 6,
+      "passes": false
+    },
+    {
+      "id": "US-321",
+      "title": "Documentation templates and macros",
+      "description": "AI-powered template suggestions and smart macros.",
+      "acceptanceCriteria": [
+        "Suggest templates based on appointment type",
+        "Smart text expansion macros",
+        "Auto-complete common phrases",
+        "Previous note pull-forward",
+        "Condition-specific templates",
+        "Quick normal exam generation",
+        "Customizable macro library"
+      ],
+      "priority": 7,
+      "passes": false
+    },
+    {
+      "id": "US-322",
+      "title": "AI documentation assistant UI",
+      "description": "Interface for AI-assisted documentation.",
+      "acceptanceCriteria": [
+        "Transcription panel in encounter",
+        "Real-time transcript view",
+        "One-click SOAP generation",
+        "Code suggestion sidebar",
+        "Compliance alerts display",
+        "Quick accept/reject suggestions",
+        "Voice command support",
+        "Ambient mode toggle"
+      ],
+      "priority": 8,
+      "passes": false
+    }
+  ]
+}

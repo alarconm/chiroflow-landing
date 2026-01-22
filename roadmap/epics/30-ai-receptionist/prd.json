@@ -1,0 +1,139 @@
+{
+  "branch": "feature/ai-receptionist",
+  "title": "Epic 30: AI Receptionist Agent",
+  "description": "Autonomous AI receptionist that handles phone calls, schedules appointments, answers patient questions, and manages the front desk workflow 24/7. Reduces staff burden and ensures no call goes unanswered.",
+  "epic": "30-ai-receptionist",
+  "dependencies": ["03-patient-scheduling", "11-patient-communication"],
+  "userStories": [
+    {
+      "id": "US-300",
+      "title": "AI receptionist schema",
+      "description": "Create database models for AI receptionist conversations and actions.",
+      "acceptanceCriteria": [
+        "AIConversation model with patientId, channel (phone/chat/sms), transcript, status",
+        "AIAction model with conversationId, actionType, parameters, result, confidence",
+        "AIEscalation model with conversationId, reason, assignedTo, resolvedAt",
+        "AIKnowledgeBase model for FAQ and practice information",
+        "AIVoiceConfig model with voice settings, greeting, hold music",
+        "ConversationChannel enum (Phone, Chat, SMS, Email)",
+        "Prisma migrations run successfully"
+      ],
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-301",
+      "title": "Voice AI integration",
+      "description": "Integrate with voice AI platform for phone call handling.",
+      "acceptanceCriteria": [
+        "Twilio Voice + OpenAI Realtime API integration",
+        "Natural voice synthesis with configurable voice",
+        "Real-time speech-to-text transcription",
+        "Low-latency conversational responses",
+        "Call transfer to human when needed",
+        "Call recording with consent",
+        "After-hours automated handling"
+      ],
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-302",
+      "title": "Appointment scheduling agent",
+      "description": "AI agent that books, reschedules, and cancels appointments.",
+      "acceptanceCriteria": [
+        "aiReceptionist.bookAppointment - Book from conversation",
+        "Understand natural language scheduling requests",
+        "Check provider availability in real-time",
+        "Offer alternative times if preferred unavailable",
+        "Collect patient information for new patients",
+        "Confirm insurance information",
+        "Send confirmation via patient's preferred method",
+        "Handle rescheduling and cancellation requests"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-303",
+      "title": "FAQ and information agent",
+      "description": "AI agent that answers common patient questions.",
+      "acceptanceCriteria": [
+        "aiReceptionist.answerQuestion - Answer from knowledge base",
+        "Practice hours, location, parking information",
+        "Insurance and payment questions",
+        "Service and treatment questions",
+        "Appointment preparation instructions",
+        "New patient process explanation",
+        "Provider background and specialties",
+        "Escalate unknown questions to staff"
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-304",
+      "title": "Patient identification",
+      "description": "Identify callers and retrieve their information.",
+      "acceptanceCriteria": [
+        "Caller ID lookup for existing patients",
+        "Voice verification option",
+        "DOB/name verification for security",
+        "Create new patient record during call",
+        "Link conversation to patient record",
+        "Handle family members calling",
+        "Privacy-compliant identification"
+      ],
+      "priority": 5,
+      "passes": false
+    },
+    {
+      "id": "US-305",
+      "title": "Smart escalation",
+      "description": "Intelligently escalate to human staff when needed.",
+      "acceptanceCriteria": [
+        "aiReceptionist.escalate - Transfer to human",
+        "Detect frustration or urgency",
+        "Clinical questions trigger escalation",
+        "Billing disputes trigger escalation",
+        "Patient request for human triggers immediate transfer",
+        "Context handoff to human staff",
+        "Escalation metrics tracking"
+      ],
+      "priority": 6,
+      "passes": false
+    },
+    {
+      "id": "US-306",
+      "title": "Multi-channel support",
+      "description": "Handle conversations across phone, chat, and SMS.",
+      "acceptanceCriteria": [
+        "Unified conversation handling across channels",
+        "Website chat widget integration",
+        "SMS conversation support",
+        "Consistent responses across channels",
+        "Channel preference learning",
+        "Conversation handoff between channels",
+        "Multi-language support"
+      ],
+      "priority": 7,
+      "passes": false
+    },
+    {
+      "id": "US-307",
+      "title": "AI receptionist dashboard",
+      "description": "Dashboard for monitoring and configuring AI receptionist.",
+      "acceptanceCriteria": [
+        "Live conversation monitoring",
+        "Conversation history and transcripts",
+        "Escalation queue management",
+        "Performance metrics (calls handled, resolution rate)",
+        "Knowledge base management",
+        "Voice and greeting configuration",
+        "Business hours and routing rules"
+      ],
+      "priority": 8,
+      "passes": false
+    }
+  ]
+}

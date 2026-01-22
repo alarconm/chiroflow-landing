@@ -1,0 +1,130 @@
+{
+  "branch": "feature/reporting",
+  "title": "Epic 15: Reporting & Analytics",
+  "description": "Comprehensive reporting and analytics dashboard for practice management insights. Covers financial, clinical, and operational metrics with export capabilities.",
+  "epic": "15-reporting",
+  "dependencies": ["07-billing-claims", "03-patient-scheduling"],
+  "userStories": [
+    {
+      "id": "US-101",
+      "title": "Reporting infrastructure",
+      "description": "Create base infrastructure for report generation and storage.",
+      "acceptanceCriteria": [
+        "Report model with name, type, parameters, generatedAt, data",
+        "ReportSchedule model for automated report generation",
+        "Report service with generateReport, getReport, listReports methods",
+        "Support for date range filtering",
+        "Export to PDF, CSV, Excel formats",
+        "Report caching for performance"
+      ],
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-102",
+      "title": "Financial reports",
+      "description": "Generate standard financial reports for practice management.",
+      "acceptanceCriteria": [
+        "Daily collections report - payments received by date",
+        "Accounts receivable aging report - outstanding balances by age bucket",
+        "Revenue by provider report - charges and collections by provider",
+        "Revenue by service code report - revenue breakdown by CPT code",
+        "Payment type summary - cash, card, insurance breakdown",
+        "Date range selection for all reports"
+      ],
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-103",
+      "title": "Claims and insurance reports",
+      "description": "Generate reports on claims status and insurance performance.",
+      "acceptanceCriteria": [
+        "Claims status summary - submitted, pending, paid, denied counts",
+        "Denial analysis report - denials by reason code",
+        "Payer performance report - payment rate and timing by payer",
+        "Clean claim rate report - percentage of claims paid on first submission",
+        "Outstanding claims report - claims awaiting response",
+        "ERA posting summary - auto-posted vs manual posting"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-104",
+      "title": "Scheduling and productivity reports",
+      "description": "Generate reports on scheduling utilization and provider productivity.",
+      "acceptanceCriteria": [
+        "Appointment volume report - appointments by day/week/month",
+        "No-show and cancellation report with rates",
+        "Provider utilization report - scheduled vs available time",
+        "New patient report - new patients by referral source",
+        "Patient visit frequency report",
+        "Peak hours analysis"
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-105",
+      "title": "Clinical reports",
+      "description": "Generate reports on clinical metrics and outcomes.",
+      "acceptanceCriteria": [
+        "Diagnosis frequency report - top diagnoses by volume",
+        "Treatment plan completion report",
+        "Average visits per case report",
+        "Provider case mix report",
+        "Outcome tracking report (if outcome measures implemented)",
+        "Care plan adherence report"
+      ],
+      "priority": 5,
+      "passes": false
+    },
+    {
+      "id": "US-106",
+      "title": "Report scheduling and delivery",
+      "description": "Schedule automated report generation and delivery.",
+      "acceptanceCriteria": [
+        "Schedule reports for daily, weekly, monthly generation",
+        "Email delivery to configured recipients",
+        "Multiple format options per schedule",
+        "Enable/disable scheduled reports",
+        "View scheduled report history",
+        "Failure notifications"
+      ],
+      "priority": 6,
+      "passes": false
+    },
+    {
+      "id": "US-107",
+      "title": "Analytics dashboard",
+      "description": "Interactive dashboard with key performance indicators.",
+      "acceptanceCriteria": [
+        "KPI cards for daily collections, appointments, new patients",
+        "Trend charts for revenue over time",
+        "Appointment utilization gauge",
+        "Claims status pie chart",
+        "Provider comparison bar charts",
+        "Date range picker for all widgets",
+        "Dashboard customization (widget arrangement)"
+      ],
+      "priority": 7,
+      "passes": false
+    },
+    {
+      "id": "US-108",
+      "title": "Reporting UI",
+      "description": "Create UI for running and viewing reports.",
+      "acceptanceCriteria": [
+        "Reports page at /reporting with report categories",
+        "Report parameter form with date range and filters",
+        "Report preview before export",
+        "Export buttons for PDF, CSV, Excel",
+        "Saved report list with re-run capability",
+        "Report scheduling interface"
+      ],
+      "priority": 8,
+      "passes": false
+    }
+  ]
+}

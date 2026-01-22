@@ -1,0 +1,140 @@
+{
+  "branch": "feature/ai-revenue-optimizer",
+  "title": "Epic 35: AI Revenue Optimizer Agent",
+  "description": "AI agent that continuously analyzes practice financials to identify revenue opportunities, reduce leakage, optimize fee schedules, and provide actionable recommendations to maximize profitability.",
+  "epic": "35-ai-revenue-optimizer",
+  "dependencies": ["07-billing-claims", "15-reporting"],
+  "userStories": [
+    {
+      "id": "US-339",
+      "title": "AI revenue optimizer schema",
+      "description": "Create database models for revenue optimization.",
+      "acceptanceCriteria": [
+        "RevenueOpportunity model with type, amount, description, status",
+        "RevenueLeakage model with type, amount, source, recommendation",
+        "FeeScheduleAnalysis model with cptCode, currentFee, recommendedFee, reasoning",
+        "RevenueGoal model with period, target, actual, variance",
+        "OptimizationAction model with opportunityId, action, result",
+        "Prisma migrations run successfully"
+      ],
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-340",
+      "title": "Revenue leakage detection",
+      "description": "AI identifies sources of revenue leakage.",
+      "acceptanceCriteria": [
+        "aiRevenue.detectLeakage - Find revenue leaks",
+        "Unbilled services detection",
+        "Undercoding identification",
+        "Missed modifier opportunities",
+        "Unbilled supplies",
+        "Write-off pattern analysis",
+        "Collection rate issues",
+        "Quantify leakage by category"
+      ],
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-341",
+      "title": "Fee schedule optimization",
+      "description": "AI recommends optimal fee schedule pricing.",
+      "acceptanceCriteria": [
+        "aiRevenue.analyzeFees - Analyze fee schedule",
+        "Compare to Medicare rates",
+        "Compare to regional benchmarks",
+        "Analyze payer reimbursement patterns",
+        "Identify underpriced services",
+        "Model revenue impact of changes",
+        "Generate fee update recommendations",
+        "Track fee change effectiveness"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-342",
+      "title": "Service mix optimization",
+      "description": "AI recommends optimal service mix for profitability.",
+      "acceptanceCriteria": [
+        "aiRevenue.analyzeServiceMix - Evaluate services",
+        "Profitability by service type",
+        "Identify high-margin services",
+        "Recommend service expansion",
+        "Identify unprofitable services",
+        "Payer mix optimization",
+        "Time vs revenue analysis",
+        "Capacity utilization recommendations"
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-343",
+      "title": "Coding optimization",
+      "description": "AI identifies coding improvement opportunities.",
+      "acceptanceCriteria": [
+        "aiRevenue.optimizeCoding - Review coding patterns",
+        "E&M level optimization",
+        "Modifier usage analysis",
+        "Bundling/unbundling review",
+        "Provider coding comparison",
+        "Documentation improvement suggestions",
+        "Compliant revenue increase opportunities"
+      ],
+      "priority": 5,
+      "passes": false
+    },
+    {
+      "id": "US-344",
+      "title": "Contract analysis",
+      "description": "AI analyzes payer contracts for optimization.",
+      "acceptanceCriteria": [
+        "aiRevenue.analyzeContracts - Review payer contracts",
+        "Reimbursement rate analysis",
+        "Compare to market rates",
+        "Identify renegotiation opportunities",
+        "Model contract change impact",
+        "Track contract performance",
+        "Generate negotiation talking points"
+      ],
+      "priority": 6,
+      "passes": false
+    },
+    {
+      "id": "US-345",
+      "title": "Revenue forecasting",
+      "description": "AI forecasts future revenue with recommendations.",
+      "acceptanceCriteria": [
+        "aiRevenue.forecast - Predict revenue",
+        "Historical trend analysis",
+        "Seasonality adjustment",
+        "Pipeline-based forecasting",
+        "Scenario modeling",
+        "Goal vs forecast variance",
+        "Action recommendations to close gaps"
+      ],
+      "priority": 7,
+      "passes": false
+    },
+    {
+      "id": "US-346",
+      "title": "Revenue optimizer dashboard",
+      "description": "Dashboard for revenue optimization insights.",
+      "acceptanceCriteria": [
+        "Revenue opportunity summary",
+        "Leakage identification list",
+        "Fee schedule recommendations",
+        "Coding improvement suggestions",
+        "Contract performance overview",
+        "Revenue forecast vs actual",
+        "Action item tracking",
+        "ROI from optimizations"
+      ],
+      "priority": 8,
+      "passes": false
+    }
+  ]
+}

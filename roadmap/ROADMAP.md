@@ -417,11 +417,11 @@ Features:
 
 | Epic | Name | Status | Dependencies Met |
 |------|------|--------|------------------|
-| 01 | Platform Foundation | Not Started | - |
-| 02 | Patient Management | Not Started | Blocked by 01 |
-| 03 | Scheduling Engine | Not Started | Blocked by 01, 02 |
-| 04 | Digital Intake | Not Started | Blocked by 01, 02 |
-| 05 | EHR & SOAP Notes | Not Started | Blocked by 02, 03 |
+| 01 | Platform Foundation | ✅ Complete | ✓ |
+| 02 | Patient Management | ✅ Complete | ✓ |
+| 03 | Scheduling Engine | ✅ Complete | ✓ |
+| 04 | Digital Intake | ✅ Complete | ✓ |
+| 05 | EHR & SOAP Notes | **In Progress** | ✓ |
 | 06 | AI Documentation | Not Started | Blocked by 05 |
 | 07 | Billing & Claims | Not Started | Blocked by 02, 05 |
 | 08 | Clearinghouse | Not Started | Blocked by 07 |

@@ -1,0 +1,141 @@
+{
+  "branch": "feature/ai-quality-assurance",
+  "title": "Epic 36: AI Quality Assurance Agent",
+  "description": "AI agent that continuously audits documentation, coding, compliance, and clinical quality. Identifies risks before they become problems and ensures consistent quality standards.",
+  "epic": "36-ai-quality-assurance",
+  "dependencies": ["05-ehr-soap-notes", "07-billing-claims"],
+  "userStories": [
+    {
+      "id": "US-347",
+      "title": "AI QA agent schema",
+      "description": "Create database models for quality assurance activities.",
+      "acceptanceCriteria": [
+        "QAAudit model with auditType, targetId, findings, score, date",
+        "QAFinding model with auditId, findingType, severity, description, recommendation",
+        "QAMetric model with metricType, period, score, benchmark",
+        "ComplianceAlert model with type, severity, description, status, resolvedBy",
+        "QARule model for configurable audit criteria",
+        "Prisma migrations run successfully"
+      ],
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-348",
+      "title": "Documentation quality audit",
+      "description": "AI audits clinical documentation quality.",
+      "acceptanceCriteria": [
+        "aiQA.auditDocumentation - Review note quality",
+        "Completeness assessment",
+        "Medical necessity documentation",
+        "Diagnosis-procedure linkage",
+        "Progress note adequacy",
+        "Treatment plan documentation",
+        "Generate improvement recommendations",
+        "Track quality scores over time"
+      ],
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-349",
+      "title": "Coding accuracy audit",
+      "description": "AI audits coding accuracy and appropriateness.",
+      "acceptanceCriteria": [
+        "aiQA.auditCoding - Review coding accuracy",
+        "Code-to-documentation match",
+        "Modifier appropriateness",
+        "Upcoding/downcoding detection",
+        "Bundling compliance",
+        "LCD/NCD compliance",
+        "Provider-level accuracy rates",
+        "Targeted education recommendations"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-350",
+      "title": "Compliance monitoring",
+      "description": "Continuous monitoring for compliance issues.",
+      "acceptanceCriteria": [
+        "aiQA.monitorCompliance - Ongoing compliance watch",
+        "HIPAA compliance checks",
+        "Billing compliance monitoring",
+        "Consent documentation verification",
+        "Audit trail completeness",
+        "Unusual pattern detection",
+        "Real-time compliance alerts",
+        "Compliance score trending"
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-351",
+      "title": "Clinical quality measures",
+      "description": "Track and report clinical quality metrics.",
+      "acceptanceCriteria": [
+        "aiQA.trackQuality - Monitor clinical quality",
+        "Outcome measure tracking",
+        "Treatment effectiveness metrics",
+        "Patient satisfaction correlation",
+        "Care gap closure rates",
+        "Benchmark comparison",
+        "Quality improvement recommendations",
+        "Provider performance comparison"
+      ],
+      "priority": 5,
+      "passes": false
+    },
+    {
+      "id": "US-352",
+      "title": "Risk identification",
+      "description": "AI identifies compliance and audit risks.",
+      "acceptanceCriteria": [
+        "aiQA.identifyRisks - Find potential risks",
+        "Audit target risk scoring",
+        "Pattern-based risk detection",
+        "Provider outlier identification",
+        "Payer audit risk assessment",
+        "Proactive remediation suggestions",
+        "Risk mitigation tracking"
+      ],
+      "priority": 6,
+      "passes": false
+    },
+    {
+      "id": "US-353",
+      "title": "Audit preparation",
+      "description": "AI assists with audit preparation and response.",
+      "acceptanceCriteria": [
+        "aiQA.prepareForAudit - Audit readiness report",
+        "Documentation gap identification",
+        "Sample chart review",
+        "Compliance checklist generation",
+        "Supporting documentation gathering",
+        "Response template generation",
+        "Mock audit simulation"
+      ],
+      "priority": 7,
+      "passes": false
+    },
+    {
+      "id": "US-354",
+      "title": "QA agent dashboard",
+      "description": "Dashboard for quality assurance activities.",
+      "acceptanceCriteria": [
+        "Overall quality score",
+        "Audit findings summary",
+        "Compliance alert queue",
+        "Provider quality comparison",
+        "Risk indicators",
+        "Quality trend charts",
+        "Action item tracking",
+        "Audit schedule and history"
+      ],
+      "priority": 8,
+      "passes": false
+    }
+  ]
+}

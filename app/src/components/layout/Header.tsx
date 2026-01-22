@@ -1,7 +1,7 @@
 'use client';
 
 import { useSession, signOut } from 'next-auth/react';
-import { Menu, Bell, Sun, Moon, LogOut, User, Settings } from 'lucide-react';
+import { Menu, Bell, LogOut, User, Settings, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -12,7 +12,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { useState } from 'react';
 import type { AuthUser } from '@/lib/auth';
 
 type HeaderProps = {
@@ -22,13 +21,6 @@ type HeaderProps = {
 export function Header({ onMenuClick }: HeaderProps) {
   const { data: session } = useSession();
   const user = session?.user as AuthUser | undefined;
-  const [darkMode, setDarkMode] = useState(false);
-
-  const toggleDarkMode = () => {
-    setDarkMode(!darkMode);
-    // In a real app, this would toggle the theme
-    document.documentElement.classList.toggle('dark');
-  };
 
   const getInitials = (firstName?: string, lastName?: string) => {
     const first = firstName?.charAt(0) ?? '';
@@ -41,14 +33,14 @@ export function Header({ onMenuClick }: HeaderProps) {
   };
 
   return (
-    <header className="h-16 border-b border-gray-200 bg-white flex items-center justify-between px-4 lg:px-6">
+    <header className="h-16 border-b border-stone-200 bg-white flex items-center justify-between px-4 lg:px-6">
       {/* Left side */}
       <div className="flex items-center gap-4">
         {/* Mobile menu button */}
         <Button
           variant="ghost"
           size="icon"
-          className="lg:hidden"
+          className="lg:hidden text-stone-500 hover:text-stone-700 hover:bg-stone-100"
           onClick={onMenuClick}
         >
           <Menu className="h-5 w-5" />
@@ -56,41 +48,44 @@ export function Header({ onMenuClick }: HeaderProps) {
 
         {/* Organization name */}
         <div className="hidden sm:block">
-          <h2 className="font-semibold text-gray-900">
+          <h2 className="font-semibold text-stone-800">
             {user?.organizationName ?? 'ChiroFlow'}
           </h2>
+          <p className="text-xs text-stone-500">{user?.role === 'ADMIN' ? 'Administrator' : user?.role === 'PROVIDER' ? 'Provider' : 'Staff'}</p>
+        </div>
+      </div>
+
+      {/* Center - Search (optional, hidden on mobile) */}
+      <div className="hidden md:flex flex-1 max-w-md mx-8">
+        <div className="relative w-full">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+          <input
+            type="text"
+            placeholder="Search patients, appointments..."
+            className="w-full pl-10 pr-4 py-2 text-sm border border-stone-200 rounded-lg bg-stone-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
+          />
         </div>
       </div>
 
       {/* Right side */}
       <div className="flex items-center gap-2">
-        {/* Dark mode toggle */}
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={toggleDarkMode}
-          className="text-gray-500 hover:text-gray-900"
-        >
-          {darkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-        </Button>
-
         {/* Notifications */}
         <Button
           variant="ghost"
           size="icon"
-          className="text-gray-500 hover:text-gray-900 relative"
+          className="text-stone-500 hover:text-stone-700 hover:bg-stone-100 relative"
         >
           <Bell className="h-5 w-5" />
           {/* Notification badge */}
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
+          <span className="absolute top-2 right-2 w-2 h-2 bg-blue-500 rounded-full" />
         </Button>
 
         {/* User menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="relative h-10 w-10 rounded-full">
+            <Button variant="ghost" className="relative h-10 w-10 rounded-full hover:bg-stone-100">
               <Avatar>
-                <AvatarFallback className="bg-gradient-to-br from-cyan-500 to-teal-500 text-white">
+                <AvatarFallback className="bg-blue-100 text-blue-800 font-medium">
                   {getInitials(user?.firstName, user?.lastName)}
                 </AvatarFallback>
               </Avatar>
@@ -99,10 +94,10 @@ export function Header({ onMenuClick }: HeaderProps) {
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>
               <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium">
+                <p className="text-sm font-medium text-stone-900">
                   {user?.firstName} {user?.lastName}
                 </p>
-                <p className="text-xs text-gray-500">{user?.email}</p>
+                <p className="text-xs text-stone-500">{user?.email}</p>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
