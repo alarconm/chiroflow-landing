@@ -57,6 +57,7 @@ import { subluxationRouter } from './subluxation';
 import { adjustmentRouter } from './adjustment';
 import { vertebralListingRouter } from './vertebralListing';
 import { chiropracticExamRouter } from './chiropracticExam';
+import { spinalAnalysisRouter } from './spinalAnalysis';
 
 export const appRouter = router({
   auth: authRouter,
@@ -117,6 +118,7 @@ export const appRouter = router({
   adjustment: adjustmentRouter,
   vertebralListing: vertebralListingRouter,
   chiropracticExam: chiropracticExamRouter,
+  spinalAnalysis: spinalAnalysisRouter,
 });
 
 

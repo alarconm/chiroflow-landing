@@ -390,3 +390,71 @@ TypeScript compilation passes ✓
 --- Iteration 11 completed at 2026-01-22 00:35:00 ---
 Story: US-205 - Chiropractic examination
 
+--- Iteration 11 completed at 2026-01-22 00:31:01 ---
+Story: US-205 - Chiropractic examination
+
+--- Iteration 12 completed at 2026-01-22 ---
+Story: US-206 - Spinal analysis tools
+
+Implemented:
+
+Backend (spinalAnalysis router):
+- spinalAnalysis.getDiagramData - Get interactive spine diagram data with findings
+  - Supports coronal (front) and sagittal (side) views
+  - Returns all 29 spinal segments with position data
+  - Color-coded severity visualization (green to red, 1-5 scale)
+  - X-axis offsets based on laterality (coronal) or AP position (sagittal)
+  - Groups segments by region with summary statistics
+  - Includes subluxation, listing, and adjustment data per segment
+
+- spinalAnalysis.exportToSoapNote - Export spine diagram to SOAP note format
+  - Generates formatted text for clinical documentation
+  - Groups findings by region and type
+  - Include/exclude findings and recommendations
+  - Returns counts for subluxations, listings, and adjustments
+
+- spinalAnalysis.generatePatientEducationDiagram - Print-ready patient education report
+  - Patient-friendly explanations of findings
+  - Progress notes when comparing visits
+  - Region explanations (what each area affects)
+  - Overall health message based on findings
+  - Care instructions list
+
+- spinalAnalysis.getSegmentDetails - Click-to-document segment info
+  - Returns current and historical data for a segment
+  - Recent adjustments with technique and response
+  - Subluxation and listing history
+
+- spinalAnalysis.getSegmentsList - Reference list of all spinal segments
+
+Frontend Components:
+
+InteractiveSpineDiagram.tsx:
+- Click-to-document functionality for each vertebra
+- Coronal/sagittal view toggle
+- Visual spine representation with clickable segments
+- Color-coded severity indicators
+- Tooltip on hover showing segment details
+- Summary panel with findings count by region/severity
+- Detail dialog when clicking a segment
+- Document Finding action button
+
+SpineAnalysisPanel.tsx:
+- Complete panel with diagram and controls
+- Export to SOAP Note dialog
+  - Checkbox options for findings/recommendations
+  - Preview pane with formatted content
+  - Copy to clipboard functionality
+- Print Patient Education Report dialog
+  - Full preview with styled HTML
+  - Safe DOM manipulation for print
+  - Includes header, findings, summary, instructions, footer
+- Region statistics cards (Cervical, Thoracic, Lumbar, Sacral, Pelvis)
+- Finding count display with severity breakdown
+
+Updated exports:
+- body-diagram/index.ts exports new components
+- Router registered in routers/index.ts
+
+TypeScript compilation passes
+
