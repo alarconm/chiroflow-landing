@@ -38,7 +38,7 @@
         "Support for primary/secondary/tertiary payer order"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-059",

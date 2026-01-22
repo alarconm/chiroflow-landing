@@ -527,3 +527,55 @@ Date: 2026-01-21T10:00:00Z
 - Portal components needed type updates to handle API vs demo data type differences
 
 ---
+--- Iteration 1 completed at 2026-01-21 19:40:20 ---
+Story: US-057 - Billing database schema
+
+--- Iteration 2 completed at 2026-01-21 20:15:00 ---
+Story: US-058 - Insurance payer management
+
+## Story: US-058 - Insurance payer management
+Date: 2026-01-21T20:15:00Z
+
+### What I Did
+- Verified payer tRPC router already exists with all required CRUD operations
+- Created comprehensive seed data for 20 common insurance payers
+- Added seedInsurancePayers() function to seed.ts
+
+### Router Procedures (Already Implemented)
+- payer.create - Add new insurance payer with electronic IDs
+- payer.update - Modify payer details (admin only)
+- payer.list - List all payers with search/filter, pagination
+- payer.get - Get payer details with submission requirements and counts
+- payer.delete - Soft delete (deactivate) payer
+- payer.reactivate - Reactivate a deactivated payer
+- payer.getCommonPayers - Get commonly used payers
+- payer.search - Search payers by name or ID
+
+### Seeded Insurance Payers (20 total)
+- **Medicare**: Part B, Advantage
+- **Medicaid**: Generic (state-specific placeholder)
+- **National Insurers**: Aetna, Anthem BCBS, Cigna, UnitedHealthcare, Humana, Kaiser
+- **Regional (Oregon)**: Regence BCBS, Providence, Moda, PacificSource
+- **Workers Comp/Auto**: SAIF Corporation, Liberty Mutual, State Farm
+- **Chiro Networks**: ChiroHealth USA, American Specialty Health (ASH)
+- **Self-Pay**: Cash/Self-Pay placeholder
+
+### Files Changed
+- app/prisma/seed.ts (added seedInsurancePayers function with 20 payers)
+
+### Key Features
+- EDI payer IDs for electronic claim submission
+- Timely filing days for each payer (90-365 days)
+- Claim submission methods: electronic, paper, portal
+- Contact information (address, phone, website)
+- Notes for special handling instructions
+
+### Build Status
+- ✓ Build compiles successfully
+- ✓ TypeScript checks pass
+
+### Learnings
+- Payer router was already implemented in previous work
+- InsurancePayer model is global (not organization-specific)
+- PatientInsurance has priority field for primary/secondary/tertiary ordering
+
