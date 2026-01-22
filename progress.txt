@@ -130,3 +130,79 @@ Added audit action types: SUBLUXATION_CREATE, SUBLUXATION_UPDATE, SUBLUXATION_DE
 Router registered in index.ts
 TypeScript compilation passes ✓
 
+--- Iteration 8 completed at 2026-01-22 00:15:10 ---
+Story: US-202 - Subluxation documentation
+
+--- Iteration 9 completed at 2026-01-22 ---
+Story: US-203 - Adjustment documentation
+
+Implemented:
+- adjustment.create - Record adjustment with technique, segment, response
+  - Links to encounter, technique, and optionally subluxation
+  - Auto-detects spinal region from vertebra
+  - Validates encounter is not signed
+  - Records all adjustment details including force, direction, position
+- adjustment.update - Update adjustment details (if encounter not signed)
+- adjustment.list - List adjustments by encounter
+  - Filter by region, groups by spinal region
+  - Includes technique and subluxation relations
+- adjustment.get - Get single adjustment with full details
+- adjustment.getPatientHistory - All adjustments for patient
+  - Filter by region, vertebra, date range
+  - Includes encounter and provider info
+  - Pagination support
+- adjustment.delete - Remove adjustment (only from unsigned encounters)
+
+Pre/post findings recording:
+- preLegLength/postLegLength - Leg length difference before/after
+- preROM/postROM - Range of motion before/after
+- prePain/postPain - Pain scale 0-10 before/after
+
+Patient response documentation:
+- response enum: EXCELLENT, GOOD, FAIR, GUARDED, POOR
+- cavitation - Boolean for audible release
+- muscleGuarding - Boolean for guarding present
+- immediateRelief - Boolean for relief achieved
+- responseNotes - Text field for additional notes
+
+Response scale with color coding:
+- EXCELLENT (#22c55e) - Cavitation with immediate relief
+- GOOD (#84cc16) - Partial correction, positive response
+- FAIR (#f59e0b) - Minimal response
+- GUARDED (#f97316) - Muscle guarding present
+- POOR (#ef4444) - No correction achieved
+
+Segment tracking over time:
+- adjustment.getSegmentStats - Comprehensive statistics including:
+  - Total adjustments count
+  - Breakdown by vertebra (with counts and response distribution)
+  - Breakdown by region
+  - Breakdown by technique
+  - Monthly trend data
+  - Overall response distribution
+
+Quick entry templates (8 templates):
+- full-spine-diversified - Standard full spine with Diversified
+- cervical-focus - Upper and mid cervical
+- low-back-pelvis - Lumbar and pelvic
+- activator-full - Low-force full spine with Activator
+- cox-flexion-lumbar - Flexion-distraction for disc issues
+- thoracic-focus - Mid and lower thoracic
+- upper-cervical - Atlas and Axis specific
+- sot-category-2 - SOT block placement
+
+Template features:
+- adjustment.getTemplates - List all templates with resolved technique IDs
+- adjustment.applyTemplate - Create multiple adjustments from template
+  - Supports overrides for technique, force, position, response
+  - Optional pre/post pain to apply to all segments
+- adjustment.bulkCreate - Custom bulk adjustment creation
+
+Helper endpoints:
+- adjustment.getResponseScale - Response enum info with colors
+- adjustment.getForceOptions - LIGHT, MODERATE, FIRM descriptions
+- adjustment.getPositionOptions - PRONE, SUPINE, SIDE_LYING, SEATED, STANDING
+
+Router registered in index.ts
+TypeScript compilation passes ✓
+
