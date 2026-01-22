@@ -382,3 +382,110 @@ Story: US-227 - X-ray annotation tools
 --- Iteration 5 completed at 2026-01-22 ---
 Story: US-228 - Spinal measurement tools
 
+--- Iteration 5 completed at 2026-01-22 03:20:14 ---
+Story: US-228 - Spinal measurement tools
+
+## US-229: Imaging reports
+**Status:** COMPLETED
+**Date:** 2026-01-22
+
+### What was done:
+1. Created imaging reports library at `app/src/lib/imaging/reports.ts`:
+   - **Types and Interfaces**:
+     - `FindingCategory` - 10 categories (alignment, boneStructure, discSpace, jointSpace, softTissue, spineCurvature, degenerativeChanges, fracture, subluxation, other)
+     - `FindingSeverity` - normal, mild, moderate, severe
+     - `StructuredFinding` - Individual finding with category, location, description, severity
+     - `FindingTemplate` - Template for common findings
+     - `ReportSectionTemplate` - Template for report sections
+     - `ReportTemplate` - Complete report template with sections and findings
+     - `ReportStatusTransition` - Valid status workflow transitions
+
+   - **Constants**:
+     - `FINDING_CATEGORIES` - Labels and descriptions for each category
+     - `SEVERITY_DEFINITIONS` - Labels, colors, and descriptions for severity levels
+     - `FINDING_TEMPLATES` - 20+ chiropractic finding templates:
+       - Loss of lordosis, anterolisthesis, retrolisthesis, lateral deviation
+       - Scoliosis, hyperkyphosis, hyperlordosis
+       - Disc space narrowing, vacuum phenomenon
+       - Osteophytes, facet arthrosis, endplate sclerosis, uncovertebral arthrosis
+       - Osteopenia, compression fracture
+       - Rotational/flexion/extension malposition
+       - SI joint dysfunction
+     - `REPORT_SECTIONS` - 7 standard report sections (clinical history, technique, comparison, findings, measurements, impression, recommendations)
+     - `REPORT_TEMPLATES` - Pre-built templates for cervical, lumbar, thoracic, full spine, and pelvis X-rays
+     - `STATUS_TRANSITIONS` - Valid workflow transitions (DRAFT → PENDING_REVIEW → FINAL, etc.)
+
+   - **Helper Functions**:
+     - `getValidTransitions()` - Get valid status transitions for current status
+     - `isValidTransition()` - Validate status transition
+     - `getReportTemplate()` - Get template for body part and modality
+     - `getFindingsByCategory()` - Get templates by category
+     - `getFindingsByLocation()` - Get templates by location
+     - `generateFindingId()` - Generate unique finding ID
+     - `createFindingFromTemplate()` - Create finding from template
+     - `formatMeasurementsForReport()` - Format measurements as text
+     - `formatFindingsForReport()` - Format structured findings as text
+     - `generateImpression()` - Generate impression from findings
+     - `generateRecommendations()` - Generate recommendations based on findings
+     - `validateReportForTransition()` - Validate report before status change
+
+2. Extended imaging router with comprehensive report procedures:
+   - **CRUD Operations**:
+     - `createReport` - Create new imaging report with findings, impression, structured findings
+     - `getReport` - Get report by ID with full relations
+     - `updateReport` - Update draft/pending review reports
+     - `deleteReport` - Delete draft reports only
+     - `listReportsByStudy` - List all reports for a study
+
+   - **Workflow Management**:
+     - `updateReportStatus` - Transition report status with validation
+     - `getValidStatusTransitions` - Get valid next statuses for report
+     - Automatic signature requirement for final/amended status
+     - Study status automatically updated to REPORTED when report finalized
+
+   - **Template & Finding Utilities**:
+     - `getReportTemplates` - Get report template for body part/modality
+     - `getFindingTemplates` - Get finding templates by category or location
+     - `generateReportContent` - Generate report text from structured findings and measurements
+
+   - **Treatment Plan Integration**:
+     - `linkReportToTreatmentPlan` - Link findings to treatment plan
+
+3. Created ImagingReportEditor UI component at `app/src/components/imaging/ImagingReportEditor.tsx`:
+   - **Study Information Card** - Patient name, body part, modality, study date
+   - **Comparison Section** - Select prior studies for comparison with notes
+   - **Structured Findings Panel**:
+     - Add findings from categorized templates via accordion UI
+     - Select location and severity for each finding
+     - Add optional notes
+     - Visual severity color-coding (green/yellow/orange/red)
+     - Generate findings text from structured findings
+     - Generate impression from findings
+   - **Measurements Summary** - Display quantitative measurements with deviation indicators
+   - **Text Sections** - Findings, Impression, Recommendations, Clinical Correlation textareas
+   - **Treatment Plan Link** - Select treatment plan to link report recommendations
+   - **Status Badge** - Visual status indicator (Draft, Pending Review, Final, Amended, Addendum)
+   - **Action Buttons**:
+     - Save Draft
+     - Submit for Review
+     - Sign & Finalize (with electronic signature dialog)
+     - Delete Draft
+   - **Electronic Signature Dialog** - Type name to sign, creates base64 signature data
+
+4. Updated exports:
+   - `app/src/lib/imaging/index.ts` - Added reports module exports
+   - `app/src/components/imaging/index.ts` - Added ImagingReportEditor exports
+
+5. Verified TypeScript compilation passes
+
+### Acceptance Criteria Met:
+- [x] imaging.createReport - Create imaging report (createReport procedure)
+- [x] Structured finding templates (FINDING_TEMPLATES with 20+ templates)
+- [x] Impression/conclusion section (impression field with generateImpression helper)
+- [x] Comparison to prior studies (comparisonStudyId, comparisonNotes fields)
+- [x] Report status workflow (draft, final, amended) - Full workflow with DRAFT, PENDING_REVIEW, FINAL, AMENDED, ADDENDUM
+- [x] Electronic signature (signatureData field, signature dialog in UI)
+- [x] Link findings to treatment plan (treatmentPlanId field, linkReportToTreatmentPlan procedure)
+--- Iteration 6 completed at 2026-01-22 ---
+Story: US-229 - Imaging reports
+

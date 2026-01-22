@@ -14,6 +14,14 @@ export {
   type SpinalMeasurementType,
   type SpinalMeasurement,
 } from './SpinalMeasurementTools';
+export {
+  ImagingReportEditor,
+  type ImagingReportEditorProps,
+  type ReportStatus,
+  type StructuredFinding,
+  type FindingTemplate as ReportFindingTemplate,
+  type ReportData,
+} from './ImagingReportEditor';
 
 export {
   type ViewportState,

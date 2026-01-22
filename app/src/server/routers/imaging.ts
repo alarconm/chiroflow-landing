@@ -2266,6 +2266,815 @@ export const imagingRouter = router({
 
       return summary;
     }),
+
+  // ============================================
+  // IMAGING REPORTS (US-229)
+  // ============================================
+
+  /**
+   * Create a new imaging report
+   */
+  createReport: providerProcedure
+    .input(
+      z.object({
+        studyId: z.string(),
+        findings: z.string().min(1),
+        impression: z.string().optional(),
+        structuredFindings: z.array(z.record(z.string(), z.unknown())).optional(),
+        comparisonStudyId: z.string().optional(),
+        comparisonNotes: z.string().optional(),
+        recommendations: z.string().optional(),
+        clinicalCorrelation: z.string().optional(),
+        treatmentPlanId: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const {
+        studyId,
+        findings,
+        impression,
+        structuredFindings,
+        comparisonStudyId,
+        comparisonNotes,
+        recommendations,
+        clinicalCorrelation,
+        treatmentPlanId,
+      } = input;
+
+      // Verify study exists and belongs to organization
+      const study = await ctx.prisma.imagingStudy.findFirst({
+        where: {
+          id: studyId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!study) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Study not found',
+        });
+      }
+
+      // Get provider ID
+      const provider = await ctx.prisma.provider.findFirst({
+        where: {
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!provider) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only providers can create imaging reports',
+        });
+      }
+
+      // Verify comparison study if provided
+      if (comparisonStudyId) {
+        const comparisonStudy = await ctx.prisma.imagingStudy.findFirst({
+          where: {
+            id: comparisonStudyId,
+            organizationId: ctx.user.organizationId,
+            patientId: study.patientId,
+          },
+        });
+
+        if (!comparisonStudy) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Comparison study not found',
+          });
+        }
+      }
+
+      // Verify treatment plan if provided
+      if (treatmentPlanId) {
+        const treatmentPlan = await ctx.prisma.treatmentPlan.findFirst({
+          where: {
+            id: treatmentPlanId,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+
+        if (!treatmentPlan) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Treatment plan not found',
+          });
+        }
+      }
+
+      // Create the report
+      const report = await ctx.prisma.imagingReport.create({
+        data: {
+          studyId,
+          organizationId: ctx.user.organizationId,
+          reportedById: provider.id,
+          status: 'DRAFT',
+          findings,
+          impression,
+          structuredFindings: structuredFindings as Prisma.InputJsonValue | undefined,
+          comparisonStudyId,
+          comparisonNotes,
+          recommendations,
+          clinicalCorrelation,
+          treatmentPlanId,
+          dictatedAt: new Date(),
+        },
+        include: {
+          study: {
+            select: {
+              id: true,
+              bodyPart: true,
+              modality: true,
+              patient: {
+                include: {
+                  demographics: {
+                    select: {
+                      firstName: true,
+                      lastName: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+          reportedBy: {
+            include: {
+              user: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // Audit log
+      await createAuditLog({
+        action: 'CREATE',
+        entityType: 'ImagingReport',
+        entityId: report.id,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          studyId,
+          status: 'DRAFT',
+        },
+      });
+
+      return report;
+    }),
+
+  /**
+   * Get a report by ID
+   */
+  getReport: protectedProcedure
+    .input(z.object({ reportId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const report = await ctx.prisma.imagingReport.findFirst({
+        where: {
+          id: input.reportId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          study: {
+            include: {
+              patient: {
+                include: {
+                  demographics: {
+                    select: {
+                      firstName: true,
+                      lastName: true,
+                      dateOfBirth: true,
+                    },
+                  },
+                },
+              },
+              images: {
+                select: {
+                  id: true,
+                  thumbnailUrl: true,
+                  viewPosition: true,
+                },
+                take: 4,
+              },
+            },
+          },
+          reportedBy: {
+            include: {
+              user: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+            },
+          },
+          treatmentPlan: {
+            select: {
+              id: true,
+              name: true,
+              status: true,
+            },
+          },
+        },
+      });
+
+      if (!report) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Report not found',
+        });
+      }
+
+      return report;
+    }),
+
+  /**
+   * Update a report (only DRAFT or PENDING_REVIEW)
+   */
+  updateReport: providerProcedure
+    .input(
+      z.object({
+        reportId: z.string(),
+        findings: z.string().optional(),
+        impression: z.string().optional(),
+        structuredFindings: z.array(z.record(z.string(), z.unknown())).optional(),
+        comparisonStudyId: z.string().nullable().optional(),
+        comparisonNotes: z.string().nullable().optional(),
+        recommendations: z.string().nullable().optional(),
+        clinicalCorrelation: z.string().nullable().optional(),
+        treatmentPlanId: z.string().nullable().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { reportId, structuredFindings, ...updateData } = input;
+
+      // Get existing report
+      const report = await ctx.prisma.imagingReport.findFirst({
+        where: {
+          id: reportId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!report) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Report not found',
+        });
+      }
+
+      // Only allow updates to DRAFT or PENDING_REVIEW reports
+      if (report.status !== 'DRAFT' && report.status !== 'PENDING_REVIEW') {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Can only edit draft or pending review reports. Use amend for finalized reports.',
+        });
+      }
+
+      // Update the report
+      const updatedReport = await ctx.prisma.imagingReport.update({
+        where: { id: reportId },
+        data: {
+          ...updateData,
+          ...(structuredFindings !== undefined && {
+            structuredFindings: structuredFindings as Prisma.InputJsonValue,
+          }),
+        },
+        include: {
+          study: {
+            select: {
+              id: true,
+              bodyPart: true,
+              modality: true,
+            },
+          },
+          reportedBy: {
+            include: {
+              user: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // Audit log
+      await createAuditLog({
+        action: 'UPDATE',
+        entityType: 'ImagingReport',
+        entityId: reportId,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: updateData,
+      });
+
+      return updatedReport;
+    }),
+
+  /**
+   * Update report status (workflow)
+   */
+  updateReportStatus: providerProcedure
+    .input(
+      z.object({
+        reportId: z.string(),
+        status: z.enum(['DRAFT', 'PENDING_REVIEW', 'FINAL', 'AMENDED', 'ADDENDUM']),
+        signatureData: z.string().optional(), // Base64 signature for final/amended
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { reportId, status, signatureData } = input;
+
+      // Get existing report
+      const report = await ctx.prisma.imagingReport.findFirst({
+        where: {
+          id: reportId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!report) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Report not found',
+        });
+      }
+
+      // Import validation function dynamically to avoid circular deps
+      const { isValidTransition, validateReportForTransition } = await import('@/lib/imaging/reports');
+
+      // Validate transition
+      if (!isValidTransition(report.status, status)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Cannot transition from ${report.status} to ${status}`,
+        });
+      }
+
+      // Validate report is ready for transition
+      const validation = validateReportForTransition(
+        {
+          findings: report.findings,
+          impression: report.impression,
+          signatureData: signatureData || report.signatureData,
+          status: report.status,
+        },
+        status
+      );
+
+      if (!validation.valid) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: validation.errors.join(', '),
+        });
+      }
+
+      // Prepare update data
+      const updateData: Prisma.ImagingReportUpdateInput = {
+        status,
+      };
+
+      // Set timestamps based on status
+      if (status === 'FINAL') {
+        updateData.signedAt = new Date();
+        if (signatureData) {
+          updateData.signatureData = signatureData;
+        }
+      } else if (status === 'AMENDED') {
+        updateData.amendedAt = new Date();
+        if (signatureData) {
+          updateData.signatureData = signatureData;
+        }
+      }
+
+      // Update report
+      const updatedReport = await ctx.prisma.imagingReport.update({
+        where: { id: reportId },
+        data: updateData,
+        include: {
+          study: {
+            select: {
+              id: true,
+              bodyPart: true,
+              modality: true,
+              status: true,
+            },
+          },
+          reportedBy: {
+            include: {
+              user: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // Update study status to REPORTED if finalizing report
+      if (status === 'FINAL') {
+        await ctx.prisma.imagingStudy.update({
+          where: { id: report.studyId },
+          data: { status: 'REPORTED' },
+        });
+      }
+
+      // Audit log
+      await createAuditLog({
+        action: 'UPDATE',
+        entityType: 'ImagingReport',
+        entityId: reportId,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          previousStatus: report.status,
+          newStatus: status,
+          signed: status === 'FINAL' || status === 'AMENDED',
+        },
+      });
+
+      return updatedReport;
+    }),
+
+  /**
+   * List reports for a study
+   */
+  listReportsByStudy: protectedProcedure
+    .input(z.object({ studyId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const study = await ctx.prisma.imagingStudy.findFirst({
+        where: {
+          id: input.studyId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!study) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Study not found',
+        });
+      }
+
+      return ctx.prisma.imagingReport.findMany({
+        where: {
+          studyId: input.studyId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          reportedBy: {
+            include: {
+              user: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    }),
+
+  /**
+   * Delete a report (only DRAFT)
+   */
+  deleteReport: providerProcedure
+    .input(z.object({ reportId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const report = await ctx.prisma.imagingReport.findFirst({
+        where: {
+          id: input.reportId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!report) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Report not found',
+        });
+      }
+
+      if (report.status !== 'DRAFT') {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Can only delete draft reports',
+        });
+      }
+
+      await ctx.prisma.imagingReport.delete({
+        where: { id: input.reportId },
+      });
+
+      // Audit log
+      await createAuditLog({
+        action: 'DELETE',
+        entityType: 'ImagingReport',
+        entityId: input.reportId,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          studyId: report.studyId,
+        },
+      });
+
+      return { success: true };
+    }),
+
+  /**
+   * Get report templates for a body part
+   */
+  getReportTemplates: protectedProcedure
+    .input(
+      z.object({
+        bodyPart: z.string(),
+        modality: z.enum(['XRAY', 'MRI', 'CT', 'ULTRASOUND']).default('XRAY'),
+      })
+    )
+    .query(async ({ input }) => {
+      const { getReportTemplate, FINDING_TEMPLATES, REPORT_SECTIONS } = await import('@/lib/imaging/reports');
+
+      const template = getReportTemplate(input.bodyPart, input.modality);
+
+      return {
+        template,
+        sections: REPORT_SECTIONS,
+        allFindings: FINDING_TEMPLATES,
+      };
+    }),
+
+  /**
+   * Get finding templates by category or location
+   */
+  getFindingTemplates: protectedProcedure
+    .input(
+      z.object({
+        category: z
+          .enum([
+            'alignment',
+            'boneStructure',
+            'discSpace',
+            'jointSpace',
+            'softTissue',
+            'spineCurvature',
+            'degenerativeChanges',
+            'fracture',
+            'subluxation',
+            'other',
+          ])
+          .optional(),
+        location: z.string().optional(),
+      })
+    )
+    .query(async ({ input }) => {
+      const { getFindingsByCategory, getFindingsByLocation, FINDING_TEMPLATES } = await import('@/lib/imaging/reports');
+
+      if (input.category) {
+        return getFindingsByCategory(input.category);
+      }
+
+      if (input.location) {
+        return getFindingsByLocation(input.location);
+      }
+
+      return FINDING_TEMPLATES;
+    }),
+
+  /**
+   * Get valid status transitions for a report
+   */
+  getValidStatusTransitions: protectedProcedure
+    .input(z.object({ reportId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const report = await ctx.prisma.imagingReport.findFirst({
+        where: {
+          id: input.reportId,
+          organizationId: ctx.user.organizationId,
+        },
+        select: { status: true },
+      });
+
+      if (!report) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Report not found',
+        });
+      }
+
+      const { getValidTransitions } = await import('@/lib/imaging/reports');
+
+      return getValidTransitions(report.status);
+    }),
+
+  /**
+   * Generate report content from measurements and findings
+   */
+  generateReportContent: providerProcedure
+    .input(
+      z.object({
+        studyId: z.string(),
+        structuredFindings: z.array(
+          z.object({
+            id: z.string(),
+            category: z.string(),
+            location: z.string(),
+            description: z.string(),
+            severity: z.enum(['normal', 'mild', 'moderate', 'severe']),
+            measurementId: z.string().optional(),
+            notes: z.string().optional(),
+          })
+        ),
+        includeMeasurements: z.boolean().default(true),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { studyId, structuredFindings, includeMeasurements } = input;
+
+      // Get study with measurements
+      const study = await ctx.prisma.imagingStudy.findFirst({
+        where: {
+          id: studyId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          images: {
+            include: {
+              measurements: true,
+            },
+          },
+          patient: {
+            include: {
+              demographics: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                  dateOfBirth: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!study) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Study not found',
+        });
+      }
+
+      const {
+        formatMeasurementsForReport,
+        formatFindingsForReport,
+        generateImpression,
+        generateRecommendations,
+      } = await import('@/lib/imaging/reports');
+
+      // Collect all measurements
+      const allMeasurements = study.images.flatMap((img) =>
+        img.measurements.map((m) => ({
+          type: m.type,
+          value: m.value,
+          unit: m.unit,
+          label: m.label || undefined,
+          deviation: m.deviation,
+          normalMin: m.normalMin,
+          normalMax: m.normalMax,
+        }))
+      );
+
+      // Cast structuredFindings to the expected type
+      type FindingCategory =
+        | 'alignment'
+        | 'boneStructure'
+        | 'discSpace'
+        | 'jointSpace'
+        | 'softTissue'
+        | 'spineCurvature'
+        | 'degenerativeChanges'
+        | 'fracture'
+        | 'subluxation'
+        | 'other';
+
+      interface StructuredFinding {
+        id: string;
+        category: FindingCategory;
+        location: string;
+        description: string;
+        severity: 'normal' | 'mild' | 'moderate' | 'severe';
+        measurementId?: string;
+        notes?: string;
+      }
+
+      const typedFindings: StructuredFinding[] = structuredFindings.map((f) => ({
+        ...f,
+        category: f.category as FindingCategory,
+      }));
+
+      // Generate content
+      const measurementsText = includeMeasurements
+        ? formatMeasurementsForReport(allMeasurements)
+        : '';
+      const findingsText = formatFindingsForReport(typedFindings);
+      const impressionText = generateImpression(typedFindings);
+      const recommendationsList = generateRecommendations(typedFindings);
+
+      return {
+        findings: findingsText,
+        measurements: measurementsText,
+        impression: impressionText,
+        recommendations: recommendationsList.join('\n'),
+        structuredFindings,
+      };
+    }),
+
+  /**
+   * Link report to treatment plan
+   */
+  linkReportToTreatmentPlan: providerProcedure
+    .input(
+      z.object({
+        reportId: z.string(),
+        treatmentPlanId: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { reportId, treatmentPlanId } = input;
+
+      // Verify report
+      const report = await ctx.prisma.imagingReport.findFirst({
+        where: {
+          id: reportId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!report) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Report not found',
+        });
+      }
+
+      // Verify treatment plan
+      const treatmentPlan = await ctx.prisma.treatmentPlan.findFirst({
+        where: {
+          id: treatmentPlanId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!treatmentPlan) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Treatment plan not found',
+        });
+      }
+
+      // Update report
+      const updatedReport = await ctx.prisma.imagingReport.update({
+        where: { id: reportId },
+        data: { treatmentPlanId },
+        include: {
+          treatmentPlan: {
+            select: {
+              id: true,
+              name: true,
+              status: true,
+            },
+          },
+        },
+      });
+
+      // Audit log
+      await createAuditLog({
+        action: 'UPDATE',
+        entityType: 'ImagingReport',
+        entityId: reportId,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          treatmentPlanId,
+          linked: true,
+        },
+      });
+
+      return updatedReport;
+    }),
 });
 
 export type ImagingRouter = typeof imagingRouter;

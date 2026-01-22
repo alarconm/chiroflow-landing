@@ -99,7 +99,7 @@
         "Link findings to treatment plan"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-230",

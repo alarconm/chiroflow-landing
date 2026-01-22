@@ -46,3 +46,34 @@ export {
   type VertebralHeightInput,
   type AtlasPlaneInput,
 } from './spinal-measurements';
+
+// Imaging Reports (US-229)
+export {
+  // Types
+  type ImagingFindingCategory,
+  type ImagingFindingSeverity,
+  type ImagingStructuredFinding,
+  type ImagingFindingTemplate,
+  type ImagingReportTemplate,
+  type ImagingReportContext,
+  // Constants
+  FINDING_CATEGORIES,
+  SEVERITY_DEFINITIONS,
+  FINDING_TEMPLATES,
+  REPORT_SECTIONS,
+  REPORT_TEMPLATES,
+  STATUS_TRANSITIONS,
+  // Functions
+  getValidTransitions,
+  isValidTransition,
+  getReportTemplate,
+  getFindingsByCategory,
+  getFindingsByLocation,
+  generateFindingId,
+  createFindingFromTemplate,
+  formatMeasurementsForReport,
+  formatFindingsForReport,
+  generateImpression,
+  generateRecommendations,
+  validateReportForTransition,
+} from './reports';
