@@ -501,3 +501,66 @@ Date: 2026-01-22
 --- Iteration 7 completed at 2026-01-22 ---
 Story: US-214 - Posture comparison reports
 
+--- Iteration 7 completed at 2026-01-22 01:39:10 ---
+Story: US-214 - Posture comparison reports
+
+## US-215: Posture analysis UI - COMPLETED
+Date: 2026-01-22
+
+### Changes Made:
+1. Created comprehensive posture analysis page at `app/src/app/(dashboard)/patients/[id]/posture/page.tsx`:
+   - 6 main tabs: Overview, Deviations, ROM, FMS, Compare, History
+   - Real-time patient summary statistics on Overview tab
+   - PostureCapture dialog integration for photo capture/upload
+   - LandmarkEditor dialog for viewing/adjusting landmarks
+   - Full deviation analysis display with severity badges
+   - ROM entry form with all joints grouped by region
+   - FMS scoring interface with full 7-test assessment
+   - Historical comparison view with assessment selector
+   - Patient education export button (PDF-ready)
+
+2. Sub-components created within page:
+   - ROMEntryForm: Form for recording ROM measurements
+     - Select joint region and specific joint
+     - Enter degrees measured and pain level
+     - Notes field for observations
+     - Validates against normal ranges
+   - FMSEntryForm: Form for recording FMS assessment
+     - Full 7-test FMS scoring
+     - Left/right scores for bilateral tests
+     - Pain tracking with location
+     - Real-time summary calculation
+   - ComparisonView: Assessment comparison component
+     - Fetches deviations for two assessments
+     - Calculates improvement score
+     - Displays deviations side by side with change indicators
+     - Shows improved/stable/declined statistics
+
+3. UI Features:
+   - Responsive tabs layout
+   - ChiroFlow brand colors (primary #053e67, accent #c90000)
+   - Loading states with spinners
+   - Empty states with actionable guidance
+   - Assessment status badges (COMPLETED, ANALYSIS_PENDING, IN_PROGRESS)
+   - Date formatting with formatDistanceToNow
+   - Grid layouts for deviation cards
+   - Severity color coding (green/yellow/orange/red)
+
+4. TypeScript compilation passes
+
+### Files Created:
+- app/src/app/(dashboard)/patients/[id]/posture/page.tsx
+
+### Acceptance Criteria Met:
+- [x] Posture analysis page at /patients/[id]/posture
+- [x] Photo capture/upload interface (PostureCapture dialog)
+- [x] Landmark visualization overlay (LandmarkEditor dialog)
+- [x] Deviation measurement display (Deviations tab with cards)
+- [x] ROM entry and tracking (ROM tab with entry form and history)
+- [x] FMS scoring interface (FMS tab with full assessment form)
+- [x] Historical comparison view (Compare and History tabs)
+- [x] Patient education export (Export button on deviations)
+
+--- Iteration 8 completed at 2026-01-22 ---
+Story: US-215 - Posture analysis UI
+
