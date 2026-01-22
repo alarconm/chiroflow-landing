@@ -489,3 +489,107 @@ Story: US-228 - Spinal measurement tools
 --- Iteration 6 completed at 2026-01-22 ---
 Story: US-229 - Imaging reports
 
+--- Iteration 6 completed at 2026-01-22 03:28:18 ---
+Story: US-229 - Imaging reports
+
+## US-230: AI imaging analysis
+**Status:** COMPLETED
+**Date:** 2026-01-22
+
+### What was done:
+1. Created comprehensive AI imaging analysis library at `app/src/lib/imaging/ai-analysis.ts`:
+   - **Types and Interfaces**:
+     - `Point`, `BoundingBox` - Basic geometry types
+     - `VertebralLevel` - All vertebral levels from C1-Coccyx
+     - `SpinalRegion` - cervical, thoracic, lumbar, sacral, coccygeal
+     - `AbnormalityType` - 20 abnormality types (degenerative_disc_disease, disc_herniation, osteophyte, facet_arthrosis, spondylolisthesis, compression_fracture, scoliosis, etc.)
+     - `AbnormalitySeverity` - mild, moderate, severe
+     - `ConfidenceLevel` - low, medium, high, very_high
+     - `DetectedVertebra` - Detected vertebra with bounding box, endplate points, margins, and confidence
+     - `DetectedAbnormality` - Abnormality with location, severity, description, and suggested actions
+     - `SuggestedMeasurement` - AI-suggested measurement with points, estimated value, and rationale
+     - `AIFinding` - Preliminary finding with category, summary, details, and clinical significance
+     - `AIAnalysisResult` - Complete analysis result with all detections, findings, and disclaimers
+     - `AIAnalysisInput` - Input parameters for analysis
+     - `AIAnalysisOptions` - Configuration options for analysis
+
+   - **Constants**:
+     - `VERTEBRAL_LEVELS` - All vertebral levels organized by region
+     - `ABNORMALITY_DESCRIPTIONS` - Detailed descriptions for each abnormality type
+     - `SEVERITY_THRESHOLDS` - Thresholds for classifying severity (Cobb angle, disc height loss, etc.)
+     - `CONFIDENCE_THRESHOLDS` - Numeric thresholds for confidence levels (0.9 for very_high, 0.75 for high, etc.)
+     - `AI_MODEL_VERSION` - Current model version identifier
+     - `AI_DISCLAIMERS` - 6 mandatory disclaimers for AI-generated findings
+
+   - **Helper Functions**:
+     - `getConfidenceLevel()` - Convert numeric confidence to level
+     - `generateAIFindingId()` - Generate unique finding IDs
+     - `getSpinalRegion()` - Determine region from vertebral level
+     - `calculateDistance()`, `calculateAngle()` - Geometry calculations
+     - `classifyScoliosisSeverity()` - Classify scoliosis by Cobb angle
+
+   - **Analysis Functions**:
+     - `detectVertebralLevels()` - Detect and locate vertebral levels in image
+     - `suggestMeasurements()` - Suggest Cobb angle, lordosis, and disc height measurements
+     - `detectAbnormalities()` - Detect alignment and degenerative abnormalities
+     - `generatePreliminaryFindings()` - Generate structured findings from detections
+     - `generateOverallAssessment()` - Create overall assessment summary
+     - `assessImageQuality()` - Evaluate image quality and flag issues
+     - `determineReviewPriority()` - Set review priority (routine, expedited, urgent)
+     - `analyzeImage()` - Main analysis function combining all capabilities
+     - `validateAnalysisResult()` - Validate analysis output
+
+2. Extended imaging router (`app/src/server/routers/imaging.ts`) with AI procedures:
+   - **Core Analysis**:
+     - `aiAnalyze` - Run full AI analysis on an image
+       - Detects vertebral levels
+       - Suggests measurements with point coordinates
+       - Identifies abnormalities with severity
+       - Generates preliminary findings
+       - Returns confidence scores for all findings
+       - REQUIRES PROVIDER REVIEW AND APPROVAL
+     - `getAIAnalysisSummary` - Get simplified analysis summary
+
+   - **Apply AI Suggestions**:
+     - `applyAISuggestedMeasurement` - Create measurement from AI suggestion
+       - Requires provider approval flag
+       - Supports provider-verified points to override AI suggestions
+       - Records AI provenance in measurement data
+     - `applyAIDetectedAbnormality` - Create annotation from AI abnormality
+       - Requires provider approval
+       - Supports provider notes
+       - Color-coded by severity
+
+   - **Report Generation**:
+     - `generateAIReportDraft` - Generate draft report from AI findings
+       - Compiles findings by category (anatomy, alignment, degeneration, abnormality, measurement)
+       - Marks all content as AI-generated requiring review
+       - Creates draft report in database
+
+   - **Utility**:
+     - `getAIModelInfo` - Get AI model capabilities and disclaimers
+
+3. Added AI imaging audit actions to `app/src/lib/audit.ts`:
+   - `IMAGING_AI_ANALYZE` - AI analysis execution
+   - `IMAGING_AI_MEASUREMENT_APPLY` - Applying AI measurement
+   - `IMAGING_AI_ABNORMALITY_APPLY` - Applying AI abnormality
+   - `IMAGING_AI_REPORT_DRAFT` - Generating AI report draft
+
+4. Updated exports in `app/src/lib/imaging/index.ts`:
+   - Added all AI analysis types and functions
+   - Aliased Point to AIPoint to avoid conflicts
+
+5. Verified TypeScript compilation passes
+
+### Acceptance Criteria Met:
+- [x] imaging.aiAnalyze - AI analysis of X-ray (aiAnalyze procedure with full analysis)
+- [x] Auto-detect vertebral levels (detectVertebralLevels function with C1-Coccyx support)
+- [x] Suggest Cobb angle measurements (suggestMeasurements generates Cobb angle suggestions with points)
+- [x] Identify potential abnormalities (detectAbnormalities with 20 abnormality types)
+- [x] Degenerative change detection (degenerative_disc_disease, osteophyte, facet_arthrosis, etc.)
+- [x] Generate preliminary findings (generatePreliminaryFindings with structured findings)
+- [x] Confidence scores for AI findings (all detections include confidence 0-1 and confidenceLevel)
+- [x] Provider review and approval required (all procedures require providerApproved flag, disclaimers included)
+--- Iteration 7 completed at 2026-01-22 ---
+Story: US-230 - AI imaging analysis
+

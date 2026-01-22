@@ -3075,6 +3075,610 @@ export const imagingRouter = router({
 
       return updatedReport;
     }),
+
+  // ============================================
+  // AI IMAGING ANALYSIS (US-230)
+  // ============================================
+
+  /**
+   * Run AI analysis on an imaging image
+   * Automatically detects vertebral levels, suggests measurements,
+   * identifies potential abnormalities, and generates preliminary findings
+   * IMPORTANT: All AI findings require provider review and approval
+   */
+  aiAnalyze: providerProcedure
+    .input(
+      z.object({
+        imageId: z.string(),
+        options: z
+          .object({
+            detectVertebrae: z.boolean().default(true),
+            suggestMeasurements: z.boolean().default(true),
+            detectAbnormalities: z.boolean().default(true),
+            detectDegenerativeChanges: z.boolean().default(true),
+            generateFindings: z.boolean().default(true),
+            confidenceThreshold: z.number().min(0).max(1).default(0.5),
+          })
+          .optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { imageId, options } = input;
+
+      // Verify image exists and belongs to organization
+      const image = await ctx.prisma.imagingImage.findFirst({
+        where: { id: imageId },
+        include: {
+          study: {
+            select: {
+              id: true,
+              organizationId: true,
+              patientId: true,
+              bodyPart: true,
+              modality: true,
+              clinicalHistory: true,
+              indication: true,
+            },
+          },
+        },
+      });
+
+      if (!image || image.study.organizationId !== ctx.user.organizationId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Image not found',
+        });
+      }
+
+      // Import AI analysis functions
+      const {
+        analyzeImage,
+        validateAnalysisResult,
+        AI_DISCLAIMERS,
+      } = await import('@/lib/imaging/ai-analysis');
+
+      // Prepare input for AI analysis
+      const analysisInput = {
+        imageId: image.id,
+        imageUrl: image.imageUrl,
+        bodyPart: image.study.bodyPart,
+        viewPosition: image.viewPosition || undefined,
+        modality: image.study.modality,
+        clinicalHistory: image.study.clinicalHistory || undefined,
+        indication: image.study.indication || undefined,
+      };
+
+      // Run AI analysis
+      const analysisResult = await analyzeImage(analysisInput, {
+        ...options,
+        includeDisclaimer: true,
+      });
+
+      // Validate the result
+      const validation = validateAnalysisResult(analysisResult);
+      if (!validation.valid) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `AI analysis validation failed: ${validation.errors.join(', ')}`,
+        });
+      }
+
+      // Audit log
+      await createAuditLog({
+        action: 'IMAGING_AI_ANALYZE',
+        entityType: 'ImagingImage',
+        entityId: imageId,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          analysisId: analysisResult.analysisId,
+          modelVersion: analysisResult.modelVersion,
+          vertebraeDetected: analysisResult.detectedVertebrae.length,
+          abnormalitiesDetected: analysisResult.detectedAbnormalities.length,
+          findingsGenerated: analysisResult.preliminaryFindings.length,
+          reviewPriority: analysisResult.reviewPriority,
+        },
+      });
+
+      return {
+        ...analysisResult,
+        disclaimers: AI_DISCLAIMERS,
+        message: 'AI analysis complete. All findings require provider review and approval.',
+      };
+    }),
+
+  /**
+   * Get AI analysis summary for an image
+   * Returns a simplified view of the AI analysis results
+   */
+  getAIAnalysisSummary: protectedProcedure
+    .input(z.object({ imageId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const image = await ctx.prisma.imagingImage.findFirst({
+        where: { id: input.imageId },
+        include: {
+          study: {
+            select: {
+              organizationId: true,
+              bodyPart: true,
+            },
+          },
+        },
+      });
+
+      if (!image || image.study.organizationId !== ctx.user.organizationId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Image not found',
+        });
+      }
+
+      // Import AI analysis types
+      const { AI_DISCLAIMERS } = await import('@/lib/imaging/ai-analysis');
+
+      return {
+        imageId: input.imageId,
+        bodyPart: image.study.bodyPart,
+        aiAnalysisAvailable: true,
+        disclaimers: AI_DISCLAIMERS,
+        message: 'Use aiAnalyze to run AI analysis on this image',
+      };
+    }),
+
+  /**
+   * Apply AI-suggested measurement to the image
+   * Creates a measurement record from the AI suggestion
+   * Provider must verify and approve the suggested points
+   */
+  applyAISuggestedMeasurement: providerProcedure
+    .input(
+      z.object({
+        imageId: z.string(),
+        suggestion: z.object({
+          id: z.string(),
+          type: z.string(),
+          label: z.string(),
+          suggestedPoints: z.array(
+            z.object({
+              name: z.string(),
+              point: z.object({ x: z.number(), y: z.number() }),
+              confidence: z.number(),
+            })
+          ),
+          estimatedValue: z.number().optional(),
+          unit: z.string().optional(),
+          normalRange: z
+            .object({
+              min: z.number(),
+              max: z.number(),
+            })
+            .optional(),
+        }),
+        // Provider-verified points (overrides AI suggestions if provided)
+        verifiedPoints: z
+          .array(
+            z.object({
+              name: z.string(),
+              point: z.object({ x: z.number(), y: z.number() }),
+            })
+          )
+          .optional(),
+        providerApproved: z.boolean(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { imageId, suggestion, verifiedPoints, providerApproved } = input;
+
+      if (!providerApproved) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Provider approval is required to apply AI-suggested measurements',
+        });
+      }
+
+      // Verify image exists and belongs to organization
+      const image = await ctx.prisma.imagingImage.findFirst({
+        where: { id: imageId },
+        include: {
+          study: {
+            select: {
+              organizationId: true,
+            },
+          },
+        },
+      });
+
+      if (!image || image.study.organizationId !== ctx.user.organizationId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Image not found',
+        });
+      }
+
+      // Use verified points if provided, otherwise use AI suggestions
+      const pointsToUse = verifiedPoints || suggestion.suggestedPoints;
+
+      // Map the type to ImagingMeasurementType
+      let measurementType: ImagingMeasurementType;
+      switch (suggestion.type) {
+        case 'COBB_ANGLE':
+          measurementType = 'COBB_ANGLE';
+          break;
+        case 'CERVICAL_LORDOSIS':
+        case 'LUMBAR_LORDOSIS':
+          measurementType = 'CERVICAL_LORDOSIS';
+          break;
+        case 'DISC_HEIGHT':
+          measurementType = 'DISC_HEIGHT';
+          break;
+        case 'VERTEBRAL_HEIGHT':
+          measurementType = 'VERTEBRAL_HEIGHT';
+          break;
+        case 'ATLAS_PLANE':
+          measurementType = 'ATLAS_PLANE';
+          break;
+        default:
+          measurementType = 'LINEAR';
+      }
+
+      // Create the measurement record
+      const measurement = await ctx.prisma.imagingMeasurement.create({
+        data: {
+          imageId,
+          type: measurementType,
+          value: suggestion.estimatedValue || 0,
+          unit: suggestion.unit || 'degrees',
+          coordinates: {
+            aiSuggestionId: suggestion.id,
+            aiSuggested: true,
+            providerVerified: !!verifiedPoints,
+            points: pointsToUse,
+          } as Prisma.InputJsonValue,
+          label: suggestion.label,
+          description: `AI-suggested measurement (provider approved)`,
+          normalMin: suggestion.normalRange?.min,
+          normalMax: suggestion.normalRange?.max,
+          color: '#00BFFF', // AI suggestion color (cyan)
+          createdById: ctx.user.id,
+        },
+      });
+
+      // Audit log
+      await createAuditLog({
+        action: 'CREATE',
+        entityType: 'ImagingMeasurement',
+        entityId: measurement.id,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          aiSuggestionId: suggestion.id,
+          type: suggestion.type,
+          providerApproved: true,
+          pointsModified: !!verifiedPoints,
+        },
+      });
+
+      return {
+        measurement,
+        message: 'AI-suggested measurement applied with provider approval',
+      };
+    }),
+
+  /**
+   * Apply AI-detected abnormality as an annotation
+   * Creates annotation record from the AI finding
+   * Provider must review and approve
+   */
+  applyAIDetectedAbnormality: providerProcedure
+    .input(
+      z.object({
+        imageId: z.string(),
+        abnormality: z.object({
+          id: z.string(),
+          type: z.string(),
+          location: z.string(),
+          severity: z.enum(['mild', 'moderate', 'severe']),
+          description: z.string(),
+          boundingBox: z
+            .object({
+              x: z.number(),
+              y: z.number(),
+              width: z.number(),
+              height: z.number(),
+            })
+            .optional(),
+          confidence: z.number(),
+        }),
+        providerNotes: z.string().optional(),
+        providerApproved: z.boolean(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { imageId, abnormality, providerNotes, providerApproved } = input;
+
+      if (!providerApproved) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Provider approval is required to apply AI-detected abnormalities',
+        });
+      }
+
+      // Verify image exists and belongs to organization
+      const image = await ctx.prisma.imagingImage.findFirst({
+        where: { id: imageId },
+        include: {
+          study: {
+            select: {
+              organizationId: true,
+            },
+          },
+        },
+      });
+
+      if (!image || image.study.organizationId !== ctx.user.organizationId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Image not found',
+        });
+      }
+
+      // Determine color based on severity
+      const severityColors = {
+        mild: '#FFFF00', // Yellow
+        moderate: '#FFA500', // Orange
+        severe: '#FF0000', // Red
+      };
+
+      // Create annotation for the abnormality
+      const annotation = await ctx.prisma.imagingAnnotation.create({
+        data: {
+          imageId,
+          type: abnormality.boundingBox ? 'RECTANGLE' : 'TEXT',
+          coordinates: abnormality.boundingBox
+            ? {
+                aiAbnormalityId: abnormality.id,
+                aiDetected: true,
+                type: abnormality.type,
+                location: abnormality.location,
+                severity: abnormality.severity,
+                boundingBox: abnormality.boundingBox,
+              }
+            : {
+                aiAbnormalityId: abnormality.id,
+                aiDetected: true,
+                type: abnormality.type,
+                location: abnormality.location,
+                severity: abnormality.severity,
+              },
+          text: `[AI] ${abnormality.description}${providerNotes ? ` - Provider note: ${providerNotes}` : ''}`,
+          color: severityColors[abnormality.severity],
+          lineWidth: 2,
+          createdById: ctx.user.id,
+        },
+      });
+
+      // Audit log
+      await createAuditLog({
+        action: 'CREATE',
+        entityType: 'ImagingAnnotation',
+        entityId: annotation.id,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          aiAbnormalityId: abnormality.id,
+          type: abnormality.type,
+          severity: abnormality.severity,
+          providerApproved: true,
+          providerNotes: !!providerNotes,
+        },
+      });
+
+      return {
+        annotation,
+        message: 'AI-detected abnormality applied with provider approval',
+      };
+    }),
+
+  /**
+   * Generate AI preliminary findings as a draft report section
+   * Provider must review, edit, and approve before finalizing
+   */
+  generateAIReportDraft: providerProcedure
+    .input(
+      z.object({
+        studyId: z.string(),
+        analysisResults: z.array(
+          z.object({
+            imageId: z.string(),
+            preliminaryFindings: z.array(
+              z.object({
+                id: z.string(),
+                category: z.string(),
+                summary: z.string(),
+                details: z.string(),
+                confidence: z.number(),
+                severity: z.enum(['mild', 'moderate', 'severe']).optional(),
+              })
+            ),
+            overallAssessment: z.string(),
+          })
+        ),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { studyId, analysisResults } = input;
+
+      // Verify study exists and belongs to organization
+      const study = await ctx.prisma.imagingStudy.findFirst({
+        where: {
+          id: studyId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          patient: {
+            include: {
+              demographics: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!study) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Study not found',
+        });
+      }
+
+      // Get provider
+      const provider = await ctx.prisma.provider.findFirst({
+        where: {
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!provider) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only providers can generate AI report drafts',
+        });
+      }
+
+      // Compile AI findings into report format
+      const allFindings = analysisResults.flatMap((r) => r.preliminaryFindings);
+      const overallAssessments = analysisResults.map((r) => r.overallAssessment);
+
+      // Group findings by category
+      const anatomyFindings = allFindings.filter((f) => f.category === 'anatomy');
+      const alignmentFindings = allFindings.filter((f) => f.category === 'alignment');
+      const degenerationFindings = allFindings.filter((f) => f.category === 'degeneration');
+      const abnormalityFindings = allFindings.filter((f) => f.category === 'abnormality');
+      const measurementFindings = allFindings.filter((f) => f.category === 'measurement');
+
+      // Build findings text
+      const findingsSections: string[] = [];
+
+      if (anatomyFindings.length > 0) {
+        findingsSections.push(
+          'ANATOMY:\n' + anatomyFindings.map((f) => `- ${f.details}`).join('\n')
+        );
+      }
+
+      if (alignmentFindings.length > 0) {
+        findingsSections.push(
+          'ALIGNMENT:\n' + alignmentFindings.map((f) => `- ${f.details}`).join('\n')
+        );
+      }
+
+      if (degenerationFindings.length > 0) {
+        findingsSections.push(
+          'DEGENERATIVE CHANGES:\n' + degenerationFindings.map((f) => `- ${f.details}`).join('\n')
+        );
+      }
+
+      if (abnormalityFindings.length > 0) {
+        findingsSections.push(
+          'ABNORMALITIES:\n' + abnormalityFindings.map((f) => `- ${f.details}`).join('\n')
+        );
+      }
+
+      if (measurementFindings.length > 0) {
+        findingsSections.push(
+          'MEASUREMENTS:\n' + measurementFindings.map((f) => `- ${f.details}`).join('\n')
+        );
+      }
+
+      const draftFindings = findingsSections.join('\n\n');
+      const draftImpression = overallAssessments.join(' ');
+
+      // Create draft report with AI-generated content
+      const report = await ctx.prisma.imagingReport.create({
+        data: {
+          studyId,
+          organizationId: ctx.user.organizationId,
+          reportedById: provider.id,
+          status: 'DRAFT',
+          findings: `[AI-GENERATED - REQUIRES PROVIDER REVIEW]\n\n${draftFindings}`,
+          impression: `[AI-GENERATED - REQUIRES PROVIDER REVIEW]\n\n${draftImpression}`,
+          structuredFindings: allFindings.map((f) => ({
+            ...f,
+            aiGenerated: true,
+            providerReviewed: false,
+          })) as unknown as Prisma.InputJsonValue,
+          recommendations:
+            'AI analysis requires provider review. Please add clinical recommendations based on correlation with patient presentation.',
+          dictatedAt: new Date(),
+        },
+        include: {
+          study: {
+            select: {
+              bodyPart: true,
+              modality: true,
+            },
+          },
+        },
+      });
+
+      // Audit log
+      await createAuditLog({
+        action: 'CREATE',
+        entityType: 'ImagingReport',
+        entityId: report.id,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          aiGenerated: true,
+          findingsCount: allFindings.length,
+          imagesAnalyzed: analysisResults.length,
+        },
+      });
+
+      return {
+        report,
+        aiDisclaimer:
+          'This report draft was generated by AI and requires thorough provider review and modification before finalization. AI confidence scores are provided as guidance but do not indicate clinical significance.',
+        message: 'AI report draft generated. Provider review and editing required.',
+      };
+    }),
+
+  /**
+   * Get AI analysis model information
+   */
+  getAIModelInfo: protectedProcedure.query(async () => {
+    const { AI_MODEL_VERSION, AI_DISCLAIMERS, CONFIDENCE_THRESHOLDS } = await import(
+      '@/lib/imaging/ai-analysis'
+    );
+
+    return {
+      modelVersion: AI_MODEL_VERSION,
+      capabilities: [
+        'Vertebral level detection',
+        'Cobb angle measurement suggestions',
+        'Cervical and lumbar lordosis suggestions',
+        'Disc height measurement suggestions',
+        'Degenerative change detection',
+        'Spinal alignment assessment',
+        'Preliminary findings generation',
+      ],
+      confidenceThresholds: CONFIDENCE_THRESHOLDS,
+      disclaimers: AI_DISCLAIMERS,
+      requiresProviderReview: true,
+      supportedModalities: ['XRAY'],
+      supportedBodyParts: [
+        'Cervical Spine',
+        'Thoracic Spine',
+        'Lumbar Spine',
+        'Full Spine',
+        'Pelvis',
+      ],
+    };
+  }),
 });
 
 export type ImagingRouter = typeof imagingRouter;

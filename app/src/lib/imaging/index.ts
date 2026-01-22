@@ -77,3 +77,46 @@ export {
   generateRecommendations,
   validateReportForTransition,
 } from './reports';
+
+// AI Imaging Analysis (US-230)
+export {
+  // Types
+  type Point as AIPoint,
+  type BoundingBox,
+  type VertebralLevel,
+  type SpinalRegion,
+  type AbnormalityType,
+  type AbnormalitySeverity,
+  type ConfidenceLevel,
+  type DetectedVertebra,
+  type DetectedAbnormality,
+  type SuggestedMeasurement,
+  type AIFinding,
+  type AIAnalysisResult,
+  type AIAnalysisInput,
+  type AIAnalysisOptions,
+  // Constants
+  VERTEBRAL_LEVELS,
+  ABNORMALITY_DESCRIPTIONS,
+  SEVERITY_THRESHOLDS,
+  CONFIDENCE_THRESHOLDS,
+  AI_MODEL_VERSION,
+  AI_DISCLAIMERS,
+  // Helper Functions
+  getConfidenceLevel,
+  generateAIFindingId,
+  getSpinalRegion,
+  calculateDistance as aiCalculateDistance,
+  calculateAngle as aiCalculateAngle,
+  classifyScoliosisSeverity,
+  // Analysis Functions
+  detectVertebralLevels,
+  suggestMeasurements,
+  detectAbnormalities,
+  generatePreliminaryFindings,
+  generateOverallAssessment,
+  assessImageQuality,
+  determineReviewPriority,
+  analyzeImage,
+  validateAnalysisResult,
+} from './ai-analysis';
