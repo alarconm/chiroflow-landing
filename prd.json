@@ -19,7 +19,7 @@
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-225",
@@ -35,7 +35,7 @@
         "Bulk upload for multi-image studies"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-226",

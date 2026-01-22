@@ -65,6 +65,8 @@ import { romRouter } from './rom';
 import { fmsRouter } from './fms';
 // Telehealth & Virtual Care (Epic 21)
 import { telehealthRouter } from './telehealth';
+// Imaging & X-Ray Integration (Epic 22)
+import { imagingRouter } from './imaging';
 
 export const appRouter = router({
   auth: authRouter,
@@ -133,6 +135,8 @@ export const appRouter = router({
   fms: fmsRouter,
   // Telehealth & Virtual Care (Epic 21)
   telehealth: telehealthRouter,
+  // Imaging & X-Ray Integration (Epic 22)
+  imaging: imagingRouter,
 });
 
 
