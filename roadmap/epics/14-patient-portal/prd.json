@@ -18,7 +18,7 @@
         "Rate limiting on login attempts"
       ],
       "priority": 1,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-094",
@@ -33,7 +33,7 @@
         "Mobile-responsive layout"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-095",
@@ -49,7 +49,7 @@
         "Confirmation email on booking/changes"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-096",
@@ -64,7 +64,7 @@
         "Signature capture component"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-097",
@@ -79,7 +79,7 @@
         "Download receipts and statements"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-098",
@@ -94,7 +94,7 @@
         "Audit logging of all record access"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-099",
@@ -109,7 +109,7 @@
         "Auto-response for after-hours messages"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-100",
@@ -124,7 +124,7 @@
         "Respect preferences in all communications"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }
