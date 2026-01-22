@@ -18,7 +18,7 @@
         "Report caching for performance"
       ],
       "priority": 1,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-102",
@@ -33,7 +33,7 @@
         "Date range selection for all reports"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-103",
@@ -48,7 +48,7 @@
         "ERA posting summary - auto-posted vs manual posting"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-104",
@@ -63,7 +63,7 @@
         "Peak hours analysis"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-105",
@@ -78,7 +78,7 @@
         "Care plan adherence report"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-106",
@@ -93,7 +93,7 @@
         "Failure notifications"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-107",
@@ -109,7 +109,7 @@
         "Dashboard customization (widget arrangement)"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-108",
@@ -124,7 +124,7 @@
         "Report scheduling interface"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }
