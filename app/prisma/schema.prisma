@@ -4815,6 +4815,16 @@ model PortalPreferences {
   notifyBillingStatements    Boolean @default(true)
   notifyFormRequests         Boolean @default(true)
 
+  // Appointment reminder timing (hours before appointment)
+  reminderTiming1   Int     @default(24)  // First reminder (hours before)
+  reminderTiming2   Int?    // Second reminder (optional)
+  reminderTiming3   Int?    // Third reminder (optional)
+
+  // Marketing preferences
+  marketingEmailOptIn Boolean @default(false)  // Newsletter, promotions
+  marketingSmsOptIn   Boolean @default(false)  // Text campaigns
+  marketingCallOptIn  Boolean @default(false)  // Phone calls
+
   // Communication preferences
   preferredLanguage String   @default("en")
 

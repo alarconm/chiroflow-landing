@@ -165,6 +165,15 @@ const preferencesSchema = z.object({
   notifyNewDocuments: z.boolean().optional(),
   notifyBillingStatements: z.boolean().optional(),
   notifyFormRequests: z.boolean().optional(),
+  // Appointment reminder timing (hours before)
+  reminderTiming1: z.number().min(1).max(168).optional(), // 1 hour to 7 days
+  reminderTiming2: z.number().min(1).max(168).nullable().optional(),
+  reminderTiming3: z.number().min(1).max(168).nullable().optional(),
+  // Marketing preferences
+  marketingEmailOptIn: z.boolean().optional(),
+  marketingSmsOptIn: z.boolean().optional(),
+  marketingCallOptIn: z.boolean().optional(),
+  // Display preferences
   preferredLanguage: z.string().optional(),
   timezone: z.string().optional(),
   dateFormat: z.string().optional(),
@@ -2362,6 +2371,15 @@ export const portalRouter = router({
         notifyNewDocuments: preferences.notifyNewDocuments,
         notifyBillingStatements: preferences.notifyBillingStatements,
         notifyFormRequests: preferences.notifyFormRequests,
+        // Reminder timing preferences
+        reminderTiming1: preferences.reminderTiming1,
+        reminderTiming2: preferences.reminderTiming2,
+        reminderTiming3: preferences.reminderTiming3,
+        // Marketing preferences
+        marketingEmailOptIn: preferences.marketingEmailOptIn,
+        marketingSmsOptIn: preferences.marketingSmsOptIn,
+        marketingCallOptIn: preferences.marketingCallOptIn,
+        // Display preferences
         preferredLanguage: preferences.preferredLanguage,
         timezone: preferences.timezone,
         dateFormat: preferences.dateFormat,

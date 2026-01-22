@@ -428,7 +428,7 @@ export function ProfileSettings() {
               )}
 
               <div className="space-y-4">
-                <h3 className="font-medium">Appointment Reminders</h3>
+                <h3 className="font-medium">Quick Settings</h3>
                 <div className="space-y-4 pl-4">
                   <div className="flex items-center justify-between">
                     <div>
@@ -460,12 +460,6 @@ export function ProfileSettings() {
                       }}
                     />
                   </div>
-                </div>
-              </div>
-
-              <div className="border-t pt-6 space-y-4">
-                <h3 className="font-medium">Other Notifications</h3>
-                <div className="space-y-4 pl-4">
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium">Statement Notifications</p>
@@ -497,6 +491,20 @@ export function ProfileSettings() {
                     />
                   </div>
                 </div>
+              </div>
+
+              <div className="border-t pt-6">
+                <Alert className="bg-blue-50 border-blue-200">
+                  <Bell className="h-4 w-4 text-blue-600" />
+                  <AlertDescription className="text-blue-800">
+                    For advanced options including reminder timing, marketing preferences, and more,
+                    visit the{' '}
+                    <a href="/portal/notifications" className="font-medium underline hover:no-underline">
+                      full Notification Preferences page
+                    </a>
+                    .
+                  </AlertDescription>
+                </Alert>
               </div>
             </CardContent>
           </Card>

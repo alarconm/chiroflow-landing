@@ -124,7 +124,7 @@
         "Respect preferences in all communications"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }

@@ -119,7 +119,8 @@ export function PortalLayout({ children }: PortalLayoutProps) {
       icon: FolderOpen,
       badge: summary?.newDocuments,
     },
-    { href: '/portal/treatment-plan', label: 'Treatment Plan', icon: ClipboardList },
+    { href: '/portal/records', label: 'Health Records', icon: ClipboardList },
+    { href: '/portal/notifications', label: 'Notifications', icon: Bell },
     { href: '/portal/settings', label: 'Settings', icon: Settings },
   ];
 

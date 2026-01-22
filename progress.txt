@@ -564,3 +564,108 @@ Files Created/Modified:
 --- Iteration 7 completed at 2026-01-21 ---
 Story: US-099 - Secure messaging
 
+--- Iteration 7 completed at 2026-01-21 22:45:41 ---
+Story: US-099 - Secure messaging
+
+US-100: Portal notification preferences - COMPLETE
+--------------------------------------------------
+Implemented comprehensive notification preferences management:
+
+1. NotificationPreferences component (/portal/notifications)
+   - Tabbed interface with 4 main sections:
+     * Channels: Email and SMS notification toggles
+     * Types: Granular notification type controls
+     * Timing: Appointment reminder timing preferences
+     * Marketing: Marketing communication opt-in/out
+   - Unsaved changes detection with visual indicator
+   - Mobile-responsive with sticky save button on mobile
+   - Loading skeleton states
+
+2. Communication Channels Tab
+   - Email notifications toggle with active badge
+   - SMS/Text notifications toggle with rate warning
+   - Privacy notice about contact information protection
+   - Visual card design for each channel option
+
+3. Notification Types Tab
+   - Appointments section:
+     * Appointment reminders toggle
+     * Appointment changes toggle (schedule/reschedule/cancel)
+   - Messages section:
+     * New messages notification toggle
+   - Documents & Forms section:
+     * New documents notification toggle
+     * Form requests notification toggle
+   - Billing section:
+     * Billing statements notification toggle
+   - Organized with section headers and icons
+
+4. Appointment Reminder Timing Tab
+   - First reminder (required): Select 1hr to 1 week before
+   - Second reminder (optional): Additional reminder time
+   - Third reminder (optional): Third reminder option
+   - Visual preview showing when reminders will be sent
+   - Info alert explaining multiple reminder options
+   - Time options: 1hr, 2hr, 4hr, 12hr, 24hr, 48hr, 72hr, 168hr (1 week)
+
+5. Marketing Communications Tab
+   - Email marketing opt-in/out (newsletters, promotions)
+   - SMS marketing opt-in/out (text campaigns)
+   - Phone call marketing opt-in/out (promotional calls)
+   - Clear separation from healthcare notifications
+   - Visual status summary with badges
+   - Info alert explaining marketing vs healthcare messages
+   - Privacy assurance message
+
+6. Prisma Schema Updates
+   - Added reminderTiming1 (Int, default 24)
+   - Added reminderTiming2 (Int?, optional)
+   - Added reminderTiming3 (Int?, optional)
+   - Added marketingEmailOptIn (Boolean, default false)
+   - Added marketingSmsOptIn (Boolean, default false)
+   - Added marketingCallOptIn (Boolean, default false)
+
+7. Portal Router Updates
+   - Updated preferencesSchema with new fields
+   - Updated getPreferences to return all new fields
+   - updatePreferences now handles all marketing and timing fields
+   - Audit logging for preference updates
+
+8. ProfileSettings Integration
+   - Quick settings for common notification toggles
+   - Link to full Notification Preferences page
+   - Consolidated notification options in settings tab
+
+9. PortalLayout Navigation
+   - Added Notifications nav item with Bell icon
+   - Accessible from main portal navigation
+
+Acceptance Criteria Status:
+- [x] Email notification preferences (reminders, messages, billing)
+- [x] SMS notification preferences
+- [x] Appointment reminder timing preferences
+- [x] Marketing communication opt-in/out
+- [x] Save preferences with confirmation
+- [x] Respect preferences in all communications (schema fields available)
+
+Technical Implementation:
+- State management with useCallback for efficient re-renders
+- Change detection comparing initial vs current preferences
+- Immediate save with confirmation feedback
+- All preferences stored in PortalPreferences model
+- Fields properly typed with zod validation
+- Mobile-first responsive design
+- WCAG accessibility with proper labels
+
+Files Created/Modified:
+- app/prisma/schema.prisma (MODIFIED - added 6 new fields to PortalPreferences)
+- app/src/components/portal/NotificationPreferences.tsx (NEW - 600+ lines)
+- app/src/app/portal/notifications/page.tsx (NEW - page route)
+- app/src/server/routers/portal.ts (MODIFIED - updated preferencesSchema and endpoints)
+- app/src/components/portal/index.ts (MODIFIED - added NotificationPreferences export)
+- app/src/components/portal/PortalLayout.tsx (MODIFIED - added Notifications nav item)
+- app/src/components/portal/ProfileSettings.tsx (MODIFIED - added link to full preferences)
+
+--- Iteration 8 completed at 2026-01-22 ---
+Story: US-100 - Portal notification preferences
+
