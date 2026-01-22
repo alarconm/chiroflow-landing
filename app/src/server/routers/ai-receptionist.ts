@@ -14,11 +14,14 @@ import {
   getVoiceConfig,
   createSchedulingAgent,
   createFAQAgent,
+  createPatientIdentificationAgent,
   type VoiceServiceConfig,
   type BusinessHours,
   type EscalationRule,
   type SchedulingRequest,
   type FAQRequest,
+  type PatientIdentificationRequest,
+  type NewPatientInfo,
 } from '@/lib/ai-receptionist';
 import type { Prisma, AIConversationStatus, ConversationChannel } from '@prisma/client';
 
@@ -1582,6 +1585,553 @@ export const aiReceptionistRouter = router({
       await auditLog('UPDATE', 'FAQFeedback', {
         entityId: input.entryId,
         changes: { helpful: input.helpful },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { success: true };
+    }),
+
+  // ==================== Patient Identification Agent (US-304) ====================
+
+  /**
+   * Identify patient by caller ID (phone number lookup)
+   * US-304: Patient identification
+   */
+  identifyByCallerId: protectedProcedure
+    .input(
+      z.object({
+        phoneNumber: z.string().min(10),
+        callSid: z.string().optional(),
+        conversationId: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const identificationAgent = createPatientIdentificationAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const callState = {
+        callSid: input.callSid || `API-${Date.now()}`,
+        organizationId: ctx.user.organizationId,
+        phoneNumber: input.phoneNumber,
+        conversationId: input.conversationId,
+        status: 'in-progress' as const,
+        direction: 'inbound' as const,
+        startedAt: new Date(),
+        recordingConsent: false,
+        transcript: [],
+        context: {
+          patientIdentified: false,
+          intents: ['IDENTIFY_PATIENT' as const],
+          turnCount: 1,
+          frustrationLevel: 0,
+          silenceCount: 0,
+          retryCount: 0,
+        },
+      };
+
+      const result = await identificationAgent.lookupByCallerId(input.phoneNumber, callState);
+
+      // Record the action
+      if (input.conversationId) {
+        await ctx.prisma.aIReceptionistAction.create({
+          data: {
+            organizationId: ctx.user.organizationId,
+            conversationId: input.conversationId,
+            actionType: 'IDENTIFY_PATIENT',
+            parameters: { phoneNumber: input.phoneNumber, method: 'caller_id' },
+            result: result.actionResult,
+            confidence: result.verified ? 1.0 : 0.5,
+            patientId: result.patientId,
+          },
+        });
+      }
+
+      await auditLog('CREATE', 'PatientIdentification', {
+        entityId: result.patientId || 'unknown',
+        changes: { method: 'caller_id', verified: result.verified },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return result;
+    }),
+
+  /**
+   * Verify patient by name and date of birth
+   * US-304: Patient identification
+   */
+  verifyByNameAndDOB: protectedProcedure
+    .input(
+      z.object({
+        firstName: z.string().min(1),
+        lastName: z.string().min(1),
+        dateOfBirth: z.coerce.date(),
+        callSid: z.string().optional(),
+        conversationId: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const identificationAgent = createPatientIdentificationAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const callState = {
+        callSid: input.callSid || `API-${Date.now()}`,
+        organizationId: ctx.user.organizationId,
+        phoneNumber: '',
+        conversationId: input.conversationId,
+        status: 'in-progress' as const,
+        direction: 'inbound' as const,
+        startedAt: new Date(),
+        recordingConsent: false,
+        transcript: [],
+        context: {
+          patientIdentified: false,
+          intents: ['IDENTIFY_PATIENT' as const],
+          turnCount: 1,
+          frustrationLevel: 0,
+          silenceCount: 0,
+          retryCount: 0,
+        },
+      };
+
+      const result = await identificationAgent.verifyByNameAndDOB(
+        input.firstName,
+        input.lastName,
+        input.dateOfBirth,
+        callState
+      );
+
+      // Record the action
+      if (input.conversationId) {
+        await ctx.prisma.aIReceptionistAction.create({
+          data: {
+            organizationId: ctx.user.organizationId,
+            conversationId: input.conversationId,
+            actionType: 'IDENTIFY_PATIENT',
+            parameters: {
+              firstName: input.firstName,
+              lastName: input.lastName,
+              method: 'dob_name',
+            },
+            result: result.actionResult,
+            confidence: result.verified ? 1.0 : 0.5,
+            patientId: result.patientId,
+          },
+        });
+      }
+
+      await auditLog('CREATE', 'PatientIdentification', {
+        entityId: result.patientId || 'unknown',
+        changes: { method: 'dob_name', verified: result.verified },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return result;
+    }),
+
+  /**
+   * Parse verification info from natural language
+   * US-304: Patient identification
+   */
+  parseVerificationInfo: protectedProcedure
+    .input(
+      z.object({
+        userInput: z.string().min(1),
+        currentInfo: z
+          .object({
+            firstName: z.string().optional(),
+            lastName: z.string().optional(),
+            dateOfBirth: z.coerce.date().optional(),
+            phoneNumber: z.string().optional(),
+          })
+          .optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const identificationAgent = createPatientIdentificationAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const result = identificationAgent.parseVerificationInfo(
+        input.userInput,
+        input.currentInfo || {}
+      );
+
+      return result;
+    }),
+
+  /**
+   * Main identification flow - orchestrates the full verification process
+   * US-304: Patient identification
+   */
+  identifyPatient: protectedProcedure
+    .input(
+      z.object({
+        phoneNumber: z.string().optional(),
+        firstName: z.string().optional(),
+        lastName: z.string().optional(),
+        dateOfBirth: z.coerce.date().optional(),
+        verificationMethod: z.enum(['caller_id', 'voice', 'dob_name']).optional(),
+        callSid: z.string().optional(),
+        conversationId: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const identificationAgent = createPatientIdentificationAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const callState = {
+        callSid: input.callSid || `API-${Date.now()}`,
+        organizationId: ctx.user.organizationId,
+        phoneNumber: input.phoneNumber || '',
+        conversationId: input.conversationId,
+        status: 'in-progress' as const,
+        direction: 'inbound' as const,
+        startedAt: new Date(),
+        recordingConsent: false,
+        transcript: [],
+        context: {
+          patientIdentified: false,
+          intents: ['IDENTIFY_PATIENT' as const],
+          turnCount: 1,
+          frustrationLevel: 0,
+          silenceCount: 0,
+          retryCount: 0,
+        },
+      };
+
+      const result = await identificationAgent.identifyPatient(
+        {
+          phoneNumber: input.phoneNumber,
+          firstName: input.firstName,
+          lastName: input.lastName,
+          dateOfBirth: input.dateOfBirth,
+          verificationMethod: input.verificationMethod,
+        },
+        callState
+      );
+
+      // Record the action
+      if (input.conversationId) {
+        await ctx.prisma.aIReceptionistAction.create({
+          data: {
+            organizationId: ctx.user.organizationId,
+            conversationId: input.conversationId,
+            actionType: 'IDENTIFY_PATIENT',
+            parameters: {
+              method: result.verificationMethod,
+            },
+            result: result.actionResult,
+            confidence: result.verified ? 1.0 : 0.5,
+            patientId: result.patientId,
+          },
+        });
+      }
+
+      await auditLog('CREATE', 'PatientIdentification', {
+        entityId: result.patientId || 'unknown',
+        changes: { method: result.verificationMethod, verified: result.verified },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return result;
+    }),
+
+  /**
+   * Create a new patient during a call
+   * US-304: Patient identification
+   */
+  createPatientDuringCall: protectedProcedure
+    .input(
+      z.object({
+        firstName: z.string().min(1),
+        lastName: z.string().min(1),
+        dateOfBirth: z.coerce.date(),
+        phone: z.string().min(10),
+        email: z.string().email().optional(),
+        address: z
+          .object({
+            street: z.string().optional(),
+            city: z.string().optional(),
+            state: z.string().optional(),
+            zip: z.string().optional(),
+          })
+          .optional(),
+        insuranceProvider: z.string().optional(),
+        insuranceMemberId: z.string().optional(),
+        emergencyContactName: z.string().optional(),
+        emergencyContactPhone: z.string().optional(),
+        referralSource: z.string().optional(),
+        callSid: z.string().optional(),
+        conversationId: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const identificationAgent = createPatientIdentificationAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+        allowNewPatientCreation: true,
+      });
+
+      const callState = {
+        callSid: input.callSid || `API-${Date.now()}`,
+        organizationId: ctx.user.organizationId,
+        phoneNumber: input.phone,
+        conversationId: input.conversationId,
+        status: 'in-progress' as const,
+        direction: 'inbound' as const,
+        startedAt: new Date(),
+        recordingConsent: false,
+        transcript: [],
+        context: {
+          patientIdentified: false,
+          intents: ['CREATE_PATIENT' as const],
+          turnCount: 1,
+          frustrationLevel: 0,
+          silenceCount: 0,
+          retryCount: 0,
+        },
+      };
+
+      const patientInfo: NewPatientInfo = {
+        firstName: input.firstName,
+        lastName: input.lastName,
+        dateOfBirth: input.dateOfBirth,
+        phone: input.phone,
+        email: input.email,
+        address: input.address,
+        insuranceProvider: input.insuranceProvider,
+        insuranceMemberId: input.insuranceMemberId,
+        emergencyContactName: input.emergencyContactName,
+        emergencyContactPhone: input.emergencyContactPhone,
+        referralSource: input.referralSource,
+      };
+
+      const result = await identificationAgent.createNewPatient(patientInfo, callState);
+
+      // Record the action
+      if (input.conversationId) {
+        await ctx.prisma.aIReceptionistAction.create({
+          data: {
+            organizationId: ctx.user.organizationId,
+            conversationId: input.conversationId,
+            actionType: 'CREATE_PATIENT',
+            parameters: {
+              firstName: input.firstName,
+              lastName: input.lastName,
+            },
+            result: result.actionResult,
+            confidence: 1.0,
+            patientId: result.patientId,
+          },
+        });
+      }
+
+      await auditLog('CREATE', 'Patient', {
+        entityId: result.patientId || 'unknown',
+        changes: {
+          firstName: input.firstName,
+          lastName: input.lastName,
+          createdDuringCall: true,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return result;
+    }),
+
+  /**
+   * Collect new patient information from conversation
+   * US-304: Patient identification
+   */
+  collectNewPatientInfo: protectedProcedure
+    .input(
+      z.object({
+        userInput: z.string().min(1),
+        currentInfo: z
+          .object({
+            firstName: z.string().optional(),
+            lastName: z.string().optional(),
+            dateOfBirth: z.coerce.date().optional(),
+            phone: z.string().optional(),
+            email: z.string().optional(),
+          })
+          .optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const identificationAgent = createPatientIdentificationAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const result = await identificationAgent.collectNewPatientInfo(
+        input.userInput,
+        input.currentInfo || {}
+      );
+
+      return result;
+    }),
+
+  /**
+   * Handle family member calling on behalf of patient
+   * US-304: Patient identification
+   */
+  handleFamilyMemberCalling: protectedProcedure
+    .input(
+      z.object({
+        callerPatientId: z.string(),
+        callingForPatientId: z.string(),
+        callSid: z.string().optional(),
+        conversationId: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const identificationAgent = createPatientIdentificationAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const callState = {
+        callSid: input.callSid || `API-${Date.now()}`,
+        organizationId: ctx.user.organizationId,
+        phoneNumber: '',
+        conversationId: input.conversationId,
+        patientId: input.callerPatientId,
+        status: 'in-progress' as const,
+        direction: 'inbound' as const,
+        startedAt: new Date(),
+        recordingConsent: false,
+        transcript: [],
+        context: {
+          patientIdentified: true,
+          intents: ['IDENTIFY_PATIENT' as const],
+          turnCount: 1,
+          frustrationLevel: 0,
+          silenceCount: 0,
+          retryCount: 0,
+        },
+      };
+
+      const result = await identificationAgent.handleFamilyMemberCalling(
+        input.callerPatientId,
+        input.callingForPatientId,
+        callState
+      );
+
+      // Record the action
+      if (input.conversationId) {
+        await ctx.prisma.aIReceptionistAction.create({
+          data: {
+            organizationId: ctx.user.organizationId,
+            conversationId: input.conversationId,
+            actionType: 'IDENTIFY_PATIENT',
+            parameters: {
+              method: 'family_member',
+              callerPatientId: input.callerPatientId,
+              callingForPatientId: input.callingForPatientId,
+            },
+            result: result.actionResult,
+            confidence: result.verified ? 1.0 : 0.5,
+            patientId: result.patientId,
+          },
+        });
+      }
+
+      await auditLog('CREATE', 'PatientIdentification', {
+        entityId: result.patientId || 'unknown',
+        changes: {
+          method: 'family_member',
+          callerPatientId: input.callerPatientId,
+          verified: result.verified,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return result;
+    }),
+
+  /**
+   * Prompt for family member selection when household has multiple patients
+   * US-304: Patient identification
+   */
+  promptForFamilyMember: protectedProcedure
+    .input(
+      z.object({
+        callerPatientId: z.string(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const identificationAgent = createPatientIdentificationAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      return identificationAgent.promptForFamilyMember(input.callerPatientId);
+    }),
+
+  /**
+   * Verify caller authorization to access patient information (HIPAA compliance)
+   * US-304: Patient identification
+   */
+  verifyAuthorization: protectedProcedure
+    .input(
+      z.object({
+        callerId: z.string(),
+        patientId: z.string(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const identificationAgent = createPatientIdentificationAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      return identificationAgent.verifyAuthorization(input.callerId, input.patientId);
+    }),
+
+  /**
+   * Get privacy-safe patient info for verification without revealing full details
+   * US-304: Patient identification
+   */
+  getPrivacySafePatientInfo: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const identificationAgent = createPatientIdentificationAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      return identificationAgent.getPrivacySafePatientInfo(input.patientId);
+    }),
+
+  /**
+   * Link a conversation to a patient record
+   * US-304: Patient identification
+   */
+  linkConversationToPatient: protectedProcedure
+    .input(
+      z.object({
+        conversationId: z.string(),
+        patientId: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const identificationAgent = createPatientIdentificationAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      await identificationAgent.linkConversationToPatient(input.conversationId, input.patientId);
+
+      await auditLog('UPDATE', 'AIReceptionistConversation', {
+        entityId: input.conversationId,
+        changes: { patientId: input.patientId },
         userId: ctx.user.id,
         organizationId: ctx.user.organizationId,
       });

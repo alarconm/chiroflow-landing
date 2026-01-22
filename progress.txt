@@ -170,8 +170,62 @@
   ✅ Provider background and specialties
   ✅ Escalate unknown questions to staff
 
+#### US-304: Patient identification (COMPLETED)
+- Created comprehensive PatientIdentificationAgent class in `app/src/lib/ai-receptionist/patient-identification-agent.ts`:
+  - Caller ID lookup via PatientContact phone fields (homePhone, mobilePhone, workPhone)
+  - Phone number normalization for consistent matching
+  - Multi-patient household detection and handling
+- Verification methods:
+  - lookupByCallerId - Find patients by phone number with confidence scoring
+  - verifyByNameAndDOB - Secure name and date of birth verification
+  - verifyByVoice - Voice verification framework (placeholder for biometrics integration)
+  - parseVerificationInfo - Natural language parsing for name/DOB extraction
+- New patient creation during call:
+  - createNewPatient - Full patient record creation with demographics and contact
+  - collectNewPatientInfo - Progressive information collection from conversation
+  - Automatic MRN generation
+  - Soundex values for fuzzy name matching
+- Family member handling:
+  - handleFamilyMemberCalling - Verify family relationships via Household model
+  - promptForFamilyMember - Prompt when household has multiple patients
+  - verifyFamilyRelationship - Check shared households
+  - buildFamilyContext - Build context for family member calls
+- Privacy-compliant identification (HIPAA):
+  - verifyAuthorization - Check caller authorization for patient access
+  - getPrivacySafePatientInfo - Return only partial info for verification
+  - Age-based authorization rules for minors
+  - Authorized relationship types (PARENT, GUARDIAN, SPOUSE, etc.)
+- Conversation linking:
+  - linkConversationToPatient - Associate conversation with patient record
+  - Auto-linking option in configuration
+- Helper utilities:
+  - Soundex algorithm for fuzzy name matching
+  - findBySoundex - Search by phonetic similarity
+  - calculateAge - Age calculation for authorization rules
+  - normalizePhoneNumber - Clean phone numbers for comparison
+- Added tRPC endpoints in ai-receptionist.ts:
+  - aiReceptionist.identifyByCallerId - Lookup by phone number
+  - aiReceptionist.verifyByNameAndDOB - Name/DOB verification
+  - aiReceptionist.parseVerificationInfo - Parse natural language input
+  - aiReceptionist.identifyPatient - Main identification flow orchestrator
+  - aiReceptionist.createPatientDuringCall - Create new patient
+  - aiReceptionist.collectNewPatientInfo - Collect patient info progressively
+  - aiReceptionist.handleFamilyMemberCalling - Handle family member scenarios
+  - aiReceptionist.promptForFamilyMember - Prompt for household member selection
+  - aiReceptionist.verifyAuthorization - HIPAA authorization check
+  - aiReceptionist.getPrivacySafePatientInfo - Privacy-safe patient lookup
+  - aiReceptionist.linkConversationToPatient - Link conversation to patient
+- Updated exports in ai-receptionist/index.ts
+- All acceptance criteria met:
+  ✅ Caller ID lookup for existing patients
+  ✅ Voice verification option (framework ready)
+  ✅ DOB/name verification for security
+  ✅ Create new patient record during call
+  ✅ Link conversation to patient record
+  ✅ Handle family members calling
+  ✅ Privacy-compliant identification
+
 ### Pending Stories
-- US-304: Patient identification
 - US-305: Smart escalation
 - US-306: Multi-channel support
 - US-307: AI receptionist dashboard
@@ -197,4 +251,10 @@ Story: US-302 - Appointment scheduling agent
 
 --- Iteration 4 completed at 2026-01-22 ---
 Story: US-303 - FAQ and information agent
+
+--- Iteration 4 completed at 2026-01-22 09:26:54 ---
+Story: US-303 - FAQ and information agent
+
+--- Iteration 5 completed at 2026-01-22 ---
+Story: US-304 - Patient identification
 

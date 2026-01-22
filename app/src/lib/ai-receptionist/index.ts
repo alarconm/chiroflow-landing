@@ -34,3 +34,16 @@ export {
   type FAQAgentConfig,
   type KnowledgeEntry,
 } from './faq-agent';
+
+// Patient Identification Agent (US-304)
+export {
+  PatientIdentificationAgent,
+  createPatientIdentificationAgent,
+  type PatientIdentificationRequest,
+  type PatientIdentificationResponse,
+  type PatientMatch,
+  type VoiceVerificationData,
+  type FamilyContext,
+  type NewPatientInfo,
+  type PatientIdentificationConfig,
+} from './patient-identification-agent';
