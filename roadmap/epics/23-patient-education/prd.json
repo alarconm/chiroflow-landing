@@ -19,7 +19,7 @@
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-233",
@@ -36,7 +36,7 @@
         "Equipment requirements"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-234",
@@ -52,7 +52,7 @@
         "prescription.discontinue - End prescription"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-235",
@@ -69,7 +69,7 @@
         "Printable PDF format"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-236",
@@ -86,7 +86,7 @@
         "Reading level options"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-237",
@@ -102,7 +102,7 @@
         "Achievement badges for consistency"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-238",
@@ -119,7 +119,7 @@
         "Mobile-friendly design"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-239",
@@ -135,7 +135,7 @@
         "Generate take-home handout"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }
