@@ -118,8 +118,59 @@
   ✅ Appointment confirmation via patient's preferred method
   ✅ Reschedule/cancel through conversation
 
+#### US-303: FAQ and information agent (COMPLETED)
+- Created comprehensive FAQAgent class in `app/src/lib/ai-receptionist/faq-agent.ts`:
+  - Question answering from knowledge base (answerQuestion)
+  - Question classification into categories (PRACTICE_INFO, INSURANCE, SERVICES, PROVIDERS, etc.)
+  - Emergency detection and handling for urgent medical situations
+  - Keyword and pattern-based matching with confidence scoring
+- Specialized query methods:
+  - getPracticeInfo - Hours, location, parking, contact information
+  - getInsuranceInfo - Insurance acceptance and coverage questions
+  - getServiceInfo - Treatment and service offerings
+  - getProviderInfo - Doctor backgrounds and specialties
+  - getAppointmentPrep - Pre-appointment preparation instructions
+  - getNewPatientInfo - New patient process explanation
+- Search and discovery:
+  - searchFAQs - Full-text search across knowledge base
+  - getFAQsByCategory - Browse FAQs by category
+  - getPopularQuestions - Most frequently asked questions
+- Feedback and analytics:
+  - recordFeedback - Track helpful/unhelpful responses
+  - Usage tracking (timesUsed) for knowledge entries
+- Question classification with regex patterns and keywords for:
+  - Practice hours, location, parking
+  - Insurance and payment questions
+  - Services and treatment options
+  - Provider information
+  - Appointment preparation
+  - New patient process
+  - Policies (cancellation, rescheduling)
+  - Emergency situations
+- Added tRPC endpoints in ai-receptionist.ts:
+  - aiReceptionist.answerQuestion - Answer from knowledge base
+  - aiReceptionist.getPracticeInfo - Practice info by type
+  - aiReceptionist.getInsuranceInfo - Insurance questions
+  - aiReceptionist.getServiceInfo - Service/treatment info
+  - aiReceptionist.getProviderInfo - Provider backgrounds
+  - aiReceptionist.getAppointmentPrep - Appointment preparation
+  - aiReceptionist.getNewPatientInfo - New patient process
+  - aiReceptionist.searchFAQs - Search knowledge base
+  - aiReceptionist.getFAQsByCategory - Browse by category
+  - aiReceptionist.getPopularQuestions - Popular FAQs
+  - aiReceptionist.recordFAQFeedback - Feedback on answers
+- Updated exports in ai-receptionist/index.ts
+- All acceptance criteria met:
+  ✅ aiReceptionist.answerQuestion - Answer from knowledge base
+  ✅ Practice hours, location, parking information
+  ✅ Insurance and payment questions
+  ✅ Service and treatment questions
+  ✅ Appointment preparation instructions
+  ✅ New patient process explanation
+  ✅ Provider background and specialties
+  ✅ Escalate unknown questions to staff
+
 ### Pending Stories
-- US-303: FAQ and information agent
 - US-304: Patient identification
 - US-305: Smart escalation
 - US-306: Multi-channel support
@@ -140,4 +191,10 @@ Story: US-301 - Voice AI integration
 
 --- Iteration 3 completed at 2026-01-22 ---
 Story: US-302 - Appointment scheduling agent
+
+--- Iteration 3 completed at 2026-01-22 09:20:46 ---
+Story: US-302 - Appointment scheduling agent
+
+--- Iteration 4 completed at 2026-01-22 ---
+Story: US-303 - FAQ and information agent
 

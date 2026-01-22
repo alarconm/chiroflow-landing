@@ -13,10 +13,12 @@ import {
   createVoiceService,
   getVoiceConfig,
   createSchedulingAgent,
+  createFAQAgent,
   type VoiceServiceConfig,
   type BusinessHours,
   type EscalationRule,
   type SchedulingRequest,
+  type FAQRequest,
 } from '@/lib/ai-receptionist';
 import type { Prisma, AIConversationStatus, ConversationChannel } from '@prisma/client';
 
@@ -1314,5 +1316,276 @@ export const aiReceptionistRouter = router({
 
       const voiceService = createVoiceService(ctx.prisma, voiceConfig);
       return voiceService.getCallAnalytics(input.startDate, input.endDate);
+    }),
+
+  // ==================== FAQ Agent (US-303) ====================
+
+  /**
+   * Answer a patient question using the knowledge base
+   * US-303: FAQ and information agent
+   */
+  answerQuestion: protectedProcedure
+    .input(
+      z.object({
+        question: z.string().min(1),
+        category: knowledgeCategorySchema.optional(),
+        patientId: z.string().optional(),
+        conversationId: z.string().optional(),
+        context: z
+          .object({
+            previousQuestions: z.array(z.string()).optional(),
+            patientIsNew: z.boolean().optional(),
+            appointmentDate: z.coerce.date().optional(),
+            appointmentType: z.string().optional(),
+            providerName: z.string().optional(),
+          })
+          .optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const faqAgent = createFAQAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      const result = await faqAgent.answerQuestion({
+        question: input.question,
+        category: input.category,
+        patientId: input.patientId,
+        context: input.context,
+      });
+
+      // Record the action if we have a conversation
+      if (input.conversationId) {
+        await ctx.prisma.aIReceptionistAction.create({
+          data: {
+            organizationId: ctx.user.organizationId,
+            conversationId: input.conversationId,
+            actionType: 'ANSWER_QUESTION',
+            parameters: {
+              question: input.question,
+              category: input.category,
+            },
+            result: result.actionResult,
+            confidence: result.confidence,
+            reasoning: result.source?.question,
+            patientId: input.patientId,
+          },
+        });
+      }
+
+      // Log escalations
+      if (result.shouldEscalate && input.conversationId) {
+        await ctx.prisma.aIReceptionistEscalation.create({
+          data: {
+            organizationId: ctx.user.organizationId,
+            conversationId: input.conversationId,
+            reason: 'COMPLEX_REQUEST',
+            contextSummary: `Question: ${input.question}`,
+            suggestedActions: [result.escalationReason || 'Unknown question - needs human assistance'],
+            urgencyLevel: 1,
+          },
+        });
+      }
+
+      await auditLog('CREATE', 'FAQAnswer', {
+        entityId: result.source?.entryId || 'none',
+        changes: {
+          question: input.question,
+          answered: result.success,
+          confidence: result.confidence,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return result;
+    }),
+
+  /**
+   * Get practice information (hours, location, etc.)
+   * US-303: FAQ and information agent
+   */
+  getPracticeInfo: protectedProcedure
+    .input(
+      z.object({
+        infoType: z.enum(['hours', 'location', 'parking', 'contact', 'general']),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const faqAgent = createFAQAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      return faqAgent.getPracticeInfo(input.infoType);
+    }),
+
+  /**
+   * Get insurance information
+   * US-303: FAQ and information agent
+   */
+  getInsuranceInfo: protectedProcedure
+    .input(
+      z.object({
+        insuranceProvider: z.string().optional(),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const faqAgent = createFAQAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      return faqAgent.getInsuranceInfo(input?.insuranceProvider);
+    }),
+
+  /**
+   * Get service/treatment information
+   * US-303: FAQ and information agent
+   */
+  getServiceInfo: protectedProcedure
+    .input(
+      z.object({
+        serviceName: z.string().optional(),
+        condition: z.string().optional(),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const faqAgent = createFAQAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      return faqAgent.getServiceInfo(input?.serviceName, input?.condition);
+    }),
+
+  /**
+   * Get provider information
+   * US-303: FAQ and information agent
+   */
+  getProviderInfo: protectedProcedure
+    .input(
+      z.object({
+        providerName: z.string().optional(),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const faqAgent = createFAQAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      return faqAgent.getProviderInfo(input?.providerName);
+    }),
+
+  /**
+   * Get appointment preparation instructions
+   * US-303: FAQ and information agent
+   */
+  getAppointmentPrep: protectedProcedure
+    .input(
+      z.object({
+        appointmentType: z.string().optional(),
+        isNewPatient: z.boolean().optional(),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const faqAgent = createFAQAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      return faqAgent.getAppointmentPrep(input?.appointmentType, input?.isNewPatient);
+    }),
+
+  /**
+   * Get new patient process information
+   * US-303: FAQ and information agent
+   */
+  getNewPatientInfo: protectedProcedure.query(async ({ ctx }) => {
+    const faqAgent = createFAQAgent(ctx.prisma, {
+      organizationId: ctx.user.organizationId,
+    });
+
+    return faqAgent.getNewPatientInfo();
+  }),
+
+  /**
+   * Search FAQs for chat/widget display
+   * US-303: FAQ and information agent
+   */
+  searchFAQs: protectedProcedure
+    .input(
+      z.object({
+        searchTerm: z.string().min(1),
+        limit: z.number().min(1).max(20).default(10),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const faqAgent = createFAQAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+        maxSuggestions: input.limit,
+      });
+
+      return faqAgent.searchFAQs(input.searchTerm);
+    }),
+
+  /**
+   * Get FAQs by category
+   * US-303: FAQ and information agent
+   */
+  getFAQsByCategory: protectedProcedure
+    .input(
+      z.object({
+        category: knowledgeCategorySchema,
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const faqAgent = createFAQAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      return faqAgent.getFAQsByCategory(input.category);
+    }),
+
+  /**
+   * Get popular/frequently asked questions
+   * US-303: FAQ and information agent
+   */
+  getPopularQuestions: protectedProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(50).default(10),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const faqAgent = createFAQAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      return faqAgent.getPopularQuestions(input?.limit || 10);
+    }),
+
+  /**
+   * Record feedback on an FAQ answer
+   * US-303: FAQ and information agent
+   */
+  recordFAQFeedback: protectedProcedure
+    .input(
+      z.object({
+        entryId: z.string(),
+        helpful: z.boolean(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const faqAgent = createFAQAgent(ctx.prisma, {
+        organizationId: ctx.user.organizationId,
+      });
+
+      await faqAgent.recordFeedback(input.entryId, input.helpful);
+
+      await auditLog('UPDATE', 'FAQFeedback', {
+        entityId: input.entryId,
+        changes: { helpful: input.helpful },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { success: true };
     }),
 });

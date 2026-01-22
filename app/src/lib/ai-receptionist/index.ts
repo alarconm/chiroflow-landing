@@ -23,3 +23,14 @@ export {
   type PatientInfo,
   type SchedulingAgentConfig,
 } from './scheduling-agent';
+
+// FAQ Agent (US-303)
+export {
+  FAQAgent,
+  createFAQAgent,
+  type FAQRequest,
+  type FAQResponse,
+  type QuestionContext,
+  type FAQAgentConfig,
+  type KnowledgeEntry,
+} from './faq-agent';
