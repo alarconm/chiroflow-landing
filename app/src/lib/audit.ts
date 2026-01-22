@@ -146,6 +146,7 @@ export type AuditAction =
   | 'REPORT_SCHEDULE_UPDATE'
   | 'REPORT_SCHEDULE_TOGGLE'
   | 'REPORT_SCHEDULE_DELETE'
+  | 'REPORT_SCHEDULE_EXECUTE'
   | 'REPORT_EXPORT_REQUEST'
   // Report Service actions (Epic 15)
   | 'REPORT_GENERATE'

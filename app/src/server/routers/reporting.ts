@@ -70,6 +70,10 @@ import {
   getProviderCaseMixReport,
   getOutcomeTrackingReport,
   getCarePlanAdherenceReport,
+  // Report Delivery (US-106)
+  executeScheduledReport,
+  getScheduleRunHistoryList,
+  getSchedulesDueForExecution,
 } from '@/lib/reporting';
 
 import type {
@@ -1159,4 +1163,134 @@ export const reportingRouter = router({
         end: input.end,
       });
     }),
+
+  // ============================================
+  // REPORT SCHEDULING AND DELIVERY (US-106)
+  // ============================================
+
+  // Get schedule run history
+  getScheduleRunHistory: protectedProcedure
+    .input(
+      z.object({
+        scheduleId: z.string(),
+        limit: z.number().min(1).max(100).optional(),
+        offset: z.number().min(0).optional(),
+        status: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      return getScheduleRunHistoryList(
+        ctx.user.organizationId,
+        input.scheduleId,
+        {
+          limit: input.limit,
+          offset: input.offset,
+          status: input.status,
+        }
+      );
+    }),
+
+  // Execute a scheduled report immediately (manual trigger)
+  executeScheduleNow: adminProcedure
+    .input(z.object({ scheduleId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      // Verify the schedule belongs to the org
+      const schedule = await ctx.prisma.reportSchedule.findFirst({
+        where: {
+          id: input.scheduleId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!schedule) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Schedule not found' });
+      }
+
+      const result = await executeScheduledReport(input.scheduleId);
+
+      await auditLog('REPORT_SCHEDULE_EXECUTE', 'ReportSchedule', {
+        entityId: input.scheduleId,
+        changes: {
+          status: result.status,
+          deliveredCount: result.deliveredTo.length,
+          failedCount: result.failedDeliveries.length,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return result;
+    }),
+
+  // Get schedules due for execution (admin/system use)
+  getSchedulesDue: adminProcedure
+    .input(
+      z.object({
+        beforeTime: z.date().optional(),
+      }).optional()
+    )
+    .query(async ({ input }) => {
+      return getSchedulesDueForExecution(input?.beforeTime);
+    }),
+
+  // Get a single schedule with details
+  getSchedule: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const schedule = await ctx.prisma.reportSchedule.findFirst({
+        where: {
+          id: input.id,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          savedReport: true,
+          runHistory: {
+            orderBy: { runAt: 'desc' },
+            take: 5,
+          },
+        },
+      });
+
+      if (!schedule) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Schedule not found' });
+      }
+
+      return schedule;
+    }),
+
+  // Get schedule frequency options for UI
+  getFrequencyOptions: protectedProcedure.query(async () => {
+    return [
+      { value: 'DAILY', label: 'Daily', description: 'Run every day at the specified time' },
+      { value: 'WEEKLY', label: 'Weekly', description: 'Run once a week on the specified day' },
+      { value: 'MONTHLY', label: 'Monthly', description: 'Run once a month on the specified day' },
+      { value: 'QUARTERLY', label: 'Quarterly', description: 'Run once per quarter' },
+    ];
+  }),
+
+  // Get day of week options for UI
+  getDayOfWeekOptions: protectedProcedure.query(async () => {
+    return [
+      { value: 0, label: 'Sunday' },
+      { value: 1, label: 'Monday' },
+      { value: 2, label: 'Tuesday' },
+      { value: 3, label: 'Wednesday' },
+      { value: 4, label: 'Thursday' },
+      { value: 5, label: 'Friday' },
+      { value: 6, label: 'Saturday' },
+    ];
+  }),
+
+  // Get common timezone options for UI
+  getTimezoneOptions: protectedProcedure.query(async () => {
+    return [
+      { value: 'America/New_York', label: 'Eastern Time (ET)' },
+      { value: 'America/Chicago', label: 'Central Time (CT)' },
+      { value: 'America/Denver', label: 'Mountain Time (MT)' },
+      { value: 'America/Los_Angeles', label: 'Pacific Time (PT)' },
+      { value: 'America/Anchorage', label: 'Alaska Time (AKT)' },
+      { value: 'Pacific/Honolulu', label: 'Hawaii Time (HT)' },
+      { value: 'UTC', label: 'UTC' },
+    ];
+  }),
 });

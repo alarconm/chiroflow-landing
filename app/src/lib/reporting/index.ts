@@ -73,6 +73,19 @@ export {
   validateScheduleConfig,
 } from './scheduler';
 
+// Report delivery (US-106)
+export {
+  executeScheduledReport,
+  sendFailureNotification,
+  getScheduleRunHistoryList,
+  getSchedulesDueForExecution,
+} from './report-delivery';
+
+export type {
+  ScheduleRunResult,
+  FailureNotificationOptions,
+} from './report-delivery';
+
 // Report export
 export {
   requestExport,

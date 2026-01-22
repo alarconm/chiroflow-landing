@@ -390,3 +390,136 @@ All acceptance criteria met. TypeScript compiles without errors.
 --- Iteration 5 completed at 2026-01-22 ---
 Story: US-105 - Clinical reports
 
+--- Iteration 5 completed at 2026-01-21 23:26:45 ---
+Story: US-105 - Clinical reports
+
+### US-106: Report scheduling and delivery - COMPLETED
+Date: 2026-01-22
+Status: PASSED
+
+Implementation:
+1. Added ScheduleRunHistory model to Prisma schema:
+   - Tracks individual schedule execution runs
+   - Fields: runAt, status, error, deliveredTo, deliveryCount, failedCount, exportId
+   - Timing fields: startedAt, completedAt, duration
+   - Relations to ReportSchedule and Organization
+   - Proper indexes for performance queries
+
+2. Created report-delivery.ts with comprehensive delivery functionality:
+
+   a. executeScheduledReport(scheduleId):
+      - Full execution pipeline for scheduled reports
+      - Creates ScheduleRunHistory entry to track run
+      - Generates report export via export service
+      - Sends emails to all configured recipients
+      - Tracks successful and failed deliveries
+      - Updates schedule with lastRunAt, lastStatus, nextRunAt
+      - Returns detailed result with status, deliveredTo, failedDeliveries
+
+   b. sendReportEmail(options):
+      - Professional HTML email template with ChiroFlow branding
+      - Includes report name, organization, frequency
+      - Optional custom message from sender
+      - Download link when available
+      - Uses notificationService for delivery
+
+   c. sendFailureNotification(options):
+      - Alerts recipients when scheduled report fails
+      - Professional HTML error template
+      - Includes error details and schedule info
+      - Sent to all configured recipients
+
+   d. sendPartialFailureNotification(options):
+      - Warns schedule creator when some deliveries fail
+      - Lists failed recipients with error details
+      - Helps admins fix delivery issues
+
+   e. getScheduleRunHistoryList(organizationId, scheduleId, options):
+      - Retrieve paginated run history for a schedule
+      - Filter by status
+      - Returns runs with full details and total count
+
+   f. getSchedulesDueForExecution(beforeTime):
+      - Query schedules that need to run
+      - Used by background job processor
+      - Returns minimal data for execution
+
+3. Added tRPC router procedures:
+
+   a. getScheduleRunHistory:
+      - Get paginated run history for a schedule
+      - Filter by status
+      - Protected procedure
+
+   b. executeScheduleNow:
+      - Manually trigger a scheduled report
+      - Admin-only procedure
+      - Full audit logging
+
+   c. getSchedulesDue:
+      - Get schedules ready for execution
+      - Admin-only (for system use)
+
+   d. getSchedule:
+      - Get single schedule with details
+      - Includes savedReport and recent runHistory
+
+   e. getFrequencyOptions:
+      - UI helper for frequency dropdown
+      - Daily, Weekly, Monthly, Quarterly
+
+   f. getDayOfWeekOptions:
+      - UI helper for day selection
+      - Sunday through Saturday
+
+   g. getTimezoneOptions:
+      - US timezone options for scheduling
+      - ET, CT, MT, PT, AKT, HT, UTC
+
+4. Acceptance Criteria Mapping:
+
+   ✅ Schedule reports for daily, weekly, monthly generation
+      - ReportSchedule model with frequency field (DAILY, WEEKLY, MONTHLY, QUARTERLY)
+      - calculateNextRunTime() properly calculates next execution
+      - Scheduler already implemented in previous work
+
+   ✅ Email delivery to configured recipients
+      - sendReportEmail() with professional HTML template
+      - executeScheduledReport() sends to all recipients
+      - Tracks delivery status per recipient
+
+   ✅ Multiple format options per schedule
+      - exportFormat field on ReportSchedule (PDF, CSV, EXCEL, JSON)
+      - Export generated via existing export service
+
+   ✅ Enable/disable scheduled reports
+      - toggleScheduleActive() in scheduler.ts
+      - isActive field on ReportSchedule
+      - tRPC procedure: toggleScheduleActive
+
+   ✅ View scheduled report history
+      - ScheduleRunHistory model stores all executions
+      - getScheduleRunHistoryList() with pagination
+      - tRPC procedure: getScheduleRunHistory
+      - Includes status, deliveredTo, failedCount, duration
+
+   ✅ Failure notifications
+      - sendFailureNotification() for complete failures
+      - sendPartialFailureNotification() for partial failures
+      - Schedule creator notified via email
+      - All recipients notified of failures
+
+5. Added audit logging:
+   - REPORT_SCHEDULE_EXECUTE action for manual triggers
+
+Files Modified:
+- app/prisma/schema.prisma (added ScheduleRunHistory model, updated Organization relation)
+- app/src/lib/reporting/report-delivery.ts (new - 500+ lines)
+- app/src/lib/reporting/index.ts (added exports)
+- app/src/server/routers/reporting.ts (added 7 procedures)
+- app/src/lib/audit.ts (added REPORT_SCHEDULE_EXECUTE action)
+
+All acceptance criteria met. TypeScript compiles without errors.
+--- Iteration 6 completed at 2026-01-22 ---
+Story: US-106 - Report scheduling and delivery
+

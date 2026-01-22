@@ -77,6 +77,7 @@ model Organization {
   kpiSnapshots        KPISnapshot[]
   reportExports       ReportExport[]
   reports             Report[]
+  scheduleRunHistory  ScheduleRunHistory[]
 
   // AI Scheduling relations (Epic 13)
   overbookingRecommendations OverbookingRecommendation[]
@@ -3169,6 +3170,45 @@ model ReportSchedule {
   @@index([organizationId])
   @@index([isActive])
   @@index([nextRunAt])
+
+  // Run history relation
+  runHistory  ScheduleRunHistory[]
+}
+
+// Schedule run history for tracking individual executions
+model ScheduleRunHistory {
+  id            String   @id @default(cuid())
+
+  // Run details
+  runAt         DateTime @default(now())
+  status        String   // pending, running, completed, failed
+  error         String?
+
+  // Delivery tracking
+  deliveredTo   String[] // Email addresses that received the report
+  deliveryCount Int      @default(0) // Number of successful deliveries
+  failedCount   Int      @default(0) // Number of failed deliveries
+
+  // Export reference
+  exportId      String?
+
+  // Timing
+  startedAt     DateTime @default(now())
+  completedAt   DateTime?
+  duration      Int?     // Duration in milliseconds
+
+  // Schedule reference
+  scheduleId    String
+  schedule      ReportSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  // Multi-tenant relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([scheduleId])
+  @@index([organizationId])
+  @@index([runAt])
+  @@index([status])
 }
 
 // KPI snapshot for historical tracking
