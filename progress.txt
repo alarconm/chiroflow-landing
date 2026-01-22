@@ -273,3 +273,95 @@ Story: US-217 - Video provider integration
 --- Iteration 3 completed at 2026-01-22 ---
 Story: US-218 - Virtual waiting room
 
+--- Iteration 3 completed at 2026-01-22 02:11:34 ---
+Story: US-218 - Virtual waiting room
+
+## US-219: Video consultation interface
+**Status:** COMPLETED
+**Date:** 2026-01-22
+
+### What was implemented:
+
+1. **VideoConsultation component** (`app/src/components/telehealth/VideoConsultation.tsx`):
+   - Full-featured video consultation interface for telehealth sessions
+   - Supports both provider (host) and patient roles
+
+2. **Full-screen video component**:
+   - Main video display area showing remote participant or screen share
+   - Fullscreen toggle with F11-like experience
+   - Placeholder display when waiting for remote participant
+
+3. **Picture-in-picture self view**:
+   - Draggable self-view window in bottom-right corner
+   - Native browser PiP support via Picture-in-Picture API
+   - Shows camera off indicator when video disabled
+   - Muted indicator when audio disabled
+
+4. **Mute/unmute audio and video controls**:
+   - Toggle buttons for camera on/off
+   - Toggle buttons for microphone mute/unmute
+   - Visual feedback with color-coded buttons (red when disabled)
+   - Tracks enabled via MediaStream API
+
+5. **Screen sharing capability**:
+   - getDisplayMedia() integration for screen sharing
+   - Visual indicator when sharing is active
+   - Automatic handling when user stops via browser UI
+   - Screen share replaces main video display
+
+6. **Chat sidebar for text communication**:
+   - Slide-out chat panel on right side
+   - Real-time message display with timestamps
+   - Sender name and alignment (local vs remote)
+   - Unread message badge counter
+   - Auto-scroll to newest messages
+   - Enter key to send messages
+
+7. **Session timer display**:
+   - MM:SS format elapsed time counter
+   - Starts when session begins
+   - Displayed in top bar badge
+
+8. **End session button with confirmation**:
+   - AlertDialog confirmation before ending
+   - Calls endSession mutation with quality metrics
+   - Cleans up media streams on end
+   - Triggers onSessionEnd callback
+
+9. **Connection quality indicator**:
+   - Real-time quality display (Excellent/Good/Fair/Poor)
+   - Tooltip with detailed metrics (RTT, packet loss, bitrate)
+   - Color-coded icons (green/yellow/red)
+   - Warning banner when connection is poor
+   - Reports technical issues to backend
+
+10. **Additional features**:
+    - Auto-hide controls after 3 seconds of inactivity
+    - Responsive design
+    - Tooltips on all control buttons
+    - Gradient overlays for readability
+
+### Files created:
+- `app/src/components/telehealth/VideoConsultation.tsx` - Main video consultation component
+
+### Files modified:
+- `app/src/components/telehealth/index.ts` - Added VideoConsultation export
+
+### Acceptance criteria met:
+- [x] Full-screen video component
+- [x] Picture-in-picture self view
+- [x] Mute/unmute audio and video
+- [x] Screen sharing capability
+- [x] Chat sidebar for text communication
+- [x] Session timer display
+- [x] End session button with confirmation
+- [x] Connection quality indicator
+
+### Validation:
+- TypeScript compilation passes
+- All UI components use shadcn/ui
+- Follows existing codebase patterns
+
+--- Iteration 4 completed at 2026-01-22 ---
+Story: US-219 - Video consultation interface
+
