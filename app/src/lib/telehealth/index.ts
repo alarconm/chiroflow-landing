@@ -25,6 +25,22 @@ export type {
   QualityMetrics,
   ProviderCapabilities,
   ProviderStatus,
+  // Telehealth documentation types (US-220)
+  TelehealthPlaceOfService,
+  TelehealthModifier,
+  TelehealthTechnologyType,
+  TelehealthSOAPContent,
+  TelehealthPatientLocation,
+  TelehealthProviderLocation,
+  TelehealthDocumentation,
+  TelehealthSOAPTemplate,
+} from './types';
+
+// Telehealth documentation constants and templates (US-220)
+export {
+  TELEHEALTH_PLACE_OF_SERVICE,
+  TELEHEALTH_MODIFIERS,
+  DEFAULT_TELEHEALTH_SOAP_TEMPLATE,
 } from './types';
 
 // Provider interface and base class

@@ -365,3 +365,106 @@ Story: US-218 - Virtual waiting room
 --- Iteration 4 completed at 2026-01-22 ---
 Story: US-219 - Video consultation interface
 
+--- Iteration 4 completed at 2026-01-22 02:15:47 ---
+Story: US-219 - Video consultation interface
+
+## US-220: Telehealth documentation
+**Status:** COMPLETED
+**Date:** 2026-01-22
+
+### What was implemented:
+
+1. **Telehealth documentation types** (`app/src/lib/telehealth/types.ts`):
+   - TELEHEALTH_PLACE_OF_SERVICE constants (10 = Home, 02 = Non-home, etc.)
+   - TELEHEALTH_MODIFIERS constants (95, GT, FQ, 93, GQ)
+   - TelehealthTechnologyType (audio_video, audio_only, store_and_forward, remote_monitoring)
+   - TelehealthSOAPContent interface with telehealth-specific fields
+   - TelehealthPatientLocation and TelehealthProviderLocation interfaces
+   - TelehealthDocumentation interface for comprehensive documentation
+   - TelehealthSOAPTemplate interface for telehealth-specific SOAP templates
+   - DEFAULT_TELEHEALTH_SOAP_TEMPLATE - Complete telehealth visit template
+
+2. **telehealth.createTelehealthNote tRPC procedure**:
+   - Creates SOAP note with telehealth-specific content
+   - Auto-determines place of service code (10 for home, 02 for other)
+   - Auto-determines telehealth modifier (95 for audio/video, 93 for audio-only)
+   - Documents patient and provider locations
+   - Verifies telehealth consent
+   - Adds telehealth documentation prefix to objective section
+   - Creates encounter if not provided
+   - Stores telehealth details in objectiveJson field
+
+3. **telehealth.addTelehealthModifierToProcedures tRPC procedure**:
+   - Auto-adds telehealth modifier (95, GT, FQ, 93, GQ) to procedure billing codes
+   - Finds first available modifier slot (modifier1-4)
+   - Can target specific procedures or all procedures on encounter
+   - Validates encounter is telehealth and not signed
+
+4. **telehealth.getDocumentationStatus tRPC procedure**:
+   - Returns comprehensive documentation status for telehealth session
+   - Checks: SOAP note, diagnosis, procedures, patient location, provider location
+   - Verifies place of service code and telehealth modifier
+   - Counts procedures with telehealth modifiers
+   - Returns list of missing documentation items
+
+5. **telehealth.verifyConsent tRPC procedure**:
+   - Verifies patient has valid telehealth consent
+   - Supports multiple consent types (GENERAL, HIPAA, RECORDING, STATE_SPECIFIC)
+   - Checks consent is signed and not expired
+   - Returns consent status for each requested type
+
+6. **telehealth.getSOAPTemplate tRPC procedure**:
+   - Returns DEFAULT_TELEHEALTH_SOAP_TEMPLATE
+   - Contains prompts, sections, and defaults for telehealth visits
+
+7. **telehealth.updateBillingInfo tRPC procedure**:
+   - Updates session billing information
+   - Place of service code (10, 02, 11, 12)
+   - Telehealth modifier (95, GT, FQ, 93, GQ)
+   - Patient and provider locations
+
+8. **TelehealthDocumentation component** (`app/src/components/telehealth/TelehealthDocumentation.tsx`):
+   - Tabbed interface: Telehealth Info, SOAP Note, Locations, Billing
+   - Technology selection (audio/video, audio-only, etc.)
+   - Connection quality rating
+   - Technical issues documentation
+   - Patient location form with all US states
+   - Provider location form
+   - Consent verification checkbox
+   - Full SOAP note editor with telehealth prompts
+   - Assessment adequacy checkbox with reason field
+   - Follow-up recommendation selection
+   - Auto-calculated billing codes (POS + modifier)
+   - Billing summary display
+   - Documentation status banner
+   - Form validation
+
+### Module exports updated:
+- `app/src/lib/telehealth/index.ts` - Added all new types and constants
+- `app/src/components/telehealth/index.ts` - Added TelehealthDocumentation export
+
+### Files created:
+- `app/src/components/telehealth/TelehealthDocumentation.tsx` - Documentation form component
+
+### Files modified:
+- `app/src/lib/telehealth/types.ts` - Added documentation types and template
+- `app/src/lib/telehealth/index.ts` - Added exports
+- `app/src/server/routers/telehealth.ts` - Added 6 new procedures
+- `app/src/components/telehealth/index.ts` - Added export
+
+### Acceptance criteria met:
+- [x] Telehealth-specific SOAP note template
+- [x] Auto-add telehealth modifier to billing codes
+- [x] Document patient/provider locations
+- [x] Place of service code (10 for home, 02 for other location)
+- [x] Consent verification tracking
+
+### Validation:
+- TypeScript compilation passes
+- All tRPC procedures follow existing patterns
+- UI components use shadcn/ui
+- Billing codes follow CMS guidelines
+
+--- Iteration 5 completed at 2026-01-22 ---
+Story: US-220 - Telehealth documentation
+

@@ -6,3 +6,4 @@
 export { VirtualWaitingRoom } from './VirtualWaitingRoom';
 export { ProviderWaitingRoomDashboard } from './ProviderWaitingRoomDashboard';
 export { VideoConsultation } from './VideoConsultation';
+export { TelehealthDocumentation } from './TelehealthDocumentation';

@@ -1187,4 +1187,599 @@ export const telehealthRouter = router({
         appointmentType: waitingRoom.session.appointment.appointmentType?.name || 'Telehealth Visit',
       };
     }),
+
+  // ==========================================
+  // TELEHEALTH DOCUMENTATION (US-220)
+  // ==========================================
+
+  /**
+   * Create telehealth-specific SOAP note with auto-populated telehealth fields
+   */
+  createTelehealthNote: protectedProcedure
+    .input(
+      z.object({
+        sessionId: z.string(),
+        encounterId: z.string().optional(), // If not provided, creates new encounter
+        // Telehealth-specific documentation
+        technologyUsed: z.enum(['audio_video', 'audio_only', 'store_and_forward', 'remote_monitoring']),
+        connectionQuality: z.enum(['excellent', 'good', 'fair', 'poor']),
+        technicalIssues: z.string().optional(),
+        // Patient location (required for billing)
+        patientLocation: z.object({
+          city: z.string().min(1, 'Patient city is required'),
+          state: z.string().min(2).max(2, 'State must be 2-letter code'),
+          isPatientHome: z.boolean(),
+        }),
+        // Provider location
+        providerLocation: z.object({
+          city: z.string().min(1, 'Provider city is required'),
+          state: z.string().min(2).max(2, 'State must be 2-letter code'),
+        }),
+        // Consent verification
+        consentVerified: z.boolean(),
+        consentId: z.string().optional(),
+        // SOAP content
+        subjective: z.string().optional(),
+        objective: z.string().optional(),
+        assessment: z.string().optional(),
+        plan: z.string().optional(),
+        // Whether patient could be adequately assessed via telehealth
+        adequateAssessment: z.boolean().default(true),
+        inadequateAssessmentReason: z.string().optional(),
+        // Follow-up recommendation
+        followUpRecommendation: z.enum(['telehealth', 'in_person', 'either']).default('either'),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Verify session exists
+      const session = await prisma.telehealthSession.findFirst({
+        where: {
+          id: input.sessionId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          appointment: {
+            include: {
+              patient: { include: { demographics: true } },
+              provider: { include: { user: true } },
+            },
+          },
+        },
+      });
+
+      if (!session) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Telehealth session not found',
+        });
+      }
+
+      // Verify consent if required
+      if (input.consentVerified && !input.consentId) {
+        // Check if patient has valid telehealth consent
+        const validConsent = await prisma.telehealthConsent.findFirst({
+          where: {
+            patientId: session.appointment.patientId,
+            organizationId: ctx.user.organizationId,
+            status: 'SIGNED',
+            OR: [
+              { expirationDate: null },
+              { expirationDate: { gt: new Date() } },
+            ],
+          },
+        });
+
+        if (!validConsent) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'No valid telehealth consent found for this patient',
+          });
+        }
+      }
+
+      // Determine place of service code
+      const placeOfServiceCode = input.patientLocation.isPatientHome ? '10' : '02';
+
+      // Determine telehealth modifier based on technology
+      const telehealthModifier = input.technologyUsed === 'audio_only' ? '93' : '95';
+
+      // Update session with documentation details
+      await prisma.telehealthSession.update({
+        where: { id: input.sessionId },
+        data: {
+          patientLocation: `${input.patientLocation.city}, ${input.patientLocation.state}`,
+          providerLocation: `${input.providerLocation.city}, ${input.providerLocation.state}`,
+          placeOfServiceCode,
+          telehealthModifier,
+          technicalNotes: input.technicalIssues,
+          connectionQuality: input.connectionQuality,
+        },
+      });
+
+      // Create or get encounter
+      let encounterId = input.encounterId;
+      if (!encounterId) {
+        // Get user's provider record
+        const provider = await prisma.provider.findFirst({
+          where: { userId: ctx.user.id, organizationId: ctx.user.organizationId },
+        });
+
+        if (!provider) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'User is not a provider',
+          });
+        }
+
+        // Create encounter for this telehealth session
+        const encounter = await prisma.encounter.create({
+          data: {
+            patientId: session.appointment.patientId,
+            providerId: provider.id,
+            appointmentId: session.appointment.id,
+            encounterType: 'FOLLOW_UP',
+            encounterDate: session.actualStartTime || session.scheduledStartTime,
+            status: 'IN_PROGRESS',
+            organizationId: ctx.user.organizationId,
+            createdBy: ctx.user.id,
+            location: 'Telehealth',
+          },
+        });
+        encounterId = encounter.id;
+      }
+
+      // Build telehealth-specific SOAP content
+      const telehealthObjectivePrefix = `
+TELEHEALTH VISIT DOCUMENTATION
+==============================
+Visit conducted via: ${input.technologyUsed === 'audio_video' ? 'Real-time audio and video' : input.technologyUsed === 'audio_only' ? 'Audio only' : input.technologyUsed}
+Technology used: ${input.technologyUsed.replace(/_/g, ' ')}
+Connection quality: ${input.connectionQuality}
+${input.technicalIssues ? `Technical issues noted: ${input.technicalIssues}` : 'No technical issues during visit'}
+
+Patient Location: ${input.patientLocation.city}, ${input.patientLocation.state} (${input.patientLocation.isPatientHome ? 'Patient\'s home' : 'Other location'})
+Provider Location: ${input.providerLocation.city}, ${input.providerLocation.state}
+
+Telehealth consent verified: ${input.consentVerified ? 'Yes' : 'No'}
+Adequate assessment via telehealth: ${input.adequateAssessment ? 'Yes' : 'No'}${!input.adequateAssessment && input.inadequateAssessmentReason ? ` - ${input.inadequateAssessmentReason}` : ''}
+
+EXAMINATION (via telehealth):
+`;
+
+      const objectiveContent = `${telehealthObjectivePrefix}
+${input.objective || 'Visual observation performed via video. Physical examination limited by telehealth modality.'}`;
+
+      const planSuffix = `
+FOLLOW-UP RECOMMENDATION:
+${input.followUpRecommendation === 'telehealth' ? 'Continue with telehealth visits' : input.followUpRecommendation === 'in_person' ? 'In-person visit recommended for next appointment' : 'Either telehealth or in-person appropriate'}
+
+BILLING INFORMATION:
+- Place of Service: ${placeOfServiceCode} (${input.patientLocation.isPatientHome ? 'Patient\'s home' : 'Telehealth - other location'})
+- Telehealth Modifier: ${telehealthModifier} (${telehealthModifier === '95' ? 'Synchronous telemedicine' : 'Audio-only'})
+`;
+
+      const planContent = `${input.plan || ''}${planSuffix}`;
+
+      // Create or update SOAP note
+      const existingNote = await prisma.sOAPNote.findFirst({
+        where: { encounterId },
+      });
+
+      let soapNote;
+      if (existingNote) {
+        soapNote = await prisma.sOAPNote.update({
+          where: { id: existingNote.id },
+          data: {
+            subjective: input.subjective || existingNote.subjective,
+            objective: objectiveContent,
+            assessment: input.assessment || existingNote.assessment,
+            plan: planContent,
+            version: { increment: 1 },
+            objectiveJson: {
+              telehealthDetails: {
+                technologyUsed: input.technologyUsed,
+                connectionQuality: input.connectionQuality,
+                technicalIssues: input.technicalIssues,
+                patientLocation: input.patientLocation,
+                providerLocation: input.providerLocation,
+                adequateAssessment: input.adequateAssessment,
+                inadequateAssessmentReason: input.inadequateAssessmentReason,
+                followUpRecommendation: input.followUpRecommendation,
+                consentVerified: input.consentVerified,
+              },
+            } as Prisma.InputJsonValue,
+          },
+        });
+      } else {
+        soapNote = await prisma.sOAPNote.create({
+          data: {
+            encounterId,
+            subjective: input.subjective || '',
+            objective: objectiveContent,
+            assessment: input.assessment || '',
+            plan: planContent,
+            version: 1,
+            objectiveJson: {
+              telehealthDetails: {
+                technologyUsed: input.technologyUsed,
+                connectionQuality: input.connectionQuality,
+                technicalIssues: input.technicalIssues,
+                patientLocation: input.patientLocation,
+                providerLocation: input.providerLocation,
+                adequateAssessment: input.adequateAssessment,
+                inadequateAssessmentReason: input.inadequateAssessmentReason,
+                followUpRecommendation: input.followUpRecommendation,
+                consentVerified: input.consentVerified,
+              },
+            } as Prisma.InputJsonValue,
+          },
+        });
+      }
+
+      // Audit log
+      await createAuditLog({
+        organizationId: ctx.user.organizationId,
+        userId: ctx.user.id,
+        action: 'CREATE' as AuditAction,
+        entityType: 'SOAPNote',
+        entityId: soapNote.id,
+        metadata: {
+          sessionId: input.sessionId,
+          encounterId,
+          isTelehealth: true,
+          technologyUsed: input.technologyUsed,
+          placeOfServiceCode,
+          telehealthModifier,
+        },
+      });
+
+      return {
+        soapNoteId: soapNote.id,
+        encounterId,
+        sessionId: input.sessionId,
+        billingInfo: {
+          placeOfServiceCode,
+          telehealthModifier,
+          patientLocation: `${input.patientLocation.city}, ${input.patientLocation.state}`,
+          providerLocation: `${input.providerLocation.city}, ${input.providerLocation.state}`,
+        },
+      };
+    }),
+
+  /**
+   * Add telehealth modifier to procedure billing codes
+   */
+  addTelehealthModifierToProcedures: protectedProcedure
+    .input(
+      z.object({
+        encounterId: z.string(),
+        modifier: z.enum(['95', 'GT', 'FQ', '93', 'GQ']).default('95'),
+        procedureIds: z.array(z.string()).optional(), // If not provided, updates all procedures
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Verify encounter exists and is linked to a telehealth session
+      const encounter = await prisma.encounter.findFirst({
+        where: {
+          id: input.encounterId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          appointment: {
+            include: {
+              telehealthSession: true,
+            },
+          },
+          procedures: true,
+        },
+      });
+
+      if (!encounter) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Encounter not found',
+        });
+      }
+
+      if (!encounter.appointment?.telehealthSession) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'This encounter is not linked to a telehealth session',
+        });
+      }
+
+      if (encounter.status === 'SIGNED' || encounter.status === 'AMENDED') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Cannot modify procedures on a signed encounter',
+        });
+      }
+
+      // Get procedures to update
+      const proceduresToUpdate = input.procedureIds
+        ? encounter.procedures.filter((p) => input.procedureIds!.includes(p.id))
+        : encounter.procedures;
+
+      const updatedProcedures = [];
+      for (const proc of proceduresToUpdate) {
+        // Add telehealth modifier to first available modifier slot
+        const updated = await prisma.procedure.update({
+          where: { id: proc.id },
+          data: {
+            modifier1: proc.modifier1 || input.modifier,
+            modifier2: proc.modifier1 && !proc.modifier2 ? input.modifier : proc.modifier2,
+            modifier3:
+              proc.modifier1 && proc.modifier2 && !proc.modifier3
+                ? input.modifier
+                : proc.modifier3,
+            modifier4:
+              proc.modifier1 && proc.modifier2 && proc.modifier3 && !proc.modifier4
+                ? input.modifier
+                : proc.modifier4,
+          },
+        });
+        updatedProcedures.push(updated);
+      }
+
+      // Audit log
+      await createAuditLog({
+        organizationId: ctx.user.organizationId,
+        userId: ctx.user.id,
+        action: 'UPDATE' as AuditAction,
+        entityType: 'Procedure',
+        entityId: input.encounterId,
+        metadata: {
+          action: 'add_telehealth_modifier',
+          modifier: input.modifier,
+          procedureCount: updatedProcedures.length,
+        },
+      });
+
+      return {
+        updatedCount: updatedProcedures.length,
+        procedures: updatedProcedures,
+        modifier: input.modifier,
+      };
+    }),
+
+  /**
+   * Get telehealth documentation status for a session
+   */
+  getDocumentationStatus: protectedProcedure
+    .input(
+      z.object({
+        sessionId: z.string(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const session = await prisma.telehealthSession.findFirst({
+        where: {
+          id: input.sessionId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          appointment: {
+            include: {
+              encounter: {
+                include: {
+                  soapNote: true,
+                  diagnoses: { where: { isPrimary: true }, take: 1 },
+                  procedures: true,
+                },
+              },
+              patient: {
+                include: {
+                  demographics: { select: { firstName: true, lastName: true } },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!session) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Session not found',
+        });
+      }
+
+      const encounter = session.appointment.encounter;
+      const hasSOAPNote = !!encounter?.soapNote;
+      const hasDiagnosis = (encounter?.diagnoses?.length ?? 0) > 0;
+      const hasProcedures = (encounter?.procedures?.length ?? 0) > 0;
+      const hasPatientLocation = !!session.patientLocation;
+      const hasProviderLocation = !!session.providerLocation;
+      const hasPlaceOfService = !!session.placeOfServiceCode;
+      const hasTelehealthModifier = !!session.telehealthModifier;
+
+      // Check if procedures have telehealth modifier
+      const proceduresWithModifier =
+        encounter?.procedures?.filter(
+          (p) =>
+            p.modifier1 === '95' ||
+            p.modifier1 === 'GT' ||
+            p.modifier1 === '93' ||
+            p.modifier2 === '95' ||
+            p.modifier2 === 'GT' ||
+            p.modifier2 === '93'
+        ).length ?? 0;
+
+      const documentationComplete =
+        hasSOAPNote &&
+        hasDiagnosis &&
+        hasProcedures &&
+        hasPatientLocation &&
+        hasProviderLocation &&
+        hasPlaceOfService &&
+        proceduresWithModifier === (encounter?.procedures?.length ?? 0);
+
+      return {
+        sessionId: input.sessionId,
+        encounterId: encounter?.id,
+        patientName: session.appointment.patient.demographics
+          ? `${session.appointment.patient.demographics.firstName} ${session.appointment.patient.demographics.lastName}`
+          : 'Unknown',
+        sessionStatus: session.status,
+
+        documentationStatus: {
+          complete: documentationComplete,
+          hasSOAPNote,
+          hasDiagnosis,
+          hasProcedures,
+          hasPatientLocation,
+          hasProviderLocation,
+          hasPlaceOfService,
+          hasTelehealthModifier,
+          proceduresWithModifier,
+          totalProcedures: encounter?.procedures?.length ?? 0,
+        },
+
+        billingInfo: {
+          placeOfServiceCode: session.placeOfServiceCode,
+          telehealthModifier: session.telehealthModifier,
+          patientLocation: session.patientLocation,
+          providerLocation: session.providerLocation,
+        },
+
+        missingItems: [
+          !hasSOAPNote && 'SOAP note',
+          !hasDiagnosis && 'Diagnosis',
+          !hasProcedures && 'Procedures',
+          !hasPatientLocation && 'Patient location',
+          !hasProviderLocation && 'Provider location',
+          !hasPlaceOfService && 'Place of service code',
+          proceduresWithModifier < (encounter?.procedures?.length ?? 0) &&
+            'Telehealth modifier on all procedures',
+        ].filter(Boolean) as string[],
+      };
+    }),
+
+  /**
+   * Verify telehealth consent for a patient before session
+   */
+  verifyConsent: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        consentTypes: z
+          .array(z.enum(['GENERAL', 'HIPAA', 'RECORDING', 'STATE_SPECIFIC']))
+          .default(['GENERAL']),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const consents = await prisma.telehealthConsent.findMany({
+        where: {
+          patientId: input.patientId,
+          organizationId: ctx.user.organizationId,
+          consentType: { in: input.consentTypes },
+          status: 'SIGNED',
+          OR: [
+            { expirationDate: null },
+            { expirationDate: { gt: new Date() } },
+          ],
+        },
+        orderBy: { signedAt: 'desc' },
+      });
+
+      const consentStatus: Record<
+        string,
+        { valid: boolean; consentId?: string; signedAt?: Date; expiresAt?: Date | null }
+      > = {};
+
+      for (const type of input.consentTypes) {
+        const consent = consents.find((c) => c.consentType === type);
+        consentStatus[type] = {
+          valid: !!consent,
+          consentId: consent?.id,
+          signedAt: consent?.signedAt || undefined,
+          expiresAt: consent?.expirationDate,
+        };
+      }
+
+      const allConsentsValid = input.consentTypes.every(
+        (type) => consentStatus[type]?.valid
+      );
+
+      return {
+        patientId: input.patientId,
+        allConsentsValid,
+        consents: consentStatus,
+        missingConsents: input.consentTypes.filter(
+          (type) => !consentStatus[type]?.valid
+        ),
+      };
+    }),
+
+  /**
+   * Get telehealth SOAP template
+   */
+  getSOAPTemplate: protectedProcedure.query(async () => {
+    // Import the default template from types
+    const {
+      DEFAULT_TELEHEALTH_SOAP_TEMPLATE,
+    } = await import('@/lib/telehealth/types');
+
+    return DEFAULT_TELEHEALTH_SOAP_TEMPLATE;
+  }),
+
+  /**
+   * Update session billing information
+   */
+  updateBillingInfo: protectedProcedure
+    .input(
+      z.object({
+        sessionId: z.string(),
+        placeOfServiceCode: z.enum(['10', '02', '11', '12']),
+        telehealthModifier: z.enum(['95', 'GT', 'FQ', '93', 'GQ']),
+        patientLocation: z.string().optional(),
+        providerLocation: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const session = await prisma.telehealthSession.findFirst({
+        where: {
+          id: input.sessionId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!session) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Session not found',
+        });
+      }
+
+      const updated = await prisma.telehealthSession.update({
+        where: { id: input.sessionId },
+        data: {
+          placeOfServiceCode: input.placeOfServiceCode,
+          telehealthModifier: input.telehealthModifier,
+          patientLocation: input.patientLocation,
+          providerLocation: input.providerLocation,
+        },
+      });
+
+      await createAuditLog({
+        organizationId: ctx.user.organizationId,
+        userId: ctx.user.id,
+        action: 'UPDATE' as AuditAction,
+        entityType: 'TelehealthSession',
+        entityId: input.sessionId,
+        metadata: {
+          action: 'update_billing_info',
+          placeOfServiceCode: input.placeOfServiceCode,
+          telehealthModifier: input.telehealthModifier,
+        },
+      });
+
+      return {
+        sessionId: updated.id,
+        placeOfServiceCode: updated.placeOfServiceCode,
+        telehealthModifier: updated.telehealthModifier,
+        patientLocation: updated.patientLocation,
+        providerLocation: updated.providerLocation,
+      };
+    }),
 });

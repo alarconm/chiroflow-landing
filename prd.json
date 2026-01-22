@@ -84,7 +84,7 @@
         "Place of service code auto-selection"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-221",
