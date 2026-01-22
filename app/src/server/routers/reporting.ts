@@ -43,6 +43,12 @@ import {
   invalidateReportCache,
   getAvailableReportTypes,
   getDateRangePresets,
+  // Financial Reports (US-102)
+  getDailyCollectionsReport,
+  getARAgingDetailReport,
+  getRevenueByProviderReport,
+  getRevenueByServiceCodeReport,
+  getPaymentTypeSummaryReport,
 } from '@/lib/reporting';
 
 import type {
@@ -297,6 +303,61 @@ export const reportingRouter = router({
     )
     .query(async ({ ctx, input }) => {
       return getARAgingReport(ctx.user.organizationId, input?.asOfDate);
+    }),
+
+  // ============================================
+  // FINANCIAL REPORTS (US-102)
+  // ============================================
+
+  // Daily collections report - payments received by date
+  getDailyCollections: billerProcedure
+    .input(dateRangeSchema)
+    .query(async ({ ctx, input }) => {
+      return getDailyCollectionsReport(ctx.user.organizationId, {
+        start: input.start,
+        end: input.end,
+      });
+    }),
+
+  // AR aging detail report - outstanding balances by age bucket
+  getARAgingDetail: billerProcedure
+    .input(
+      z.object({
+        asOfDate: z.date().optional(),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      return getARAgingDetailReport(ctx.user.organizationId, input?.asOfDate);
+    }),
+
+  // Revenue by provider report - charges and collections by provider
+  getRevenueByProvider: billerProcedure
+    .input(dateRangeSchema)
+    .query(async ({ ctx, input }) => {
+      return getRevenueByProviderReport(ctx.user.organizationId, {
+        start: input.start,
+        end: input.end,
+      });
+    }),
+
+  // Revenue by service code report - revenue breakdown by CPT code
+  getRevenueByServiceCode: billerProcedure
+    .input(dateRangeSchema)
+    .query(async ({ ctx, input }) => {
+      return getRevenueByServiceCodeReport(ctx.user.organizationId, {
+        start: input.start,
+        end: input.end,
+      });
+    }),
+
+  // Payment type summary - cash, card, insurance breakdown
+  getPaymentTypeSummary: billerProcedure
+    .input(dateRangeSchema)
+    .query(async ({ ctx, input }) => {
+      return getPaymentTypeSummaryReport(ctx.user.organizationId, {
+        start: input.start,
+        end: input.end,
+      });
     }),
 
   // ============================================

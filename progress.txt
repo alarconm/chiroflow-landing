@@ -58,3 +58,74 @@ Files Modified:
 - app/src/lib/audit.ts (added audit actions)
 
 All acceptance criteria met. TypeScript compiles without errors.
+--- Iteration 1 completed at 2026-01-21 23:00:24 ---
+Story: US-101 - Reporting infrastructure
+
+### US-102: Financial reports - COMPLETED
+Date: 2026-01-22
+Status: PASSED
+
+Implementation:
+1. Created financial-reports.ts with 6 comprehensive financial reports:
+
+   a. Daily Collections Report (getDailyCollectionsReport):
+      - Payments received by date
+      - Breakdown by payment method (cash, card, check, insurance, other)
+      - Daily totals and running totals
+      - Payment count tracking
+      - Daily average calculation
+
+   b. Accounts Receivable Aging Report (getARAgingDetailReport):
+      - Outstanding balances by age bucket (0-30, 31-60, 61-90, 91-120, 120+)
+      - Per-bucket totals and percentages
+      - Detailed breakdown by patient with all aging buckets
+      - Summary with average age, total patients, total charges
+      - Oldest charge date tracking per patient
+
+   c. Revenue by Provider Report (getRevenueByProviderReport):
+      - Charges and collections by provider
+      - Total charges, collections, adjustments per provider
+      - Net revenue calculation
+      - Collection rate percentage
+      - Visit count and average revenue per visit
+      - Overall totals for all providers
+
+   d. Revenue by Service Code Report (getRevenueByServiceCodeReport):
+      - Revenue breakdown by CPT code
+      - Unit count, total charges, collections, adjustments
+      - Net revenue per service code
+      - Average fee per unit
+      - Collection rate by service
+
+   e. Payment Type Summary (getPaymentTypeSummaryReport):
+      - Cash, card, insurance breakdown
+      - Payment method labels for display
+      - Count, total amount, percentage per method
+      - Average payment amount calculation
+      - Breakdown by payer type (patient, insurance, other)
+
+2. Added tRPC router procedures:
+   - getDailyCollections: Daily collections with date range
+   - getARAgingDetail: AR aging with optional as-of date
+   - getRevenueByProvider: Provider revenue with date range
+   - getRevenueByServiceCode: CPT code revenue with date range
+   - getPaymentTypeSummary: Payment breakdown with date range
+
+3. All reports support date range selection via dateRangeSchema
+
+4. Proper TypeScript types for all report interfaces:
+   - DailyCollectionsReport, DailyCollectionsReportRow
+   - AccountsReceivableAgingReport, ARAgingBucket, ARAgingByPatient
+   - RevenueByProviderReport, RevenueByProviderRow
+   - RevenueByServiceCodeReport, RevenueByServiceCodeRow
+   - PaymentTypeSummaryReport, PaymentTypeSummaryRow
+
+Files Modified:
+- app/src/lib/reporting/financial-reports.ts (new - 700+ lines)
+- app/src/lib/reporting/index.ts (added exports)
+- app/src/server/routers/reporting.ts (added 5 procedures)
+
+All acceptance criteria met. TypeScript compiles without errors.
+--- Iteration 2 completed at 2026-01-22 ---
+Story: US-102 - Financial reports
+

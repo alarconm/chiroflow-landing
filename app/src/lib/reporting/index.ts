@@ -85,3 +85,26 @@ export {
   formatExportType,
   getAvailableExportFormats,
 } from './export';
+
+// Financial reports (US-102)
+export {
+  getDailyCollectionsReport,
+  getARAgingDetailReport,
+  getRevenueByProviderReport,
+  getRevenueByServiceCodeReport,
+  getPaymentTypeSummaryReport,
+} from './financial-reports';
+
+export type {
+  DailyCollectionsReport,
+  DailyCollectionsReportRow,
+  AccountsReceivableAgingReport,
+  ARAgingBucket,
+  ARAgingByPatient,
+  RevenueByProviderReport,
+  RevenueByProviderRow,
+  RevenueByServiceCodeReport,
+  RevenueByServiceCodeRow,
+  PaymentTypeSummaryReport,
+  PaymentTypeSummaryRow,
+} from './financial-reports';
