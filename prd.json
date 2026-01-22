@@ -67,7 +67,7 @@
         "Save annotation layer separately from image"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-228",
