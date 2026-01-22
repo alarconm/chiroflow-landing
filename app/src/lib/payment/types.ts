@@ -270,3 +270,48 @@ export interface WebhookVerificationResult {
   event?: WebhookEvent;
   errorMessage?: string;
 }
+
+// ============================================
+// Webhook Handler Types (US-091)
+// ============================================
+
+export type StripeWebhookEventType =
+  | 'payment_intent.succeeded'
+  | 'payment_intent.payment_failed'
+  | 'payment_intent.canceled'
+  | 'charge.refunded'
+  | 'charge.refund.updated'
+  | 'charge.dispute.created'
+  | 'charge.dispute.updated'
+  | 'charge.dispute.closed'
+  | 'payment_method.attached'
+  | 'payment_method.detached'
+  | 'customer.created'
+  | 'customer.deleted';
+
+export interface WebhookHandlerResult {
+  success: boolean;
+  eventId: string;
+  eventType: string;
+  processed: boolean;
+  skipped?: boolean;  // True if already processed (idempotent)
+  actions?: WebhookAction[];
+  error?: string;
+}
+
+export interface WebhookAction {
+  type: 'transaction_updated' | 'ledger_updated' | 'email_sent' | 'alert_created' | 'dispute_created';
+  entityId?: string;
+  entityType?: string;
+  details?: Record<string, unknown>;
+}
+
+export interface DisputeInfo {
+  disputeId: string;
+  transactionId: string;
+  amount: number;
+  reason: string;
+  status: 'needs_response' | 'under_review' | 'won' | 'lost' | 'warning_closed' | 'warning_needs_response';
+  evidenceDueDate?: Date;
+  createdAt: Date;
+}

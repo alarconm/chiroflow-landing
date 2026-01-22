@@ -509,3 +509,133 @@ Implemented the complete automated payment plan billing system with scheduled jo
 --- Iteration 6 completed at 2026-01-21 ---
 Story: US-090 - Automated payment plan billing
 
+--- Iteration 6 completed at 2026-01-21 21:32:24 ---
+Story: US-090 - Automated payment plan billing
+
+## 2026-01-21: US-091 - Payment webhook handling
+
+**Status:** COMPLETE
+
+### What was done:
+
+Implemented comprehensive payment webhook handling with support for Stripe events, idempotent processing, and automated notifications.
+
+#### 1. Webhook endpoint for payment processor events (NEW)
+
+**API Endpoint (`app/src/app/api/webhooks/payment/route.ts`):**
+- POST endpoint for receiving webhook events from Stripe/Square
+- Raw body handling for signature verification
+- Supports multiple processor types via `?processor=` query param
+- Health check GET endpoint for configuration verification
+- Proper HTTP status codes (200 for success, 400 for verification failure, 500 for errors)
+
+#### 2. Handle payment.succeeded and payment.failed events (NEW)
+
+**payment.succeeded handler:**
+- Finds transaction by external transaction ID
+- Updates status to COMPLETED
+- Stores processor response for audit
+- Sends confirmation email to patient (if email enabled)
+- Records actions taken
+
+**payment.failed handler:**
+- Updates transaction with failure details (errorCode, errorMessage, declineCode)
+- Updates payment plan installment status if applicable
+- Alerts staff via email with patient and error details
+- Records failure actions for audit
+
+#### 3. Handle refund events (NEW)
+
+**charge.refunded handler:**
+- Determines if full or partial refund based on amounts
+- Updates transaction status to REFUNDED or PARTIALLY_REFUNDED
+- Sends refund notification email to patient
+- Logs refund processing details
+
+#### 4. Handle dispute/chargeback events (NEW)
+
+**charge.dispute.created/updated/closed handlers:**
+- Extracts dispute info (ID, amount, reason, status, evidence due date)
+- Updates transaction's processorResponse with dispute details
+- Sends URGENT alert email to staff for new disputes
+- Provides actionable next steps (gather evidence, submit before deadline)
+- Tracks dispute status changes through lifecycle
+
+#### 5. Webhook signature verification for security (NEW)
+
+- Uses Stripe provider's `verifyWebhook()` method
+- Validates webhook signature from `stripe-signature` header
+- Returns 400 status for invalid signatures
+- Parses and maps Stripe event types to internal types
+
+#### 6. Idempotent webhook processing (NEW)
+
+**New Prisma Model (`ProcessedWebhookEvent`):**
+- `eventId` + `processorType` as unique composite key
+- Status tracking: PENDING, PROCESSING, COMPLETED, FAILED, SKIPPED
+- `retryCount` for tracking retry attempts
+- `rawPayload` for debugging/replay
+- `actions` array for recording what was done
+- `transactionId` for linking to affected transaction
+
+**Processing Flow:**
+1. Check if event already processed (status = COMPLETED) → skip
+2. Check if currently processing → skip (prevents duplicates)
+3. Upsert event record with PROCESSING status
+4. Process event and record actions
+5. Update to COMPLETED on success, FAILED on error
+6. Failed events can be retried (retryCount incremented)
+
+### Files Created:
+- `app/src/lib/payment/webhook-handler.ts` - Complete webhook handler service (966 lines)
+  - `handlePaymentWebhook()` - Main entry point
+  - `handlePaymentSucceeded()` - Payment success handler
+  - `handlePaymentFailed()` - Payment failure handler
+  - `handleRefund()` - Refund event handler
+  - `handleDispute()` - Dispute/chargeback handler
+  - `handlePaymentMethodChange()` - Payment method events
+  - Email templates for all notification types
+- `app/src/app/api/webhooks/payment/route.ts` - Webhook API endpoint
+
+### Files Modified:
+- `app/prisma/schema.prisma`
+  - Added `ProcessedWebhookEvent` model for idempotency
+  - Added `WebhookProcessingStatus` enum
+  - Added `webhookEvents` relation to `PaymentTransaction`
+  - Added `processedWebhookEvents` relation to `Organization`
+- `app/src/lib/payment/types.ts`
+  - Added `StripeWebhookEventType` type
+  - Added `WebhookHandlerResult` interface
+  - Added `WebhookAction` interface
+  - Added `DisputeInfo` interface
+- `app/src/lib/payment/index.ts` - Added webhook handler exports
+
+### Supported Webhook Events:
+- `payment_intent.succeeded` / `payment.succeeded`
+- `payment_intent.payment_failed` / `payment.failed`
+- `charge.refunded` / `payment.refunded`
+- `charge.dispute.created`
+- `charge.dispute.updated`
+- `charge.dispute.closed`
+- `payment_method.attached`
+- `payment_method.detached`
+- `customer.created`
+- `customer.deleted`
+
+### Acceptance Criteria Met:
+✅ Webhook endpoint for payment processor events
+✅ Handle payment.succeeded, payment.failed events
+✅ Handle refund events
+✅ Handle dispute/chargeback events
+✅ Webhook signature verification for security
+✅ Idempotent webhook processing
+
+### Validation:
+- TypeScript compiles without errors
+- Prisma client generates successfully
+- All exports available from `@/lib/payment`
+- Proper error handling and logging
+
+--- Iteration 7 completed at 2026-01-21 ---
+Story: US-091 - Payment webhook handling
+

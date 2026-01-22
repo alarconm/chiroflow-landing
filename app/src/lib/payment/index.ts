@@ -29,6 +29,12 @@ export {
   type InstallmentProcessResult,
 } from './plan-billing-scheduler';
 
+// Payment Webhook Handler (US-091)
+export {
+  handlePaymentWebhook,
+  type WebhookHandlerResult,
+} from './webhook-handler';
+
 // Credential encryption utilities
 export {
   encryptPaymentCredential,

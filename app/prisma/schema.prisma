@@ -68,6 +68,7 @@ model Organization {
   patientStatements    PatientStatement[]
   autoPayEnrollments   AutoPayEnrollment[]
   refunds              Refund[]
+  processedWebhookEvents ProcessedWebhookEvent[]
 
   // Reporting & Analytics relations (Epic 15)
   dashboardWidgets    DashboardWidget[]
@@ -2448,6 +2449,9 @@ model PaymentTransaction {
   organizationId  String
   organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  // Webhook events that affected this transaction
+  webhookEvents   ProcessedWebhookEvent[]
+
   @@index([organizationId])
   @@index([patientId])
   @@index([status])
@@ -2703,6 +2707,59 @@ model Refund {
   @@index([status])
   @@index([createdAt])
   @@index([paymentProcessorId])
+}
+
+// Processed webhook events (for idempotency - US-091)
+model ProcessedWebhookEvent {
+  id              String    @id @default(cuid())
+
+  // Event identification (idempotency key)
+  eventId         String    // External event ID from payment processor
+  eventType       String    // payment.succeeded, payment.failed, etc.
+
+  // Processor info
+  processorType   PaymentProcessorType
+  processorId     String?   // Link to PaymentProcessor if organization-specific
+
+  // Processing status
+  status          WebhookProcessingStatus @default(PENDING)
+  processedAt     DateTime?
+  retryCount      Int       @default(0)
+  lastError       String?   @db.Text
+
+  // Event data (raw payload for debugging/replay)
+  rawPayload      Json
+
+  // Resulting actions taken
+  actions         Json?     // Array of actions taken (e.g., transaction updated, email sent)
+
+  // Timestamps
+  receivedAt      DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Multi-tenant relation (null for events without org context)
+  organizationId  String?
+  organization    Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Related transaction (if applicable)
+  transactionId   String?
+  transaction     PaymentTransaction? @relation(fields: [transactionId], references: [id])
+
+  @@unique([eventId, processorType])
+  @@index([organizationId])
+  @@index([eventType])
+  @@index([status])
+  @@index([receivedAt])
+}
+
+// Webhook processing status
+enum WebhookProcessingStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  SKIPPED     // Already processed (idempotent check)
 }
 
 // ============================================
