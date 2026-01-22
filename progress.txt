@@ -389,8 +389,101 @@
   ✓ Quick normal exam generation (generateQuickNormal)
   ✓ Customizable macro library (getMacroLibrary, createMacro)
 
-### Remaining Stories:
-- US-322: AI documentation assistant UI
+### US-322: AI documentation assistant UI - COMPLETED
+- Created comprehensive AI Documentation Assistant UI component system:
+
+  **Main Container:**
+  1. **AIDocumentationAssistant.tsx** - Main orchestrating component
+     - Expandable/collapsible panel with quick action buttons
+     - Tabbed interface for transcribe, SOAP, codes, and compliance
+     - Resizable sidebar for context-aware secondary panels
+     - Voice command integration with wake word support
+     - Ambient mode toggle for continuous listening
+     - Sheet variant for mobile/overlay use
+
+  **Feature Components:**
+  2. **TranscriptionPanel.tsx** - Real-time transcription interface
+     - Live audio recording with waveform visualization
+     - Speaker diarization display (provider/patient segments)
+     - Real-time confidence indicators per segment
+     - Transcript editing with correction tracking
+     - Ambient and dictation mode switching
+     - Quick actions: generate SOAP, stop recording
+     - Duration and segment count display
+
+  3. **SOAPGenerationPanel.tsx** - AI SOAP note generation
+     - One-click generation from transcript
+     - Draft note management with status tracking
+     - Section-by-section confidence scores
+     - Section collapse/expand with inline editing
+     - Quick accept/reject workflow
+     - Regenerate with additional context
+     - Apply to encounter action
+     - Provider style matching score display
+
+  4. **CodeSuggestionSidebar.tsx** - Intelligent code suggestions
+     - ICD-10 and CPT code suggestions with confidence
+     - Color-coded confidence indicators (high/medium/low)
+     - Reasoning display for each suggestion
+     - Alternative codes with one-click swap
+     - Risk flags (upcoding, downcoding, audit risk)
+     - Quick accept/reject/modify actions
+     - Filter by code type
+     - Compact mode for sidebar display
+
+  5. **ComplianceAlertsDisplay.tsx** - Compliance checking
+     - Real-time compliance score gauge (0-100)
+     - Issues grouped by severity (critical, error, warning, info)
+     - Expandable issue cards with suggestions
+     - Auto-fix capability for supported issues
+     - Section focus navigation
+     - Pre-billing gate status
+     - Compliance tips based on common issues
+     - Show/hide resolved issues toggle
+
+  6. **VoiceCommandProvider.tsx** - Voice command system
+     - Custom hook-based provider pattern
+     - Wake word detection ("hey chiroflow")
+     - Command registration/unregistration API
+     - Speech recognition with confidence scores
+     - Visual command status indicator
+     - Help dialog with grouped commands
+     - Category-based command organization
+     - Auto-sleep timeout after inactivity
+
+- Added reusable UI components:
+  - `resizable.tsx` - Resizable panel wrappers for react-resizable-panels
+
+- Integrated voice commands:
+  - "start transcription" / "record" / "begin transcription"
+  - "stop transcription" / "stop recording"
+  - "generate soap" / "create soap" / "make soap note"
+  - "suggest codes" / "get codes" / "billing codes"
+  - "check compliance" / "compliance check"
+  - "toggle ambient" / "ambient mode"
+  - "expand panel" / "collapse panel"
+  - "help" / "show commands"
+
+- Features implemented per acceptance criteria:
+  ✓ Transcription panel in encounter (TranscriptionPanel)
+  ✓ Real-time transcript view (speaker segments with waveform)
+  ✓ One-click SOAP generation (SOAPGenerationPanel)
+  ✓ Code suggestion sidebar (CodeSuggestionSidebar)
+  ✓ Compliance alerts display (ComplianceAlertsDisplay)
+  ✓ Quick accept/reject suggestions (all components)
+  ✓ Voice command support (VoiceCommandProvider)
+  ✓ Ambient mode toggle (TranscriptionPanel + main component)
+
+### Epic 32: AI Documentation Agent - COMPLETE
+All 8 stories in the epic have been implemented:
+- US-315: AI documentation agent schema ✓
+- US-316: Real-time encounter transcription ✓
+- US-317: AI SOAP note generation ✓
+- US-318: Intelligent code suggestion ✓
+- US-319: Compliance checking ✓
+- US-320: Provider preference learning ✓
+- US-321: Documentation templates and macros ✓
+- US-322: AI documentation assistant UI ✓
 
 --- Iteration 1 completed at 2026-01-22 11:33:29 ---
 Story: US-315 - AI documentation agent schema
@@ -424,4 +517,10 @@ Story: US-320 - Provider preference learning
 
 --- Iteration 7 completed at 2026-01-22 ---
 Story: US-321 - Documentation templates and macros
+
+--- Iteration 7 completed at 2026-01-22 12:16:40 ---
+Story: US-321 - Documentation templates and macros
+
+--- Iteration 8 completed at 2026-01-22 ---
+Story: US-322 - AI documentation assistant UI
 

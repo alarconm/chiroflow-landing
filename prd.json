@@ -135,7 +135,7 @@
         "Ambient mode toggle"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }
