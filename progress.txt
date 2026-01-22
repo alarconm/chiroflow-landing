@@ -450,3 +450,78 @@ Story: US-237 - Patient progress tracking
 --- Iteration 8 completed at 2026-01-22 ---
 Story: US-238 - Patient education portal
 
+--- Iteration 8 completed at 2026-01-22 04:32:59 ---
+Story: US-238 - Patient education portal
+
+## US-239: Education prescription UI - COMPLETED
+
+### Date: 2026-01-22
+
+### What was implemented:
+1. Created comprehensive ExercisePrescriptionBuilder component (`app/src/components/encounters/ExercisePrescriptionBuilder.tsx`) with:
+   - Exercise prescription builder integrated into encounter workflow
+   - Three-tab interface: Exercise Library, Selected Exercises, Templates
+
+2. Exercise Library Tab:
+   - Search exercises by name/description
+   - Filter by body region, difficulty, and category
+   - Visual exercise cards with difficulty badges
+   - Click to add exercises to selection
+   - Checkmark indicators for already-selected exercises
+   - Clear filters button
+
+3. Selected Exercises Tab:
+   - Drag-and-drop reordering of selected exercises
+   - Edit parameters dialog (sets, reps, hold time, frequency, special instructions)
+   - Remove exercises with confirmation
+   - Display of exercise details and parameters
+
+4. Templates Tab (Bulk prescribe common protocols):
+   - 5 pre-built exercise protocols:
+     - Cervical Rehabilitation (4 exercises, 4 weeks)
+     - Lumbar & Core Stability (5 exercises, 6 weeks)
+     - Posture Correction (4 exercises, 4 weeks)
+     - Sciatica Relief (4 exercises, 4 weeks)
+     - Balance & Proprioception (2 exercises, 4 weeks)
+   - One-click apply to add all protocol exercises
+   - Body region and duration labels
+
+5. Patient Preview (Preview patient view):
+   - Sheet panel showing how exercises appear in patient portal
+   - Exercise cards with numbered sequence
+   - Parameter badges (sets, reps, hold time, frequency)
+   - Video indicator for exercises with demonstrations
+   - Special instructions highlighted in amber
+
+6. Take-Home Handout (Generate take-home handout):
+   - Modal dialog with iframe preview
+   - Printable HTML format with professional styling
+   - Exercise details with parameters and instructions
+   - Page breaks for long programs
+   - Open in new window for printing
+   - HTML escaping for security
+
+7. Prescription Effectiveness Tracking:
+   - Displays patient compliance rate in header
+   - Color-coded compliance (green 80%+, yellow 50-79%, red <50%)
+   - Integration with prescription summary API
+
+8. Additional features:
+   - Bulk create mutation for prescribing multiple exercises at once
+   - Links to encounter, treatment plan, and diagnosis
+   - Shows existing active prescriptions for the patient
+   - Organization-scoped data access
+   - Audit logging integration
+
+### Files created:
+- app/src/components/encounters/ExercisePrescriptionBuilder.tsx
+
+### Files modified:
+- app/src/components/encounters/index.ts (added ExercisePrescriptionBuilder export)
+
+### Verification:
+- TypeScript compilation passed with no errors
+
+--- Iteration 9 completed at 2026-01-22 ---
+Story: US-239 - Education prescription UI
+

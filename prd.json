@@ -135,7 +135,7 @@
         "Generate take-home handout"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }

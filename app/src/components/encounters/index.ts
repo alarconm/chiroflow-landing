@@ -4,3 +4,4 @@ export { ProcedureList } from './ProcedureList';
 export { TreatmentPlanView } from './TreatmentPlanView';
 export { AssessmentList } from './AssessmentList';
 export { BodyDiagramSection } from './BodyDiagramSection';
+export { ExercisePrescriptionBuilder } from './ExercisePrescriptionBuilder';
