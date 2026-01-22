@@ -18,7 +18,7 @@
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-324",
@@ -35,7 +35,7 @@
         "Provider notifications for at-risk patients"
       ],
       "priority": 2,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-325",
@@ -52,7 +52,7 @@
         "Multi-channel delivery"
       ],
       "priority": 3,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-326",

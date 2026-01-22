@@ -85,3 +85,81 @@ Story: US-323 - AI care coordinator schema
 --- Iteration 2 completed at 2026-01-22 ---
 Story: US-324 - Treatment plan monitoring
 
+--- Iteration 2 completed at 2026-01-22 13:46:40 ---
+Story: US-324 - Treatment plan monitoring
+
+## US-325: Intelligent appointment reminders - COMPLETED
+
+### What was implemented:
+
+1. **Core helper functions added:**
+   - `calculateNoShowRisk` - Calculates patient no-show risk based on history, visit gaps, treatment plan status, and reminder response rates
+   - `calculateOptimalTiming` - Determines optimal reminder send time based on appointment proximity, patient preferences, and no-show risk
+   - `generatePersonalizedMessage` - Creates personalized SMS and email messages with preparation instructions
+   - `getPreparationInstructions` - Returns appointment-type-specific preparation instructions
+
+2. **New types defined:**
+   - `ReminderTiming` - Tracks optimal send timing and reasoning
+   - `NoShowRisk` - Risk level, score, factors, and recommended actions
+   - `PersonalizedReminder` - Complete reminder payload with all context
+   - `ReminderResponse` - Tracks patient responses and actions taken
+
+3. **New tRPC procedures added:**
+   - `aiCare.sendReminders` - Main endpoint for sending intelligent reminders with:
+     - Personalized message generation based on patient name, appointment details, provider
+     - Optimal timing calculation based on patient behavior patterns
+     - No-show risk assessment (LOW, MEDIUM, HIGH, VERY_HIGH)
+     - Multi-channel delivery (SMS, email, phone, portal)
+     - Preparation instructions by appointment type
+     - Dry run mode for previewing reminders
+     - Creates CareOutreach records tracking all reminders
+   - `aiCare.handleReminderResponse` - Process patient responses:
+     - CONFIRMED - Updates appointment to confirmed status
+     - RESCHEDULE_REQUESTED - Creates follow-up action for staff
+     - CANCEL_REQUESTED - Cancels appointment
+     - Creates CareCoordinatorAction for reschedule requests
+   - `aiCare.processRescheduleRequest` - Auto-reschedule workflow:
+     - Finds available slots based on patient preferences
+     - Respects preferred dates and time of day
+     - Checks provider availability
+     - Creates action with slot options
+   - `aiCare.getReminderQueue` - Get appointments needing reminders:
+     - Filters by time window and reminder sequence
+     - Categorizes by urgency (IMMEDIATE, SOON, SCHEDULED)
+     - Respects patient opt-out preferences
+   - `aiCare.getReminderStats` - Reminder effectiveness analytics:
+     - Stats by channel (SMS, email, phone, portal)
+     - Outcome tracking (confirmed, completed, no-show, cancelled)
+     - Response rates and confirmation rates
+     - Show rates for reminded appointments
+
+4. **No-show risk calculation factors:**
+   - Historical no-show rate (0-40 points)
+   - Days since last visit (0-25 points)
+   - Treatment plan engagement (0-15 points)
+   - Reminder response rate (0-20 points)
+   - Risk levels: LOW (<30), MEDIUM (30-49), HIGH (50-69), VERY_HIGH (70+)
+
+5. **Preparation instructions by appointment type:**
+   - Initial/New patient: Arrive early, bring ID/insurance, medical records, comfortable clothing
+   - X-ray/Imaging: Remove metal, loose clothing, pregnancy notification
+   - Adjustment/Treatment: Comfortable clothing, hydration, avoid heavy meals
+   - Exam/Evaluation: Easy movement clothing, note symptoms, medication list
+   - Follow-up/Recheck: Progress discussion, symptom changes
+
+### Files modified:
+- app/src/server/routers/aiCare.ts
+
+### Features implemented per acceptance criteria:
+- ✅ aiCare.sendReminders - Send smart reminders
+- ✅ Personalized reminder messages
+- ✅ Optimal timing based on patient behavior
+- ✅ Include relevant preparation instructions
+- ✅ Handle confirmation responses
+- ✅ Auto-reschedule from replies
+- ✅ No-show risk adjustment
+- ✅ Multi-channel delivery
+
+--- Iteration 3 completed at 2026-01-22 ---
+Story: US-325 - Intelligent appointment reminders
+
