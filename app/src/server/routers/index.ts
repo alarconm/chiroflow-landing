@@ -71,6 +71,7 @@ import { imagingRouter } from './imaging';
 import { exerciseRouter } from './exercise';
 import { prescriptionRouter } from './prescription';
 import { homeCareRouter } from './homeCare';
+import { educationRouter } from './education';
 
 export const appRouter = router({
   auth: authRouter,
@@ -145,6 +146,7 @@ export const appRouter = router({
   exercise: exerciseRouter,
   prescription: prescriptionRouter,
   homeCare: homeCareRouter,
+  education: educationRouter,
 });
 
 

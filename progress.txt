@@ -232,3 +232,83 @@ Story: US-234 - Exercise prescription
 --- Iteration 5 completed at 2026-01-22 ---
 Story: US-235 - Home care instructions
 
+--- Iteration 5 completed at 2026-01-22 04:05:47 ---
+Story: US-235 - Home care instructions
+
+## US-236: Condition-specific education - COMPLETED
+
+### Date: 2026-01-22
+
+### What was implemented:
+1. Created comprehensive education tRPC router (`app/src/server/routers/education.ts`) with:
+   - `education.getByCondition` - Get content for diagnosis (ICD-10 code, condition slug, or keyword)
+   - `education.list` - List all articles with filtering and pagination
+   - `education.get` - Get single article with view count tracking
+   - `education.getCategories` - Get available article categories with counts
+   - `education.getLanguages` - Get available languages with counts
+   - `education.getConditions` - Get common chiropractic conditions list
+   - `education.getFAQ` - Get FAQ articles for a condition
+   - `education.getRecoveryTimeline` - Get recovery timeline for a condition
+   - `education.getLifestyleGuidance` - Get lifestyle modification articles
+   - `education.prescribeArticle` - Prescribe article to patient (provider only)
+   - `education.getPatientArticles` - Get prescribed articles for patient
+   - `education.markArticleRead` - Mark prescribed article as read
+   - `education.create` - Create new article (admin only)
+   - `education.update` - Update article (admin only)
+   - `education.delete` - Delete article if not prescribed (admin only)
+   - `education.seedContent` - Seed database with standard content (admin only)
+
+2. Condition overview articles and treatment explanations:
+   - 10 common chiropractic conditions mapped with ICD-10 codes:
+     - Low Back Pain (M54.5)
+     - Neck Pain (M54.2)
+     - Sciatica (M54.3)
+     - Headache/Migraine (G43, R51)
+     - Herniated Disc (M51, M50)
+     - Whiplash (S13.4)
+     - Scoliosis (M41)
+     - Shoulder Pain (M25.51, M75)
+     - Carpal Tunnel (G56.0)
+     - Fibromyalgia (M79.7)
+
+3. Article categories implemented:
+   - Condition Overview
+   - Treatment Options
+   - Recovery Timeline
+   - Lifestyle Modifications
+   - FAQ
+   - Prevention
+   - Self Care
+   - When to Seek Help
+
+4. Multi-language support:
+   - Language field with 10 language labels (English, Spanish, Chinese, Vietnamese, Korean, Russian, Arabic, Portuguese, French, German)
+   - Seeded example article in Spanish (Entendiendo el Dolor de Espalda Baja)
+   - Language-filtered queries throughout the router
+
+5. Reading level options:
+   - SIMPLE (5th grade) - Basic explanation with short sentences
+   - STANDARD (8th grade) - Default comprehensive content
+   - DETAILED (12th grade) - More technical information
+   - Seeded example article at SIMPLE reading level
+
+6. Seeded content library with 9 articles:
+   - Low Back Pain: Overview, Recovery Timeline, Lifestyle Changes, FAQ
+   - Neck Pain: Overview
+   - Sciatica: Overview
+   - Headaches: Overview
+   - Low Back Pain (Simple): Easy-to-read version
+   - Low Back Pain (Spanish): Spanish translation
+
+### Files created:
+- app/src/server/routers/education.ts
+
+### Files modified:
+- app/src/server/routers/index.ts (added educationRouter)
+
+### Verification:
+- TypeScript compilation passed with no errors
+
+--- Iteration 6 completed at 2026-01-22 ---
+Story: US-236 - Condition-specific education
+

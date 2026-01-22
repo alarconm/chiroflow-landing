@@ -86,7 +86,7 @@
         "Reading level options"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-237",
