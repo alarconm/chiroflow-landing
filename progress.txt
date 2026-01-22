@@ -68,3 +68,55 @@ Date: 2026-01-22
 --- Iteration 2 completed at 2026-01-22 ---
 Story: US-348 - Documentation quality audit
 
+--- Iteration 2 completed at 2026-01-22 15:15:40 ---
+Story: US-348 - Documentation quality audit
+
+## US-349: Coding accuracy audit - COMPLETED
+
+### What was implemented:
+- Created `aiQA.auditCoding` mutation for comprehensive coding accuracy auditing
+- Implemented 5 coding assessment criteria:
+  1. **Code-to-Documentation Match** (25%) - Validates CPT codes match SOAP documentation
+  2. **Modifier Appropriateness** (20%) - Checks proper modifier usage (25, 59, AT, etc.)
+  3. **Upcoding/Downcoding Detection** (25%) - Detects potential over/under-coding
+  4. **Bundling Compliance** (15%) - Checks NCCI bundling rules
+  5. **LCD/NCD Compliance** (15%) - Validates Medicare coverage criteria
+
+- Provider-level accuracy tracking with:
+  - Per-provider accuracy rates
+  - Provider rankings
+  - Targeted education recommendations
+
+- Supporting endpoints:
+  - `aiQA.getCodingAccuracyHistory` - Score trends over time
+  - `aiQA.getCodingAuditHistory` - Past coding audits
+  - `aiQA.getProviderCodingAccuracy` - Provider comparison dashboard
+  - `aiQA.getCodingFinding` - Detailed finding with education content
+
+- Chiropractic-specific coding validation:
+  - Spinal manipulation codes (98940-98943) region validation
+  - E/M documentation level matching
+  - Physical therapy time-based code validation
+  - Medicare LCD requirements for chiropractic services
+
+- Education content generation for each finding type
+
+### Acceptance Criteria Met:
+- [x] aiQA.auditCoding - Review coding accuracy
+- [x] Code-to-documentation match
+- [x] Modifier appropriateness
+- [x] Upcoding/downcoding detection
+- [x] Bundling compliance
+- [x] LCD/NCD compliance
+- [x] Provider-level accuracy rates
+- [x] Targeted education recommendations
+
+### Files modified:
+- app/src/server/routers/aiQA.ts (~1400 lines added)
+- app/src/lib/audit.ts (added AI QA audit actions)
+
+### Status: COMPLETE
+Date: 2026-01-22
+--- Iteration 3 completed at 2026-01-22 ---
+Story: US-349 - Coding accuracy audit
+
