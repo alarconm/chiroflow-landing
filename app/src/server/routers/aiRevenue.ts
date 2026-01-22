@@ -3446,4 +3446,762 @@ export const aiRevenueRouter = router({
         opportunity: updated,
       };
     }),
+
+  // ============================================
+  // US-344: Contract Analysis
+  // ============================================
+
+  /**
+   * Analyze payer contracts for optimization
+   * Reviews reimbursement rates, compares to market, identifies renegotiation opportunities
+   */
+  analyzeContracts: billerProcedure
+    .input(
+      z.object({
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+        payerIds: z.array(z.string()).optional(),
+        minClaimVolume: z.number().default(20),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { dateFrom, dateTo, payerIds, minClaimVolume } = input;
+      const organizationId = ctx.user.organizationId;
+
+      const endDate = dateTo || new Date();
+      const startDate = dateFrom || new Date(endDate.getTime() - 365 * 24 * 60 * 60 * 1000); // Default 1 year
+
+      // Market benchmark rates (typical Medicare % and regional variations)
+      const MARKET_BENCHMARKS: Record<string, {
+        medicarePercent: number; // Expected % of Medicare
+        minAcceptable: number;
+        regional: { low: number; mid: number; high: number };
+      }> = {
+        // E&M Codes
+        '99201': { medicarePercent: 120, minAcceptable: 100, regional: { low: 95, mid: 120, high: 145 } },
+        '99202': { medicarePercent: 125, minAcceptable: 100, regional: { low: 100, mid: 125, high: 150 } },
+        '99203': { medicarePercent: 130, minAcceptable: 105, regional: { low: 105, mid: 130, high: 155 } },
+        '99204': { medicarePercent: 135, minAcceptable: 110, regional: { low: 110, mid: 135, high: 160 } },
+        '99205': { medicarePercent: 140, minAcceptable: 115, regional: { low: 115, mid: 140, high: 165 } },
+        '99211': { medicarePercent: 115, minAcceptable: 95, regional: { low: 90, mid: 115, high: 140 } },
+        '99212': { medicarePercent: 120, minAcceptable: 100, regional: { low: 95, mid: 120, high: 145 } },
+        '99213': { medicarePercent: 125, minAcceptable: 105, regional: { low: 100, mid: 125, high: 150 } },
+        '99214': { medicarePercent: 130, minAcceptable: 110, regional: { low: 105, mid: 130, high: 155 } },
+        '99215': { medicarePercent: 135, minAcceptable: 115, regional: { low: 110, mid: 135, high: 160 } },
+        // CMT Codes
+        '98940': { medicarePercent: 130, minAcceptable: 100, regional: { low: 100, mid: 130, high: 160 } },
+        '98941': { medicarePercent: 135, minAcceptable: 105, regional: { low: 105, mid: 135, high: 165 } },
+        '98942': { medicarePercent: 140, minAcceptable: 110, regional: { low: 110, mid: 140, high: 170 } },
+        '98943': { medicarePercent: 130, minAcceptable: 100, regional: { low: 100, mid: 130, high: 160 } },
+        // Therapy Codes
+        '97110': { medicarePercent: 125, minAcceptable: 100, regional: { low: 95, mid: 125, high: 155 } },
+        '97112': { medicarePercent: 125, minAcceptable: 100, regional: { low: 95, mid: 125, high: 155 } },
+        '97140': { medicarePercent: 125, minAcceptable: 100, regional: { low: 95, mid: 125, high: 155 } },
+        '97530': { medicarePercent: 130, minAcceptable: 105, regional: { low: 100, mid: 130, high: 160 } },
+        // Exam Codes
+        '97161': { medicarePercent: 135, minAcceptable: 110, regional: { low: 105, mid: 135, high: 165 } },
+        '97162': { medicarePercent: 140, minAcceptable: 115, regional: { low: 110, mid: 140, high: 170 } },
+        '97163': { medicarePercent: 145, minAcceptable: 120, regional: { low: 115, mid: 145, high: 175 } },
+      };
+
+      // Medicare base rates (2024 approximate)
+      const MEDICARE_RATES: Record<string, number> = {
+        '99201': 45, '99202': 65, '99203': 95, '99204': 145, '99205': 185,
+        '99211': 22, '99212': 45, '99213': 75, '99214': 110, '99215': 150,
+        '98940': 32, '98941': 42, '98942': 52, '98943': 30,
+        '97110': 33, '97112': 35, '97140': 32, '97530': 38,
+        '97161': 95, '97162': 125, '97163': 145,
+      };
+
+      // Get payers
+      const payerFilter = payerIds && payerIds.length > 0 ? { id: { in: payerIds } } : {};
+      const payers = await ctx.prisma.insurancePayer.findMany({
+        where: {
+          ...payerFilter,
+          claims: {
+            some: {
+              organizationId,
+              createdDate: {
+                gte: startDate,
+                lte: endDate,
+              },
+            },
+          },
+        },
+      });
+
+      // Analyze each payer's contract performance
+      interface ContractAnalysis {
+        payerId: string;
+        payerName: string;
+        claimVolume: number;
+        totalBilled: number;
+        totalAllowed: number;
+        totalPaid: number;
+        avgReimbursementRate: number;
+        avgDaysToPayment: number;
+        denialRate: number;
+        cptAnalysis: Array<{
+          cptCode: string;
+          volume: number;
+          avgBilled: number;
+          avgAllowed: number;
+          avgPaid: number;
+          reimbursementPercent: number;
+          medicarePercent: number;
+          marketComparison: 'below_market' | 'at_market' | 'above_market';
+          annualImpact: number;
+        }>;
+        overallRating: 'poor' | 'below_average' | 'average' | 'good' | 'excellent';
+        renegotiationPriority: 'low' | 'medium' | 'high' | 'critical';
+        estimatedAnnualOpportunity: number;
+        recommendations: string[];
+        negotiationTalkingPoints: string[];
+      }
+
+      const contractAnalyses: ContractAnalysis[] = [];
+
+      for (const payer of payers) {
+        // Get claims for this payer
+        const claims = await ctx.prisma.claim.findMany({
+          where: {
+            organizationId,
+            payerId: payer.id,
+            createdDate: {
+              gte: startDate,
+              lte: endDate,
+            },
+            status: {
+              in: ['PAID', 'DENIED', 'ACCEPTED'],
+            },
+          },
+          include: {
+            claimLines: true,
+          },
+        });
+
+        if (claims.length < minClaimVolume) continue;
+
+        // Calculate overall metrics
+        const totalBilled = claims.reduce((sum, c) => sum + Number(c.totalCharges), 0);
+        const totalAllowed = claims.reduce((sum, c) => sum + Number(c.totalAllowed), 0);
+        const totalPaid = claims.reduce((sum, c) => sum + Number(c.totalPaid), 0);
+        const deniedClaims = claims.filter(c => c.status === 'DENIED').length;
+        const denialRate = (deniedClaims / claims.length) * 100;
+
+        // Calculate days to payment
+        const paymentDays: number[] = [];
+        for (const claim of claims) {
+          if (claim.paidDate && claim.submittedDate) {
+            const days = Math.floor(
+              (claim.paidDate.getTime() - claim.submittedDate.getTime()) / (24 * 60 * 60 * 1000)
+            );
+            if (days > 0 && days < 365) paymentDays.push(days);
+          }
+        }
+        const avgDaysToPayment = paymentDays.length > 0
+          ? paymentDays.reduce((a, b) => a + b, 0) / paymentDays.length
+          : 0;
+
+        // Analyze by CPT code
+        const cptStats: Record<string, {
+          volume: number;
+          totalBilled: number;
+          totalAllowed: number;
+          totalPaid: number;
+        }> = {};
+
+        for (const claim of claims) {
+          for (const line of claim.claimLines) {
+            if (!cptStats[line.cptCode]) {
+              cptStats[line.cptCode] = { volume: 0, totalBilled: 0, totalAllowed: 0, totalPaid: 0 };
+            }
+            cptStats[line.cptCode].volume += line.units;
+            cptStats[line.cptCode].totalBilled += Number(line.chargedAmount) * line.units;
+            cptStats[line.cptCode].totalAllowed += Number(line.allowedAmount) * line.units;
+            cptStats[line.cptCode].totalPaid += Number(line.paidAmount) * line.units;
+          }
+        }
+
+        const cptAnalysis: ContractAnalysis['cptAnalysis'] = [];
+        let totalOpportunity = 0;
+
+        for (const [cptCode, stats] of Object.entries(cptStats)) {
+          if (stats.volume < 5) continue;
+
+          const avgBilled = stats.totalBilled / stats.volume;
+          const avgAllowed = stats.totalAllowed / stats.volume;
+          const avgPaid = stats.totalPaid / stats.volume;
+          const reimbursementPercent = avgBilled > 0 ? (avgPaid / avgBilled) * 100 : 0;
+
+          // Compare to Medicare
+          const medicareRate = MEDICARE_RATES[cptCode] || 0;
+          const medicarePercent = medicareRate > 0 ? (avgPaid / medicareRate) * 100 : 0;
+
+          // Compare to market benchmarks
+          const benchmark = MARKET_BENCHMARKS[cptCode];
+          let marketComparison: 'below_market' | 'at_market' | 'above_market' = 'at_market';
+          let opportunity = 0;
+
+          if (benchmark && medicareRate > 0) {
+            const expectedRate = (benchmark.medicarePercent / 100) * medicareRate;
+            if (avgPaid < expectedRate * 0.9) {
+              marketComparison = 'below_market';
+              opportunity = (expectedRate - avgPaid) * stats.volume;
+            } else if (avgPaid > expectedRate * 1.1) {
+              marketComparison = 'above_market';
+            }
+          }
+
+          totalOpportunity += opportunity;
+
+          cptAnalysis.push({
+            cptCode,
+            volume: stats.volume,
+            avgBilled,
+            avgAllowed,
+            avgPaid,
+            reimbursementPercent,
+            medicarePercent,
+            marketComparison,
+            annualImpact: opportunity,
+          });
+        }
+
+        // Sort by opportunity
+        cptAnalysis.sort((a, b) => b.annualImpact - a.annualImpact);
+
+        // Calculate overall rating
+        const avgReimbursementRate = totalBilled > 0 ? (totalPaid / totalBilled) * 100 : 0;
+        let overallRating: ContractAnalysis['overallRating'] = 'average';
+        let renegotiationPriority: ContractAnalysis['renegotiationPriority'] = 'low';
+
+        if (avgReimbursementRate < 40) {
+          overallRating = 'poor';
+          renegotiationPriority = 'critical';
+        } else if (avgReimbursementRate < 50) {
+          overallRating = 'below_average';
+          renegotiationPriority = 'high';
+        } else if (avgReimbursementRate < 60) {
+          overallRating = 'average';
+          renegotiationPriority = totalOpportunity > 10000 ? 'high' : 'medium';
+        } else if (avgReimbursementRate < 70) {
+          overallRating = 'good';
+          renegotiationPriority = totalOpportunity > 20000 ? 'medium' : 'low';
+        } else {
+          overallRating = 'excellent';
+          renegotiationPriority = 'low';
+        }
+
+        // Adjust for denial rate and payment speed
+        if (denialRate > 15) {
+          if (renegotiationPriority === 'low') renegotiationPriority = 'medium';
+          else if (renegotiationPriority === 'medium') renegotiationPriority = 'high';
+        }
+        if (avgDaysToPayment > 45) {
+          if (renegotiationPriority === 'low') renegotiationPriority = 'medium';
+        }
+
+        // Generate recommendations
+        const recommendations: string[] = [];
+        const negotiationTalkingPoints: string[] = [];
+
+        // Low reimbursement codes
+        const lowCodes = cptAnalysis.filter(c => c.marketComparison === 'below_market').slice(0, 5);
+        if (lowCodes.length > 0) {
+          recommendations.push(
+            `Request fee increase for ${lowCodes.length} underpriced CPT codes with ${lowCodes.reduce((s, c) => s + c.annualImpact, 0).toFixed(0)} annual opportunity`
+          );
+          for (const code of lowCodes) {
+            const benchmark = MARKET_BENCHMARKS[code.cptCode];
+            const medicareRate = MEDICARE_RATES[code.cptCode];
+            if (benchmark && medicareRate) {
+              const targetRate = (benchmark.regional.mid / 100) * medicareRate;
+              negotiationTalkingPoints.push(
+                `${code.cptCode}: Currently paying $${code.avgPaid.toFixed(2)} (${code.medicarePercent.toFixed(0)}% Medicare). Market mid-point is $${targetRate.toFixed(2)} (${benchmark.regional.mid}% Medicare). Request increase to at least $${targetRate.toFixed(2)}.`
+              );
+            }
+          }
+        }
+
+        // Denial rate issues
+        if (denialRate > 10) {
+          recommendations.push(
+            `Address ${denialRate.toFixed(1)}% denial rate - request clear denial criteria and pre-authorization guidelines`
+          );
+          negotiationTalkingPoints.push(
+            `Denial rate of ${denialRate.toFixed(1)}% exceeds industry standard of 5-10%. Request specific documentation requirements and simplified pre-authorization process.`
+          );
+        }
+
+        // Payment speed issues
+        if (avgDaysToPayment > 30) {
+          recommendations.push(
+            `Negotiate faster payment terms - current ${avgDaysToPayment.toFixed(0)} days exceeds 30-day standard`
+          );
+          negotiationTalkingPoints.push(
+            `Current average payment time of ${avgDaysToPayment.toFixed(0)} days impacts practice cash flow. Request contract amendment for 30-day clean claim payment.`
+          );
+        }
+
+        // Volume leverage
+        if (claims.length > 100) {
+          negotiationTalkingPoints.push(
+            `Practice submitted ${claims.length} claims worth $${totalBilled.toFixed(2)} in the analysis period, demonstrating significant patient volume with ${payer.name}.`
+          );
+        }
+
+        // Overall contract health
+        if (overallRating === 'poor' || overallRating === 'below_average') {
+          recommendations.push(
+            `Consider dropping ${payer.name} if renegotiation fails - overall reimbursement rate of ${avgReimbursementRate.toFixed(1)}% is unsustainable`
+          );
+        }
+
+        contractAnalyses.push({
+          payerId: payer.id,
+          payerName: payer.name,
+          claimVolume: claims.length,
+          totalBilled,
+          totalAllowed,
+          totalPaid,
+          avgReimbursementRate,
+          avgDaysToPayment,
+          denialRate,
+          cptAnalysis: cptAnalysis.slice(0, 20),
+          overallRating,
+          renegotiationPriority,
+          estimatedAnnualOpportunity: totalOpportunity,
+          recommendations,
+          negotiationTalkingPoints,
+        });
+      }
+
+      // Sort by opportunity
+      contractAnalyses.sort((a, b) => b.estimatedAnnualOpportunity - a.estimatedAnnualOpportunity);
+
+      // Create revenue opportunities for top contracts needing renegotiation
+      const opportunitiesToCreate = contractAnalyses
+        .filter(c => c.renegotiationPriority === 'critical' || c.renegotiationPriority === 'high')
+        .slice(0, 5);
+
+      for (const analysis of opportunitiesToCreate) {
+        // Check if opportunity already exists
+        const existing = await ctx.prisma.revenueOpportunity.findFirst({
+          where: {
+            organizationId,
+            opportunityType: 'contract_renegotiation',
+            payerName: analysis.payerName,
+            status: { in: ['identified', 'in_progress'] },
+          },
+        });
+
+        if (!existing) {
+          await ctx.prisma.revenueOpportunity.create({
+            data: {
+              opportunityType: 'contract_renegotiation',
+              title: `Renegotiate ${analysis.payerName} contract`,
+              description: `Current reimbursement rate of ${analysis.avgReimbursementRate.toFixed(1)}% is ${analysis.overallRating}. ${analysis.recommendations[0] || 'Review contract terms.'}`,
+              estimatedValue: new Decimal(analysis.estimatedAnnualOpportunity),
+              confidence: new Decimal(70),
+              payerName: analysis.payerName,
+              status: 'identified',
+              organizationId,
+            },
+          });
+        }
+      }
+
+      // Summary
+      const summary = {
+        payersAnalyzed: contractAnalyses.length,
+        totalAnnualOpportunity: contractAnalyses.reduce((s, c) => s + c.estimatedAnnualOpportunity, 0),
+        criticalContracts: contractAnalyses.filter(c => c.renegotiationPriority === 'critical').length,
+        highPriorityContracts: contractAnalyses.filter(c => c.renegotiationPriority === 'high').length,
+        avgReimbursementRate: contractAnalyses.length > 0
+          ? contractAnalyses.reduce((s, c) => s + c.avgReimbursementRate, 0) / contractAnalyses.length
+          : 0,
+        avgDaysToPayment: contractAnalyses.length > 0
+          ? contractAnalyses.reduce((s, c) => s + c.avgDaysToPayment, 0) / contractAnalyses.length
+          : 0,
+      };
+
+      return {
+        success: true,
+        summary,
+        contracts: contractAnalyses,
+        dateRange: { from: startDate, to: endDate },
+        analyzedAt: new Date(),
+      };
+    }),
+
+  /**
+   * Get contract performance summary
+   */
+  getContractPerformance: billerProcedure
+    .input(
+      z.object({
+        payerId: z.string(),
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { payerId, dateFrom, dateTo } = input;
+      const organizationId = ctx.user.organizationId;
+
+      const endDate = dateTo || new Date();
+      const startDate = dateFrom || new Date(endDate.getTime() - 365 * 24 * 60 * 60 * 1000);
+
+      // Get payer details
+      const payer = await ctx.prisma.insurancePayer.findUnique({
+        where: { id: payerId },
+      });
+
+      if (!payer) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Payer not found',
+        });
+      }
+
+      // Get performance over time (by month)
+      const claims = await ctx.prisma.claim.findMany({
+        where: {
+          organizationId,
+          payerId,
+          createdDate: {
+            gte: startDate,
+            lte: endDate,
+          },
+        },
+        orderBy: { createdDate: 'asc' },
+      });
+
+      // Group by month
+      const monthlyPerformance: Array<{
+        month: string;
+        claimCount: number;
+        totalBilled: number;
+        totalPaid: number;
+        reimbursementRate: number;
+        denialCount: number;
+        denialRate: number;
+      }> = [];
+
+      const byMonth: Record<string, {
+        claims: number;
+        billed: number;
+        paid: number;
+        denials: number;
+      }> = {};
+
+      for (const claim of claims) {
+        const monthKey = `${claim.createdDate.getFullYear()}-${String(claim.createdDate.getMonth() + 1).padStart(2, '0')}`;
+        if (!byMonth[monthKey]) {
+          byMonth[monthKey] = { claims: 0, billed: 0, paid: 0, denials: 0 };
+        }
+        byMonth[monthKey].claims++;
+        byMonth[monthKey].billed += Number(claim.totalCharges);
+        byMonth[monthKey].paid += Number(claim.totalPaid);
+        if (claim.status === 'DENIED') byMonth[monthKey].denials++;
+      }
+
+      for (const [month, data] of Object.entries(byMonth).sort()) {
+        monthlyPerformance.push({
+          month,
+          claimCount: data.claims,
+          totalBilled: data.billed,
+          totalPaid: data.paid,
+          reimbursementRate: data.billed > 0 ? (data.paid / data.billed) * 100 : 0,
+          denialCount: data.denials,
+          denialRate: data.claims > 0 ? (data.denials / data.claims) * 100 : 0,
+        });
+      }
+
+      // Calculate trends
+      const trend = {
+        reimbursementTrend: 'stable' as 'improving' | 'stable' | 'declining',
+        denialTrend: 'stable' as 'improving' | 'stable' | 'worsening',
+      };
+
+      if (monthlyPerformance.length >= 3) {
+        const recent = monthlyPerformance.slice(-3);
+        const earlier = monthlyPerformance.slice(0, Math.min(3, monthlyPerformance.length - 3));
+
+        if (earlier.length > 0) {
+          const recentAvgRate = recent.reduce((s, m) => s + m.reimbursementRate, 0) / recent.length;
+          const earlierAvgRate = earlier.reduce((s, m) => s + m.reimbursementRate, 0) / earlier.length;
+
+          if (recentAvgRate > earlierAvgRate + 5) trend.reimbursementTrend = 'improving';
+          else if (recentAvgRate < earlierAvgRate - 5) trend.reimbursementTrend = 'declining';
+
+          const recentAvgDenial = recent.reduce((s, m) => s + m.denialRate, 0) / recent.length;
+          const earlierAvgDenial = earlier.reduce((s, m) => s + m.denialRate, 0) / earlier.length;
+
+          if (recentAvgDenial < earlierAvgDenial - 3) trend.denialTrend = 'improving';
+          else if (recentAvgDenial > earlierAvgDenial + 3) trend.denialTrend = 'worsening';
+        }
+      }
+
+      // Calculate overall stats
+      const totalBilled = claims.reduce((s, c) => s + Number(c.totalCharges), 0);
+      const totalPaid = claims.reduce((s, c) => s + Number(c.totalPaid), 0);
+      const totalDenials = claims.filter(c => c.status === 'DENIED').length;
+
+      return {
+        payer: {
+          id: payer.id,
+          name: payer.name,
+          payerId: payer.payerId,
+        },
+        overall: {
+          claimCount: claims.length,
+          totalBilled,
+          totalPaid,
+          reimbursementRate: totalBilled > 0 ? (totalPaid / totalBilled) * 100 : 0,
+          denialCount: totalDenials,
+          denialRate: claims.length > 0 ? (totalDenials / claims.length) * 100 : 0,
+        },
+        monthlyPerformance,
+        trend,
+        dateRange: { from: startDate, to: endDate },
+      };
+    }),
+
+  /**
+   * Get contract analysis summary for dashboard
+   */
+  getContractAnalysisSummary: billerProcedure.query(async ({ ctx }) => {
+    const organizationId = ctx.user.organizationId;
+
+    // Get contract-related opportunities
+    const opportunities = await ctx.prisma.revenueOpportunity.findMany({
+      where: {
+        organizationId,
+        opportunityType: 'contract_renegotiation',
+        status: { in: ['identified', 'in_progress'] },
+      },
+      orderBy: { estimatedValue: 'desc' },
+    });
+
+    // Get captured value from contract negotiations in last 12 months
+    const yearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+    const capturedOpportunities = await ctx.prisma.revenueOpportunity.findMany({
+      where: {
+        organizationId,
+        opportunityType: 'contract_renegotiation',
+        status: 'captured',
+        capturedAt: { gte: yearAgo },
+      },
+    });
+
+    // Get payer count with recent claims
+    const payerCount = await ctx.prisma.insurancePayer.count({
+      where: {
+        claims: {
+          some: {
+            organizationId,
+            createdDate: { gte: yearAgo },
+          },
+        },
+      },
+    });
+
+    return {
+      payersWithActivity: payerCount,
+      activeOpportunities: opportunities.length,
+      totalEstimatedValue: opportunities.reduce((sum, o) => sum + Number(o.estimatedValue), 0),
+      capturedThisYear: capturedOpportunities.reduce((sum, o) => sum + Number(o.capturedValue || 0), 0),
+      topOpportunities: opportunities.slice(0, 5).map(o => ({
+        id: o.id,
+        payerName: o.payerName,
+        estimatedValue: Number(o.estimatedValue),
+        status: o.status,
+      })),
+    };
+  }),
+
+  /**
+   * Model the impact of a proposed contract change
+   */
+  modelContractChange: billerProcedure
+    .input(
+      z.object({
+        payerId: z.string(),
+        proposedChanges: z.array(
+          z.object({
+            cptCode: z.string(),
+            currentRate: z.number(),
+            proposedRate: z.number(),
+          })
+        ),
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { payerId, proposedChanges, dateFrom, dateTo } = input;
+      const organizationId = ctx.user.organizationId;
+
+      const endDate = dateTo || new Date();
+      const startDate = dateFrom || new Date(endDate.getTime() - 365 * 24 * 60 * 60 * 1000);
+
+      // Get historical volume by CPT code
+      const claims = await ctx.prisma.claim.findMany({
+        where: {
+          organizationId,
+          payerId,
+          createdDate: { gte: startDate, lte: endDate },
+          status: { in: ['PAID', 'ACCEPTED'] },
+        },
+        include: {
+          claimLines: true,
+        },
+      });
+
+      // Calculate volume by CPT
+      const volumeByCpt: Record<string, number> = {};
+      for (const claim of claims) {
+        for (const line of claim.claimLines) {
+          volumeByCpt[line.cptCode] = (volumeByCpt[line.cptCode] || 0) + line.units;
+        }
+      }
+
+      // Model impact
+      const impactByCode: Array<{
+        cptCode: string;
+        volume: number;
+        currentRate: number;
+        proposedRate: number;
+        changePercent: number;
+        currentAnnualRevenue: number;
+        projectedAnnualRevenue: number;
+        annualImpact: number;
+      }> = [];
+
+      let totalCurrentRevenue = 0;
+      let totalProjectedRevenue = 0;
+
+      for (const change of proposedChanges) {
+        const volume = volumeByCpt[change.cptCode] || 0;
+        if (volume === 0) continue;
+
+        const currentAnnual = change.currentRate * volume;
+        const projectedAnnual = change.proposedRate * volume;
+        const impact = projectedAnnual - currentAnnual;
+        const changePercent = change.currentRate > 0
+          ? ((change.proposedRate - change.currentRate) / change.currentRate) * 100
+          : 0;
+
+        totalCurrentRevenue += currentAnnual;
+        totalProjectedRevenue += projectedAnnual;
+
+        impactByCode.push({
+          cptCode: change.cptCode,
+          volume,
+          currentRate: change.currentRate,
+          proposedRate: change.proposedRate,
+          changePercent,
+          currentAnnualRevenue: currentAnnual,
+          projectedAnnualRevenue: projectedAnnual,
+          annualImpact: impact,
+        });
+      }
+
+      // Sort by impact
+      impactByCode.sort((a, b) => b.annualImpact - a.annualImpact);
+
+      return {
+        summary: {
+          codesAnalyzed: impactByCode.length,
+          currentAnnualRevenue: totalCurrentRevenue,
+          projectedAnnualRevenue: totalProjectedRevenue,
+          totalAnnualImpact: totalProjectedRevenue - totalCurrentRevenue,
+          percentChange: totalCurrentRevenue > 0
+            ? ((totalProjectedRevenue - totalCurrentRevenue) / totalCurrentRevenue) * 100
+            : 0,
+        },
+        impactByCode,
+        dateRange: { from: startDate, to: endDate },
+        modeledAt: new Date(),
+      };
+    }),
+
+  /**
+   * Act on a contract renegotiation opportunity
+   */
+  actOnContractOpportunity: billerProcedure
+    .input(
+      z.object({
+        opportunityId: z.string(),
+        action: z.enum(['start', 'complete', 'decline']),
+        capturedValue: z.number().optional(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { opportunityId, action, capturedValue, notes } = input;
+
+      const opportunity = await ctx.prisma.revenueOpportunity.findFirst({
+        where: {
+          id: opportunityId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!opportunity) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Opportunity not found',
+        });
+      }
+
+      let newStatus: string;
+      switch (action) {
+        case 'start':
+          newStatus = 'in_progress';
+          break;
+        case 'complete':
+          newStatus = 'captured';
+          break;
+        case 'decline':
+          newStatus = 'declined';
+          break;
+      }
+
+      const updated = await ctx.prisma.revenueOpportunity.update({
+        where: { id: opportunityId },
+        data: {
+          status: newStatus,
+          ...(action === 'complete' && {
+            capturedValue: capturedValue ? new Decimal(capturedValue) : null,
+            capturedAt: new Date(),
+            capturedBy: ctx.user.id,
+          }),
+          notes: notes || opportunity.notes,
+        },
+      });
+
+      // Create optimization action record
+      if (action === 'complete') {
+        await ctx.prisma.optimizationAction.create({
+          data: {
+            actionType: 'contract_renegotiation',
+            action: `Completed: ${opportunity.title}`,
+            projectedImpact: opportunity.estimatedValue,
+            actualImpact: capturedValue ? new Decimal(capturedValue) : null,
+            status: 'completed',
+            completedAt: new Date(),
+            completedBy: ctx.user.id,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+      }
+
+      return {
+        success: true,
+        opportunity: updated,
+      };
+    }),
 });
