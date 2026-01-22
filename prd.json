@@ -137,7 +137,7 @@
         "ROI calculator"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }

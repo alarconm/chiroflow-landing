@@ -1,10 +1,10 @@
-import { AIBillingDashboard } from '@/components/ai-billing';
+import { AIAgentDashboard } from '@/components/ai-billing';
 
 export const metadata = {
-  title: 'AI Billing Agent | ChiroFlow',
-  description: 'Autonomous billing operations with AI-powered claim scrubbing, denial prediction, and payment matching',
+  title: 'AI Billing Agent Dashboard | ChiroFlow',
+  description: 'Autonomous billing operations dashboard with AI-powered claim processing, denial management, revenue impact tracking, and ROI calculator',
 };
 
 export default function AIBillingPage() {
-  return <AIBillingDashboard />;
+  return <AIAgentDashboard />;
 }

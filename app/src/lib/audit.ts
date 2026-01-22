@@ -146,6 +146,8 @@ export type AuditAction =
   | 'AI_BILLING_FEE_SCHEDULE_ANALYSIS'
   | 'AI_BILLING_CONTRACT_INSIGHTS'
   | 'AI_BILLING_REVENUE_LEAKAGE'
+  // AI Billing Agent Dashboard actions (Epic 31 - US-314)
+  | 'AI_BILLING_UPDATE_RULE'
   // AI Insights actions (Epic 10)
   | 'AI_INSIGHT_STATUS_UPDATE'
   | 'AI_NL_QUERY'

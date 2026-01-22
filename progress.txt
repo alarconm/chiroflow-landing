@@ -492,8 +492,67 @@ Implemented comprehensive billing optimization advisor system with undercoding d
 - TypeScript compiles successfully for new files
 - Pre-existing TypeScript errors unrelated to this change
 
-## Next Stories to Implement
-- US-314 - AI billing agent dashboard
+### US-314 - AI billing agent dashboard
+**Status**: COMPLETED
+**Date**: 2026-01-22
+
+**Implementation Summary**:
+Implemented comprehensive AI billing agent dashboard with real-time activity feed, claims processing metrics, denial/appeal tracking, revenue impact visualization, pending tasks queue, agent configuration management, performance comparison (AI vs manual), and ROI calculator.
+
+**Files Created**:
+- `app/src/components/ai-billing/AIAgentDashboard.tsx` - New dashboard component (~1050 lines)
+
+**Files Modified**:
+- `app/src/server/routers/aiBilling.ts` - Added 9 new dashboard endpoints
+- `app/src/lib/audit.ts` - Added AI_BILLING_UPDATE_RULE audit action
+- `app/src/components/ai-billing/index.ts` - Added AIAgentDashboard export
+- `app/src/app/(dashboard)/ai-billing/page.tsx` - Updated to use new AIAgentDashboard
+
+**New tRPC Endpoints**:
+1. `getAgentActivityFeed` - Real-time activity feed with task filtering
+2. `getClaimsProcessedMetrics` - Claims submission metrics by period
+3. `getDenialAppealTracking` - Denial/appeal tracking with category breakdown
+4. `getRevenueImpactData` - Revenue impact time series visualization
+5. `getPendingTasksQueue` - Pending tasks with priority sorting
+6. `getAgentConfiguration` - Agent rules and configuration
+7. `updateAgentRule` - Update agent automation rules
+8. `getPerformanceComparison` - AI vs manual performance comparison
+9. `getROICalculator` - Return on investment calculation
+
+**Dashboard Components**:
+1. `ActivityFeed` - Real-time task activity with filtering
+2. `ClaimsProcessedMetrics` - Claims submission statistics
+3. `DenialAppealTracking` - Appeal performance monitoring
+4. `RevenueImpact` - Financial impact visualization
+5. `PendingTasksQueue` - Task queue management
+6. `AgentConfiguration` - Rule configuration interface
+7. `PerformanceComparison` - AI vs manual metrics table
+8. `ROICalculator` - Investment return breakdown
+
+**Acceptance Criteria Met**:
+- ✅ AI agent activity feed (via ActivityFeed component with task filtering)
+- ✅ Claims processed metrics (via ClaimsProcessedMetrics with period selection)
+- ✅ Denial and appeal tracking (via DenialAppealTracking with category breakdown)
+- ✅ Revenue impact visualization (via RevenueImpact with time series)
+- ✅ Pending tasks queue (via PendingTasksQueue with priority sorting)
+- ✅ Agent configuration UI (via AgentConfiguration with rule toggling)
+- ✅ Performance comparison (via PerformanceComparison with AI vs manual)
+- ✅ ROI calculator (via ROICalculator with projections)
+
+**Validation**:
+- TypeScript compiles successfully for new files
+- Pre-existing TypeScript errors unrelated to this change
+
+## Epic 31 Complete!
+All 7 stories for Epic 31 - AI Billing Agent have been implemented:
+- US-308: AI billing agent schema + Autonomous claim submission
+- US-309: Denial analysis and routing
+- US-310: Automated appeal generation
+- US-311: Claim follow-up automation
+- US-312: Smart payment posting
+- US-313: Billing optimization recommendations
+- US-314: AI billing agent dashboard
+
 --- Iteration 1 completed at 2026-01-22 10:01:45 ---
 Story: US-308 - AI billing agent schema
 
@@ -523,3 +582,6 @@ Story: US-312 - Smart payment posting
 
 --- Iteration 7 completed at 2026-01-22 ---
 Story: US-313 - Billing optimization recommendations
+--- Iteration 7 completed at 2026-01-22 11:14:41 ---
+Story: US-313 - Billing optimization recommendations
+

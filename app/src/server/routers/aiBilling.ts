@@ -3248,4 +3248,691 @@ export const aiBillingRouter = router({
       });
     }
   }),
+
+  // ============================================
+  // US-314: AI Billing Agent Dashboard
+  // ============================================
+
+  /**
+   * Get agent activity feed - recent tasks and actions
+   */
+  getAgentActivityFeed: billerProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(100).default(20),
+        offset: z.number().min(0).default(0),
+        taskTypes: z.array(z.nativeEnum({
+          SUBMIT: 'SUBMIT',
+          FOLLOW_UP: 'FOLLOW_UP',
+          APPEAL: 'APPEAL',
+          CORRECT: 'CORRECT',
+          POST: 'POST',
+          SCRUB: 'SCRUB',
+          ELIGIBILITY: 'ELIGIBILITY',
+          STATUS: 'STATUS',
+        } as const)).optional(),
+        status: z.array(z.string()).optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      // Build where clause
+      const whereClause = {
+        organizationId: ctx.user.organizationId,
+        ...(input.taskTypes && input.taskTypes.length > 0 && { taskType: { in: input.taskTypes as any } }),
+        ...(input.status && input.status.length > 0 && { status: { in: input.status as any } }),
+      };
+
+      const tasks = await ctx.prisma.aIBillingTask.findMany({
+        where: whereClause,
+        orderBy: { createdAt: 'desc' },
+        take: input.limit,
+        skip: input.offset,
+      });
+
+      // Get related data separately
+      const claimIds = tasks.map((t) => t.claimId).filter(Boolean) as string[];
+      const patientIds = tasks.map((t) => t.patientId).filter(Boolean) as string[];
+      const payerIds = tasks.map((t) => t.payerId).filter(Boolean) as string[];
+      const taskIds = tasks.map((t) => t.id);
+
+      const [claims, patientDemographics, payers, decisions] = await Promise.all([
+        claimIds.length > 0 ? ctx.prisma.claim.findMany({
+          where: { id: { in: claimIds } },
+          select: { id: true, totalCharges: true, status: true },
+        }) : [],
+        patientIds.length > 0 ? ctx.prisma.patientDemographics.findMany({
+          where: { patientId: { in: patientIds } },
+          select: { patientId: true, firstName: true, lastName: true },
+        }) : [],
+        payerIds.length > 0 ? ctx.prisma.insurancePayer.findMany({
+          where: { id: { in: payerIds } },
+          select: { id: true, name: true },
+        }) : [],
+        taskIds.length > 0 ? ctx.prisma.aIBillingDecision.findMany({
+          where: { taskId: { in: taskIds } },
+          orderBy: { createdAt: 'desc' },
+        }) : [],
+      ]);
+
+      const claimsMap = new Map(claims.map((c) => [c.id, c]));
+      const patientDemoMap = new Map(patientDemographics.map((p) => [p.patientId, p]));
+      const payersMap = new Map(payers.map((p) => [p.id, p]));
+      const decisionsMap = new Map<string, typeof decisions[0]>();
+      decisions.forEach((d) => {
+        if (!decisionsMap.has(d.taskId)) {
+          decisionsMap.set(d.taskId, d);
+        }
+      });
+
+      const total = await ctx.prisma.aIBillingTask.count({
+        where: whereClause,
+      });
+
+      return {
+        tasks: tasks.map((task) => {
+          const claim = task.claimId ? claimsMap.get(task.claimId) : null;
+          const patientDemo = task.patientId ? patientDemoMap.get(task.patientId) : null;
+          const payer = task.payerId ? payersMap.get(task.payerId) : null;
+          const latestDecision = decisionsMap.get(task.id);
+
+          return {
+            id: task.id,
+            taskType: task.taskType,
+            status: task.status,
+            priority: task.priority,
+            attempts: task.attempts,
+            maxAttempts: task.maxAttempts,
+            resultSummary: task.resultSummary,
+            amountRecovered: task.amountRecovered ? Number(task.amountRecovered) : null,
+            processingTimeMs: task.processingTimeMs,
+            startedAt: task.startedAt,
+            completedAt: task.completedAt,
+            createdAt: task.createdAt,
+            claim: claim ? { id: claim.id, patientName: 'Patient', totalCharges: claim.totalCharges, status: claim.status } : null,
+            patient: patientDemo ? { id: task.patientId!, name: `${patientDemo.firstName} ${patientDemo.lastName}` } : null,
+            payer: payer ? { id: payer.id, name: payer.name } : null,
+            latestDecision: latestDecision ? {
+              decision: latestDecision.decision,
+              confidence: latestDecision.confidence,
+              riskLevel: latestDecision.riskLevel,
+            } : null,
+          };
+        }),
+        total,
+        hasMore: input.offset + input.limit < total,
+      };
+    }),
+
+  /**
+   * Get claims processed metrics - summary of claim operations
+   */
+  getClaimsProcessedMetrics: billerProcedure
+    .input(
+      z.object({
+        periodType: z.enum(['daily', 'weekly', 'monthly']).default('daily'),
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const dateFrom = input.dateFrom || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const dateTo = input.dateTo || new Date();
+
+      const metrics = await ctx.prisma.aIBillingMetric.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          periodType: input.periodType,
+          metricDate: {
+            gte: dateFrom,
+            lte: dateTo,
+          },
+        },
+        orderBy: { metricDate: 'asc' },
+      });
+
+      // Aggregate totals
+      const totals = metrics.reduce(
+        (acc, m) => ({
+          claimsSubmitted: acc.claimsSubmitted + m.claimsSubmitted,
+          claimsAccepted: acc.claimsAccepted + m.claimsAccepted,
+          claimsRejected: acc.claimsRejected + m.claimsRejected,
+          tasksCompleted: acc.tasksCompleted + m.tasksCompleted,
+          tasksFailed: acc.tasksFailed + m.tasksFailed,
+          paymentsPosted: acc.paymentsPosted + m.paymentsPosted,
+          amountPosted: acc.amountPosted + Number(m.amountPosted),
+          revenueRecovered: acc.revenueRecovered + Number(m.revenueRecovered),
+        }),
+        {
+          claimsSubmitted: 0,
+          claimsAccepted: 0,
+          claimsRejected: 0,
+          tasksCompleted: 0,
+          tasksFailed: 0,
+          paymentsPosted: 0,
+          amountPosted: 0,
+          revenueRecovered: 0,
+        }
+      );
+
+      // Calculate rates
+      const submissionRate = totals.claimsSubmitted > 0
+        ? (totals.claimsAccepted / totals.claimsSubmitted) * 100
+        : 0;
+      const successRate = totals.tasksCompleted + totals.tasksFailed > 0
+        ? (totals.tasksCompleted / (totals.tasksCompleted + totals.tasksFailed)) * 100
+        : 0;
+
+      return {
+        periodType: input.periodType,
+        dateFrom,
+        dateTo,
+        totals,
+        submissionRate,
+        successRate,
+        metrics: metrics.map((m) => ({
+          date: m.metricDate,
+          claimsSubmitted: m.claimsSubmitted,
+          claimsAccepted: m.claimsAccepted,
+          claimsRejected: m.claimsRejected,
+          submissionRate: m.submissionRate,
+          tasksCompleted: m.tasksCompleted,
+          tasksFailed: m.tasksFailed,
+          paymentsPosted: m.paymentsPosted,
+          amountPosted: Number(m.amountPosted),
+          revenueRecovered: Number(m.revenueRecovered),
+        })),
+      };
+    }),
+
+  /**
+   * Get denial and appeal tracking dashboard data
+   */
+  getDenialAppealTracking: billerProcedure
+    .input(
+      z.object({
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const dateFrom = input.dateFrom || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const dateTo = input.dateTo || new Date();
+
+      // Get denial counts by category
+      const denialTasks = await ctx.prisma.aIBillingTask.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          taskType: 'APPEAL',
+          createdAt: { gte: dateFrom, lte: dateTo },
+        },
+        include: {
+          decisions: true,
+        },
+      });
+
+      // Get AI appeals
+      const appeals = await ctx.prisma.aIAppeal.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          createdAt: { gte: dateFrom, lte: dateTo },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      // Calculate appeal metrics
+      const totalAppeals = appeals.length;
+      const pendingAppeals = appeals.filter((a) => ['DRAFT', 'PENDING', 'SUBMITTED'].includes(a.status)).length;
+      const wonAppeals = appeals.filter((a) => a.status === 'APPROVED').length;
+      const lostAppeals = appeals.filter((a) => a.status === 'DENIED').length;
+      const totalRecovered = appeals
+        .filter((a) => a.status === 'APPROVED' && a.recoveredAmount)
+        .reduce((sum, a) => sum + Number(a.recoveredAmount), 0);
+
+      // Calculate success rate
+      const decidedAppeals = wonAppeals + lostAppeals;
+      const successRate = decidedAppeals > 0 ? (wonAppeals / decidedAppeals) * 100 : 0;
+
+      // Group by denial category (using denialCode as category fallback)
+      const categoryBreakdown = appeals.reduce((acc, a) => {
+        const category = a.denialCode || 'OTHER';
+        if (!acc[category]) {
+          acc[category] = { count: 0, won: 0, lost: 0, pending: 0, amountAtRisk: 0, amountRecovered: 0 };
+        }
+        acc[category].count++;
+        if (a.status === 'APPROVED') {
+          acc[category].won++;
+          acc[category].amountRecovered += Number(a.recoveredAmount || 0);
+        } else if (a.status === 'DENIED') {
+          acc[category].lost++;
+        } else {
+          acc[category].pending++;
+          acc[category].amountAtRisk += Number(a.originalAmount || 0);
+        }
+        return acc;
+      }, {} as Record<string, { count: number; won: number; lost: number; pending: number; amountAtRisk: number; amountRecovered: number }>);
+
+      return {
+        summary: {
+          totalAppeals,
+          pendingAppeals,
+          wonAppeals,
+          lostAppeals,
+          successRate,
+          totalRecovered,
+          totalAtRisk: appeals
+            .filter((a) => ['DRAFT', 'PENDING', 'SUBMITTED'].includes(a.status))
+            .reduce((sum, a) => sum + Number(a.originalAmount || 0), 0),
+        },
+        categoryBreakdown: Object.entries(categoryBreakdown).map(([category, data]) => ({
+          category,
+          ...data,
+          successRate: data.won + data.lost > 0 ? (data.won / (data.won + data.lost)) * 100 : 0,
+        })),
+        recentAppeals: appeals.slice(0, 10).map((a) => ({
+          id: a.id,
+          claimId: a.claimId,
+          denialCode: a.denialCode,
+          denialCategory: a.denialCode, // Use denialCode as category
+          status: a.status,
+          appealType: a.appealType,
+          amountAtRisk: Number(a.originalAmount || 0),
+          amountRecovered: Number(a.recoveredAmount || 0),
+          deadline: a.appealDeadline,
+          submittedDate: a.submittedAt,
+          createdAt: a.createdAt,
+        })),
+      };
+    }),
+
+  /**
+   * Get revenue impact visualization data
+   */
+  getRevenueImpactData: billerProcedure
+    .input(
+      z.object({
+        periodType: z.enum(['daily', 'weekly', 'monthly']).default('daily'),
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const dateFrom = input.dateFrom || new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+      const dateTo = input.dateTo || new Date();
+
+      const metrics = await ctx.prisma.aIBillingMetric.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          periodType: input.periodType,
+          metricDate: { gte: dateFrom, lte: dateTo },
+        },
+        orderBy: { metricDate: 'asc' },
+      });
+
+      // Calculate cumulative revenue impact
+      let cumulativeRecovered = 0;
+      let cumulativeSaved = 0;
+      const timeSeriesData = metrics.map((m) => {
+        cumulativeRecovered += Number(m.revenueRecovered);
+        cumulativeSaved += Number(m.denialPreventionSaved);
+        return {
+          date: m.metricDate,
+          revenueRecovered: Number(m.revenueRecovered),
+          denialPreventionSaved: Number(m.denialPreventionSaved),
+          underpaymentAmount: Number(m.underpaymentAmount),
+          amountPosted: Number(m.amountPosted),
+          cumulativeRecovered,
+          cumulativeSaved,
+        };
+      });
+
+      // Calculate totals
+      const totalRevenueRecovered = metrics.reduce((sum, m) => sum + Number(m.revenueRecovered), 0);
+      const totalDenialsSaved = metrics.reduce((sum, m) => sum + Number(m.denialPreventionSaved), 0);
+      const totalUnderpayments = metrics.reduce((sum, m) => sum + Number(m.underpaymentAmount), 0);
+      const totalCostSavings = metrics.reduce((sum, m) => sum + Number(m.costSavingsUsd), 0);
+
+      return {
+        periodType: input.periodType,
+        dateFrom,
+        dateTo,
+        totals: {
+          revenueRecovered: totalRevenueRecovered,
+          denialsSaved: totalDenialsSaved,
+          underpaymentsCaught: totalUnderpayments,
+          costSavings: totalCostSavings,
+          totalImpact: totalRevenueRecovered + totalDenialsSaved + totalUnderpayments,
+        },
+        timeSeries: timeSeriesData,
+      };
+    }),
+
+  /**
+   * Get pending tasks queue
+   */
+  getPendingTasksQueue: billerProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(100).default(20),
+        sortBy: z.enum(['priority', 'scheduledFor', 'createdAt']).default('priority'),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const tasks = await ctx.prisma.aIBillingTask.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: { in: ['QUEUED', 'IN_PROGRESS'] },
+        },
+        orderBy: input.sortBy === 'priority'
+          ? [{ priority: 'desc' }, { createdAt: 'asc' }]
+          : input.sortBy === 'scheduledFor'
+          ? [{ scheduledFor: 'asc' }, { priority: 'desc' }]
+          : [{ createdAt: 'asc' }],
+        take: input.limit,
+      });
+
+      // Get related data separately
+      const claimIds = tasks.map((t) => t.claimId).filter(Boolean) as string[];
+      const payerIds = tasks.map((t) => t.payerId).filter(Boolean) as string[];
+
+      const [claims, payers] = await Promise.all([
+        claimIds.length > 0 ? ctx.prisma.claim.findMany({
+          where: { id: { in: claimIds } },
+          select: { id: true, totalCharges: true },
+        }) : [],
+        payerIds.length > 0 ? ctx.prisma.insurancePayer.findMany({
+          where: { id: { in: payerIds } },
+          select: { id: true, name: true },
+        }) : [],
+      ]);
+
+      const claimsMap = new Map(claims.map((c) => [c.id, c]));
+      const payersMap = new Map(payers.map((p) => [p.id, p]));
+
+      const queueStats = await ctx.prisma.aIBillingTask.groupBy({
+        by: ['taskType', 'status'],
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: { in: ['QUEUED', 'IN_PROGRESS'] },
+        },
+        _count: true,
+      });
+
+      return {
+        tasks: tasks.map((t) => {
+          const claim = t.claimId ? claimsMap.get(t.claimId) : null;
+          const payer = t.payerId ? payersMap.get(t.payerId) : null;
+
+          return {
+            id: t.id,
+            taskType: t.taskType,
+            status: t.status,
+            priority: t.priority,
+            scheduledFor: t.scheduledFor,
+            attempts: t.attempts,
+            maxAttempts: t.maxAttempts,
+            lastError: t.lastError,
+            claim: claim ? { id: claim.id, patientName: 'Patient', totalCharges: claim.totalCharges } : null,
+            payer: payer ? { id: payer.id, name: payer.name } : null,
+            createdAt: t.createdAt,
+          };
+        }),
+        stats: queueStats.reduce((acc, s) => {
+          if (!acc[s.taskType]) acc[s.taskType] = { queued: 0, inProgress: 0 };
+          if (s.status === 'QUEUED') acc[s.taskType].queued = s._count;
+          if (s.status === 'IN_PROGRESS') acc[s.taskType].inProgress = s._count;
+          return acc;
+        }, {} as Record<string, { queued: number; inProgress: number }>),
+        totalPending: queueStats.reduce((sum, s) => sum + s._count, 0),
+      };
+    }),
+
+  /**
+   * Get agent configuration and rules
+   */
+  getAgentConfiguration: billerProcedure.query(async ({ ctx }) => {
+    const rules = await ctx.prisma.aIBillingRule.findMany({
+      where: {
+        organizationId: ctx.user.organizationId,
+        isActive: true,
+      },
+      orderBy: { priority: 'desc' },
+    });
+
+    // Group rules by category
+    const rulesByType = rules.reduce((acc, rule) => {
+      const ruleType = rule.category || 'OTHER';
+      if (!acc[ruleType]) acc[ruleType] = [];
+      acc[ruleType].push({
+        id: rule.id,
+        name: rule.name,
+        description: rule.description,
+        priority: rule.priority,
+        isActive: rule.isActive,
+        conditions: rule.conditions,
+        actions: rule.actions,
+        triggerType: rule.triggerType,
+        lastTriggered: rule.lastRunAt,
+        triggerCount: rule.runCount,
+      });
+      return acc;
+    }, {} as Record<string, any[]>);
+
+    return {
+      totalRules: rules.length,
+      rulesByType,
+      automationEnabled: true, // Could be stored in org settings
+    };
+  }),
+
+  /**
+   * Update agent rule
+   */
+  updateAgentRule: billerProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        name: z.string().optional(),
+        description: z.string().optional(),
+        isActive: z.boolean().optional(),
+        priority: z.number().optional(),
+        conditions: z.record(z.string(), z.unknown()).optional(),
+        actions: z.record(z.string(), z.unknown()).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...updates } = input;
+
+      // Build update data - cast conditions and actions properly
+      const updateData: any = {};
+      if (updates.name !== undefined) updateData.name = updates.name;
+      if (updates.description !== undefined) updateData.description = updates.description;
+      if (updates.isActive !== undefined) updateData.isActive = updates.isActive;
+      if (updates.priority !== undefined) updateData.priority = updates.priority;
+      if (updates.conditions !== undefined) updateData.conditions = updates.conditions;
+      if (updates.actions !== undefined) updateData.actions = updates.actions;
+
+      const rule = await ctx.prisma.aIBillingRule.update({
+        where: {
+          id,
+          organizationId: ctx.user.organizationId,
+        },
+        data: updateData,
+      });
+
+      await auditLog('AI_BILLING_UPDATE_RULE', 'AIBillingRule', {
+        entityId: id,
+        changes: updates,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return rule;
+    }),
+
+  /**
+   * Get performance comparison (manual vs AI)
+   */
+  getPerformanceComparison: billerProcedure
+    .input(
+      z.object({
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const dateFrom = input.dateFrom || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const dateTo = input.dateTo || new Date();
+
+      const metrics = await ctx.prisma.aIBillingMetric.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          metricDate: { gte: dateFrom, lte: dateTo },
+        },
+      });
+
+      // Calculate totals
+      const totals = metrics.reduce(
+        (acc, m) => ({
+          tasksCompleted: acc.tasksCompleted + m.tasksCompleted,
+          aiDecisionsMade: acc.aiDecisionsMade + m.aiDecisionsMade,
+          aiDecisionsCorrect: acc.aiDecisionsCorrect + m.aiDecisionsCorrect,
+          userOverrides: acc.userOverrides + m.userOverrides,
+          manualHoursEquivalent: acc.manualHoursEquivalent + m.manualHoursEquivalent,
+          costSavingsUsd: acc.costSavingsUsd + Number(m.costSavingsUsd),
+          aiCostUsd: acc.aiCostUsd + Number(m.aiCostUsd),
+          avgProcessingMs: acc.avgProcessingMs + m.avgProcessingMs,
+          appealSuccessRate: acc.appealSuccessRate + m.appealSuccessRate,
+          collectionRate: acc.collectionRate + m.collectionRate,
+          avgDaysInAR: acc.avgDaysInAR + m.avgDaysInAR,
+        }),
+        {
+          tasksCompleted: 0,
+          aiDecisionsMade: 0,
+          aiDecisionsCorrect: 0,
+          userOverrides: 0,
+          manualHoursEquivalent: 0,
+          costSavingsUsd: 0,
+          aiCostUsd: 0,
+          avgProcessingMs: 0,
+          appealSuccessRate: 0,
+          collectionRate: 0,
+          avgDaysInAR: 0,
+        }
+      );
+
+      const count = metrics.length || 1;
+      const aiAccuracyRate = totals.aiDecisionsMade > 0
+        ? (totals.aiDecisionsCorrect / totals.aiDecisionsMade) * 100
+        : 0;
+
+      return {
+        dateFrom,
+        dateTo,
+        ai: {
+          tasksCompleted: totals.tasksCompleted,
+          decisionsAccuracyRate: aiAccuracyRate,
+          avgProcessingTimeMs: Math.round(totals.avgProcessingMs / count),
+          appealSuccessRate: totals.appealSuccessRate / count,
+          collectionRate: totals.collectionRate / count,
+          avgDaysInAR: totals.avgDaysInAR / count,
+          costUsd: totals.aiCostUsd,
+        },
+        manual: {
+          hoursEquivalent: totals.manualHoursEquivalent,
+          estimatedCostUsd: totals.manualHoursEquivalent * 35, // Assume $35/hour
+          avgProcessingTimeMs: 300000, // 5 minutes per task estimate
+          appealSuccessRate: 45, // Industry average
+          collectionRate: 85, // Industry average
+          avgDaysInAR: 45, // Industry average
+        },
+        savings: {
+          hoursSaved: totals.manualHoursEquivalent,
+          costSavingsUsd: totals.costSavingsUsd,
+          netSavingsUsd: totals.costSavingsUsd - totals.aiCostUsd,
+          efficiencyGain: totals.tasksCompleted > 0
+            ? ((300000 - (totals.avgProcessingMs / count)) / 300000) * 100
+            : 0,
+        },
+        userOverrides: totals.userOverrides,
+        overrideRate: totals.aiDecisionsMade > 0
+          ? (totals.userOverrides / totals.aiDecisionsMade) * 100
+          : 0,
+      };
+    }),
+
+  /**
+   * Get ROI calculator data
+   */
+  getROICalculator: billerProcedure
+    .input(
+      z.object({
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const dateFrom = input.dateFrom || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const dateTo = input.dateTo || new Date();
+
+      const metrics = await ctx.prisma.aIBillingMetric.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          metricDate: { gte: dateFrom, lte: dateTo },
+        },
+      });
+
+      // Calculate totals
+      const revenueRecovered = metrics.reduce((sum, m) => sum + Number(m.revenueRecovered), 0);
+      const denialsSaved = metrics.reduce((sum, m) => sum + Number(m.denialPreventionSaved), 0);
+      const underpaymentsCaught = metrics.reduce((sum, m) => sum + Number(m.underpaymentAmount), 0);
+      const manualHoursSaved = metrics.reduce((sum, m) => sum + m.manualHoursEquivalent, 0);
+      const aiCost = metrics.reduce((sum, m) => sum + Number(m.aiCostUsd), 0);
+
+      // Calculate labor savings (assume $35/hour)
+      const laborRate = 35;
+      const laborSavings = manualHoursSaved * laborRate;
+
+      // Calculate total benefits
+      const totalBenefits = revenueRecovered + denialsSaved + underpaymentsCaught + laborSavings;
+
+      // Calculate ROI
+      const roi = aiCost > 0 ? ((totalBenefits - aiCost) / aiCost) * 100 : 0;
+
+      // Monthly projections
+      const daysCovered = Math.max(1, Math.ceil((dateTo.getTime() - dateFrom.getTime()) / (24 * 60 * 60 * 1000)));
+      const dailyBenefits = totalBenefits / daysCovered;
+      const monthlyProjection = dailyBenefits * 30;
+      const annualProjection = dailyBenefits * 365;
+
+      return {
+        period: {
+          dateFrom,
+          dateTo,
+          daysCovered,
+        },
+        benefits: {
+          revenueRecovered,
+          denialsSaved,
+          underpaymentsCaught,
+          laborSavings,
+          totalBenefits,
+        },
+        costs: {
+          aiCost,
+          laborRate,
+          hoursEquivalent: manualHoursSaved,
+        },
+        roi: {
+          percentage: roi,
+          netBenefit: totalBenefits - aiCost,
+          paybackDays: totalBenefits > 0 ? Math.ceil((aiCost / totalBenefits) * daysCovered) : 0,
+        },
+        projections: {
+          daily: dailyBenefits,
+          monthly: monthlyProjection,
+          annual: annualProjection,
+          monthlyROI: aiCost > 0 ? ((monthlyProjection - (aiCost / daysCovered * 30)) / (aiCost / daysCovered * 30)) * 100 : 0,
+        },
+      };
+    }),
 });
