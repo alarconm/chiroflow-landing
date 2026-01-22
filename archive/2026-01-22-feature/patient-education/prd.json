@@ -19,7 +19,7 @@
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-241",
@@ -36,7 +36,7 @@
         "Data mapping to internal models"
       ],
       "priority": 2,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-242",
@@ -53,7 +53,7 @@
         "Handle token refresh"
       ],
       "priority": 3,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-243",

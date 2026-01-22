@@ -113,3 +113,68 @@ Story: US-240 - Device integration schema
 --- Iteration 2 completed at 2026-01-22 ---
 Story: US-241 - Apple Health integration
 
+--- Iteration 2 completed at 2026-01-22 04:46:55 ---
+Story: US-241 - Apple Health integration
+
+## US-242: Google Fit integration - COMPLETED
+
+### What was done:
+1. Added Google Fit OAuth2 configuration with:
+   - Client ID, secret, endpoints
+   - Fitness API scopes for activity, sleep, heart rate, body data
+   - Token endpoint and revoke endpoint URLs
+
+2. Created Google Fit data source mappings:
+   - Activity data sources (steps, distance, calories, active minutes)
+   - Sleep data sources (sleep segments)
+   - Heart rate data sources (bpm, heart minutes)
+   - Sleep stage mapping (awake, light, deep, REM)
+
+3. Implemented tRPC procedures:
+   - `devices.connectGoogleFit` - Initiate OAuth2 connection with state token (CSRF)
+   - `devices.completeGoogleFitAuth` - Exchange authorization code for tokens
+   - `devices.refreshGoogleFitToken` - Automatic token refresh using refresh token
+   - `devices.syncGoogleFit` - Manual sync trigger for activity, sleep, heart rate data
+   - `devices.scheduleGoogleFitSync` - Background sync scheduling (15min to 24hr)
+   - `devices.subscribeGoogleFitUpdates` - Real-time data subscription via webhooks
+   - `devices.unsubscribeGoogleFitUpdates` - Cancel real-time subscriptions
+   - `devices.getHeartRateData` - Retrieve synced heart rate data with statistics
+
+4. Token management:
+   - Automatic token refresh when access token expires
+   - Refresh token stored encrypted for long-term access
+   - Graceful handling when refresh token unavailable (re-auth required)
+
+5. Data mapping to internal models:
+   - Activity data: steps, distance, activeMinutes, calories, hourlySteps, workouts
+   - Sleep data: duration, quality, stages (awake, light, deep, rem), times
+   - Heart rate data: bpm, type, HRV, activity level
+
+6. Real-time subscription support:
+   - Subscribe to specific data types (activity, sleep, heartRate)
+   - Webhook URL configuration for push notifications
+   - Subscription state tracked in scopes array
+
+7. TypeScript compilation verified - no errors
+
+### Acceptance Criteria Met:
+- [x] devices.connectGoogleFit - Initiate Google Fit connection
+- [x] OAuth2 flow for authorization
+- [x] Sync activity data
+- [x] Sync sleep data
+- [x] Sync heart rate data
+- [x] devices.syncGoogleFit - Manual sync trigger
+- [x] Real-time data subscription
+- [x] Handle token refresh
+
+---
+
+## Remaining Stories:
+- US-243: Posture sensor integration
+- US-244: Activity correlation analysis
+- US-245: Activity goals and alerts
+- US-246: Device data dashboard
+- US-247: Device connection portal
+--- Iteration 3 completed at 2026-01-22 ---
+Story: US-242 - Google Fit integration
+

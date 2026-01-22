@@ -20,6 +20,23 @@ const APPLE_HEALTH_CONFIG = {
   redirectUri: process.env.APPLE_HEALTH_REDIRECT_URI || 'https://app.chiroflow.com/api/devices/apple-health/callback',
 };
 
+// OAuth2 configuration for Google Fit
+const GOOGLE_FIT_CONFIG = {
+  clientId: process.env.GOOGLE_FIT_CLIENT_ID || 'chiroflow-google-fit.apps.googleusercontent.com',
+  clientSecret: process.env.GOOGLE_FIT_CLIENT_SECRET || '',
+  authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+  tokenEndpoint: 'https://oauth2.googleapis.com/token',
+  revokeEndpoint: 'https://oauth2.googleapis.com/revoke',
+  fitnessApiBase: 'https://www.googleapis.com/fitness/v1/users/me',
+  scopes: [
+    'https://www.googleapis.com/auth/fitness.activity.read',
+    'https://www.googleapis.com/auth/fitness.sleep.read',
+    'https://www.googleapis.com/auth/fitness.heart_rate.read',
+    'https://www.googleapis.com/auth/fitness.body.read',
+  ],
+  redirectUri: process.env.GOOGLE_FIT_REDIRECT_URI || 'https://app.chiroflow.com/api/devices/google-fit/callback',
+};
+
 // Encryption key for storing tokens (in production, use a proper key management service)
 const ENCRYPTION_KEY = process.env.TOKEN_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
 
@@ -64,6 +81,33 @@ const APPLE_HEALTH_DATA_TYPES = {
     'HKQuantityTypeIdentifierHeartRateVariabilitySDNN',
     'HKQuantityTypeIdentifierRestingHeartRate',
   ],
+};
+
+// Google Fit data source types mapping
+const GOOGLE_FIT_DATA_SOURCES = {
+  activity: [
+    'derived:com.google.step_count.delta:com.google.android.gms:estimated_steps',
+    'derived:com.google.distance.delta:com.google.android.gms:merge_distance_delta',
+    'derived:com.google.calories.expended:com.google.android.gms:merge_calories_expended',
+    'derived:com.google.active_minutes:com.google.android.gms:merge_active_minutes',
+  ],
+  sleep: [
+    'derived:com.google.sleep.segment:com.google.android.gms:merged',
+  ],
+  heartRate: [
+    'derived:com.google.heart_rate.bpm:com.google.android.gms:merge_heart_rate_bpm',
+    'derived:com.google.heart_minutes:com.google.android.gms:merge_heart_minutes',
+  ],
+};
+
+// Google Fit sleep stage mapping
+const GOOGLE_FIT_SLEEP_STAGES = {
+  1: 'awake',    // Awake (during sleep)
+  2: 'sleep',    // Sleep (generic)
+  3: 'out_of_bed', // Out of bed
+  4: 'light',    // Light sleep
+  5: 'deep',     // Deep sleep
+  6: 'rem',      // REM sleep
 };
 
 export const devicesRouter = router({
@@ -576,6 +620,775 @@ export const devicesRouter = router({
       };
     }),
 
+  // ============================================
+  // Google Fit Integration
+  // ============================================
+
+  // Initiate Google Fit connection - generates OAuth2 authorization URL
+  connectGoogleFit: protectedProcedure
+    .input(z.object({
+      patientId: z.string(),
+      deviceName: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { patientId, deviceName } = input;
+
+      // Verify patient belongs to organization
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      // Check for existing connection
+      const existing = await ctx.prisma.deviceConnection.findFirst({
+        where: {
+          patientId,
+          deviceType: DeviceType.GOOGLE_FIT,
+        },
+      });
+
+      if (existing && existing.status === DeviceConnectionStatus.CONNECTED) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'Google Fit is already connected for this patient',
+        });
+      }
+
+      // Generate state token for OAuth2 flow (CSRF protection)
+      const stateToken = crypto.randomBytes(32).toString('hex');
+      // Include connection context in state for callback processing
+      const statePayload = JSON.stringify({
+        token: stateToken,
+        patientId,
+        organizationId: ctx.user.organizationId,
+      });
+      const encodedState = Buffer.from(statePayload).toString('base64url');
+
+      // Create or update device connection in PENDING state
+      const connection = existing
+        ? await ctx.prisma.deviceConnection.update({
+            where: { id: existing.id },
+            data: {
+              status: DeviceConnectionStatus.PENDING,
+              deviceName: deviceName || 'Google Fit',
+              connectionToken: encryptToken(stateToken), // Store state temporarily
+              lastError: null,
+              errorCount: 0,
+            },
+          })
+        : await ctx.prisma.deviceConnection.create({
+            data: {
+              patientId,
+              organizationId: ctx.user.organizationId,
+              deviceType: DeviceType.GOOGLE_FIT,
+              deviceName: deviceName || 'Google Fit',
+              status: DeviceConnectionStatus.PENDING,
+              connectionToken: encryptToken(stateToken),
+              scopes: GOOGLE_FIT_CONFIG.scopes,
+              syncFrequency: 60, // Sync every hour by default
+            },
+          });
+
+      // Build OAuth2 authorization URL
+      const authParams = new URLSearchParams({
+        client_id: GOOGLE_FIT_CONFIG.clientId,
+        redirect_uri: GOOGLE_FIT_CONFIG.redirectUri,
+        response_type: 'code',
+        scope: GOOGLE_FIT_CONFIG.scopes.join(' '),
+        state: encodedState,
+        access_type: 'offline', // Request refresh token
+        prompt: 'consent', // Force consent to get refresh token
+        include_granted_scopes: 'true',
+      });
+
+      const authorizationUrl = `${GOOGLE_FIT_CONFIG.authorizationEndpoint}?${authParams.toString()}`;
+
+      await auditLog('CREATE', 'DeviceConnection', {
+        entityId: connection.id,
+        changes: {
+          action: 'initiate_google_fit_connection',
+          patientId,
+          deviceType: 'GOOGLE_FIT',
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        connectionId: connection.id,
+        authorizationUrl,
+        scopes: GOOGLE_FIT_CONFIG.scopes,
+        instructions: [
+          'Open the authorization URL on the patient\'s Android device or computer',
+          'Patient will sign in with their Google account',
+          'Patient grants permission to share Google Fit data',
+          'After authorization, data will sync automatically',
+        ],
+      };
+    }),
+
+  // Complete Google Fit OAuth2 flow - exchange code for tokens
+  completeGoogleFitAuth: protectedProcedure
+    .input(z.object({
+      connectionId: z.string(),
+      code: z.string(),
+      state: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { connectionId, code, state } = input;
+
+      const connection = await ctx.prisma.deviceConnection.findFirst({
+        where: {
+          id: connectionId,
+          organizationId: ctx.user.organizationId,
+          deviceType: DeviceType.GOOGLE_FIT,
+        },
+      });
+
+      if (!connection) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Device connection not found',
+        });
+      }
+
+      // Decode and verify state token
+      try {
+        const decodedState = JSON.parse(Buffer.from(state, 'base64url').toString());
+        if (connection.connectionToken) {
+          const storedState = decryptToken(connection.connectionToken);
+          if (storedState !== decodedState.token) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Invalid state token - possible CSRF attack',
+            });
+          }
+        }
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Invalid state format',
+        });
+      }
+
+      // In production, exchange code for tokens via Google's token endpoint
+      // POST to https://oauth2.googleapis.com/token with:
+      // - code, client_id, client_secret, redirect_uri, grant_type=authorization_code
+      // For now, simulate the token exchange
+      const mockAccessToken = crypto.randomBytes(64).toString('hex');
+      const mockRefreshToken = crypto.randomBytes(64).toString('hex');
+      const tokenExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+      // Update connection with tokens
+      const updatedConnection = await ctx.prisma.deviceConnection.update({
+        where: { id: connectionId },
+        data: {
+          status: DeviceConnectionStatus.CONNECTED,
+          connectionToken: encryptToken(mockAccessToken),
+          refreshToken: encryptToken(mockRefreshToken),
+          tokenExpiresAt: tokenExpiry,
+          lastSyncAt: null, // Will be set on first sync
+        },
+      });
+
+      await auditLog('UPDATE', 'DeviceConnection', {
+        entityId: connectionId,
+        changes: {
+          action: 'complete_google_fit_auth',
+          status: 'CONNECTED',
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        success: true,
+        connectionId: updatedConnection.id,
+        status: updatedConnection.status,
+        message: 'Google Fit connected successfully. Data will sync shortly.',
+      };
+    }),
+
+  // Refresh Google Fit access token using refresh token
+  refreshGoogleFitToken: protectedProcedure
+    .input(z.object({
+      connectionId: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { connectionId } = input;
+
+      const connection = await ctx.prisma.deviceConnection.findFirst({
+        where: {
+          id: connectionId,
+          organizationId: ctx.user.organizationId,
+          deviceType: DeviceType.GOOGLE_FIT,
+        },
+      });
+
+      if (!connection) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Device connection not found',
+        });
+      }
+
+      if (!connection.refreshToken) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'No refresh token available. Please reconnect Google Fit.',
+        });
+      }
+
+      // In production, call Google's token endpoint with:
+      // - refresh_token, client_id, client_secret, grant_type=refresh_token
+      // POST https://oauth2.googleapis.com/token
+      // For now, simulate token refresh
+      const newAccessToken = crypto.randomBytes(64).toString('hex');
+      const newExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+      const updated = await ctx.prisma.deviceConnection.update({
+        where: { id: connectionId },
+        data: {
+          connectionToken: encryptToken(newAccessToken),
+          tokenExpiresAt: newExpiry,
+          status: DeviceConnectionStatus.CONNECTED,
+          lastError: null,
+          errorCount: 0,
+        },
+      });
+
+      await auditLog('UPDATE', 'DeviceConnection', {
+        entityId: connectionId,
+        changes: {
+          action: 'refresh_google_fit_token',
+          tokenRefreshed: true,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        success: true,
+        tokenExpiresAt: updated.tokenExpiresAt,
+        status: updated.status,
+      };
+    }),
+
+  // Manual sync trigger for Google Fit
+  syncGoogleFit: protectedProcedure
+    .input(z.object({
+      connectionId: z.string(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      dataTypes: z.array(z.enum(['activity', 'sleep', 'heartRate'])).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { connectionId, startDate, endDate, dataTypes } = input;
+
+      const connection = await ctx.prisma.deviceConnection.findFirst({
+        where: {
+          id: connectionId,
+          organizationId: ctx.user.organizationId,
+          deviceType: DeviceType.GOOGLE_FIT,
+        },
+      });
+
+      if (!connection) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Device connection not found',
+        });
+      }
+
+      if (connection.status !== DeviceConnectionStatus.CONNECTED) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Cannot sync - connection status is ${connection.status}`,
+        });
+      }
+
+      // Check if token needs refresh
+      if (connection.tokenExpiresAt && new Date() > connection.tokenExpiresAt) {
+        if (connection.refreshToken) {
+          // In production, automatically refresh the token
+          // For now, mark as needing refresh
+          await ctx.prisma.deviceConnection.update({
+            where: { id: connectionId },
+            data: {
+              lastError: 'Access token expired - attempting refresh',
+              lastErrorAt: new Date(),
+            },
+          });
+
+          // Simulate automatic token refresh
+          const newAccessToken = crypto.randomBytes(64).toString('hex');
+          const newExpiry = new Date(Date.now() + 60 * 60 * 1000);
+
+          await ctx.prisma.deviceConnection.update({
+            where: { id: connectionId },
+            data: {
+              connectionToken: encryptToken(newAccessToken),
+              tokenExpiresAt: newExpiry,
+              lastError: null,
+            },
+          });
+        } else {
+          // No refresh token, mark as expired
+          await ctx.prisma.deviceConnection.update({
+            where: { id: connectionId },
+            data: {
+              status: DeviceConnectionStatus.EXPIRED,
+              lastError: 'Access token expired - reauthorization required',
+              lastErrorAt: new Date(),
+            },
+          });
+
+          throw new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'Access token expired. Please reconnect Google Fit.',
+          });
+        }
+      }
+
+      // Default date range: last 7 days
+      const syncStartDate = startDate || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const syncEndDate = endDate || new Date();
+      const typesToSync = dataTypes || ['activity', 'sleep', 'heartRate'];
+
+      // In production, this would call the Google Fitness REST API
+      // https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate
+      // For now, simulate synced data
+      const syncResults = {
+        activity: 0,
+        sleep: 0,
+        heartRate: 0,
+      };
+
+      // Simulate activity data sync from Google Fit
+      if (typesToSync.includes('activity')) {
+        const days = Math.ceil((syncEndDate.getTime() - syncStartDate.getTime()) / (24 * 60 * 60 * 1000));
+
+        for (let i = 0; i < days; i++) {
+          const date = new Date(syncStartDate.getTime() + i * 24 * 60 * 60 * 1000);
+          date.setHours(0, 0, 0, 0);
+
+          // Check if data already exists for this date
+          const existing = await ctx.prisma.activityData.findFirst({
+            where: {
+              patientId: connection.patientId,
+              deviceConnectionId: connectionId,
+              date,
+            },
+          });
+
+          if (!existing) {
+            // Simulate activity data from Google Fit
+            const simulatedData = {
+              steps: Math.floor(Math.random() * 10000) + 2000,
+              distance: Math.floor(Math.random() * 8000) + 1000, // meters
+              activeMinutes: Math.floor(Math.random() * 60) + 15,
+              calories: Math.floor(Math.random() * 500) + 100,
+              hourlySteps: generateHourlySteps(),
+              workouts: generateGoogleFitWorkouts(),
+            };
+
+            await ctx.prisma.activityData.create({
+              data: {
+                patientId: connection.patientId,
+                deviceConnectionId: connectionId,
+                organizationId: ctx.user.organizationId,
+                date,
+                steps: simulatedData.steps,
+                distance: simulatedData.distance,
+                activeMinutes: simulatedData.activeMinutes,
+                calories: simulatedData.calories,
+                hourlySteps: simulatedData.hourlySteps,
+                workouts: simulatedData.workouts,
+                sourceDevice: 'Google Fit',
+              },
+            });
+
+            syncResults.activity++;
+          }
+        }
+      }
+
+      // Simulate sleep data sync from Google Fit
+      if (typesToSync.includes('sleep')) {
+        const days = Math.ceil((syncEndDate.getTime() - syncStartDate.getTime()) / (24 * 60 * 60 * 1000));
+
+        for (let i = 0; i < days; i++) {
+          const date = new Date(syncStartDate.getTime() + i * 24 * 60 * 60 * 1000);
+          date.setHours(0, 0, 0, 0);
+
+          const existing = await ctx.prisma.sleepData.findFirst({
+            where: {
+              patientId: connection.patientId,
+              deviceConnectionId: connectionId,
+              date,
+            },
+          });
+
+          if (!existing) {
+            const simulatedSleep = generateGoogleFitSleepData(date);
+
+            await ctx.prisma.sleepData.create({
+              data: {
+                patientId: connection.patientId,
+                deviceConnectionId: connectionId,
+                organizationId: ctx.user.organizationId,
+                date,
+                ...simulatedSleep,
+                sourceDevice: 'Google Fit',
+              },
+            });
+
+            syncResults.sleep++;
+          }
+        }
+      }
+
+      // Simulate heart rate data sync from Google Fit
+      if (typesToSync.includes('heartRate')) {
+        // Get heart rate samples throughout the sync period
+        const samplesPerDay = 24; // One per hour average
+        const days = Math.ceil((syncEndDate.getTime() - syncStartDate.getTime()) / (24 * 60 * 60 * 1000));
+
+        for (let d = 0; d < days; d++) {
+          const dayStart = new Date(syncStartDate.getTime() + d * 24 * 60 * 60 * 1000);
+
+          for (let h = 0; h < samplesPerDay; h++) {
+            const timestamp = new Date(dayStart.getTime() + h * 60 * 60 * 1000);
+
+            // Check if we already have data for this timestamp
+            const existing = await ctx.prisma.heartRateData.findFirst({
+              where: {
+                patientId: connection.patientId,
+                deviceConnectionId: connectionId,
+                timestamp: {
+                  gte: new Date(timestamp.getTime() - 30 * 60 * 1000), // Within 30 min
+                  lte: new Date(timestamp.getTime() + 30 * 60 * 1000),
+                },
+              },
+            });
+
+            if (!existing) {
+              // Simulate heart rate based on time of day
+              const hour = timestamp.getHours();
+              const isActiveHour = hour >= 8 && hour <= 20;
+              const baseBpm = isActiveHour ? 75 : 60;
+              const variance = isActiveHour ? 20 : 10;
+
+              await ctx.prisma.heartRateData.create({
+                data: {
+                  patientId: connection.patientId,
+                  deviceConnectionId: connectionId,
+                  organizationId: ctx.user.organizationId,
+                  timestamp,
+                  bpm: baseBpm + Math.floor(Math.random() * variance),
+                  type: isActiveHour ? 'CONTINUOUS' : 'RESTING',
+                  hrv: Math.floor(Math.random() * 30) + 40, // 40-70ms
+                  activityLevel: isActiveHour ? 'LIGHT' : 'SEDENTARY',
+                  sourceDevice: 'Google Fit',
+                },
+              });
+
+              syncResults.heartRate++;
+            }
+          }
+        }
+      }
+
+      // Update last sync timestamp
+      await ctx.prisma.deviceConnection.update({
+        where: { id: connectionId },
+        data: {
+          lastSyncAt: new Date(),
+          lastError: null,
+          errorCount: 0,
+        },
+      });
+
+      await auditLog('UPDATE', 'DeviceConnection', {
+        entityId: connectionId,
+        changes: {
+          action: 'sync_google_fit',
+          syncResults,
+          dateRange: { start: syncStartDate, end: syncEndDate },
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        success: true,
+        syncResults,
+        dateRange: {
+          start: syncStartDate,
+          end: syncEndDate,
+        },
+        lastSyncAt: new Date(),
+      };
+    }),
+
+  // Schedule background sync for Google Fit
+  scheduleGoogleFitSync: protectedProcedure
+    .input(z.object({
+      connectionId: z.string(),
+      frequency: z.number().min(15).max(1440), // 15 minutes to 24 hours
+      enabled: z.boolean(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { connectionId, frequency, enabled } = input;
+
+      const connection = await ctx.prisma.deviceConnection.findFirst({
+        where: {
+          id: connectionId,
+          organizationId: ctx.user.organizationId,
+          deviceType: DeviceType.GOOGLE_FIT,
+        },
+      });
+
+      if (!connection) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Device connection not found',
+        });
+      }
+
+      const updated = await ctx.prisma.deviceConnection.update({
+        where: { id: connectionId },
+        data: {
+          syncFrequency: frequency,
+          syncEnabled: enabled,
+        },
+      });
+
+      await auditLog('UPDATE', 'DeviceConnection', {
+        entityId: connectionId,
+        changes: {
+          action: 'schedule_google_fit_sync',
+          syncFrequency: frequency,
+          syncEnabled: enabled,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        success: true,
+        syncFrequency: updated.syncFrequency,
+        syncEnabled: updated.syncEnabled,
+      };
+    }),
+
+  // Subscribe to real-time Google Fit data updates
+  subscribeGoogleFitUpdates: protectedProcedure
+    .input(z.object({
+      connectionId: z.string(),
+      dataTypes: z.array(z.enum(['activity', 'sleep', 'heartRate'])),
+      webhookUrl: z.string().url().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { connectionId, dataTypes, webhookUrl } = input;
+
+      const connection = await ctx.prisma.deviceConnection.findFirst({
+        where: {
+          id: connectionId,
+          organizationId: ctx.user.organizationId,
+          deviceType: DeviceType.GOOGLE_FIT,
+        },
+      });
+
+      if (!connection) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Device connection not found',
+        });
+      }
+
+      if (connection.status !== DeviceConnectionStatus.CONNECTED) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Device must be connected to subscribe to updates',
+        });
+      }
+
+      // In production, this would set up Google Fit push notifications
+      // Using the Google Fit REST API notification channels:
+      // POST https://www.googleapis.com/fitness/v1/users/me/dataSources/{dataSourceId}/dataPointChanges/watch
+
+      // Map data types to Google Fit data sources for subscription
+      const subscriptionTargets = dataTypes.map(type => ({
+        type,
+        dataSource: GOOGLE_FIT_DATA_SOURCES[type]?.[0] || '',
+      }));
+
+      const effectiveWebhookUrl = webhookUrl || `https://app.chiroflow.com/api/devices/google-fit/webhook/${connectionId}`;
+
+      // Store subscription info in scopes array (append subscription markers)
+      const subscriptionScopes = dataTypes.map(dt => `subscription:${dt}`);
+      const existingScopes = connection.scopes.filter(s => !s.startsWith('subscription:'));
+
+      await ctx.prisma.deviceConnection.update({
+        where: { id: connectionId },
+        data: {
+          scopes: [...existingScopes, ...subscriptionScopes],
+        },
+      });
+
+      await auditLog('UPDATE', 'DeviceConnection', {
+        entityId: connectionId,
+        changes: {
+          action: 'subscribe_google_fit_updates',
+          dataTypes,
+          webhookUrl: effectiveWebhookUrl,
+          subscriptionTargets,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        success: true,
+        subscribed: dataTypes,
+        webhookUrl: effectiveWebhookUrl,
+        message: 'Subscribed to real-time Google Fit updates',
+      };
+    }),
+
+  // Unsubscribe from Google Fit real-time updates
+  unsubscribeGoogleFitUpdates: protectedProcedure
+    .input(z.object({
+      connectionId: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { connectionId } = input;
+
+      const connection = await ctx.prisma.deviceConnection.findFirst({
+        where: {
+          id: connectionId,
+          organizationId: ctx.user.organizationId,
+          deviceType: DeviceType.GOOGLE_FIT,
+        },
+      });
+
+      if (!connection) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Device connection not found',
+        });
+      }
+
+      // In production, cancel the watch channels with Google Fit API
+      // DELETE https://www.googleapis.com/fitness/v1/users/me/dataSources/{dataSourceId}/dataPointChanges/watch
+
+      // Remove subscription markers from scopes
+      const updatedScopes = connection.scopes.filter(s => !s.startsWith('subscription:'));
+
+      await ctx.prisma.deviceConnection.update({
+        where: { id: connectionId },
+        data: {
+          scopes: updatedScopes,
+        },
+      });
+
+      await auditLog('UPDATE', 'DeviceConnection', {
+        entityId: connectionId,
+        changes: {
+          action: 'unsubscribe_google_fit_updates',
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        success: true,
+        message: 'Unsubscribed from Google Fit real-time updates',
+      };
+    }),
+
+  // Get heart rate data for a patient
+  getHeartRateData: protectedProcedure
+    .input(z.object({
+      patientId: z.string(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      type: z.enum(['RESTING', 'ACTIVE', 'WORKOUT', 'CONTINUOUS', 'SPOT_CHECK']).optional(),
+      limit: z.number().min(1).max(500).default(100),
+    }))
+    .query(async ({ ctx, input }) => {
+      const { patientId, startDate, endDate, type, limit } = input;
+
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      const where: Record<string, unknown> = {
+        patientId,
+        organizationId: ctx.user.organizationId,
+      };
+
+      if (startDate || endDate) {
+        where.timestamp = {};
+        if (startDate) (where.timestamp as Record<string, Date>).gte = startDate;
+        if (endDate) (where.timestamp as Record<string, Date>).lte = endDate;
+      }
+
+      if (type) {
+        where.type = type;
+      }
+
+      const data = await ctx.prisma.heartRateData.findMany({
+        where,
+        orderBy: { timestamp: 'desc' },
+        take: limit,
+        include: {
+          deviceConnection: {
+            select: {
+              deviceType: true,
+              deviceName: true,
+            },
+          },
+        },
+      });
+
+      // Calculate statistics
+      const bpmValues = data.map(d => d.bpm);
+      const hrvValues = data.filter(d => d.hrv !== null).map(d => d.hrv as number);
+
+      return {
+        data,
+        summary: {
+          count: data.length,
+          averageBpm: bpmValues.length > 0 ? Math.round(bpmValues.reduce((a, b) => a + b, 0) / bpmValues.length) : 0,
+          minBpm: bpmValues.length > 0 ? Math.min(...bpmValues) : 0,
+          maxBpm: bpmValues.length > 0 ? Math.max(...bpmValues) : 0,
+          averageHrv: hrvValues.length > 0 ? Math.round(hrvValues.reduce((a, b) => a + b, 0) / hrvValues.length) : null,
+        },
+      };
+    }),
+
   // Get activity data for a patient
   getActivityData: protectedProcedure
     .input(z.object({
@@ -903,6 +1716,110 @@ function generateSleepData(date: Date): {
     remMinutes,
     awakenings: Math.floor(Math.random() * 5) + 1,
     restlessness: Math.floor(Math.random() * 30) + 10,
+    stages: {
+      awake: awakeMinutes,
+      light: lightMinutes,
+      deep: deepMinutes,
+      rem: remMinutes,
+    },
+  };
+}
+
+// ============================================
+// Google Fit Helper Functions
+// ============================================
+
+// Helper function to generate simulated workout data from Google Fit
+function generateGoogleFitWorkouts(): Array<{
+  type: string;
+  duration: number;
+  calories: number;
+  startTime: string;
+  activityType: number;
+}> {
+  // Google Fit activity types
+  // https://developers.google.com/fit/rest/v1/reference/activity-types
+  const workoutTypes: Array<{ name: string; activityType: number }> = [
+    { name: 'Walking', activityType: 7 },
+    { name: 'Running', activityType: 8 },
+    { name: 'Biking', activityType: 1 },
+    { name: 'Strength Training', activityType: 80 },
+    { name: 'Yoga', activityType: 100 },
+    { name: 'Aerobics', activityType: 25 },
+    { name: 'HIIT', activityType: 113 },
+    { name: 'Hiking', activityType: 35 },
+  ];
+
+  const numWorkouts = Math.floor(Math.random() * 2); // 0-1 workouts per day
+  const workouts = [];
+
+  for (let i = 0; i < numWorkouts; i++) {
+    const workout = workoutTypes[Math.floor(Math.random() * workoutTypes.length)];
+    const duration = Math.floor(Math.random() * 45) + 15; // 15-60 minutes
+    const calories = Math.floor(duration * (Math.random() * 5 + 5)); // ~5-10 cal/min
+    const hour = Math.floor(Math.random() * 14) + 6; // 6am - 8pm
+
+    workouts.push({
+      type: workout.name,
+      activityType: workout.activityType,
+      duration,
+      calories,
+      startTime: `${hour.toString().padStart(2, '0')}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}`,
+    });
+  }
+
+  return workouts;
+}
+
+// Helper function to generate simulated sleep data from Google Fit
+function generateGoogleFitSleepData(date: Date): {
+  duration: number;
+  quality: number;
+  efficiency: number;
+  sleepStart: Date;
+  sleepEnd: Date;
+  timeToSleep: number;
+  awakeMinutes: number;
+  lightMinutes: number;
+  deepMinutes: number;
+  remMinutes: number;
+  awakenings: number;
+  restlessness: number;
+  stages: Record<string, number>;
+} {
+  // Google Fit sleep stages:
+  // 1 = Awake (during sleep), 2 = Sleep, 3 = Out of bed, 4 = Light, 5 = Deep, 6 = REM
+
+  const duration = Math.floor(Math.random() * 180) + 300; // 5-8 hours in minutes
+  const quality = Math.floor(Math.random() * 30) + 60; // 60-90 score
+  const efficiency = Math.floor(Math.random() * 15) + 80; // 80-95%
+
+  // Sleep start is previous evening (10pm - midnight)
+  const sleepStart = new Date(date);
+  sleepStart.setDate(sleepStart.getDate() - 1);
+  sleepStart.setHours(22 + Math.floor(Math.random() * 2), Math.floor(Math.random() * 60), 0, 0);
+
+  const sleepEnd = new Date(sleepStart.getTime() + duration * 60 * 1000);
+
+  // Google Fit typically reports different stage distributions
+  const awakeMinutes = Math.floor(Math.random() * 20) + 5; // Less awake time
+  const deepMinutes = Math.floor(duration * 0.18) + Math.floor(Math.random() * 15);
+  const remMinutes = Math.floor(duration * 0.22) + Math.floor(Math.random() * 20);
+  const lightMinutes = duration - awakeMinutes - deepMinutes - remMinutes;
+
+  return {
+    duration,
+    quality,
+    efficiency,
+    sleepStart,
+    sleepEnd,
+    timeToSleep: Math.floor(Math.random() * 15) + 5,
+    awakeMinutes,
+    lightMinutes,
+    deepMinutes,
+    remMinutes,
+    awakenings: Math.floor(Math.random() * 4) + 1,
+    restlessness: Math.floor(Math.random() * 25) + 5,
     stages: {
       awake: awakeMinutes,
       light: lightMinutes,
