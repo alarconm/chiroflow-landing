@@ -127,6 +127,11 @@ export type AuditAction =
   | 'AI_BILLING_SUBMIT_APPEAL'
   | 'AI_BILLING_APPEAL_OUTCOME'
   | 'AI_BILLING_BATCH_APPEALS'
+  // AI Claim Follow-Up actions (Epic 31 - US-311)
+  | 'AI_BILLING_FOLLOW_UP'
+  | 'AI_BILLING_BATCH_FOLLOW_UP'
+  | 'AI_BILLING_ESCALATE_CLAIMS'
+  | 'AI_BILLING_GET_AR_AGING'
   // AI Insights actions (Epic 10)
   | 'AI_INSIGHT_STATUS_UPDATE'
   | 'AI_NL_QUERY'

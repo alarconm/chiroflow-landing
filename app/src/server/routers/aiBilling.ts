@@ -19,6 +19,7 @@ import {
   ClaimSubmitter,
   DenialAnalyzer,
   AutomatedAppealGenerator,
+  ClaimFollowUpAgent,
 } from '@/lib/ai-billing';
 
 // ============================================
@@ -2271,5 +2272,320 @@ export const aiBillingRouter = router({
       }
 
       return appeal;
+    }),
+
+  // ============================================
+  // US-311: Claim Follow-Up Automation
+  // ============================================
+
+  /**
+   * Follow up on a single claim - check status and determine next action
+   */
+  followUp: billerProcedure
+    .input(
+      z.object({
+        claimId: z.string(),
+        forceCheck: z.boolean().default(false),
+        includePayerCall: z.boolean().default(false),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const agent = new ClaimFollowUpAgent(ctx.prisma, ctx.user.organizationId);
+        const result = await agent.followUp(input);
+
+        // Audit log
+        await ctx.prisma.aIBillingAudit.create({
+          data: {
+            action: 'FOLLOW_UP_CLAIM',
+            entityType: 'Claim',
+            entityId: input.claimId,
+            decision: result.recommendedAction,
+            confidence: result.isStalled ? 0.9 : 0.7,
+            reasoning: result.actionReason,
+            inputData: input,
+            outputData: {
+              daysInAR: result.daysInAR,
+              isStalled: result.isStalled,
+              stalledDays: result.stalledDays,
+              priority: result.priority,
+              escalationRequired: result.escalationRequired,
+              staffTaskCreated: result.staffTaskCreated,
+            },
+            processingTimeMs: result.processingTimeMs,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+
+        await auditLog('AI_BILLING_FOLLOW_UP', 'Claim', {
+          entityId: input.claimId,
+          changes: {
+            action: 'follow_up',
+            recommendedAction: result.recommendedAction,
+            daysInAR: result.daysInAR,
+            priority: result.priority,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return result;
+      } catch (error) {
+        console.error('Claim follow-up failed:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to follow up on claim',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Batch follow-up on multiple claims
+   */
+  batchFollowUp: billerProcedure
+    .input(
+      z.object({
+        claimIds: z.array(z.string()).optional(),
+        autoSelectClaims: z.boolean().default(false),
+        maxClaims: z.number().min(1).max(200).default(100),
+        includeAgedOnly: z.boolean().default(false),
+        minDaysInAR: z.number().min(0).optional(),
+        payerIds: z.array(z.string()).optional(),
+        statuses: z.array(z.string()).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const agent = new ClaimFollowUpAgent(ctx.prisma, ctx.user.organizationId);
+        const result = await agent.batchFollowUp(input);
+
+        // Audit log
+        await ctx.prisma.aIBillingAudit.create({
+          data: {
+            action: 'BATCH_FOLLOW_UP',
+            entityType: 'Batch',
+            entityId: result.batchId,
+            decision: `Processed ${result.totalProcessed} claims`,
+            reasoning: `Status updates: ${result.statusUpdates}, Stalled: ${result.stalledClaims}, Escalations: ${result.escalations}, Tasks: ${result.tasksGenerated}`,
+            inputData: input,
+            outputData: {
+              totalProcessed: result.totalProcessed,
+              statusUpdates: result.statusUpdates,
+              stalledClaims: result.stalledClaims,
+              escalations: result.escalations,
+              tasksGenerated: result.tasksGenerated,
+            },
+            processingTimeMs: result.processingTimeMs,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+
+        await auditLog('AI_BILLING_BATCH_FOLLOW_UP', 'Batch', {
+          entityId: result.batchId,
+          changes: {
+            action: 'batch_follow_up',
+            totalProcessed: result.totalProcessed,
+            statusUpdates: result.statusUpdates,
+            escalations: result.escalations,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return result;
+      } catch (error) {
+        console.error('Batch follow-up failed:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to process batch follow-up',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Get stalled claims that need attention
+   */
+  getStalledClaims: billerProcedure
+    .input(
+      z.object({
+        minDaysStalled: z.number().min(1).default(14),
+        excludeStatuses: z.array(z.string()).optional(),
+        includePayerIds: z.array(z.string()).optional(),
+        limit: z.number().min(1).max(100).default(50),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      try {
+        const agent = new ClaimFollowUpAgent(ctx.prisma, ctx.user.organizationId);
+        const claims = await agent.getStalledClaims({
+          minDaysStalled: input.minDaysStalled,
+          excludeStatuses: input.excludeStatuses || ['PAID', 'DENIED', 'VOID', 'APPEALED'],
+          includePayerIds: input.includePayerIds,
+        });
+
+        return claims.slice(0, input.limit);
+      } catch (error) {
+        console.error('Failed to get stalled claims:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to get stalled claims',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Get AR aging report
+   */
+  getARAgingReport: billerProcedure.query(async ({ ctx }) => {
+    try {
+      const agent = new ClaimFollowUpAgent(ctx.prisma, ctx.user.organizationId);
+      const report = await agent.getARAgingReport();
+
+      await auditLog('AI_BILLING_GET_AR_AGING', 'Report', {
+        entityId: 'ar_aging',
+        changes: {
+          action: 'view_report',
+          totalClaims: report.totalClaims,
+          totalAmount: report.totalAmount,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return report;
+    } catch (error) {
+      console.error('Failed to get AR aging report:', error);
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to get AR aging report',
+        cause: error,
+      });
+    }
+  }),
+
+  /**
+   * Get payer response time analysis
+   */
+  getPayerResponseAnalysis: billerProcedure
+    .input(
+      z.object({
+        payerId: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      try {
+        const agent = new ClaimFollowUpAgent(ctx.prisma, ctx.user.organizationId);
+        return agent.getPayerResponseAnalysis(input.payerId);
+      } catch (error) {
+        console.error('Failed to get payer response analysis:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to get payer response analysis',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Escalate aged claims
+   */
+  escalateAgedClaims: billerProcedure
+    .input(
+      z.object({
+        minDaysInAR: z.number().min(1).optional(),
+        minAmount: z.number().min(0).optional(),
+        stalledDays: z.number().min(1).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const agent = new ClaimFollowUpAgent(ctx.prisma, ctx.user.organizationId);
+        const escalated = await agent.escalateAgedClaims(input);
+
+        // Audit log
+        await ctx.prisma.aIBillingAudit.create({
+          data: {
+            action: 'ESCALATE_AGED_CLAIMS',
+            entityType: 'Batch',
+            entityId: 'escalation',
+            decision: `Escalated ${escalated.length} claims`,
+            reasoning: `Criteria: minDaysInAR=${input.minDaysInAR || 90}, minAmount=${input.minAmount || 500}, stalledDays=${input.stalledDays || 30}`,
+            inputData: input,
+            outputData: {
+              escalatedCount: escalated.length,
+              claimIds: escalated.map(c => c.claimId),
+            },
+            organizationId: ctx.user.organizationId,
+          },
+        });
+
+        await auditLog('AI_BILLING_ESCALATE_CLAIMS', 'Batch', {
+          entityId: 'escalation',
+          changes: {
+            action: 'escalate_aged_claims',
+            escalatedCount: escalated.length,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return escalated;
+      } catch (error) {
+        console.error('Failed to escalate aged claims:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to escalate aged claims',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Get follow-up schedule (upcoming and overdue)
+   */
+  getFollowUpSchedule: billerProcedure
+    .input(
+      z.object({
+        daysAhead: z.number().min(1).max(30).default(7),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      try {
+        const agent = new ClaimFollowUpAgent(ctx.prisma, ctx.user.organizationId);
+        return agent.getFollowUpSchedule(input.daysAhead);
+      } catch (error) {
+        console.error('Failed to get follow-up schedule:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to get follow-up schedule',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Get claims needing follow-up (prioritized list)
+   */
+  getClaimsNeedingFollowUp: billerProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(100).default(50),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      try {
+        const agent = new ClaimFollowUpAgent(ctx.prisma, ctx.user.organizationId);
+        return agent.getClaimsNeedingFollowUp(input.limit);
+      } catch (error) {
+        console.error('Failed to get claims needing follow-up:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to get claims needing follow-up',
+          cause: error,
+        });
+      }
     }),
 });

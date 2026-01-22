@@ -242,8 +242,80 @@ Implemented comprehensive automated appeal generation system with payer-specific
 - TypeScript compiles successfully for new files
 - Pre-existing TypeScript errors unrelated to this change
 
+### US-311 - Claim follow-up automation
+**Status**: COMPLETED
+**Date**: 2026-01-22
+
+**Implementation Summary**:
+Implemented comprehensive claim follow-up automation system with automated status checks, stalled claim detection, escalation workflows, AR aging reports, and payer response time analysis.
+
+**Files Created**:
+- `app/src/lib/ai-billing/claim-follow-up-agent.ts` - New ClaimFollowUpAgent service class (~1100 lines)
+
+**Files Modified**:
+- `app/src/lib/ai-billing/index.ts` - Added ClaimFollowUpAgent exports and types
+- `app/src/server/routers/aiBilling.ts` - Added 8 new endpoints for claim follow-up automation
+- `app/src/lib/audit.ts` - Added AI_BILLING_FOLLOW_UP, AI_BILLING_BATCH_FOLLOW_UP, AI_BILLING_ESCALATE_CLAIMS, AI_BILLING_GET_AR_AGING audit actions
+
+**ClaimFollowUpAgent Service Features**:
+1. `followUp()` - Check single claim status and determine next action
+2. `batchFollowUp()` - Process multiple claims at once
+3. `getStalledClaims()` - Identify claims with no activity beyond threshold
+4. `getARAgingReport()` - Complete AR aging report with buckets (0-30, 31-60, 61-90, 91-120, 120+)
+5. `getPayerResponseAnalysis()` - Analyze payer response times with trends
+6. `escalateAgedClaims()` - Auto-escalate claims meeting criteria
+7. `getFollowUpSchedule()` - Get upcoming and overdue follow-ups
+8. `getClaimsNeedingFollowUp()` - Prioritized list based on urgency score
+
+**Follow-Up Actions Determined**:
+- CHECK_STATUS - Routine status check
+- CALL_PAYER - Direct payer contact needed
+- RESUBMIT - Correction and resubmission
+- ESCALATE - Supervisor review required
+- APPEAL - Appeal the denial
+- PATIENT_STATEMENT - Patient balance due
+- WRITE_OFF_REVIEW - Consider write-off
+- SECONDARY_CLAIM - Submit to secondary
+- WAIT - No action needed yet
+- CLOSE - Close the claim
+
+**AR Aging Buckets**:
+- 0-30 days, 31-60 days, 61-90 days, 91-120 days, 120+ days
+- Summary by payer with stalled claim counts
+- Average days in AR calculation
+
+**New tRPC Endpoints**:
+1. `followUp` - Follow up on single claim (mutation)
+2. `batchFollowUp` - Process multiple claims (mutation)
+3. `getStalledClaims` - Get stalled claims list (query)
+4. `getARAgingReport` - Get AR aging report (query)
+5. `getPayerResponseAnalysis` - Get payer response analysis (query)
+6. `escalateAgedClaims` - Escalate aged claims (mutation)
+7. `getFollowUpSchedule` - Get follow-up schedule (query)
+8. `getClaimsNeedingFollowUp` - Get prioritized claims list (query)
+
+**Type Exports Added**:
+- FollowUpAction, FollowUpPriority, FollowUpTaskStatus
+- FollowUpInput, FollowUpOutput, BatchFollowUpInput, BatchFollowUpOutput
+- StalledClaimCriteria, StalledClaim, FollowUpTask
+- ARAgingReport, ARAgingBucket, PayerARSummary
+- PayerResponseAnalysis, EscalationCriteria, EscalatedClaim
+
+**Acceptance Criteria Met**:
+- ✅ aiBilling.followUp - Check claim status (via followUp endpoint)
+- ✅ Automated status checks on schedule (via batchFollowUp, getFollowUpSchedule)
+- ✅ Identify stalled claims (via getStalledClaims with configurable thresholds)
+- ✅ Determine follow-up action needed (via determineFollowUpAction with 10 action types)
+- ✅ Generate follow-up tasks for staff (via createStaffTask with priority-based due dates)
+- ✅ Track days in AR (via calculateDaysInAR, getARAgingReport)
+- ✅ Escalate aged claims (via escalateAgedClaims with configurable criteria)
+- ✅ Payer response time analysis (via getPayerResponseAnalysis with trends and anomalies)
+
+**Validation**:
+- TypeScript compiles successfully for new files
+- Pre-existing TypeScript errors unrelated to this change
+
 ## Next Stories to Implement
-- US-311 - Claim follow-up automation
 - US-312 - Smart payment posting
 - US-313 - Billing optimization recommendations
 - US-314 - AI billing agent dashboard
@@ -258,4 +330,10 @@ Story: US-308 - Autonomous claim submission
 Story: US-309 - Denial analysis and routing
 --- Iteration 3 completed at 2026-01-22 10:24:47 ---
 Story: US-309 - Denial analysis and routing
+
+--- Iteration 4 completed at 2026-01-22 10:37:11 ---
+Story: US-310 - Automated appeal generation
+
+--- Iteration 5 completed at 2026-01-22 ---
+Story: US-311 - Claim follow-up automation
 

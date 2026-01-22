@@ -16,6 +16,7 @@ export { UnderpaymentDetector } from './underpayment-detector';
 export { ClaimSubmitter } from './claim-submitter';
 export { DenialAnalyzer } from './denial-analyzer';
 export { AutomatedAppealGenerator } from './automated-appeal-generator';
+export { ClaimFollowUpAgent } from './claim-follow-up-agent';
 
 // Convenience type re-exports for common usage
 export type {
@@ -79,3 +80,23 @@ export type {
   PayerAppealTemplate,
   LearnedAppealPattern,
 } from './automated-appeal-generator';
+
+// Claim Follow-Up Agent types (Epic 31: US-311)
+export type {
+  FollowUpAction,
+  FollowUpPriority,
+  FollowUpTaskStatus,
+  FollowUpInput,
+  FollowUpOutput,
+  BatchFollowUpInput,
+  BatchFollowUpOutput,
+  StalledClaimCriteria,
+  StalledClaim,
+  FollowUpTask,
+  ARAgingReport,
+  ARAgingBucket,
+  PayerARSummary,
+  PayerResponseAnalysis,
+  EscalationCriteria,
+  EscalatedClaim,
+} from './claim-follow-up-agent';

@@ -69,7 +69,7 @@
         "Learn from successful appeals"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-311",
@@ -86,7 +86,7 @@
         "Payer response time analysis"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-312",
