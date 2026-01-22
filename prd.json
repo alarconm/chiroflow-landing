@@ -84,7 +84,7 @@
         "Security event dashboard"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-261",

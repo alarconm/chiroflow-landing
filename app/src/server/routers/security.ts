@@ -2557,6 +2557,781 @@ export const securityRouter = router({
       ipAddress,
     };
   }),
+
+  // ============================================
+  // Security Event Logging (US-260)
+  // ============================================
+
+  // List security events with filtering
+  listSecurityEvents: adminProcedure
+    .input(
+      z.object({
+        eventTypes: z.array(z.string()).optional(),
+        severity: z.enum(['INFO', 'WARNING', 'CRITICAL']).optional(),
+        success: z.boolean().optional(),
+        userId: z.string().optional(),
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+        ipAddress: z.string().optional(),
+        limit: z.number().min(1).max(500).default(100),
+        offset: z.number().min(0).default(0),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const where: Record<string, unknown> = {
+        organizationId: ctx.user.organizationId,
+      };
+
+      if (input?.eventTypes && input.eventTypes.length > 0) {
+        where.eventType = { in: input.eventTypes };
+      }
+      if (input?.severity) {
+        where.severity = input.severity;
+      }
+      if (input?.success !== undefined) {
+        where.success = input.success;
+      }
+      if (input?.userId) {
+        where.userId = input.userId;
+      }
+      if (input?.ipAddress) {
+        where.ipAddress = input.ipAddress;
+      }
+      if (input?.startDate || input?.endDate) {
+        where.createdAt = {};
+        if (input?.startDate) {
+          (where.createdAt as Record<string, unknown>).gte = input.startDate;
+        }
+        if (input?.endDate) {
+          (where.createdAt as Record<string, unknown>).lte = input.endDate;
+        }
+      }
+
+      const [events, total] = await Promise.all([
+        ctx.prisma.securityEvent.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          take: input?.limit ?? 100,
+          skip: input?.offset ?? 0,
+          include: {
+            user: {
+              select: {
+                id: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+                role: true,
+              },
+            },
+          },
+        }),
+        ctx.prisma.securityEvent.count({ where }),
+      ]);
+
+      return {
+        events,
+        total,
+        hasMore: (input?.offset ?? 0) + events.length < total,
+      };
+    }),
+
+  // Get security event by ID
+  getSecurityEvent: adminProcedure
+    .input(z.object({ eventId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const event = await ctx.prisma.securityEvent.findFirst({
+        where: {
+          id: input.eventId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              role: true,
+            },
+          },
+        },
+      });
+
+      if (!event) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Security event not found',
+        });
+      }
+
+      return event;
+    }),
+
+  // Get failed login attempts for a user
+  getFailedLoginAttempts: adminProcedure
+    .input(
+      z.object({
+        userId: z.string().optional(),
+        ipAddress: z.string().optional(),
+        hours: z.number().min(1).max(168).default(24), // Up to 1 week
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const since = new Date(Date.now() - input.hours * 60 * 60 * 1000);
+
+      const where: Record<string, unknown> = {
+        organizationId: ctx.user.organizationId,
+        eventType: 'LOGIN_FAILURE',
+        createdAt: { gte: since },
+      };
+
+      if (input.userId) {
+        where.userId = input.userId;
+      }
+      if (input.ipAddress) {
+        where.ipAddress = input.ipAddress;
+      }
+
+      const failedAttempts = await ctx.prisma.securityEvent.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      });
+
+      // Group by IP address for pattern detection
+      const byIP: Record<string, typeof failedAttempts> = {};
+      for (const attempt of failedAttempts) {
+        const ip = attempt.ipAddress || 'unknown';
+        if (!byIP[ip]) byIP[ip] = [];
+        byIP[ip].push(attempt);
+      }
+
+      // Identify suspicious IPs (more than 5 failures in the period)
+      const suspiciousIPs = Object.entries(byIP)
+        .filter(([, attempts]) => attempts.length >= 5)
+        .map(([ip, attempts]) => ({
+          ipAddress: ip,
+          attemptCount: attempts.length,
+          firstAttempt: attempts[attempts.length - 1].createdAt,
+          lastAttempt: attempts[0].createdAt,
+          targetUsers: [...new Set(attempts.map(a => a.userId).filter(Boolean))],
+        }));
+
+      return {
+        totalAttempts: failedAttempts.length,
+        attempts: failedAttempts,
+        suspiciousIPs,
+        periodHours: input.hours,
+      };
+    }),
+
+  // Get PHI access events (HIPAA compliance)
+  getPHIAccessEvents: adminProcedure
+    .input(
+      z.object({
+        userId: z.string().optional(),
+        entityType: z.string().optional(),
+        entityId: z.string().optional(),
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+        limit: z.number().min(1).max(500).default(100),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const where: Record<string, unknown> = {
+        organizationId: ctx.user.organizationId,
+        eventType: { in: ['PHI_ACCESSED', 'PHI_EXPORTED', 'PHI_MODIFIED'] },
+      };
+
+      if (input.userId) where.userId = input.userId;
+      if (input.entityType) where.entityType = input.entityType;
+      if (input.entityId) where.entityId = input.entityId;
+      if (input.startDate || input.endDate) {
+        where.createdAt = {};
+        if (input.startDate) {
+          (where.createdAt as Record<string, unknown>).gte = input.startDate;
+        }
+        if (input.endDate) {
+          (where.createdAt as Record<string, unknown>).lte = input.endDate;
+        }
+      }
+
+      const events = await ctx.prisma.securityEvent.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: input.limit,
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              role: true,
+            },
+          },
+        },
+      });
+
+      return events;
+    }),
+
+  // Get permission change events (audit trail)
+  getPermissionChanges: adminProcedure
+    .input(
+      z.object({
+        userId: z.string().optional(),
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+        limit: z.number().min(1).max(200).default(50),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const where: Record<string, unknown> = {
+        organizationId: ctx.user.organizationId,
+        eventType: { in: ['PERMISSION_GRANTED', 'PERMISSION_REVOKED', 'ROLE_CHANGED'] },
+      };
+
+      if (input.userId) where.userId = input.userId;
+      if (input.startDate || input.endDate) {
+        where.createdAt = {};
+        if (input.startDate) {
+          (where.createdAt as Record<string, unknown>).gte = input.startDate;
+        }
+        if (input.endDate) {
+          (where.createdAt as Record<string, unknown>).lte = input.endDate;
+        }
+      }
+
+      const events = await ctx.prisma.securityEvent.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: input.limit,
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              role: true,
+            },
+          },
+        },
+      });
+
+      return events;
+    }),
+
+  // Get configuration change events
+  getConfigurationChanges: adminProcedure
+    .input(
+      z.object({
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+        limit: z.number().min(1).max(200).default(50),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const where: Record<string, unknown> = {
+        organizationId: ctx.user.organizationId,
+        eventType: 'CONFIG_CHANGED',
+      };
+
+      if (input.startDate || input.endDate) {
+        where.createdAt = {};
+        if (input.startDate) {
+          (where.createdAt as Record<string, unknown>).gte = input.startDate;
+        }
+        if (input.endDate) {
+          (where.createdAt as Record<string, unknown>).lte = input.endDate;
+        }
+      }
+
+      const events = await ctx.prisma.securityEvent.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: input.limit,
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              role: true,
+            },
+          },
+        },
+      });
+
+      return events;
+    }),
+
+  // Detect suspicious activity patterns
+  detectSuspiciousActivity: adminProcedure
+    .input(
+      z.object({
+        hours: z.number().min(1).max(168).default(24),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const since = new Date(Date.now() - input.hours * 60 * 60 * 1000);
+
+      // Get all recent security events
+      const events = await ctx.prisma.securityEvent.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          createdAt: { gte: since },
+        },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      });
+
+      const alerts: Array<{
+        type: string;
+        severity: 'WARNING' | 'CRITICAL';
+        message: string;
+        details: Record<string, unknown>;
+        timestamp: Date;
+      }> = [];
+
+      // Pattern 1: Multiple failed logins from same IP
+      const failedLoginsByIP: Record<string, typeof events> = {};
+      for (const event of events) {
+        if (event.eventType === 'LOGIN_FAILURE' && event.ipAddress) {
+          if (!failedLoginsByIP[event.ipAddress]) {
+            failedLoginsByIP[event.ipAddress] = [];
+          }
+          failedLoginsByIP[event.ipAddress].push(event);
+        }
+      }
+
+      for (const [ip, attempts] of Object.entries(failedLoginsByIP)) {
+        if (attempts.length >= 10) {
+          alerts.push({
+            type: 'BRUTE_FORCE_ATTEMPT',
+            severity: 'CRITICAL',
+            message: `Potential brute force attack: ${attempts.length} failed login attempts from IP ${ip}`,
+            details: {
+              ipAddress: ip,
+              attemptCount: attempts.length,
+              targetUsers: [...new Set(attempts.map(a => a.userId).filter(Boolean))],
+            },
+            timestamp: attempts[0].createdAt,
+          });
+        } else if (attempts.length >= 5) {
+          alerts.push({
+            type: 'MULTIPLE_FAILED_LOGINS',
+            severity: 'WARNING',
+            message: `Multiple failed login attempts (${attempts.length}) from IP ${ip}`,
+            details: {
+              ipAddress: ip,
+              attemptCount: attempts.length,
+            },
+            timestamp: attempts[0].createdAt,
+          });
+        }
+      }
+
+      // Pattern 2: Unusual access patterns (many PHI accesses in short time)
+      const phiAccessByUser: Record<string, typeof events> = {};
+      for (const event of events) {
+        if (['PHI_ACCESSED', 'PHI_EXPORTED'].includes(event.eventType) && event.userId) {
+          if (!phiAccessByUser[event.userId]) {
+            phiAccessByUser[event.userId] = [];
+          }
+          phiAccessByUser[event.userId].push(event);
+        }
+      }
+
+      for (const [userId, accesses] of Object.entries(phiAccessByUser)) {
+        // More than 100 PHI accesses in the period - unusual
+        if (accesses.length >= 100) {
+          const user = accesses[0].user;
+          alerts.push({
+            type: 'UNUSUAL_PHI_ACCESS_VOLUME',
+            severity: 'WARNING',
+            message: `Unusual PHI access volume: ${accesses.length} accesses by ${user?.email || 'Unknown user'}`,
+            details: {
+              userId,
+              accessCount: accesses.length,
+              userEmail: user?.email,
+            },
+            timestamp: accesses[0].createdAt,
+          });
+        }
+      }
+
+      // Pattern 3: Account lockouts
+      const lockouts = events.filter(e => e.eventType === 'ACCOUNT_LOCKED');
+      if (lockouts.length >= 3) {
+        alerts.push({
+          type: 'MULTIPLE_ACCOUNT_LOCKOUTS',
+          severity: 'WARNING',
+          message: `${lockouts.length} accounts have been locked in the past ${input.hours} hours`,
+          details: {
+            lockoutCount: lockouts.length,
+            affectedUsers: lockouts.map(l => l.userId).filter(Boolean),
+          },
+          timestamp: lockouts[0].createdAt,
+        });
+      }
+
+      // Pattern 4: Suspicious activity events
+      const suspiciousEvents = events.filter(e => e.eventType === 'SUSPICIOUS_ACTIVITY');
+      for (const event of suspiciousEvents) {
+        alerts.push({
+          type: 'FLAGGED_SUSPICIOUS_ACTIVITY',
+          severity: 'WARNING',
+          message: event.description || 'Suspicious activity detected',
+          details: {
+            eventId: event.id,
+            userId: event.userId,
+            ipAddress: event.ipAddress,
+            metadata: event.metadata,
+          },
+          timestamp: event.createdAt,
+        });
+      }
+
+      // Pattern 5: MFA bypass attempts
+      const mfaFailures = events.filter(e => e.eventType === 'LOGIN_MFA_FAILURE');
+      const mfaFailuresByUser: Record<string, typeof events> = {};
+      for (const event of mfaFailures) {
+        if (event.userId) {
+          if (!mfaFailuresByUser[event.userId]) {
+            mfaFailuresByUser[event.userId] = [];
+          }
+          mfaFailuresByUser[event.userId].push(event);
+        }
+      }
+
+      for (const [userId, failures] of Object.entries(mfaFailuresByUser)) {
+        if (failures.length >= 5) {
+          const user = failures[0].user;
+          alerts.push({
+            type: 'MFA_BYPASS_ATTEMPT',
+            severity: 'CRITICAL',
+            message: `Potential MFA bypass attempt: ${failures.length} failed MFA verifications for ${user?.email || 'Unknown user'}`,
+            details: {
+              userId,
+              failureCount: failures.length,
+              userEmail: user?.email,
+            },
+            timestamp: failures[0].createdAt,
+          });
+        }
+      }
+
+      // Sort alerts by severity and timestamp
+      alerts.sort((a, b) => {
+        if (a.severity !== b.severity) {
+          return a.severity === 'CRITICAL' ? -1 : 1;
+        }
+        return b.timestamp.getTime() - a.timestamp.getTime();
+      });
+
+      return {
+        alerts,
+        totalEvents: events.length,
+        periodHours: input.hours,
+        analyzedAt: new Date(),
+      };
+    }),
+
+  // Get security event statistics for dashboard
+  getSecurityEventStats: adminProcedure
+    .input(
+      z.object({
+        hours: z.number().min(1).max(720).default(24), // Up to 30 days
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const since = new Date(Date.now() - input.hours * 60 * 60 * 1000);
+
+      const events = await ctx.prisma.securityEvent.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          createdAt: { gte: since },
+        },
+        select: {
+          eventType: true,
+          severity: true,
+          success: true,
+          createdAt: true,
+        },
+      });
+
+      // Count by event type
+      const byEventType: Record<string, number> = {};
+      const bySeverity: Record<string, number> = { INFO: 0, WARNING: 0, CRITICAL: 0 };
+      let successCount = 0;
+      let failureCount = 0;
+
+      // Hourly distribution for the last 24 hours
+      const hourlyDistribution: Record<string, number> = {};
+      const now = new Date();
+
+      for (const event of events) {
+        // By event type
+        byEventType[event.eventType] = (byEventType[event.eventType] || 0) + 1;
+
+        // By severity
+        bySeverity[event.severity] = (bySeverity[event.severity] || 0) + 1;
+
+        // Success/Failure
+        if (event.success) {
+          successCount++;
+        } else {
+          failureCount++;
+        }
+
+        // Hourly distribution (last 24 hours)
+        const hoursDiff = Math.floor((now.getTime() - event.createdAt.getTime()) / (60 * 60 * 1000));
+        if (hoursDiff < 24) {
+          const hourKey = `${hoursDiff}`;
+          hourlyDistribution[hourKey] = (hourlyDistribution[hourKey] || 0) + 1;
+        }
+      }
+
+      // Get authentication events breakdown
+      const authEvents = {
+        loginSuccess: byEventType['LOGIN_SUCCESS'] || 0,
+        loginFailure: byEventType['LOGIN_FAILURE'] || 0,
+        mfaSuccess: byEventType['LOGIN_MFA_SUCCESS'] || 0,
+        mfaFailure: byEventType['LOGIN_MFA_FAILURE'] || 0,
+        logout: byEventType['LOGOUT'] || 0,
+        passwordChanges: byEventType['PASSWORD_CHANGE'] || 0,
+      };
+
+      return {
+        totalEvents: events.length,
+        byEventType,
+        bySeverity,
+        successCount,
+        failureCount,
+        authEvents,
+        hourlyDistribution,
+        periodHours: input.hours,
+      };
+    }),
+
+  // Log a custom security event (for use by other procedures)
+  logSecurityEvent: protectedProcedure
+    .input(
+      z.object({
+        eventType: z.string(),
+        severity: z.enum(['INFO', 'WARNING', 'CRITICAL']).default('INFO'),
+        description: z.string().optional(),
+        entityType: z.string().optional(),
+        entityId: z.string().optional(),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+        success: z.boolean().default(true),
+        failureReason: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { ipAddress, userAgent } = await getRequestMetadata();
+
+      const event = await ctx.prisma.securityEvent.create({
+        data: {
+          eventType: input.eventType as SecurityEventType,
+          severity: input.severity,
+          description: input.description,
+          ipAddress,
+          userAgent,
+          entityType: input.entityType,
+          entityId: input.entityId,
+          metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
+          success: input.success,
+          failureReason: input.failureReason,
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      return { id: event.id };
+    }),
+
+  // Get authentication events timeline
+  getAuthEventsTimeline: adminProcedure
+    .input(
+      z.object({
+        userId: z.string().optional(),
+        hours: z.number().min(1).max(168).default(24),
+        limit: z.number().min(1).max(200).default(100),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const since = new Date(Date.now() - input.hours * 60 * 60 * 1000);
+
+      const where: Record<string, unknown> = {
+        organizationId: ctx.user.organizationId,
+        eventType: {
+          in: [
+            'LOGIN_SUCCESS',
+            'LOGIN_FAILURE',
+            'LOGIN_MFA_REQUIRED',
+            'LOGIN_MFA_SUCCESS',
+            'LOGIN_MFA_FAILURE',
+            'LOGOUT',
+            'PASSWORD_CHANGE',
+            'PASSWORD_RESET_REQUEST',
+            'PASSWORD_RESET_COMPLETE',
+            'MFA_ENABLED',
+            'MFA_DISABLED',
+            'MFA_RECOVERY_USED',
+            'ACCOUNT_LOCKED',
+            'ACCOUNT_UNLOCKED',
+          ],
+        },
+        createdAt: { gte: since },
+      };
+
+      if (input.userId) {
+        where.userId = input.userId;
+      }
+
+      const events = await ctx.prisma.securityEvent.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: input.limit,
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      });
+
+      return events;
+    }),
+
+  // Export security events (for compliance reporting)
+  exportSecurityEvents: adminProcedure
+    .input(
+      z.object({
+        startDate: z.date(),
+        endDate: z.date(),
+        eventTypes: z.array(z.string()).optional(),
+        format: z.enum(['json', 'csv']).default('json'),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const where: Record<string, unknown> = {
+        organizationId: ctx.user.organizationId,
+        createdAt: {
+          gte: input.startDate,
+          lte: input.endDate,
+        },
+      };
+
+      if (input.eventTypes && input.eventTypes.length > 0) {
+        where.eventType = { in: input.eventTypes };
+      }
+
+      const events = await ctx.prisma.securityEvent.findMany({
+        where,
+        orderBy: { createdAt: 'asc' },
+        include: {
+          user: {
+            select: {
+              email: true,
+              firstName: true,
+              lastName: true,
+              role: true,
+            },
+          },
+        },
+      });
+
+      // Log the export for audit
+      await logSecurityEvent(
+        ctx.prisma as unknown as PrismaClient,
+        'PHI_EXPORTED',
+        ctx.user.id,
+        ctx.user.organizationId,
+        true,
+        {
+          type: 'security_events_export',
+          format: input.format,
+          startDate: input.startDate.toISOString(),
+          endDate: input.endDate.toISOString(),
+          eventCount: events.length,
+        }
+      );
+
+      if (input.format === 'csv') {
+        // Generate CSV format
+        const headers = [
+          'ID',
+          'Timestamp',
+          'Event Type',
+          'Severity',
+          'User Email',
+          'User Name',
+          'Success',
+          'IP Address',
+          'Description',
+          'Failure Reason',
+        ];
+
+        const rows = events.map((e) => [
+          e.id,
+          e.createdAt.toISOString(),
+          e.eventType,
+          e.severity,
+          e.user?.email || '',
+          e.user ? `${e.user.firstName} ${e.user.lastName}` : '',
+          e.success ? 'Yes' : 'No',
+          e.ipAddress || '',
+          e.description || '',
+          e.failureReason || '',
+        ]);
+
+        const csvContent = [headers, ...rows]
+          .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+          .join('\n');
+
+        return {
+          format: 'csv',
+          content: csvContent,
+          filename: `security-events-${input.startDate.toISOString().split('T')[0]}-to-${input.endDate.toISOString().split('T')[0]}.csv`,
+          eventCount: events.length,
+        };
+      }
+
+      // JSON format
+      return {
+        format: 'json',
+        content: JSON.stringify(events, null, 2),
+        filename: `security-events-${input.startDate.toISOString().split('T')[0]}-to-${input.endDate.toISOString().split('T')[0]}.json`,
+        eventCount: events.length,
+      };
+    }),
 });
 
 // Helper functions

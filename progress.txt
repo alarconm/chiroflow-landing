@@ -178,7 +178,69 @@
 
 ---
 
-## Next Story: US-260 (Security event logging)
+### US-260: Security event logging
+- Status: COMPLETE
+- Date: 2026-01-22
+
+#### What was implemented:
+1. **Security Event Logging tRPC Procedures** (`app/src/server/routers/security.ts`)
+   - `security.listSecurityEvents` - List events with filtering (type, severity, success, user, date range, IP)
+   - `security.getSecurityEvent` - Get single event by ID
+   - `security.getFailedLoginAttempts` - Get failed logins with suspicious IP detection
+   - `security.getPHIAccessEvents` - Get PHI access events for HIPAA compliance
+   - `security.getPermissionChanges` - Get permission/role change events
+   - `security.getConfigurationChanges` - Get config change events
+   - `security.detectSuspiciousActivity` - Automated threat detection
+   - `security.getSecurityEventStats` - Dashboard statistics
+   - `security.logSecurityEvent` - Log custom security events
+   - `security.getAuthEventsTimeline` - Authentication events timeline
+   - `security.exportSecurityEvents` - Export events to JSON/CSV
+
+2. **Suspicious Activity Detection Patterns**
+   - Brute force attack detection (10+ failed logins from same IP)
+   - Multiple failed login warnings (5+ failures)
+   - Unusual PHI access volume detection (100+ accesses)
+   - Multiple account lockout alerts
+   - MFA bypass attempt detection (5+ MFA failures)
+   - Suspicious activity flagging
+
+3. **Security Event Dashboard** (`app/src/app/(dashboard)/settings/security/page.tsx`)
+   - Real-time security statistics cards (total events, failed logins, critical events, auth success rate)
+   - Security alert banner with severity indicators
+   - Tabbed interface:
+     - **Event Log**: Searchable/filterable security event list
+     - **Authentication**: Auth stats and suspicious IP list
+     - **PHI Access**: HIPAA-compliant PHI access logging
+     - **Threats**: Automated threat detection with severity levels
+   - Time range filtering (1h, 24h, 7d, 30d)
+   - Export to CSV/JSON functionality
+   - Event type and severity badges
+
+#### Security Features:
+- Log all authentication events (success, failure, MFA)
+- Log permission changes (granted, revoked, role changes)
+- Log PHI access events for HIPAA compliance
+- Log configuration changes
+- Failed login attempt tracking with IP analysis
+- Suspicious activity detection with pattern recognition
+- Security event dashboard with real-time stats
+- Export functionality for compliance reporting
+
+#### Alert Types Detected:
+- BRUTE_FORCE_ATTEMPT (Critical)
+- MULTIPLE_FAILED_LOGINS (Warning)
+- UNUSUAL_PHI_ACCESS_VOLUME (Warning)
+- MULTIPLE_ACCOUNT_LOCKOUTS (Warning)
+- FLAGGED_SUSPICIOUS_ACTIVITY (Warning)
+- MFA_BYPASS_ATTEMPT (Critical)
+
+#### Verification:
+- TypeScript compiles without errors
+- All acceptance criteria met
+
+---
+
+## Next Story: US-261 (BAA management)
 --- Iteration 1 completed at 2026-01-22 06:26:20 ---
 Story: US-256 - Security schema
 
@@ -196,4 +258,10 @@ Story: US-258 - Field-level encryption
 
 --- Iteration 4 completed at 2026-01-22 ---
 Story: US-259 - Session security
+
+--- Iteration 4 completed at 2026-01-22 06:43:30 ---
+Story: US-259 - Session security
+
+--- Iteration 5 completed at 2026-01-22 ---
+Story: US-260 - Security event logging
 
