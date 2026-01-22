@@ -20,6 +20,19 @@ import {
   type DeviationMeasurement,
   type SeverityLevel,
 } from '@/lib/services/deviationAnalysis';
+import {
+  compareDeviations,
+  calculateImprovementScore,
+  generateProgressSummary,
+  generateComparisonRecommendations,
+  generateComparisonReport,
+  generateReportHTML,
+  calculateOverlayAlignment,
+  type ComparisonResult,
+  type ViewComparison,
+  type PostureAssessmentSummary,
+  type PostureImageData,
+} from '@/lib/services/postureComparison';
 
 // Validation schemas
 const postureViewSchema = z.enum(['ANTERIOR', 'POSTERIOR', 'LATERAL_LEFT', 'LATERAL_RIGHT']);
@@ -1491,5 +1504,804 @@ export const postureRouter = router({
     .query(({ input }) => {
       const { measurementValue, normalRangeMin, normalRangeMax, unit } = input;
       return calculateSeverity(measurementValue, normalRangeMin, normalRangeMax, unit);
+    }),
+
+  // ============================================
+  // POSTURE COMPARISON REPORTS (US-214)
+  // ============================================
+
+  // Generate comparison report between two assessments
+  generateReport: protectedProcedure
+    .input(
+      z.object({
+        previousAssessmentId: z.string(),
+        currentAssessmentId: z.string(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { previousAssessmentId, currentAssessmentId } = input;
+
+      // Fetch both assessments with all related data
+      const [previousAssessment, currentAssessment] = await Promise.all([
+        ctx.prisma.postureAssessment.findFirst({
+          where: {
+            id: previousAssessmentId,
+            organizationId: ctx.user.organizationId,
+          },
+          include: {
+            images: {
+              include: {
+                landmarks: true,
+              },
+            },
+            deviations: true,
+            patient: {
+              include: {
+                demographics: true,
+              },
+            },
+          },
+        }),
+        ctx.prisma.postureAssessment.findFirst({
+          where: {
+            id: currentAssessmentId,
+            organizationId: ctx.user.organizationId,
+          },
+          include: {
+            images: {
+              include: {
+                landmarks: true,
+              },
+            },
+            deviations: true,
+            patient: {
+              include: {
+                demographics: true,
+              },
+            },
+          },
+        }),
+      ]);
+
+      if (!previousAssessment || !currentAssessment) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'One or both assessments not found',
+        });
+      }
+
+      if (previousAssessment.patientId !== currentAssessment.patientId) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Assessments must belong to the same patient',
+        });
+      }
+
+      // Ensure previous is actually earlier than current
+      if (previousAssessment.assessmentDate > currentAssessment.assessmentDate) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Previous assessment must be earlier than current assessment',
+        });
+      }
+
+      // Calculate days between assessments
+      const daysBetween = Math.round(
+        (currentAssessment.assessmentDate.getTime() - previousAssessment.assessmentDate.getTime()) /
+          (1000 * 60 * 60 * 24)
+      );
+
+      // Build view comparisons
+      const allViews: Array<'ANTERIOR' | 'POSTERIOR' | 'LATERAL_LEFT' | 'LATERAL_RIGHT'> = [
+        'ANTERIOR',
+        'POSTERIOR',
+        'LATERAL_LEFT',
+        'LATERAL_RIGHT',
+      ];
+
+      const viewComparisons: ViewComparison[] = allViews.map((view) => {
+        const prevImage = previousAssessment.images.find((img) => img.view === view);
+        const currImage = currentAssessment.images.find((img) => img.view === view);
+
+        // Get deviations for this view (approximate by matching deviation types to view)
+        const viewDeviationTypes: string[] = Object.entries(DEVIATION_TYPES)
+          .filter(([, def]) => (def.views as readonly string[]).includes(view))
+          .map(([, def]) => def.id);
+
+        const prevDeviations = previousAssessment.deviations.filter((d) =>
+          viewDeviationTypes.includes(d.deviationType)
+        );
+        const currDeviations = currentAssessment.deviations.filter((d) =>
+          viewDeviationTypes.includes(d.deviationType)
+        );
+
+        // Convert to DeviationMeasurement format for comparison
+        const prevDevMeasurements: DeviationMeasurement[] = prevDeviations.map((d) => ({
+          deviationType: d.deviationType,
+          name: d.description || d.deviationType,
+          description: d.description || '',
+          measurementValue: d.measurementValue || 0,
+          measurementUnit: d.measurementUnit || '',
+          normalRangeMin: d.normalRangeMin || 0,
+          normalRangeMax: d.normalRangeMax || 0,
+          deviationAmount: d.deviationAmount || 0,
+          severity: d.severity as SeverityLevel,
+          direction: d.direction || undefined,
+          clinicalSignificance: '',
+          landmarks: [],
+          view,
+          notes: d.notes || undefined,
+        }));
+
+        const currDevMeasurements: DeviationMeasurement[] = currDeviations.map((d) => ({
+          deviationType: d.deviationType,
+          name: d.description || d.deviationType,
+          description: d.description || '',
+          measurementValue: d.measurementValue || 0,
+          measurementUnit: d.measurementUnit || '',
+          normalRangeMin: d.normalRangeMin || 0,
+          normalRangeMax: d.normalRangeMax || 0,
+          deviationAmount: d.deviationAmount || 0,
+          severity: d.severity as SeverityLevel,
+          direction: d.direction || undefined,
+          clinicalSignificance: '',
+          landmarks: [],
+          view,
+          notes: d.notes || undefined,
+        }));
+
+        const deviationComparisons = compareDeviations(prevDevMeasurements, currDevMeasurements, view);
+
+        return {
+          view,
+          previousImage: prevImage
+            ? {
+                id: prevImage.id,
+                view: prevImage.view as 'ANTERIOR' | 'POSTERIOR' | 'LATERAL_LEFT' | 'LATERAL_RIGHT',
+                imageUrl: prevImage.imageUrl,
+                thumbnailUrl: prevImage.thumbnailUrl || undefined,
+                landmarks: prevImage.landmarks.map((l) => ({
+                  name: l.name,
+                  x: l.x,
+                  y: l.y,
+                  confidence: l.confidence ?? 0,
+                })),
+              }
+            : null,
+          currentImage: currImage
+            ? {
+                id: currImage.id,
+                view: currImage.view as 'ANTERIOR' | 'POSTERIOR' | 'LATERAL_LEFT' | 'LATERAL_RIGHT',
+                imageUrl: currImage.imageUrl,
+                thumbnailUrl: currImage.thumbnailUrl || undefined,
+                landmarks: currImage.landmarks.map((l) => ({
+                  name: l.name,
+                  x: l.x,
+                  y: l.y,
+                  confidence: l.confidence ?? 0,
+                })),
+              }
+            : null,
+          deviations: deviationComparisons,
+        };
+      });
+
+      // Calculate overall statistics
+      const allComparisons = viewComparisons.flatMap((vc) => vc.deviations);
+      const improvementScore = calculateImprovementScore(allComparisons);
+
+      const severityOrder: SeverityLevel[] = ['MINIMAL', 'MILD', 'MODERATE', 'SEVERE', 'EXTREME'];
+      const prevOverallSeverity = previousAssessment.deviations.reduce<SeverityLevel>((highest, dev) => {
+        const currentIndex = severityOrder.indexOf(dev.severity as SeverityLevel);
+        const highestIndex = severityOrder.indexOf(highest);
+        return currentIndex > highestIndex ? (dev.severity as SeverityLevel) : highest;
+      }, 'MINIMAL');
+
+      const currOverallSeverity = currentAssessment.deviations.reduce<SeverityLevel>((highest, dev) => {
+        const currentIndex = severityOrder.indexOf(dev.severity as SeverityLevel);
+        const highestIndex = severityOrder.indexOf(highest);
+        return currentIndex > highestIndex ? (dev.severity as SeverityLevel) : highest;
+      }, 'MINIMAL');
+
+      const summary = generateProgressSummary(improvementScore, allComparisons, daysBetween);
+      const recommendations = generateComparisonRecommendations(allComparisons, improvementScore);
+
+      // Build assessment summaries
+      const prevSummary: PostureAssessmentSummary = {
+        id: previousAssessment.id,
+        date: previousAssessment.assessmentDate,
+        patientId: previousAssessment.patientId,
+        views: previousAssessment.images.map((img) => img.view as 'ANTERIOR' | 'POSTERIOR' | 'LATERAL_LEFT' | 'LATERAL_RIGHT'),
+        imageCount: previousAssessment.images.length,
+        deviationCount: previousAssessment.deviations.length,
+        overallSeverity: prevOverallSeverity,
+        isComplete: previousAssessment.isComplete,
+      };
+
+      const currSummary: PostureAssessmentSummary = {
+        id: currentAssessment.id,
+        date: currentAssessment.assessmentDate,
+        patientId: currentAssessment.patientId,
+        views: currentAssessment.images.map((img) => img.view as 'ANTERIOR' | 'POSTERIOR' | 'LATERAL_LEFT' | 'LATERAL_RIGHT'),
+        imageCount: currentAssessment.images.length,
+        deviationCount: currentAssessment.deviations.length,
+        overallSeverity: currOverallSeverity,
+        isComplete: currentAssessment.isComplete,
+      };
+
+      const comparisonResult: ComparisonResult = {
+        previousAssessment: prevSummary,
+        currentAssessment: currSummary,
+        daysBetween,
+        viewComparisons,
+        overallProgress: {
+          totalDeviations: {
+            previous: previousAssessment.deviations.length,
+            current: currentAssessment.deviations.length,
+          },
+          significantDeviations: {
+            previous: previousAssessment.deviations.filter((d) => d.severity !== 'MINIMAL').length,
+            current: currentAssessment.deviations.filter((d) => d.severity !== 'MINIMAL').length,
+          },
+          overallSeverity: {
+            previous: prevOverallSeverity,
+            current: currOverallSeverity,
+          },
+          improvementScore,
+          summary,
+        },
+        recommendations,
+      };
+
+      return comparisonResult;
+    }),
+
+  // Generate PDF-ready comparison report
+  generateComparisonReportPDF: protectedProcedure
+    .input(
+      z.object({
+        previousAssessmentId: z.string(),
+        currentAssessmentId: z.string(),
+        treatmentGoals: z
+          .array(
+            z.object({
+              goal: z.string(),
+              baseline: z.string(),
+              target: z.string(),
+              current: z.string(),
+              progress: z.number(),
+            })
+          )
+          .optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { previousAssessmentId, currentAssessmentId, treatmentGoals } = input;
+
+      // Fetch both assessments with all related data
+      const [previousAssessment, currentAssessment, organization] = await Promise.all([
+        ctx.prisma.postureAssessment.findFirst({
+          where: {
+            id: previousAssessmentId,
+            organizationId: ctx.user.organizationId,
+          },
+          include: {
+            images: {
+              include: {
+                landmarks: true,
+              },
+            },
+            deviations: true,
+            patient: {
+              include: {
+                demographics: true,
+              },
+            },
+          },
+        }),
+        ctx.prisma.postureAssessment.findFirst({
+          where: {
+            id: currentAssessmentId,
+            organizationId: ctx.user.organizationId,
+          },
+          include: {
+            images: {
+              include: {
+                landmarks: true,
+              },
+            },
+            deviations: true,
+            patient: {
+              include: {
+                demographics: true,
+              },
+            },
+          },
+        }),
+        ctx.prisma.organization.findUnique({
+          where: { id: ctx.user.organizationId },
+        }),
+      ]);
+
+      if (!previousAssessment || !currentAssessment) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'One or both assessments not found',
+        });
+      }
+
+      // Generate the comparison result first
+      const daysBetween = Math.round(
+        (currentAssessment.assessmentDate.getTime() - previousAssessment.assessmentDate.getTime()) /
+          (1000 * 60 * 60 * 24)
+      );
+
+      const allViews: Array<'ANTERIOR' | 'POSTERIOR' | 'LATERAL_LEFT' | 'LATERAL_RIGHT'> = [
+        'ANTERIOR',
+        'POSTERIOR',
+        'LATERAL_LEFT',
+        'LATERAL_RIGHT',
+      ];
+
+      const viewComparisons: ViewComparison[] = allViews.map((view) => {
+        const prevImage = previousAssessment.images.find((img) => img.view === view);
+        const currImage = currentAssessment.images.find((img) => img.view === view);
+
+        const viewDeviationTypes: string[] = Object.entries(DEVIATION_TYPES)
+          .filter(([, def]) => (def.views as readonly string[]).includes(view))
+          .map(([, def]) => def.id);
+
+        const prevDeviations = previousAssessment.deviations.filter((d) =>
+          viewDeviationTypes.includes(d.deviationType)
+        );
+        const currDeviations = currentAssessment.deviations.filter((d) =>
+          viewDeviationTypes.includes(d.deviationType)
+        );
+
+        const prevDevMeasurements: DeviationMeasurement[] = prevDeviations.map((d) => ({
+          deviationType: d.deviationType,
+          name: d.description || d.deviationType,
+          description: d.description || '',
+          measurementValue: d.measurementValue || 0,
+          measurementUnit: d.measurementUnit || '',
+          normalRangeMin: d.normalRangeMin || 0,
+          normalRangeMax: d.normalRangeMax || 0,
+          deviationAmount: d.deviationAmount || 0,
+          severity: d.severity as SeverityLevel,
+          direction: d.direction || undefined,
+          clinicalSignificance: '',
+          landmarks: [],
+          view,
+          notes: d.notes || undefined,
+        }));
+
+        const currDevMeasurements: DeviationMeasurement[] = currDeviations.map((d) => ({
+          deviationType: d.deviationType,
+          name: d.description || d.deviationType,
+          description: d.description || '',
+          measurementValue: d.measurementValue || 0,
+          measurementUnit: d.measurementUnit || '',
+          normalRangeMin: d.normalRangeMin || 0,
+          normalRangeMax: d.normalRangeMax || 0,
+          deviationAmount: d.deviationAmount || 0,
+          severity: d.severity as SeverityLevel,
+          direction: d.direction || undefined,
+          clinicalSignificance: '',
+          landmarks: [],
+          view,
+          notes: d.notes || undefined,
+        }));
+
+        const deviationComparisons = compareDeviations(prevDevMeasurements, currDevMeasurements, view);
+
+        return {
+          view,
+          previousImage: prevImage
+            ? {
+                id: prevImage.id,
+                view: prevImage.view as 'ANTERIOR' | 'POSTERIOR' | 'LATERAL_LEFT' | 'LATERAL_RIGHT',
+                imageUrl: prevImage.imageUrl,
+                thumbnailUrl: prevImage.thumbnailUrl || undefined,
+                landmarks: prevImage.landmarks.map((l) => ({
+                  name: l.name,
+                  x: l.x,
+                  y: l.y,
+                  confidence: l.confidence ?? 0,
+                })),
+              }
+            : null,
+          currentImage: currImage
+            ? {
+                id: currImage.id,
+                view: currImage.view as 'ANTERIOR' | 'POSTERIOR' | 'LATERAL_LEFT' | 'LATERAL_RIGHT',
+                imageUrl: currImage.imageUrl,
+                thumbnailUrl: currImage.thumbnailUrl || undefined,
+                landmarks: currImage.landmarks.map((l) => ({
+                  name: l.name,
+                  x: l.x,
+                  y: l.y,
+                  confidence: l.confidence ?? 0,
+                })),
+              }
+            : null,
+          deviations: deviationComparisons,
+        };
+      });
+
+      const allComparisons = viewComparisons.flatMap((vc) => vc.deviations);
+      const improvementScore = calculateImprovementScore(allComparisons);
+
+      const severityOrder: SeverityLevel[] = ['MINIMAL', 'MILD', 'MODERATE', 'SEVERE', 'EXTREME'];
+      const prevOverallSeverity = previousAssessment.deviations.reduce<SeverityLevel>((highest, dev) => {
+        const currentIndex = severityOrder.indexOf(dev.severity as SeverityLevel);
+        const highestIndex = severityOrder.indexOf(highest);
+        return currentIndex > highestIndex ? (dev.severity as SeverityLevel) : highest;
+      }, 'MINIMAL');
+
+      const currOverallSeverity = currentAssessment.deviations.reduce<SeverityLevel>((highest, dev) => {
+        const currentIndex = severityOrder.indexOf(dev.severity as SeverityLevel);
+        const highestIndex = severityOrder.indexOf(highest);
+        return currentIndex > highestIndex ? (dev.severity as SeverityLevel) : highest;
+      }, 'MINIMAL');
+
+      const summary = generateProgressSummary(improvementScore, allComparisons, daysBetween);
+      const recommendations = generateComparisonRecommendations(allComparisons, improvementScore);
+
+      const prevSummary: PostureAssessmentSummary = {
+        id: previousAssessment.id,
+        date: previousAssessment.assessmentDate,
+        patientId: previousAssessment.patientId,
+        views: previousAssessment.images.map((img) => img.view as 'ANTERIOR' | 'POSTERIOR' | 'LATERAL_LEFT' | 'LATERAL_RIGHT'),
+        imageCount: previousAssessment.images.length,
+        deviationCount: previousAssessment.deviations.length,
+        overallSeverity: prevOverallSeverity,
+        isComplete: previousAssessment.isComplete,
+      };
+
+      const currSummary: PostureAssessmentSummary = {
+        id: currentAssessment.id,
+        date: currentAssessment.assessmentDate,
+        patientId: currentAssessment.patientId,
+        views: currentAssessment.images.map((img) => img.view as 'ANTERIOR' | 'POSTERIOR' | 'LATERAL_LEFT' | 'LATERAL_RIGHT'),
+        imageCount: currentAssessment.images.length,
+        deviationCount: currentAssessment.deviations.length,
+        overallSeverity: currOverallSeverity,
+        isComplete: currentAssessment.isComplete,
+      };
+
+      const comparisonResult: ComparisonResult = {
+        previousAssessment: prevSummary,
+        currentAssessment: currSummary,
+        daysBetween,
+        viewComparisons,
+        overallProgress: {
+          totalDeviations: {
+            previous: previousAssessment.deviations.length,
+            current: currentAssessment.deviations.length,
+          },
+          significantDeviations: {
+            previous: previousAssessment.deviations.filter((d) => d.severity !== 'MINIMAL').length,
+            current: currentAssessment.deviations.filter((d) => d.severity !== 'MINIMAL').length,
+          },
+          overallSeverity: {
+            previous: prevOverallSeverity,
+            current: currOverallSeverity,
+          },
+          improvementScore,
+          summary,
+        },
+        recommendations,
+      };
+
+      // Build patient info
+      const patient = currentAssessment.patient;
+      const patientName = patient.demographics
+        ? `${patient.demographics.firstName} ${patient.demographics.lastName}`
+        : `Patient ${patient.mrn}`;
+
+      const patientInfo = {
+        name: patientName,
+        mrn: patient.mrn,
+        dateOfBirth: patient.demographics?.dateOfBirth
+          ? new Date(patient.demographics.dateOfBirth).toLocaleDateString()
+          : undefined,
+      };
+
+      const practitionerInfo = {
+        name: `${ctx.user.firstName} ${ctx.user.lastName}`,
+        title: (ctx.user as { title?: string }).title,
+      };
+
+      const organizationInfo = {
+        name: organization?.name || 'ChiroFlow Practice',
+        address: undefined,
+        phone: undefined,
+      };
+
+      // Generate the formatted report
+      const report = generateComparisonReport(
+        comparisonResult,
+        patientInfo,
+        practitionerInfo,
+        organizationInfo,
+        treatmentGoals
+      );
+
+      // Generate HTML for PDF
+      const html = generateReportHTML(report);
+
+      return {
+        report,
+        html,
+      };
+    }),
+
+  // Compare assessments across time (trend analysis)
+  compareAssessmentHistory: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        deviationType: z.string().optional(),
+        limit: z.number().min(2).max(20).default(10),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { patientId, deviationType, limit } = input;
+
+      // Verify patient access
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      // Fetch assessments with deviations
+      const assessments = await ctx.prisma.postureAssessment.findMany({
+        where: {
+          patientId,
+          organizationId: ctx.user.organizationId,
+          isComplete: true,
+        },
+        orderBy: { assessmentDate: 'asc' },
+        take: limit,
+        include: {
+          deviations: deviationType
+            ? {
+                where: { deviationType },
+              }
+            : true,
+          images: {
+            select: {
+              id: true,
+              view: true,
+              thumbnailUrl: true,
+            },
+          },
+        },
+      });
+
+      if (assessments.length < 2) {
+        return {
+          success: false,
+          message: 'Need at least 2 completed assessments for comparison',
+          trends: [],
+          assessments: assessments.map((a) => ({
+            id: a.id,
+            date: a.assessmentDate,
+            deviationCount: a.deviations.length,
+          })),
+        };
+      }
+
+      // Build trend data for each deviation type
+      const deviationTypes = new Set<string>();
+      assessments.forEach((a) => {
+        a.deviations.forEach((d) => deviationTypes.add(d.deviationType));
+      });
+
+      const trends = Array.from(deviationTypes).map((dt) => {
+        const dataPoints = assessments
+          .map((a) => {
+            const deviation = a.deviations.find((d) => d.deviationType === dt);
+            if (!deviation) return null;
+            return {
+              date: a.assessmentDate,
+              value: deviation.measurementValue || 0,
+              severity: deviation.severity as SeverityLevel,
+            };
+          })
+          .filter((dp): dp is NonNullable<typeof dp> => dp !== null);
+
+        if (dataPoints.length < 2) {
+          return {
+            deviationType: dt,
+            name: DEVIATION_TYPES[dt.toUpperCase() as keyof typeof DEVIATION_TYPES]?.name || dt,
+            unit: DEVIATION_TYPES[dt.toUpperCase() as keyof typeof DEVIATION_TYPES]?.unit || '',
+            dataPoints,
+            trend: 'stable' as const,
+            changeFromFirst: 0,
+            changeFromPrevious: 0,
+          };
+        }
+
+        const first = dataPoints[0];
+        const last = dataPoints[dataPoints.length - 1];
+        const previous = dataPoints[dataPoints.length - 2];
+
+        const changeFromFirst = last.value - first.value;
+        const changeFromPrevious = last.value - previous.value;
+
+        // Determine trend
+        let trend: 'improving' | 'worsening' | 'stable';
+        if (Math.abs(changeFromFirst) < 1) {
+          trend = 'stable';
+        } else if (changeFromFirst < 0) {
+          trend = 'improving';
+        } else {
+          trend = 'worsening';
+        }
+
+        return {
+          deviationType: dt,
+          name: DEVIATION_TYPES[dt.toUpperCase() as keyof typeof DEVIATION_TYPES]?.name || dt,
+          unit: DEVIATION_TYPES[dt.toUpperCase() as keyof typeof DEVIATION_TYPES]?.unit || '',
+          dataPoints,
+          trend,
+          changeFromFirst: Math.round(changeFromFirst * 10) / 10,
+          changeFromPrevious: Math.round(changeFromPrevious * 10) / 10,
+        };
+      });
+
+      return {
+        success: true,
+        message: `Found ${trends.length} deviation trends across ${assessments.length} assessments`,
+        trends,
+        assessments: assessments.map((a) => ({
+          id: a.id,
+          date: a.assessmentDate,
+          deviationCount: a.deviations.length,
+          views: a.images.map((img) => img.view),
+        })),
+      };
+    }),
+
+  // Get overlay alignment data for side-by-side comparison
+  getOverlayAlignment: protectedProcedure
+    .input(
+      z.object({
+        previousImageId: z.string(),
+        currentImageId: z.string(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { previousImageId, currentImageId } = input;
+
+      const [previousImage, currentImage] = await Promise.all([
+        ctx.prisma.postureImage.findFirst({
+          where: {
+            id: previousImageId,
+            assessment: {
+              organizationId: ctx.user.organizationId,
+            },
+          },
+          include: {
+            landmarks: true,
+          },
+        }),
+        ctx.prisma.postureImage.findFirst({
+          where: {
+            id: currentImageId,
+            assessment: {
+              organizationId: ctx.user.organizationId,
+            },
+          },
+          include: {
+            landmarks: true,
+          },
+        }),
+      ]);
+
+      if (!previousImage || !currentImage) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'One or both images not found',
+        });
+      }
+
+      if (previousImage.view !== currentImage.view) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Images must be of the same view type for overlay comparison',
+        });
+      }
+
+      const previousLandmarks = previousImage.landmarks.map((l) => ({
+        name: l.name,
+        x: l.x,
+        y: l.y,
+      }));
+
+      const currentLandmarks = currentImage.landmarks.map((l) => ({
+        name: l.name,
+        x: l.x,
+        y: l.y,
+      }));
+
+      const alignment = calculateOverlayAlignment(previousLandmarks, currentLandmarks);
+
+      return {
+        previousImage: {
+          id: previousImage.id,
+          url: previousImage.imageUrl,
+          view: previousImage.view,
+        },
+        currentImage: {
+          id: currentImage.id,
+          url: currentImage.imageUrl,
+          view: currentImage.view,
+        },
+        alignment,
+        commonLandmarks: previousLandmarks.filter((pl) =>
+          currentLandmarks.some((cl) => cl.name === pl.name)
+        ).length,
+      };
+    }),
+
+  // List assessments available for comparison
+  listForComparison: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        excludeAssessmentId: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { patientId, excludeAssessmentId } = input;
+
+      const assessments = await ctx.prisma.postureAssessment.findMany({
+        where: {
+          patientId,
+          organizationId: ctx.user.organizationId,
+          isComplete: true,
+          ...(excludeAssessmentId ? { id: { not: excludeAssessmentId } } : {}),
+        },
+        orderBy: { assessmentDate: 'desc' },
+        select: {
+          id: true,
+          assessmentDate: true,
+          notes: true,
+          _count: {
+            select: {
+              images: true,
+              deviations: true,
+            },
+          },
+          images: {
+            select: {
+              view: true,
+              thumbnailUrl: true,
+            },
+            take: 4,
+          },
+        },
+      });
+
+      return assessments.map((a) => ({
+        id: a.id,
+        date: a.assessmentDate,
+        notes: a.notes,
+        imageCount: a._count.images,
+        deviationCount: a._count.deviations,
+        views: a.images.map((img) => img.view),
+        thumbnails: a.images.map((img) => img.thumbnailUrl).filter(Boolean),
+      }));
     }),
 });

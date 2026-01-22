@@ -424,3 +424,80 @@ Date: 2026-01-22
 --- Iteration 6 completed at 2026-01-22 ---
 Story: US-213 - Functional movement screen
 
+--- Iteration 6 completed at 2026-01-22 01:30:15 ---
+Story: US-213 - Functional movement screen
+
+## US-214: Posture comparison reports - COMPLETED
+Date: 2026-01-22
+
+### Changes Made:
+1. Created posture comparison service at `app/src/lib/services/postureComparison.ts`:
+   - ComparisonResult type for structured comparison data
+   - DeviationComparison type for individual deviation comparisons
+   - ViewComparison type for per-view image and deviation comparisons
+   - compareDeviationValues() - Compare two measurement values
+   - compareSeverity() - Compare severity levels
+   - compareDeviations() - Generate deviation comparisons between assessments
+   - calculateImprovementScore() - Calculate overall progress score (-100 to +100)
+   - generateProgressSummary() - Generate human-readable progress summary
+   - generateComparisonRecommendations() - Generate treatment recommendations
+   - calculateDeviationTrend() - Analyze trend across multiple assessments
+   - calculateOverlayAlignment() - Calculate image alignment for overlay mode
+   - generateComparisonReport() - Create structured report for export
+   - generateReportHTML() - Generate HTML for PDF export
+
+2. Added comparison tRPC procedures to posture router:
+   - posture.generateReport - Compare two assessments with full analysis
+   - posture.generateComparisonReportPDF - Generate PDF-ready HTML report
+   - posture.compareAssessmentHistory - Trend analysis across multiple assessments
+   - posture.getOverlayAlignment - Get alignment data for overlay comparison
+   - posture.listForComparison - List assessments available for comparison
+
+3. Created PostureComparison UI components at `app/src/components/posture/PostureComparison.tsx`:
+   - PostureComparison - Main comparison view component
+     - Grid/overlay view toggle
+     - Opacity slider for overlay mode
+     - View filter dropdown
+     - Export PDF button
+   - ProgressSummary - Display improvement score and statistics
+   - DeviationComparisonRow - Expandable row for individual comparisons
+   - ViewComparisonCard - Side-by-side or overlay image comparison
+   - TrendChart - Bar chart showing improved/stable/declined distribution
+   - RecommendationsCard - Treatment recommendations display
+   - AssessmentSelector - Dropdown for selecting assessments
+   - HistoryTrendView - Multi-assessment trend visualization
+
+4. Report features:
+   - Side-by-side image comparison
+   - Before/after overlay with opacity control
+   - Measurement change tracking with direction indicators
+   - Progress visualization with improvement score gauge
+   - Severity change badges
+   - Treatment recommendations based on changes
+   - PDF-ready HTML export with professional styling
+   - Treatment plan goal integration support
+
+5. Updated posture component exports in index.ts
+
+6. TypeScript compilation passes
+
+### Files Created:
+- app/src/lib/services/postureComparison.ts
+- app/src/components/posture/PostureComparison.tsx
+
+### Files Modified:
+- app/src/server/routers/posture.ts (added 5 comparison procedures)
+- app/src/components/posture/index.ts (exported comparison components)
+
+### Acceptance Criteria Met:
+- [x] posture.generateReport - Create comparison report
+- [x] Side-by-side image comparison
+- [x] Measurement change tracking
+- [x] Progress visualization charts (bar chart, gauge)
+- [x] Before/after overlay option (with opacity control)
+- [x] PDF export for patient (HTML-based for easy conversion)
+- [x] Integration with treatment plan goals (optional parameter)
+
+--- Iteration 7 completed at 2026-01-22 ---
+Story: US-214 - Posture comparison reports
+
