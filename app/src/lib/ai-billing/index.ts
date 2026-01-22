@@ -17,6 +17,7 @@ export { ClaimSubmitter } from './claim-submitter';
 export { DenialAnalyzer } from './denial-analyzer';
 export { AutomatedAppealGenerator } from './automated-appeal-generator';
 export { ClaimFollowUpAgent } from './claim-follow-up-agent';
+export { SmartPaymentPoster } from './smart-payment-poster';
 
 // Convenience type re-exports for common usage
 export type {
@@ -100,3 +101,23 @@ export type {
   EscalationCriteria,
   EscalatedClaim,
 } from './claim-follow-up-agent';
+
+// Smart Payment Poster types (Epic 31: US-312)
+export type {
+  PostingStatus,
+  DiscrepancyType,
+  AdjustmentFlag,
+  ERAProcessInput,
+  ERAProcessOutput,
+  LinePostingResult,
+  PostingDiscrepancy,
+  PaymentMatchInput as SmartPaymentMatchInput,
+  PaymentMatchOutput as SmartPaymentMatchOutput,
+  MatchCandidate,
+  PartialPaymentResult,
+  AdjustmentAnalysis,
+  AdjustmentCodeDetail,
+  SecondaryClaimResult,
+  PatientBalanceUpdate,
+  PostingMetrics,
+} from './smart-payment-poster';

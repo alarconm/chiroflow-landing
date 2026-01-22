@@ -20,6 +20,7 @@ import {
   DenialAnalyzer,
   AutomatedAppealGenerator,
   ClaimFollowUpAgent,
+  SmartPaymentPoster,
 } from '@/lib/ai-billing';
 
 // ============================================
@@ -2584,6 +2585,338 @@ export const aiBillingRouter = router({
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Failed to get claims needing follow-up',
+          cause: error,
+        });
+      }
+    }),
+
+  // ============================================
+  // US-312: Smart Payment Posting
+  // ============================================
+
+  /**
+   * Process ERA and auto-post payments
+   */
+  processERA: billerProcedure
+    .input(
+      z.object({
+        remittanceId: z.string(),
+        autoPost: z.boolean().default(true),
+        reviewThreshold: z.number().min(0).max(1).default(0.85),
+        maxAdjustmentPercent: z.number().min(0).max(100).default(50),
+        skipAlreadyPosted: z.boolean().default(true),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const { SmartPaymentPoster } = await import('@/lib/ai-billing');
+        const poster = new SmartPaymentPoster(ctx.prisma, ctx.user.organizationId);
+        const result = await poster.processERA(input);
+
+        // Audit log
+        await ctx.prisma.aIBillingAudit.create({
+          data: {
+            action: 'PROCESS_ERA',
+            entityType: 'Remittance',
+            entityId: input.remittanceId,
+            decision: `Posted ${result.posted} of ${result.totalLines} payments`,
+            confidence: result.posted / Math.max(result.totalLines, 1),
+            reasoning: `Auto-post: ${input.autoPost}, Threshold: ${input.reviewThreshold}`,
+            inputData: input,
+            outputData: {
+              posted: result.posted,
+              partiallyPosted: result.partiallyPosted,
+              failed: result.failed,
+              reviewRequired: result.reviewRequired,
+              totalPostedAmount: result.totalPostedAmount,
+              discrepancyCount: result.discrepancies.length,
+            },
+            processingTimeMs: result.processingTimeMs,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+
+        await auditLog('AI_BILLING_PROCESS_ERA', 'Remittance', {
+          entityId: input.remittanceId,
+          changes: {
+            action: 'process_era',
+            posted: result.posted,
+            totalLines: result.totalLines,
+            totalPostedAmount: result.totalPostedAmount,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return result;
+      } catch (error) {
+        console.error('ERA processing failed:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to process ERA',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Smart match payment to claims (US-312)
+   */
+  smartMatchPayment: billerProcedure
+    .input(
+      z.object({
+        remittanceLineId: z.string().optional(),
+        paymentAmount: z.number(),
+        patientName: z.string().optional(),
+        patientAccountNumber: z.string().optional(),
+        serviceDate: z.date().optional(),
+        cptCode: z.string().optional(),
+        payerClaimNumber: z.string().optional(),
+        checkNumber: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const { SmartPaymentPoster } = await import('@/lib/ai-billing');
+        const poster = new SmartPaymentPoster(ctx.prisma, ctx.user.organizationId);
+        const result = await poster.matchPayment(input);
+
+        await auditLog('AI_BILLING_MATCH_PAYMENT', 'Payment', {
+          entityId: input.remittanceLineId || 'manual',
+          changes: {
+            action: 'match_payment',
+            matchCount: result.matches.length,
+            matchConfidence: result.matchConfidence,
+            requiresReview: result.requiresManualReview,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return result;
+      } catch (error) {
+        console.error('Payment matching failed:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to match payment',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Manual post payment with user override
+   */
+  manualPostPayment: billerProcedure
+    .input(
+      z.object({
+        lineItemId: z.string(),
+        claimId: z.string(),
+        chargeId: z.string(),
+        overrideAmount: z.number().optional(),
+        adjustmentOverride: z
+          .array(
+            z.object({
+              code: z.string(),
+              reasonCode: z.string(),
+              amount: z.number(),
+              description: z.string(),
+              isContractual: z.boolean(),
+              isPatientResponsibility: z.boolean(),
+            })
+          )
+          .optional(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const { SmartPaymentPoster } = await import('@/lib/ai-billing');
+        const poster = new SmartPaymentPoster(ctx.prisma, ctx.user.organizationId);
+        const result = await poster.manualPostPayment(input.lineItemId, input.claimId, input.chargeId, {
+          overrideAmount: input.overrideAmount,
+          adjustmentOverride: input.adjustmentOverride,
+          notes: input.notes,
+        });
+
+        await auditLog('AI_BILLING_MANUAL_POST', 'Payment', {
+          entityId: input.lineItemId,
+          changes: {
+            action: 'manual_post',
+            claimId: input.claimId,
+            chargeId: input.chargeId,
+            postedAmount: result.postedAmount,
+            status: result.status,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return result;
+      } catch (error) {
+        console.error('Manual payment posting failed:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to post payment manually',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Get unposted remittance line items
+   */
+  getUnpostedLineItems: billerProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(100).default(50),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      try {
+        const { SmartPaymentPoster } = await import('@/lib/ai-billing');
+        const poster = new SmartPaymentPoster(ctx.prisma, ctx.user.organizationId);
+        return poster.getUnpostedLineItems(input.limit);
+      } catch (error) {
+        console.error('Failed to get unposted line items:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to get unposted line items',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Get posting metrics for reporting
+   */
+  getPostingMetrics: billerProcedure
+    .input(
+      z.object({
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      try {
+        const { SmartPaymentPoster } = await import('@/lib/ai-billing');
+        const poster = new SmartPaymentPoster(ctx.prisma, ctx.user.organizationId);
+        return poster.getPostingMetrics(input.dateFrom, input.dateTo);
+      } catch (error) {
+        console.error('Failed to get posting metrics:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to get posting metrics',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Handle partial payment for a charge
+   */
+  handlePartialPayment: billerProcedure
+    .input(
+      z.object({
+        chargeId: z.string(),
+        paidAmount: z.number(),
+        adjustments: z.array(
+          z.object({
+            code: z.string(),
+            reasonCode: z.string(),
+            amount: z.number(),
+            description: z.string(),
+            isContractual: z.boolean(),
+            isPatientResponsibility: z.boolean(),
+          })
+        ),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const { SmartPaymentPoster } = await import('@/lib/ai-billing');
+        const poster = new SmartPaymentPoster(ctx.prisma, ctx.user.organizationId);
+        const result = await poster.handlePartialPayment(
+          input.chargeId,
+          input.paidAmount,
+          input.adjustments
+        );
+
+        await auditLog('AI_BILLING_PARTIAL_PAYMENT', 'Charge', {
+          entityId: input.chargeId,
+          changes: {
+            action: 'handle_partial_payment',
+            paidAmount: input.paidAmount,
+            remainingBalance: result.remainingBalance,
+            isPaidInFull: result.isPaidInFull,
+            secondaryClaimNeeded: result.secondaryClaimNeeded,
+          },
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        });
+
+        return result;
+      } catch (error) {
+        console.error('Failed to handle partial payment:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to handle partial payment',
+          cause: error,
+        });
+      }
+    }),
+
+  /**
+   * Trigger secondary claim after primary payment
+   */
+  triggerSecondaryClaim: billerProcedure
+    .input(
+      z.object({
+        primaryClaimId: z.string(),
+        remittanceLineItemId: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        // Get remittance line item
+        const lineItem = await ctx.prisma.remittanceLineItem.findFirst({
+          where: {
+            id: input.remittanceLineItemId,
+            remittance: { organizationId: ctx.user.organizationId },
+          },
+        });
+
+        if (!lineItem) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Remittance line item not found',
+          });
+        }
+
+        const { SmartPaymentPoster } = await import('@/lib/ai-billing');
+        const poster = new SmartPaymentPoster(ctx.prisma, ctx.user.organizationId);
+        const result = await poster.triggerSecondaryClaim(input.primaryClaimId, lineItem);
+
+        if (result) {
+          await auditLog('AI_BILLING_SECONDARY_CLAIM', 'Claim', {
+            entityId: input.primaryClaimId,
+            changes: {
+              action: 'trigger_secondary_claim',
+              secondaryClaimId: result.secondaryClaimId,
+              primaryPaidAmount: result.primaryPaidAmount,
+              remainingBalance: result.remainingBalance,
+            },
+            userId: ctx.user.id,
+            organizationId: ctx.user.organizationId,
+          });
+        }
+
+        return result;
+      } catch (error) {
+        console.error('Failed to trigger secondary claim:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to trigger secondary claim',
           cause: error,
         });
       }

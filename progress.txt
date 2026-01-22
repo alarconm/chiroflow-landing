@@ -315,8 +315,95 @@ Implemented comprehensive claim follow-up automation system with automated statu
 - TypeScript compiles successfully for new files
 - Pre-existing TypeScript errors unrelated to this change
 
+### US-312 - Smart payment posting
+**Status**: COMPLETED
+**Date**: 2026-01-22
+
+**Implementation Summary**:
+Implemented comprehensive smart payment posting system with automated ERA processing, intelligent payment-to-claim matching, partial payment handling, adjustment code analysis, secondary claim triggering, and patient responsibility calculation.
+
+**Files Created**:
+- `app/src/lib/ai-billing/smart-payment-poster.ts` - New SmartPaymentPoster service class (~1470 lines)
+
+**Files Modified**:
+- `app/src/lib/ai-billing/index.ts` - Added SmartPaymentPoster exports and types
+- `app/src/server/routers/aiBilling.ts` - Added 7 new endpoints for smart payment posting
+- `app/src/lib/audit.ts` - Added AI_BILLING_PROCESS_ERA, AI_BILLING_MATCH_PAYMENT, AI_BILLING_MANUAL_POST, AI_BILLING_PARTIAL_PAYMENT, AI_BILLING_SECONDARY_CLAIM audit actions
+
+**SmartPaymentPoster Service Features**:
+1. `processERA()` - Main ERA processing with auto-post capability
+2. `processLineItem()` - Process individual remittance line items
+3. `matchPayment()` - Intelligent payment-to-claim matching with multiple criteria
+4. `handlePartialPayment()` - Handle partial payments and adjustments
+5. `analyzeAdjustments()` - Analyze CARC/RARC adjustment codes
+6. `triggerSecondaryClaim()` - Automatically trigger secondary insurance claims
+7. `calculatePatientResponsibility()` - Calculate patient responsibility from adjustments
+8. `updatePatientBalance()` - Update patient balance forward
+9. `getPostingMetrics()` - Get posting metrics for reporting
+10. `getUnpostedLineItems()` - Get unposted remittance line items with suggested matches
+11. `manualPost()` - Manual posting with user override capability
+12. `postPayment()` - Internal method for posting payment records
+
+**Adjustment Code Analysis**:
+- Contractual adjustment codes (45, 253, A2, P1, P2)
+- Patient responsibility codes (1, 2, 3) - Deductible, Coinsurance, Copay
+- Code-specific adjustment reasoning and flags
+- Underpayment detection for codes 45, 253
+
+**Matching Criteria**:
+- Patient name matching (Levenshtein distance)
+- Service date matching
+- CPT code matching
+- Payer claim number matching
+- Check/trace number matching
+- Amount tolerance matching (within $1 or 10%)
+
+**Posting Status Types**:
+- POSTED - Successfully posted
+- PARTIAL - Partial payment posted
+- PENDING_REVIEW - Requires manual review
+- FAILED - Posting failed
+- SKIPPED - Skipped per user request
+
+**Discrepancy Types**:
+- DUPLICATE_PAYMENT, OVERPAYMENT, UNDERPAYMENT
+- SERVICE_DATE_MISMATCH, CPT_MISMATCH
+- PATIENT_MISMATCH, AMOUNT_MISMATCH
+- CLAIM_NOT_FOUND, ALREADY_POSTED
+- CONTRACTUAL_VARIANCE
+
+**New tRPC Endpoints**:
+1. `processERA` - Process ERA and auto-post payments (mutation)
+2. `smartMatchPayment` - Match payment to claims intelligently (mutation)
+3. `manualPostPayment` - Manual post payment with user override (mutation)
+4. `getUnpostedLineItems` - Get unposted remittance line items (query)
+5. `getPostingMetrics` - Get posting metrics for reporting (query)
+6. `handlePartialPayment` - Handle partial payment for a charge (mutation)
+7. `triggerSecondaryClaim` - Trigger secondary claim after primary payment (mutation)
+
+**Type Exports Added**:
+- PostingStatus, DiscrepancyType, AdjustmentFlag
+- ERAProcessInput, ERAProcessOutput, LinePostingResult
+- PostingDiscrepancy, SmartPaymentMatchInput, SmartPaymentMatchOutput
+- MatchCandidate, PartialPaymentResult, AdjustmentAnalysis
+- AdjustmentCodeDetail, SecondaryClaimResult, PatientBalanceUpdate
+- PostingMetrics
+
+**Acceptance Criteria Met**:
+- ✅ aiBilling.processERA - Auto-post from ERA (via processERA endpoint)
+- ✅ Intelligent payment-to-claim matching (via matchPayment with multi-criteria)
+- ✅ Handle partial payments and adjustments (via handlePartialPayment)
+- ✅ Identify posting discrepancies (via identifyDiscrepancy with 10+ types)
+- ✅ Secondary claim triggering (via triggerSecondaryClaim with patient insurance lookup)
+- ✅ Patient responsibility calculation (via calculatePatientResponsibility)
+- ✅ Balance forward tracking (via updatePatientBalance)
+- ✅ Posting metrics for reporting (via getPostingMetrics)
+
+**Validation**:
+- TypeScript compiles successfully for new files
+- Pre-existing TypeScript errors unrelated to this change
+
 ## Next Stories to Implement
-- US-312 - Smart payment posting
 - US-313 - Billing optimization recommendations
 - US-314 - AI billing agent dashboard
 --- Iteration 1 completed at 2026-01-22 10:01:45 ---
@@ -336,4 +423,10 @@ Story: US-310 - Automated appeal generation
 
 --- Iteration 5 completed at 2026-01-22 ---
 Story: US-311 - Claim follow-up automation
+
+--- Iteration 5 completed at 2026-01-22 10:45:52 ---
+Story: US-311 - Claim follow-up automation
+
+--- Iteration 6 completed at 2026-01-22 ---
+Story: US-312 - Smart payment posting
 
