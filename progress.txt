@@ -101,3 +101,46 @@ All acceptance criteria met:
 --- Iteration 2 completed at 2026-01-22 ---
 Story: US-265 - Push notification system
 
+--- Iteration 2 completed at 2026-01-22 07:36:53 ---
+Story: US-265 - Push notification system
+
+2026-01-22: US-266 - Provider mobile app - schedule
+---------------------------------------------------
+Implemented provider mobile schedule view for Epic 27 (Mobile Applications).
+
+Files Created:
+- app/src/server/routers/mobileSchedule.ts - tRPC router for mobile schedule
+- app/src/components/mobile-schedule/MobileTodaySchedule.tsx - Today's schedule component
+- app/src/components/mobile-schedule/MobileWeekView.tsx - Week calendar view component
+- app/src/components/mobile-schedule/MobilePatientSummary.tsx - Patient summary component
+- app/src/components/mobile-schedule/index.ts - Component exports
+
+Files Modified:
+- app/src/server/routers/index.ts (added mobileScheduleRouter)
+
+Key Features:
+1. getTodaySchedule - Today's schedule with stats, next/current appointment
+2. getScheduleRange - Week/day calendar view with appointments and blocks
+3. quickCheckIn - One-tap patient check-in from mobile
+4. getPatientSummary - Patient overview with demographics, insurance, treatment plans
+5. updateAppointmentNotes - Update appointment notes from mobile
+6. getScheduleChanges - Get schedule changes since timestamp (for push notifications)
+7. updateStatus - Update appointment status (confirm, check-in, complete, cancel)
+8. refreshSchedule - Pull-to-refresh with serverTimestamp for caching
+
+Mobile-Optimized Components:
+- MobileTodaySchedule: Today's view with stats, quick actions, appointment cards
+- MobileWeekView: Week calendar with day summaries, tap to expand
+- MobilePatientSummary: Quick patient overview with treatment plans, visit history
+
+All acceptance criteria met:
+✓ mobileSchedule.getTodaySchedule - Get today's appointments
+✓ mobileSchedule.getScheduleRange - Week/day view data
+✓ mobileSchedule.quickCheckIn - Quick check-in
+✓ mobileSchedule.getPatientSummary - Patient summary view
+✓ Mobile-optimized schedule components
+✓ Pull-to-refresh with serverTimestamp
+✓ Push notification support (schedule changes endpoint)
+--- Iteration 3 completed at 2026-01-22 ---
+Story: US-266 - Provider mobile app - schedule
+

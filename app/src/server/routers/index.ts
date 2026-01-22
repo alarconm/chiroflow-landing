@@ -90,6 +90,7 @@ import { accessControlRouter } from './accessControl';
 // Mobile Applications (Epic 27)
 import { mobileRouter } from './mobile';
 import { notificationsRouter } from './notifications';
+import { mobileScheduleRouter } from './mobileSchedule';
 
 export const appRouter = router({
   auth: authRouter,
@@ -183,6 +184,7 @@ export const appRouter = router({
   // Mobile Applications (Epic 27)
   mobile: mobileRouter,
   notifications: notificationsRouter,
+  mobileSchedule: mobileScheduleRouter,
 });
 
 
