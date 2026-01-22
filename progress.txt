@@ -523,3 +523,97 @@ All acceptance criteria met. TypeScript compiles without errors.
 --- Iteration 6 completed at 2026-01-22 ---
 Story: US-106 - Report scheduling and delivery
 
+--- Iteration 6 completed at 2026-01-21 23:33:37 ---
+Story: US-106 - Report scheduling and delivery
+
+### US-107: Analytics dashboard - COMPLETED
+Date: 2026-01-22
+Status: PASSED
+
+Implementation:
+1. Created AnalyticsDashboard.tsx component with comprehensive analytics features:
+
+   a. KPI Cards (daily collections, appointments, new patients):
+      - Reusable KPICard component with icon, value, trend indicator
+      - Support for currency, number, and percentage formats
+      - Progress to target visualization with Progress component
+      - Trend calculation showing % change vs previous period
+      - Color-coded gradient backgrounds per metric
+
+   b. Revenue Trend Charts:
+      - RevenueTrendChart component using Recharts AreaChart
+      - Dual-series chart showing Charges vs Collections over time
+      - Gradient fills for visual appeal
+      - Responsive container adapts to screen size
+      - Custom tooltips with formatted currency values
+      - Date-formatted x-axis with readable labels
+
+   c. Appointment Utilization Gauge:
+      - UtilizationGauge component using PieChart as semicircle gauge
+      - Visual representation of scheduled vs available slots
+      - Color-coded by performance (green/blue/amber/red)
+      - Target comparison with on-target indicator
+      - Summary cards showing available, scheduled, open counts
+
+   d. Claims Status Pie Chart:
+      - ClaimsStatusChart component with donut chart
+      - Status-specific colors (Paid=green, Pending=amber, etc.)
+      - Custom labels with status and percentage
+      - Legend with color indicators and counts
+      - Total claims summary
+
+   e. Provider Comparison Bar Charts:
+      - ProviderComparisonChart component using horizontal BarChart
+      - Metric selector dropdown (Collections, Charges, Visits)
+      - Responsive horizontal bar layout
+      - Proper axis formatting based on metric type
+      - Tooltips with formatted values
+
+   f. Date Range Picker:
+      - Integrated DateRangePicker component for all widgets
+      - Default 30-day range
+      - Affects all dashboard queries
+      - Consistent date handling across components
+
+   g. Dashboard Customization:
+      - WidgetConfigDialog component for widget arrangement
+      - Toggle visibility for each widget type
+      - Reset to default layout option
+      - Persisted to localStorage for user preferences
+      - Grip icon indicating drag capability (visual)
+
+2. Data Integration:
+   - Integrated with existing tRPC reporting procedures:
+     - reporting.getDashboard for real-time metrics
+     - reporting.getKPIs for KPI calculations
+     - reporting.getClaimsStatusSummary for claims chart
+     - reporting.getRevenueByProvider for provider comparison
+     - reporting.getDailyCollections for trend chart
+     - reporting.getProviderUtilization for utilization gauge
+   - Demo/fallback data for graceful degradation
+
+3. UI/UX Features:
+   - Loading skeletons for all components
+   - Refresh button with loading indicator
+   - Settings/customize button
+   - Responsive grid layouts (mobile-friendly)
+   - Consistent styling with brand colors (#053e67)
+   - Toast notifications for actions
+
+4. Added to ReportingDashboard:
+   - New "Analytics" tab as the first/default tab
+   - AnalyticsDashboard component integration
+   - Updated TabsList to accommodate new tab (9 tabs total)
+
+5. Component Exports:
+   - Added AnalyticsDashboard to reporting/index.ts exports
+
+Files Modified:
+- app/src/components/reporting/AnalyticsDashboard.tsx (new - 920+ lines)
+- app/src/components/reporting/ReportingDashboard.tsx (added tab and import)
+- app/src/components/reporting/index.ts (added export)
+
+All acceptance criteria met. TypeScript compiles without errors.
+--- Iteration 7 completed at 2026-01-22 ---
+Story: US-107 - Analytics dashboard
+

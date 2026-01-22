@@ -57,6 +57,7 @@ import { ARAgingReport } from './ARAgingReport';
 import { KPIDashboard } from './KPIDashboard';
 import { CustomReportBuilder } from './CustomReportBuilder';
 import { ReportScheduler } from './ReportScheduler';
+import { AnalyticsDashboard } from './AnalyticsDashboard';
 import { trpc } from '@/trpc/client';
 import { toast } from 'sonner';
 
@@ -103,7 +104,7 @@ const DEMO_MONTHLY_TRENDS = [
 ];
 
 export function ReportingDashboard() {
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('analytics');
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: new Date(new Date().setDate(new Date().getDate() - 30)),
     to: new Date(),
@@ -298,7 +299,11 @@ export function ReportingDashboard() {
 
       {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4 lg:grid-cols-8 bg-stone-100">
+        <TabsList className="grid w-full grid-cols-5 lg:grid-cols-9 bg-stone-100">
+          <TabsTrigger value="analytics" className="flex items-center gap-2 data-[state=active]:bg-blue-100 data-[state=active]:text-blue-900">
+            <BarChart3 className="h-4 w-4" />
+            <span className="hidden sm:inline">Analytics</span>
+          </TabsTrigger>
           <TabsTrigger value="overview" className="flex items-center gap-2 data-[state=active]:bg-blue-100 data-[state=active]:text-blue-900">
             <LayoutDashboard className="h-4 w-4" />
             <span className="hidden sm:inline">Overview</span>
@@ -332,6 +337,11 @@ export function ReportingDashboard() {
             <span className="hidden sm:inline">Saved</span>
           </TabsTrigger>
         </TabsList>
+
+        {/* Analytics Tab (US-107) */}
+        <TabsContent value="analytics" className="space-y-6 mt-6">
+          <AnalyticsDashboard />
+        </TabsContent>
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-6 mt-6">
