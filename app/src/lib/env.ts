@@ -35,6 +35,13 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
   GOOGLE_AI_API_KEY: z.string().optional(),
+
+  // Optional: Clearinghouse Integration
+  CLEARINGHOUSE_ENCRYPTION_KEY: z.string().min(32).optional(),
+  CLEARINGHOUSE_DEFAULT_PROVIDER: z
+    .enum(['MOCK', 'CHANGE_HEALTHCARE', 'TRIZETTO', 'AVAILITY', 'OFFICE_ALLY'])
+    .optional(),
+  CLEARINGHOUSE_USE_MOCK_IN_DEV: z.string().transform((v) => v === 'true').optional(),
 });
 
 // Parse and validate environment variables
@@ -60,6 +67,9 @@ function validateEnv() {
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     GOOGLE_AI_API_KEY: process.env.GOOGLE_AI_API_KEY,
+    CLEARINGHOUSE_ENCRYPTION_KEY: process.env.CLEARINGHOUSE_ENCRYPTION_KEY,
+    CLEARINGHOUSE_DEFAULT_PROVIDER: process.env.CLEARINGHOUSE_DEFAULT_PROVIDER,
+    CLEARINGHOUSE_USE_MOCK_IN_DEV: process.env.CLEARINGHOUSE_USE_MOCK_IN_DEV,
   });
 
   if (!result.success) {
@@ -108,3 +118,24 @@ export const getAIProvider = (): 'anthropic' | 'google' | 'openai' | 'mock' => {
   if (env.OPENAI_API_KEY) return 'openai';
   return 'mock';
 };
+
+// Helper to get clearinghouse provider based on environment
+export const getClearinghouseProvider = ():
+  | 'MOCK'
+  | 'CHANGE_HEALTHCARE'
+  | 'TRIZETTO'
+  | 'AVAILITY'
+  | 'OFFICE_ALLY' => {
+  // In development, optionally use mock provider
+  if (isDevelopment && env.CLEARINGHOUSE_USE_MOCK_IN_DEV) {
+    return 'MOCK';
+  }
+
+  // Use configured default provider, or fall back to MOCK
+  return env.CLEARINGHOUSE_DEFAULT_PROVIDER || 'MOCK';
+};
+
+// Helper to check if clearinghouse encryption is configured
+export const hasClearinghouseEncryption = Boolean(
+  env.CLEARINGHOUSE_ENCRYPTION_KEY || env.NEXTAUTH_SECRET
+);

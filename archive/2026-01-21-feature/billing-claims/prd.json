@@ -18,7 +18,7 @@
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-070",
@@ -32,7 +32,7 @@
         "Error handling and retry logic"
       ],
       "priority": 2,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-071",

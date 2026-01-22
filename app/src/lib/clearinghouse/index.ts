@@ -2,33 +2,136 @@
  * Epic 08: Clearinghouse Integration - Module Index
  *
  * Factory function and exports for clearinghouse provider management.
+ * Includes environment-based provider selection, credential encryption,
+ * and resilient API operations with retry logic.
  */
 
 import { ClearinghouseProvider } from '@prisma/client';
-import { IClearinghouseProvider, ClearinghouseConfigData } from './types';
+import { IClearinghouseProvider, ClearinghouseConfigData, ClearinghouseCredentials } from './types';
 import { MockClearinghouseProvider } from './mock-provider';
 import { ChangeHealthcareProvider } from './change-healthcare';
+import { isDevelopment } from '../env';
+import { safeDecryptCredentials, encryptCredentials, EncryptedData } from './crypto';
+import { CircuitBreaker, withRetry, DEFAULT_RETRY_CONFIG, RetryConfig } from './retry';
 
 // Re-export types
 export * from './types';
 export { MockClearinghouseProvider } from './mock-provider';
 export { ChangeHealthcareProvider } from './change-healthcare';
 
+// Re-export crypto utilities
+export {
+  encryptCredential,
+  decryptCredential,
+  encryptCredentials,
+  decryptCredentials,
+  safeDecryptCredentials,
+  isEncrypted,
+  maskCredential,
+  rotateEncryption,
+  type EncryptedData,
+} from './crypto';
+
+// Re-export retry utilities
+export {
+  ClearinghouseError,
+  classifyError,
+  withRetry,
+  calculateRetryDelay,
+  sleep,
+  CircuitBreaker,
+  createErrorResponse,
+  withResilience,
+  DEFAULT_RETRY_CONFIG,
+  DEFAULT_CIRCUIT_BREAKER_CONFIG,
+  type ErrorCategory,
+  type RetryConfig,
+  type CircuitBreakerConfig,
+} from './retry';
+
+// Provider-specific circuit breakers (shared across instances)
+const circuitBreakers = new Map<string, CircuitBreaker>();
+
+/**
+ * Get or create a circuit breaker for a provider.
+ */
+function getCircuitBreaker(providerId: string): CircuitBreaker {
+  if (!circuitBreakers.has(providerId)) {
+    circuitBreakers.set(providerId, new CircuitBreaker());
+  }
+  return circuitBreakers.get(providerId)!;
+}
+
+/**
+ * Options for creating a clearinghouse provider.
+ */
+export interface CreateProviderOptions {
+  /** Force use of mock provider (useful for testing) */
+  forceMock?: boolean;
+  /** Enable retry logic with circuit breaker */
+  enableResilience?: boolean;
+  /** Custom retry configuration */
+  retryConfig?: Partial<RetryConfig>;
+  /** Decrypt credentials before configuring */
+  decryptCredentials?: boolean;
+}
+
 /**
  * Factory function to create clearinghouse provider instances.
  *
+ * Supports environment-based provider selection:
+ * - In development, can use CLEARINGHOUSE_USE_MOCK_IN_DEV=true to force mock
+ * - Can be overridden with forceMock option
+ *
  * @param config - The clearinghouse configuration from the database
+ * @param options - Additional options for provider creation
  * @returns Configured provider instance
  * @throws Error if provider type is not supported
  */
 export async function createClearinghouseProvider(
-  config: ClearinghouseConfigData
+  config: ClearinghouseConfigData,
+  options: CreateProviderOptions = {}
 ): Promise<IClearinghouseProvider> {
-  let provider: IClearinghouseProvider;
+  const {
+    forceMock = false,
+    enableResilience = true,
+    retryConfig = {},
+    decryptCredentials: shouldDecrypt = true,
+  } = options;
 
-  switch (config.provider) {
+  let provider: IClearinghouseProvider;
+  let effectiveConfig = { ...config };
+
+  // Environment-based mock override
+  const useMock =
+    forceMock ||
+    (isDevelopment && process.env.CLEARINGHOUSE_USE_MOCK_IN_DEV === 'true');
+
+  // Decrypt credentials if needed
+  if (shouldDecrypt && effectiveConfig.credentials) {
+    const decrypted = safeDecryptCredentials<ClearinghouseCredentials>(
+      effectiveConfig.credentials as unknown
+    );
+    if (decrypted) {
+      effectiveConfig = {
+        ...effectiveConfig,
+        credentials: decrypted,
+      };
+    }
+  }
+
+  // Select provider based on configuration (with mock override)
+  const providerType = useMock ? ClearinghouseProvider.MOCK : effectiveConfig.provider;
+
+  switch (providerType) {
     case ClearinghouseProvider.MOCK:
       provider = new MockClearinghouseProvider();
+      if (useMock && config.provider !== ClearinghouseProvider.MOCK) {
+        console.info(
+          `[Clearinghouse] Using Mock provider instead of ${config.provider} ` +
+            `(forceMock=${forceMock}, dev=${isDevelopment})`
+        );
+      }
       break;
 
     case ClearinghouseProvider.CHANGE_HEALTHCARE:
@@ -41,20 +144,115 @@ export async function createClearinghouseProvider(
       // These providers are not yet implemented
       // Fall back to mock provider with a warning
       console.warn(
-        `Clearinghouse provider '${config.provider}' is not yet implemented. ` +
+        `Clearinghouse provider '${providerType}' is not yet implemented. ` +
           `Using Mock provider for testing.`
       );
       provider = new MockClearinghouseProvider();
       break;
 
     default:
-      throw new Error(`Unsupported clearinghouse provider: ${config.provider}`);
+      throw new Error(`Unsupported clearinghouse provider: ${providerType}`);
   }
 
   // Configure the provider with the organization's settings
-  await provider.configure(config);
+  await provider.configure(effectiveConfig);
+
+  // Wrap with resilience if enabled (circuit breaker + retry)
+  if (enableResilience && providerType !== ClearinghouseProvider.MOCK) {
+    const circuitBreaker = getCircuitBreaker(effectiveConfig.id);
+    return wrapProviderWithResilience(provider, circuitBreaker, retryConfig);
+  }
 
   return provider;
+}
+
+/**
+ * Create a provider instance for a specific environment.
+ * Useful for explicit control over which provider to use.
+ *
+ * @param providerType - The type of provider to create
+ * @param config - Optional configuration to apply
+ * @returns Unconfigured or configured provider instance
+ */
+export async function createProviderByType(
+  providerType: ClearinghouseProvider,
+  config?: ClearinghouseConfigData
+): Promise<IClearinghouseProvider> {
+  let provider: IClearinghouseProvider;
+
+  switch (providerType) {
+    case ClearinghouseProvider.MOCK:
+      provider = new MockClearinghouseProvider();
+      break;
+    case ClearinghouseProvider.CHANGE_HEALTHCARE:
+      provider = new ChangeHealthcareProvider();
+      break;
+    default:
+      // Fall back to mock for unimplemented providers
+      provider = new MockClearinghouseProvider();
+  }
+
+  if (config) {
+    await provider.configure(config);
+  }
+
+  return provider;
+}
+
+/**
+ * Wrap a provider with retry and circuit breaker logic.
+ */
+function wrapProviderWithResilience(
+  provider: IClearinghouseProvider,
+  circuitBreaker: CircuitBreaker,
+  retryConfig: Partial<RetryConfig>
+): IClearinghouseProvider {
+  const mergedConfig = { ...DEFAULT_RETRY_CONFIG, ...retryConfig };
+
+  // Create a proxy that wraps each async method with resilience
+  return new Proxy(provider, {
+    get(target, prop) {
+      const value = target[prop as keyof IClearinghouseProvider];
+
+      // Only wrap async methods (not configure or providerType)
+      if (
+        typeof value === 'function' &&
+        prop !== 'configure' &&
+        prop !== 'providerType'
+      ) {
+        return async (...args: unknown[]) => {
+          return circuitBreaker.execute(() =>
+            withRetry(() => (value as Function).apply(target, args), mergedConfig)
+          );
+        };
+      }
+
+      return value;
+    },
+  });
+}
+
+/**
+ * Reset the circuit breaker for a provider.
+ */
+export function resetCircuitBreaker(providerId: string): void {
+  const breaker = circuitBreakers.get(providerId);
+  if (breaker) {
+    breaker.reset();
+  }
+}
+
+/**
+ * Get the circuit breaker status for a provider.
+ */
+export function getCircuitBreakerStatus(
+  providerId: string
+): { state: 'closed' | 'open' | 'half-open'; exists: boolean } {
+  const breaker = circuitBreakers.get(providerId);
+  if (!breaker) {
+    return { state: 'closed', exists: false };
+  }
+  return { state: breaker.getState(), exists: true };
 }
 
 /**
