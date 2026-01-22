@@ -80,6 +80,7 @@ import { devicesRouter } from './devices';
 import { locationRouter } from './location';
 import { locationStaffRouter } from './locationStaff';
 import { patientLocationRouter } from './patientLocation';
+import { crossLocationSchedulingRouter } from './crossLocationScheduling';
 
 export const appRouter = router({
   auth: authRouter,
@@ -163,6 +164,7 @@ export const appRouter = router({
   location: locationRouter,
   locationStaff: locationStaffRouter,
   patientLocation: patientLocationRouter,
+  crossLocationScheduling: crossLocationSchedulingRouter,
 });
 
 

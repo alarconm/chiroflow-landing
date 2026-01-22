@@ -348,3 +348,118 @@ Date: 2026-01-22
 --- Iteration 4 completed at 2026-01-22 ---
 Story: US-251 - Cross-location patient access
 
+--- Iteration 4 completed at 2026-01-22 05:52:27 ---
+Story: US-251 - Cross-location patient access
+
+## US-252: Cross-location scheduling - COMPLETED
+Date: 2026-01-22
+
+### Changes Made:
+
+1. **Extended Room model** (`app/prisma/schema.prisma`)
+   - Added locationId - Optional location assignment for rooms
+   - Added location relation to Location
+   - Added index on locationId
+
+2. **Extended Resource model** (`app/prisma/schema.prisma`)
+   - Added locationId - Optional location assignment for resources
+   - Added location relation to Location
+   - Added index on locationId
+
+3. **Created AppointmentTypeLocation model** (`app/prisma/schema.prisma`)
+   - Location-specific availability for appointment types
+   - isEnabled flag to enable/disable appointment types per location
+   - durationOverride for location-specific appointment durations
+   - priceOverride for location-specific pricing
+   - Unique constraint on appointmentTypeId + locationId
+
+4. **Updated AppointmentType model** (`app/prisma/schema.prisma`)
+   - Added locationAvailability relation for location-specific configuration
+
+5. **Updated Location model** (`app/prisma/schema.prisma`)
+   - Added rooms relation
+   - Added resources relation
+   - Added appointmentTypeAvailability relation
+
+6. **Added audit log actions** (`app/src/lib/audit.ts`)
+   - APPOINTMENT_TRANSFER_LOCATION
+   - APPOINTMENT_TYPE_LOCATION_UPDATE
+   - ROOM_LOCATION_ASSIGN
+   - RESOURCE_LOCATION_ASSIGN
+
+7. **Created crossLocationScheduling router** (`app/src/server/routers/crossLocationScheduling.ts`)
+
+   **Location Selection:**
+   - **getBookableLocations** - Get available locations for booking appointments
+
+   **Provider Availability by Location:**
+   - **getProviderAvailabilityByLocation** - Get provider availability at specific location
+   - **getLocationProviders** - Get all providers available at a location
+
+   **Resource Availability by Location:**
+   - **getLocationResources** - Get resources at a location with availability check
+   - **getLocationRooms** - Get rooms at a location with availability check
+   - **assignRoomToLocation** - Assign/unassign room to location
+   - **assignResourceToLocation** - Assign/unassign resource to location
+
+   **Cross-Location Appointment Booking:**
+   - **bookAtLocation** - Book appointment at any location
+     - Validates patient, location, provider, and appointment type
+     - Checks if provider is assigned to location
+     - Checks if appointment type is enabled at location
+     - Validates room and resource availability
+     - Creates appointment with location assignment
+
+   **Transfer Appointment Between Locations:**
+   - **transferAppointment** - Transfer existing appointment to different location
+     - Validates appointment status (can't transfer completed/cancelled)
+     - Optionally changes provider, room, and time
+     - Checks for conflicts at new location
+     - Adds transfer note to appointment
+
+   **Multi-Location Availability View:**
+   - **getMultiLocationAvailability** - Get availability overview across all locations
+     - Shows appointment counts, provider counts per location
+     - Shows which locations have appointment type available
+   - **findAvailableSlots** - Find available time slots across all locations
+     - Filters by date, duration, appointment type, provider
+     - Returns slots per location and provider
+
+   **Location-Specific Appointment Types:**
+   - **getLocationAppointmentTypes** - Get appointment types with location-specific settings
+   - **setAppointmentTypeLocation** - Configure appointment type at a location
+   - **bulkSetAppointmentTypeLocations** - Bulk configure types for a location
+
+   **Appointments by Location:**
+   - **listAppointmentsByLocation** - List appointments at a location
+   - **getLocationStats** - Get appointment statistics by location
+
+8. **Registered router** (`app/src/server/routers/index.ts`)
+   - Added crossLocationSchedulingRouter import and registration
+
+9. **Database migration**
+   - Prisma schema validated successfully
+   - Schema pushed to database with `prisma db push`
+   - Prisma client regenerated
+   - TypeScript compilation successful
+
+### Files Created:
+- app/src/server/routers/crossLocationScheduling.ts
+
+### Files Modified:
+- app/prisma/schema.prisma
+- app/src/lib/audit.ts
+- app/src/server/routers/index.ts
+
+### Acceptance Criteria Status:
+- [x] Location selector in appointment booking
+- [x] Provider availability by location
+- [x] Resource availability by location
+- [x] Patient can book at any location
+- [x] Transfer appointment between locations
+- [x] Multi-location availability view
+- [x] Location-specific appointment types
+
+--- Iteration 5 completed at 2026-01-22 ---
+Story: US-252 - Cross-location scheduling
+

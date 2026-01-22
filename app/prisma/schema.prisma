@@ -892,9 +892,37 @@ model AppointmentType {
   appointments    Appointment[]
   waitlistEntries WaitlistEntry[]
 
+  // Multi-location relations (Epic 25 - US-252)
+  locationAvailability AppointmentTypeLocation[]
+
   @@unique([code, organizationId])
   @@index([organizationId])
   @@index([isActive])
+}
+
+// Location-specific availability for appointment types (Epic 25 - US-252)
+model AppointmentTypeLocation {
+  id        String   @id @default(cuid())
+  isEnabled Boolean  @default(true) // Whether this type is available at this location
+
+  // Location-specific overrides
+  durationOverride Int?              // Override default duration for this location
+  priceOverride    Decimal?          @db.Decimal(10, 2) // Location-specific pricing
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  appointmentTypeId String
+  appointmentType   AppointmentType @relation(fields: [appointmentTypeId], references: [id], onDelete: Cascade)
+
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([appointmentTypeId, locationId])
+  @@index([appointmentTypeId])
+  @@index([locationId])
+  @@index([isEnabled])
 }
 
 // Treatment rooms
@@ -914,11 +942,16 @@ model Room {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  // Multi-location relation (Epic 25 - US-252)
+  locationId String?
+  location   Location? @relation(fields: [locationId], references: [id])
+
   // Relations
   appointments Appointment[]
 
   @@index([organizationId])
   @@index([isActive])
+  @@index([locationId])
 }
 
 // Shared resources (equipment that needs scheduling)
@@ -936,11 +969,16 @@ model Resource {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  // Multi-location relation (Epic 25 - US-252)
+  locationId String?
+  location   Location? @relation(fields: [locationId], references: [id])
+
   // Relations
   appointments AppointmentResource[]
 
   @@index([organizationId])
   @@index([isActive])
+  @@index([locationId])
 }
 
 // Recurring appointment series
@@ -9029,6 +9067,11 @@ model Location {
   homePatients               Patient[]                @relation("PatientHomeLocation")
   crossLocationAccessLogs    CrossLocationAccessLog[]
   patientBalances            PatientLocationBalance[]
+
+  // Cross-Location Scheduling relations (Epic 25 - US-252)
+  rooms                      Room[]
+  resources                  Resource[]
+  appointmentTypeAvailability AppointmentTypeLocation[]
 
   @@unique([code, organizationId])
   @@index([organizationId])
