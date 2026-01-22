@@ -1664,7 +1664,1562 @@ export const aiQARouter = router({
         lastAuditDate: recentAudits[0]?.auditDate || null,
       };
     }),
+
+  // ============================================
+  // US-351: Clinical quality measures endpoints
+  // ============================================
+
+  /**
+   * Track clinical quality metrics across the organization
+   * Monitors outcome measures, treatment effectiveness, patient satisfaction,
+   * care gap closure rates, and provides benchmark comparisons
+   */
+  trackQuality: providerProcedure
+    .input(
+      z.object({
+        providerId: z.string().optional(),
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+        includeDetails: z.boolean().default(true),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { providerId, dateFrom, dateTo, includeDetails } = input;
+      const now = new Date();
+      const startDate = dateFrom || new Date(now.getFullYear(), now.getMonth() - 3, 1); // Default 3 months
+      const endDate = dateTo || now;
+
+      // Create the audit record
+      const audit = await ctx.prisma.qAAudit.create({
+        data: {
+          organizationId: ctx.user.organizationId,
+          auditType: 'CLINICAL',
+          targetType: 'Organization',
+          targetId: ctx.user.organizationId,
+          providerId: providerId || null,
+          dateFrom: startDate,
+          dateTo: endDate,
+          methodology: 'AI-assisted clinical quality assessment',
+          status: 'IN_PROGRESS',
+        },
+      });
+
+      const assessments: ClinicalQualityAssessment[] = [];
+      const allFindings: Prisma.QAFindingCreateManyInput[] = [];
+      let totalScore = 0;
+      let criticalCount = 0;
+      let highCount = 0;
+      let mediumCount = 0;
+      let lowCount = 0;
+
+      // Build where clause for provider filter
+      const providerFilter = providerId ? { providerId } : {};
+
+      // 1. Outcome Measure Tracking Assessment
+      const outcomeAssessment = await assessOutcomeTracking(
+        ctx,
+        startDate,
+        endDate,
+        providerFilter
+      );
+      assessments.push(outcomeAssessment);
+      totalScore += outcomeAssessment.score;
+
+      if (!outcomeAssessment.passed) {
+        const severity = outcomeAssessment.score < 50 ? 'HIGH' : 'MEDIUM';
+        if (severity === 'HIGH') highCount++;
+        else mediumCount++;
+
+        for (const finding of outcomeAssessment.findings) {
+          allFindings.push({
+            auditId: audit.id,
+            organizationId: ctx.user.organizationId,
+            findingType: 'CLINICAL_OUTCOME_TRACKING',
+            severity,
+            title: 'Outcome tracking deficiency',
+            description: finding,
+            recommendation: outcomeAssessment.recommendations[0] || 'Implement regular outcome assessments',
+            providerId: providerId || null,
+            riskScore: Math.round(100 - outcomeAssessment.score),
+            complianceImpact: false,
+          });
+        }
+      }
+
+      // 2. Treatment Effectiveness Assessment
+      const effectivenessAssessment = await assessTreatmentEffectiveness(
+        ctx,
+        startDate,
+        endDate,
+        providerFilter
+      );
+      assessments.push(effectivenessAssessment);
+      totalScore += effectivenessAssessment.score;
+
+      if (!effectivenessAssessment.passed) {
+        const severity = effectivenessAssessment.score < 50 ? 'HIGH' : 'MEDIUM';
+        if (severity === 'HIGH') highCount++;
+        else mediumCount++;
+
+        for (const finding of effectivenessAssessment.findings) {
+          allFindings.push({
+            auditId: audit.id,
+            organizationId: ctx.user.organizationId,
+            findingType: 'CLINICAL_TREATMENT_EFFECTIVENESS',
+            severity,
+            title: 'Treatment effectiveness concern',
+            description: finding,
+            recommendation: effectivenessAssessment.recommendations[0] || 'Review treatment protocols',
+            providerId: providerId || null,
+            riskScore: Math.round(100 - effectivenessAssessment.score),
+            complianceImpact: false,
+          });
+        }
+      }
+
+      // 3. Patient Satisfaction Assessment
+      const satisfactionAssessment = await assessPatientSatisfaction(
+        ctx,
+        startDate,
+        endDate,
+        providerFilter
+      );
+      assessments.push(satisfactionAssessment);
+      totalScore += satisfactionAssessment.score;
+
+      if (!satisfactionAssessment.passed) {
+        const severity = satisfactionAssessment.score < 50 ? 'MEDIUM' : 'LOW';
+        if (severity === 'MEDIUM') mediumCount++;
+        else lowCount++;
+
+        for (const finding of satisfactionAssessment.findings) {
+          allFindings.push({
+            auditId: audit.id,
+            organizationId: ctx.user.organizationId,
+            findingType: 'CLINICAL_PATIENT_SATISFACTION',
+            severity,
+            title: 'Patient satisfaction concern',
+            description: finding,
+            recommendation: satisfactionAssessment.recommendations[0] || 'Focus on patient experience',
+            providerId: providerId || null,
+            riskScore: Math.round(100 - satisfactionAssessment.score),
+            complianceImpact: false,
+          });
+        }
+      }
+
+      // 4. Care Gap Closure Assessment
+      const careGapAssessment = await assessCareGapClosure(
+        ctx,
+        startDate,
+        endDate,
+        providerFilter
+      );
+      assessments.push(careGapAssessment);
+      totalScore += careGapAssessment.score;
+
+      if (!careGapAssessment.passed) {
+        const severity = careGapAssessment.score < 50 ? 'HIGH' : 'MEDIUM';
+        if (severity === 'HIGH') highCount++;
+        else mediumCount++;
+
+        for (const finding of careGapAssessment.findings) {
+          allFindings.push({
+            auditId: audit.id,
+            organizationId: ctx.user.organizationId,
+            findingType: 'CLINICAL_CARE_GAP',
+            severity,
+            title: 'Care gap closure issue',
+            description: finding,
+            recommendation: careGapAssessment.recommendations[0] || 'Implement care gap outreach',
+            providerId: providerId || null,
+            riskScore: Math.round(100 - careGapAssessment.score),
+            complianceImpact: true,
+          });
+        }
+      }
+
+      // 5. Visit Compliance Assessment
+      const visitComplianceAssessment = await assessVisitCompliance(
+        ctx,
+        startDate,
+        endDate,
+        providerFilter
+      );
+      assessments.push(visitComplianceAssessment);
+      totalScore += visitComplianceAssessment.score;
+
+      if (!visitComplianceAssessment.passed) {
+        const severity = visitComplianceAssessment.score < 50 ? 'MEDIUM' : 'LOW';
+        if (severity === 'MEDIUM') mediumCount++;
+        else lowCount++;
+
+        for (const finding of visitComplianceAssessment.findings) {
+          allFindings.push({
+            auditId: audit.id,
+            organizationId: ctx.user.organizationId,
+            findingType: 'CLINICAL_VISIT_COMPLIANCE',
+            severity,
+            title: 'Visit compliance issue',
+            description: finding,
+            recommendation: visitComplianceAssessment.recommendations[0] || 'Improve patient engagement',
+            providerId: providerId || null,
+            riskScore: Math.round(100 - visitComplianceAssessment.score),
+            complianceImpact: false,
+          });
+        }
+      }
+
+      // Calculate overall score (weighted average)
+      const maxPossibleScore = clinicalQualityCriteria.reduce((sum, c) => sum + c.weight, 0);
+      const overallScore = Math.round((totalScore / maxPossibleScore) * 100);
+      const scoreCategory = getScoreCategory(overallScore);
+
+      // Create findings in database
+      if (allFindings.length > 0) {
+        await ctx.prisma.qAFinding.createMany({
+          data: allFindings,
+        });
+      }
+
+      // Generate quality improvement recommendations
+      const recommendations = generateClinicalQualityRecommendations(
+        assessments,
+        overallScore,
+        criticalCount,
+        highCount
+      );
+
+      // Update the audit record
+      const updatedAudit = await ctx.prisma.qAAudit.update({
+        where: { id: audit.id },
+        data: {
+          status: 'COMPLETED',
+          completedAt: new Date(),
+          score: overallScore,
+          scoreCategory,
+          findingsCount: allFindings.length,
+          criticalCount,
+          highCount,
+          mediumCount,
+          lowCount,
+          summary: `Clinical quality assessment completed. Overall score: ${overallScore}/100 (${scoreCategory}). Found ${allFindings.length} areas for improvement.`,
+          recommendations,
+        },
+        include: {
+          findings: {
+            orderBy: [{ severity: 'asc' }, { createdAt: 'desc' }],
+            take: 20,
+          },
+        },
+      });
+
+      // Update clinical quality metrics
+      await updateClinicalQualityMetrics(ctx, assessments, overallScore, providerId);
+
+      // Log the audit action
+      await auditLog('AI_QA_CLINICAL_QUALITY', 'QAAudit', {
+        entityId: audit.id,
+        changes: {
+          score: overallScore,
+          findingsCount: allFindings.length,
+          period: `${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      // Get provider performance comparison if requested
+      let providerComparison: ProviderPerformanceMetrics[] | null = null;
+      if (includeDetails && !providerId) {
+        providerComparison = await getProviderPerformanceComparison(ctx, startDate, endDate);
+      }
+
+      return {
+        auditId: updatedAudit.id,
+        score: overallScore,
+        scoreCategory,
+        period: { from: startDate, to: endDate },
+        assessments: assessments.map(a => ({
+          criteria: a.criteriaName,
+          score: Math.round((a.score / a.maxScore) * 100),
+          passed: a.passed,
+          metrics: a.metrics,
+          findings: a.findings,
+          recommendations: a.recommendations,
+        })),
+        summary: {
+          total: allFindings.length,
+          critical: criticalCount,
+          high: highCount,
+          medium: mediumCount,
+          low: lowCount,
+        },
+        benchmarkComparison: {
+          outcomeAssessmentRate: {
+            actual: assessments.find(a => a.criteriaName === 'outcomeTracking')?.metrics.percentage || 0,
+            benchmark: clinicalBenchmarks.outcomeAssessmentRate,
+            meetsBenchmark: (assessments.find(a => a.criteriaName === 'outcomeTracking')?.metrics.percentage || 0) >= clinicalBenchmarks.outcomeAssessmentRate,
+          },
+          improvementRate: {
+            actual: assessments.find(a => a.criteriaName === 'treatmentEffectiveness')?.metrics.percentage || 0,
+            benchmark: clinicalBenchmarks.improvementRate,
+            meetsBenchmark: (assessments.find(a => a.criteriaName === 'treatmentEffectiveness')?.metrics.percentage || 0) >= clinicalBenchmarks.improvementRate,
+          },
+          satisfactionScore: {
+            actual: assessments.find(a => a.criteriaName === 'patientSatisfaction')?.metrics.percentage || 0,
+            benchmark: clinicalBenchmarks.satisfactionScore * 20, // Convert to percentage
+            meetsBenchmark: (assessments.find(a => a.criteriaName === 'patientSatisfaction')?.metrics.percentage || 0) >= clinicalBenchmarks.satisfactionScore * 20,
+          },
+          careGapClosureRate: {
+            actual: assessments.find(a => a.criteriaName === 'careGapClosure')?.metrics.percentage || 0,
+            benchmark: clinicalBenchmarks.careGapClosureRate,
+            meetsBenchmark: (assessments.find(a => a.criteriaName === 'careGapClosure')?.metrics.percentage || 0) >= clinicalBenchmarks.careGapClosureRate,
+          },
+          visitComplianceRate: {
+            actual: assessments.find(a => a.criteriaName === 'visitCompliance')?.metrics.percentage || 0,
+            benchmark: clinicalBenchmarks.visitComplianceRate,
+            meetsBenchmark: (assessments.find(a => a.criteriaName === 'visitCompliance')?.metrics.percentage || 0) >= clinicalBenchmarks.visitComplianceRate,
+          },
+        },
+        recommendations,
+        providerComparison,
+        findings: updatedAudit.findings,
+      };
+    }),
+
+  /**
+   * Get clinical quality score history for trend analysis
+   */
+  getQualityScoreHistory: providerProcedure
+    .input(
+      z.object({
+        providerId: z.string().optional(),
+        metricType: z.enum([
+          'CLINICAL_QUALITY_OVERALL',
+          'OUTCOME_TRACKING',
+          'TREATMENT_EFFECTIVENESS',
+          'PATIENT_SATISFACTION',
+          'CARE_GAP_CLOSURE',
+          'VISIT_COMPLIANCE',
+        ]).optional(),
+        period: z.enum(['weekly', 'monthly', 'quarterly']).default('monthly'),
+        limit: z.number().min(1).max(24).default(12),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { providerId, metricType, period, limit } = input;
+
+      const metricTypes = metricType
+        ? [metricType]
+        : ['CLINICAL_QUALITY_OVERALL', 'OUTCOME_TRACKING', 'TREATMENT_EFFECTIVENESS', 'PATIENT_SATISFACTION', 'CARE_GAP_CLOSURE', 'VISIT_COMPLIANCE'] as const;
+
+      const whereClause: Prisma.QAMetricWhereInput = {
+        organizationId: ctx.user.organizationId,
+        metricType: { in: metricTypes as unknown as Prisma.EnumQAMetricTypeFilter['in'] },
+        period,
+      };
+
+      if (providerId) {
+        whereClause.providerId = providerId;
+      }
+
+      const metrics = await ctx.prisma.qAMetric.findMany({
+        where: whereClause,
+        orderBy: { periodStart: 'desc' },
+        take: limit * metricTypes.length,
+      });
+
+      // Group by period
+      const periodMap = new Map<string, {
+        periodStart: Date;
+        periodEnd: Date;
+        metrics: { type: string; score: number }[];
+      }>();
+
+      for (const metric of metrics) {
+        const key = metric.periodStart.toISOString();
+        if (!periodMap.has(key)) {
+          periodMap.set(key, {
+            periodStart: metric.periodStart,
+            periodEnd: metric.periodEnd,
+            metrics: [],
+          });
+        }
+        periodMap.get(key)!.metrics.push({
+          type: metric.metricType,
+          score: Number(metric.percentage),
+        });
+      }
+
+      const history = Array.from(periodMap.entries())
+        .sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime())
+        .slice(0, limit)
+        .map(([, data]) => {
+          const overallScore = data.metrics.find(m => m.type === 'CLINICAL_QUALITY_OVERALL')?.score
+            || Math.round(data.metrics.reduce((sum, m) => sum + m.score, 0) / data.metrics.length);
+
+          return {
+            periodStart: data.periodStart,
+            periodEnd: data.periodEnd,
+            overallScore,
+            metrics: data.metrics.reduce((acc, m) => {
+              acc[m.type] = m.score;
+              return acc;
+            }, {} as Record<string, number>),
+          };
+        });
+
+      const scores = history.map(h => h.overallScore);
+
+      return {
+        history,
+        trend: calculateTrend(scores),
+        currentScore: scores[0] || null,
+        averageScore: scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null,
+      };
+    }),
+
+  /**
+   * Get provider performance comparison
+   */
+  getProviderQualityComparison: providerProcedure
+    .input(
+      z.object({
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+        sortBy: z.enum(['score', 'patients', 'improvement', 'satisfaction']).default('score'),
+        limit: z.number().min(1).max(50).default(20),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { dateFrom, dateTo, sortBy, limit } = input;
+      const now = new Date();
+      const startDate = dateFrom || new Date(now.getFullYear(), now.getMonth() - 3, 1);
+      const endDate = dateTo || now;
+
+      const comparison = await getProviderPerformanceComparison(ctx, startDate, endDate);
+
+      // Sort based on input
+      comparison.sort((a, b) => {
+        switch (sortBy) {
+          case 'patients':
+            return b.totalPatients - a.totalPatients;
+          case 'improvement':
+            return b.avgOutcomeImprovement - a.avgOutcomeImprovement;
+          case 'satisfaction':
+            return b.avgSatisfactionScore - a.avgSatisfactionScore;
+          case 'score':
+          default:
+            return b.overallQualityScore - a.overallQualityScore;
+        }
+      });
+
+      // Add ranks
+      const rankedComparison = comparison.slice(0, limit).map((p, index) => ({
+        ...p,
+        rank: index + 1,
+      }));
+
+      // Calculate organization averages
+      const orgAverages = {
+        avgOutcomeImprovement: comparison.length > 0
+          ? Math.round(comparison.reduce((sum, p) => sum + p.avgOutcomeImprovement, 0) / comparison.length)
+          : 0,
+        avgSatisfactionScore: comparison.length > 0
+          ? Number((comparison.reduce((sum, p) => sum + p.avgSatisfactionScore, 0) / comparison.length).toFixed(1))
+          : 0,
+        avgCareGapClosure: comparison.length > 0
+          ? Math.round(comparison.reduce((sum, p) => sum + p.careGapClosureRate, 0) / comparison.length)
+          : 0,
+        avgOverallScore: comparison.length > 0
+          ? Math.round(comparison.reduce((sum, p) => sum + p.overallQualityScore, 0) / comparison.length)
+          : 0,
+      };
+
+      return {
+        providers: rankedComparison,
+        organizationAverages: orgAverages,
+        totalProviders: comparison.length,
+        period: { from: startDate, to: endDate },
+      };
+    }),
+
+  /**
+   * Get clinical quality dashboard
+   */
+  getClinicalQualityDashboard: providerProcedure
+    .input(
+      z.object({
+        providerId: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { providerId } = input;
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const quarterStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
+
+      const providerFilter = providerId ? { providerId } : {};
+
+      // Get current month metrics
+      const currentMetrics = await ctx.prisma.qAMetric.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          metricType: {
+            in: [
+              'CLINICAL_QUALITY_OVERALL',
+              'OUTCOME_TRACKING',
+              'TREATMENT_EFFECTIVENESS',
+              'PATIENT_SATISFACTION',
+              'CARE_GAP_CLOSURE',
+              'VISIT_COMPLIANCE',
+            ],
+          },
+          periodStart: { gte: monthStart },
+          ...providerFilter,
+        },
+      });
+
+      // Get recent clinical audits
+      const recentAudits = await ctx.prisma.qAAudit.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          auditType: 'CLINICAL',
+          status: 'COMPLETED',
+          ...providerFilter,
+        },
+        orderBy: { completedAt: 'desc' },
+        take: 5,
+        select: {
+          id: true,
+          auditDate: true,
+          score: true,
+          scoreCategory: true,
+          findingsCount: true,
+          completedAt: true,
+        },
+      });
+
+      // Get open care gaps
+      const openCareGaps = await ctx.prisma.careGap.count({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: { notIn: ['RESOLVED', 'DISMISSED'] },
+        },
+      });
+
+      // Get patients with outcome assessments this month
+      const patientsWithAssessments = await ctx.prisma.outcomeAssessment.groupBy({
+        by: ['patientId'],
+        where: {
+          patient: { organizationId: ctx.user.organizationId },
+          administeredAt: { gte: monthStart },
+        },
+      });
+
+      // Get total active patients
+      const activePatients = await ctx.prisma.patient.count({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: 'ACTIVE',
+        },
+      });
+
+      // Get treatment plans completion rate
+      const completedPlans = await ctx.prisma.treatmentPlan.count({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: 'COMPLETED',
+          endDate: { gte: quarterStart },
+        },
+      });
+
+      const totalPlansThisQuarter = await ctx.prisma.treatmentPlan.count({
+        where: {
+          organizationId: ctx.user.organizationId,
+          startDate: { gte: quarterStart },
+        },
+      });
+
+      // Build metrics object
+      const metricsMap = new Map<string, { score: number; trend: string | null }>();
+      for (const m of currentMetrics) {
+        metricsMap.set(m.metricType, {
+          score: Number(m.percentage),
+          trend: m.trend,
+        });
+      }
+
+      return {
+        scores: {
+          overall: metricsMap.get('CLINICAL_QUALITY_OVERALL')?.score || null,
+          outcomeTracking: metricsMap.get('OUTCOME_TRACKING')?.score || null,
+          treatmentEffectiveness: metricsMap.get('TREATMENT_EFFECTIVENESS')?.score || null,
+          patientSatisfaction: metricsMap.get('PATIENT_SATISFACTION')?.score || null,
+          careGapClosure: metricsMap.get('CARE_GAP_CLOSURE')?.score || null,
+          visitCompliance: metricsMap.get('VISIT_COMPLIANCE')?.score || null,
+        },
+        trends: {
+          overall: metricsMap.get('CLINICAL_QUALITY_OVERALL')?.trend || null,
+          outcomeTracking: metricsMap.get('OUTCOME_TRACKING')?.trend || null,
+          treatmentEffectiveness: metricsMap.get('TREATMENT_EFFECTIVENESS')?.trend || null,
+          patientSatisfaction: metricsMap.get('PATIENT_SATISFACTION')?.trend || null,
+          careGapClosure: metricsMap.get('CARE_GAP_CLOSURE')?.trend || null,
+          visitCompliance: metricsMap.get('VISIT_COMPLIANCE')?.trend || null,
+        },
+        quickStats: {
+          activePatients,
+          patientsWithAssessments: patientsWithAssessments.length,
+          assessmentRate: activePatients > 0
+            ? Math.round((patientsWithAssessments.length / activePatients) * 100)
+            : 0,
+          openCareGaps,
+          treatmentPlanCompletionRate: totalPlansThisQuarter > 0
+            ? Math.round((completedPlans / totalPlansThisQuarter) * 100)
+            : 0,
+        },
+        recentAudits,
+        lastAuditDate: recentAudits[0]?.completedAt || null,
+        benchmarks: clinicalBenchmarks,
+      };
+    }),
+
+  /**
+   * Get specific clinical quality finding details
+   */
+  getClinicalQualityFinding: providerProcedure
+    .input(z.object({ findingId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const finding = await ctx.prisma.qAFinding.findFirst({
+        where: {
+          id: input.findingId,
+          organizationId: ctx.user.organizationId,
+          findingType: { startsWith: 'CLINICAL_' },
+        },
+        include: {
+          audit: true,
+        },
+      });
+
+      if (!finding) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Clinical quality finding not found',
+        });
+      }
+
+      // Generate education content based on finding type
+      const educationContent = generateClinicalEducationContent(finding.findingType);
+
+      return {
+        ...finding,
+        educationContent,
+      };
+    }),
+
+  /**
+   * Get clinical quality audit history
+   */
+  getClinicalQualityAuditHistory: providerProcedure
+    .input(
+      z.object({
+        providerId: z.string().optional(),
+        limit: z.number().min(1).max(50).default(10),
+        offset: z.number().min(0).default(0),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { providerId, limit, offset } = input;
+
+      const whereClause: Prisma.QAAuditWhereInput = {
+        organizationId: ctx.user.organizationId,
+        auditType: 'CLINICAL',
+        status: 'COMPLETED',
+      };
+
+      if (providerId) {
+        whereClause.providerId = providerId;
+      }
+
+      const [audits, total] = await Promise.all([
+        ctx.prisma.qAAudit.findMany({
+          where: whereClause,
+          orderBy: { auditDate: 'desc' },
+          take: limit,
+          skip: offset,
+          include: {
+            _count: {
+              select: { findings: true },
+            },
+          },
+        }),
+        ctx.prisma.qAAudit.count({ where: whereClause }),
+      ]);
+
+      return {
+        audits: audits.map(a => ({
+          id: a.id,
+          auditDate: a.auditDate,
+          score: a.score,
+          scoreCategory: a.scoreCategory,
+          dateFrom: a.dateFrom,
+          dateTo: a.dateTo,
+          findingsCount: a._count.findings,
+          summary: a.summary,
+          recommendations: a.recommendations,
+        })),
+        total,
+        hasMore: offset + limit < total,
+      };
+    }),
 });
+
+// ============================================
+// Helper functions for clinical quality assessment (US-351)
+// ============================================
+
+/**
+ * Assess outcome tracking - are patients getting regular outcome assessments?
+ */
+async function assessOutcomeTracking(
+  ctx: { prisma: import('@prisma/client').PrismaClient; user: { organizationId: string } },
+  startDate: Date,
+  endDate: Date,
+  providerFilter: { providerId?: string }
+): Promise<ClinicalQualityAssessment> {
+  const maxScore = clinicalQualityCriteria.find(c => c.name === 'outcomeTracking')!.weight;
+  let score = maxScore;
+  const findings: string[] = [];
+  const recommendations: string[] = [];
+
+  // Get active patients in the period
+  const activePatients = await ctx.prisma.patient.count({
+    where: {
+      organizationId: ctx.user.organizationId,
+      status: 'ACTIVE',
+      encounters: {
+        some: {
+          encounterDate: { gte: startDate, lte: endDate },
+          ...providerFilter,
+        },
+      },
+    },
+  });
+
+  // Get patients with outcome assessments
+  const patientsWithAssessments = await ctx.prisma.outcomeAssessment.groupBy({
+    by: ['patientId'],
+    where: {
+      patient: { organizationId: ctx.user.organizationId },
+      administeredAt: { gte: startDate, lte: endDate },
+      completedAt: { not: null },
+      encounter: providerFilter.providerId ? { providerId: providerFilter.providerId } : {},
+    },
+  });
+
+  const assessmentRate = activePatients > 0
+    ? Math.round((patientsWithAssessments.length / activePatients) * 100)
+    : 0;
+
+  // Score based on assessment rate vs benchmark
+  if (assessmentRate < clinicalBenchmarks.outcomeAssessmentRate * 0.5) {
+    score = maxScore * 0.3;
+    findings.push(`Only ${assessmentRate}% of active patients have outcome assessments (target: ${clinicalBenchmarks.outcomeAssessmentRate}%)`);
+    recommendations.push('Implement routine outcome assessments at initial visit and every 4-6 weeks');
+    recommendations.push('Consider using standardized tools like ODI, NDI, or NPRS');
+  } else if (assessmentRate < clinicalBenchmarks.outcomeAssessmentRate) {
+    score = maxScore * (assessmentRate / clinicalBenchmarks.outcomeAssessmentRate);
+    findings.push(`${assessmentRate}% outcome assessment rate is below target of ${clinicalBenchmarks.outcomeAssessmentRate}%`);
+    recommendations.push('Increase frequency of outcome assessments to track patient progress');
+  }
+
+  // Check for assessment diversity (different types used)
+  const assessmentTypes = await ctx.prisma.outcomeAssessment.groupBy({
+    by: ['assessmentType'],
+    where: {
+      patient: { organizationId: ctx.user.organizationId },
+      administeredAt: { gte: startDate, lte: endDate },
+    },
+    _count: true,
+  });
+
+  if (assessmentTypes.length < 2) {
+    score -= maxScore * 0.1;
+    findings.push('Limited variety in outcome assessment types');
+    recommendations.push('Consider using region-specific assessments (ODI for lumbar, NDI for cervical)');
+  }
+
+  return {
+    criteriaName: 'outcomeTracking',
+    score: Math.max(0, score),
+    maxScore,
+    passed: score >= maxScore * 0.8,
+    metrics: {
+      measured: patientsWithAssessments.length,
+      target: Math.round(activePatients * clinicalBenchmarks.outcomeAssessmentRate / 100),
+      percentage: assessmentRate,
+    },
+    findings,
+    recommendations,
+  };
+}
+
+/**
+ * Assess treatment effectiveness - are patients showing improvement?
+ */
+async function assessTreatmentEffectiveness(
+  ctx: { prisma: import('@prisma/client').PrismaClient; user: { organizationId: string } },
+  startDate: Date,
+  endDate: Date,
+  providerFilter: { providerId?: string }
+): Promise<ClinicalQualityAssessment> {
+  const maxScore = clinicalQualityCriteria.find(c => c.name === 'treatmentEffectiveness')!.weight;
+  let score = maxScore;
+  const findings: string[] = [];
+  const recommendations: string[] = [];
+
+  // Get patients with multiple assessments to track change
+  const patientsWithMultipleAssessments = await ctx.prisma.outcomeAssessment.groupBy({
+    by: ['patientId'],
+    where: {
+      patient: { organizationId: ctx.user.organizationId },
+      completedAt: { not: null },
+      encounter: providerFilter.providerId ? { providerId: providerFilter.providerId } : {},
+    },
+    having: {
+      patientId: {
+        _count: { gte: 2 },
+      },
+    },
+  });
+
+  // Get assessments with improvement (positive change)
+  const assessmentsWithChange = await ctx.prisma.outcomeAssessment.findMany({
+    where: {
+      patient: { organizationId: ctx.user.organizationId },
+      administeredAt: { gte: startDate, lte: endDate },
+      changeScore: { not: null },
+      encounter: providerFilter.providerId ? { providerId: providerFilter.providerId } : {},
+    },
+    select: {
+      changeScore: true,
+      changePercent: true,
+      assessmentType: true,
+    },
+  });
+
+  // Count improvements (negative change in pain/disability scores is improvement)
+  const improvements = assessmentsWithChange.filter(a =>
+    Number(a.changeScore) < 0 || Number(a.changePercent) < 0
+  );
+
+  const improvementRate = assessmentsWithChange.length > 0
+    ? Math.round((improvements.length / assessmentsWithChange.length) * 100)
+    : 0;
+
+  if (patientsWithMultipleAssessments.length < 10) {
+    score *= 0.7;
+    findings.push('Insufficient data for treatment effectiveness analysis (need more follow-up assessments)');
+    recommendations.push('Ensure patients receive outcome assessments at multiple points in treatment');
+  } else {
+    if (improvementRate < clinicalBenchmarks.improvementRate * 0.7) {
+      score = maxScore * 0.4;
+      findings.push(`Only ${improvementRate}% of patients showing improvement (target: ${clinicalBenchmarks.improvementRate}%)`);
+      recommendations.push('Review treatment protocols for effectiveness');
+      recommendations.push('Consider additional training or peer consultation for challenging cases');
+    } else if (improvementRate < clinicalBenchmarks.improvementRate) {
+      score = maxScore * (improvementRate / clinicalBenchmarks.improvementRate);
+      findings.push(`${improvementRate}% improvement rate is below target of ${clinicalBenchmarks.improvementRate}%`);
+      recommendations.push('Analyze non-improving cases to identify patterns');
+    }
+  }
+
+  // Calculate average improvement percentage
+  const avgImprovement = assessmentsWithChange.length > 0
+    ? Math.round(assessmentsWithChange.reduce((sum, a) => sum + Math.abs(Number(a.changePercent) || 0), 0) / assessmentsWithChange.length)
+    : 0;
+
+  return {
+    criteriaName: 'treatmentEffectiveness',
+    score: Math.max(0, score),
+    maxScore,
+    passed: score >= maxScore * 0.8,
+    metrics: {
+      measured: improvements.length,
+      target: Math.round(assessmentsWithChange.length * clinicalBenchmarks.improvementRate / 100),
+      percentage: improvementRate,
+    },
+    findings,
+    recommendations,
+  };
+}
+
+/**
+ * Assess patient satisfaction
+ */
+async function assessPatientSatisfaction(
+  ctx: { prisma: import('@prisma/client').PrismaClient; user: { organizationId: string } },
+  startDate: Date,
+  endDate: Date,
+  providerFilter: { providerId?: string }
+): Promise<ClinicalQualityAssessment> {
+  const maxScore = clinicalQualityCriteria.find(c => c.name === 'patientSatisfaction')!.weight;
+  let score = maxScore;
+  const findings: string[] = [];
+  const recommendations: string[] = [];
+
+  // Get satisfaction scores from chat sessions (if available)
+  // Note: Provider filtering not available on ChatSession - using org-wide data
+  const satisfactionScores = await ctx.prisma.chatSession.findMany({
+    where: {
+      organizationId: ctx.user.organizationId,
+      satisfactionScore: { not: null },
+      createdAt: { gte: startDate, lte: endDate },
+    },
+    select: {
+      satisfactionScore: true,
+    },
+  });
+
+  // Calculate average satisfaction
+  const avgSatisfaction = satisfactionScores.length > 0
+    ? satisfactionScores.reduce((sum: number, s: { satisfactionScore: number | null }) => sum + (s.satisfactionScore || 0), 0) / satisfactionScores.length
+    : 0;
+
+  const satisfactionPercentage = Math.round((avgSatisfaction / 5) * 100); // Convert 1-5 to percentage
+
+  if (satisfactionScores.length < 10) {
+    score *= 0.7;
+    findings.push('Limited patient satisfaction data available');
+    recommendations.push('Implement systematic patient satisfaction surveys');
+    recommendations.push('Request feedback at discharge or after completed treatment plans');
+  } else {
+    if (avgSatisfaction < clinicalBenchmarks.satisfactionScore * 0.8) {
+      score = maxScore * 0.5;
+      findings.push(`Average satisfaction score ${avgSatisfaction.toFixed(1)}/5 is below benchmark of ${clinicalBenchmarks.satisfactionScore}/5`);
+      recommendations.push('Review patient feedback for common concerns');
+      recommendations.push('Consider patient experience improvement initiatives');
+    } else if (avgSatisfaction < clinicalBenchmarks.satisfactionScore) {
+      score = maxScore * (avgSatisfaction / clinicalBenchmarks.satisfactionScore);
+      findings.push(`Satisfaction score ${avgSatisfaction.toFixed(1)}/5 slightly below target of ${clinicalBenchmarks.satisfactionScore}/5`);
+      recommendations.push('Focus on communication and patient education');
+    }
+  }
+
+  // Check for low satisfaction outliers
+  const lowScores = satisfactionScores.filter((s: { satisfactionScore: number | null }) => (s.satisfactionScore || 0) <= 2);
+  if (lowScores.length > satisfactionScores.length * 0.1 && satisfactionScores.length >= 10) {
+    score -= maxScore * 0.15;
+    findings.push(`${Math.round((lowScores.length / satisfactionScores.length) * 100)}% of satisfaction scores are 2 or below`);
+    recommendations.push('Investigate root causes of low satisfaction scores');
+  }
+
+  return {
+    criteriaName: 'patientSatisfaction',
+    score: Math.max(0, score),
+    maxScore,
+    passed: score >= maxScore * 0.8,
+    metrics: {
+      measured: satisfactionScores.length,
+      target: Math.round(clinicalBenchmarks.satisfactionScore * 20), // Target as percentage
+      percentage: satisfactionPercentage,
+    },
+    findings,
+    recommendations,
+  };
+}
+
+/**
+ * Assess care gap closure rates
+ */
+async function assessCareGapClosure(
+  ctx: { prisma: import('@prisma/client').PrismaClient; user: { organizationId: string } },
+  startDate: Date,
+  endDate: Date,
+  _providerFilter: { providerId?: string }
+): Promise<ClinicalQualityAssessment> {
+  const maxScore = clinicalQualityCriteria.find(c => c.name === 'careGapClosure')!.weight;
+  let score = maxScore;
+  const findings: string[] = [];
+  const recommendations: string[] = [];
+
+  // Get care gaps identified in the period
+  const identifiedGaps = await ctx.prisma.careGap.count({
+    where: {
+      organizationId: ctx.user.organizationId,
+      createdAt: { gte: startDate, lte: endDate },
+    },
+  });
+
+  // Get care gaps resolved in the period
+  const resolvedGaps = await ctx.prisma.careGap.count({
+    where: {
+      organizationId: ctx.user.organizationId,
+      status: 'RESOLVED',
+      resolvedDate: { gte: startDate, lte: endDate },
+    },
+  });
+
+  // Get currently open gaps
+  const openGaps = await ctx.prisma.careGap.count({
+    where: {
+      organizationId: ctx.user.organizationId,
+      status: { notIn: ['RESOLVED', 'DISMISSED'] },
+    },
+  });
+
+  // Get overdue gaps (past due date)
+  const overdueGaps = await ctx.prisma.careGap.count({
+    where: {
+      organizationId: ctx.user.organizationId,
+      status: { notIn: ['RESOLVED', 'DISMISSED'] },
+      dueDate: { lt: new Date() },
+    },
+  });
+
+  const closureRate = identifiedGaps > 0
+    ? Math.round((resolvedGaps / identifiedGaps) * 100)
+    : (openGaps === 0 ? 100 : 0);
+
+  if (closureRate < clinicalBenchmarks.careGapClosureRate * 0.7) {
+    score = maxScore * 0.4;
+    findings.push(`Care gap closure rate of ${closureRate}% is significantly below target of ${clinicalBenchmarks.careGapClosureRate}%`);
+    recommendations.push('Implement systematic care gap outreach program');
+    recommendations.push('Review and prioritize open care gaps weekly');
+  } else if (closureRate < clinicalBenchmarks.careGapClosureRate) {
+    score = maxScore * (closureRate / clinicalBenchmarks.careGapClosureRate);
+    findings.push(`Care gap closure rate of ${closureRate}% is below target of ${clinicalBenchmarks.careGapClosureRate}%`);
+    recommendations.push('Increase follow-up frequency for patients with care gaps');
+  }
+
+  if (overdueGaps > 0) {
+    const overduePercentage = Math.round((overdueGaps / (openGaps || 1)) * 100);
+    if (overduePercentage > 30) {
+      score -= maxScore * 0.2;
+      findings.push(`${overdueGaps} care gaps are past due date (${overduePercentage}% of open gaps)`);
+      recommendations.push('Address overdue care gaps immediately');
+    }
+  }
+
+  // Check gap types
+  const gapsByType = await ctx.prisma.careGap.groupBy({
+    by: ['gapType'],
+    where: {
+      organizationId: ctx.user.organizationId,
+      status: { notIn: ['RESOLVED', 'DISMISSED'] },
+    },
+    _count: true,
+  });
+
+  const missedFollowUps = gapsByType.find(g => g.gapType === 'OVERDUE_FOLLOWUP')?._count || 0;
+  if (missedFollowUps > 10) {
+    findings.push(`${missedFollowUps} patients are overdue for follow-up visits`);
+    recommendations.push('Implement appointment reminder system');
+  }
+
+  return {
+    criteriaName: 'careGapClosure',
+    score: Math.max(0, score),
+    maxScore,
+    passed: score >= maxScore * 0.8,
+    metrics: {
+      measured: resolvedGaps,
+      target: Math.round(identifiedGaps * clinicalBenchmarks.careGapClosureRate / 100),
+      percentage: closureRate,
+    },
+    findings,
+    recommendations,
+  };
+}
+
+/**
+ * Assess visit compliance - are patients completing recommended visits?
+ */
+async function assessVisitCompliance(
+  ctx: { prisma: import('@prisma/client').PrismaClient; user: { organizationId: string } },
+  startDate: Date,
+  endDate: Date,
+  providerFilter: { providerId?: string }
+): Promise<ClinicalQualityAssessment> {
+  const maxScore = clinicalQualityCriteria.find(c => c.name === 'visitCompliance')!.weight;
+  let score = maxScore;
+  const findings: string[] = [];
+  const recommendations: string[] = [];
+
+  // Get treatment plans active in the period
+  const activePlans = await ctx.prisma.treatmentPlan.findMany({
+    where: {
+      organizationId: ctx.user.organizationId,
+      status: { in: ['ACTIVE', 'COMPLETED'] },
+      startDate: { lte: endDate },
+      OR: [
+        { endDate: null },
+        { endDate: { gte: startDate } },
+      ],
+      ...(providerFilter.providerId ? { providerId: providerFilter.providerId } : {}),
+    },
+    select: {
+      id: true,
+      plannedVisits: true,
+      completedVisits: true,
+      status: true,
+    },
+  });
+
+  // Calculate overall visit compliance
+  const totalPlanned = activePlans.reduce((sum, p) => sum + (p.plannedVisits || 0), 0);
+  const totalCompleted = activePlans.reduce((sum, p) => sum + (p.completedVisits || 0), 0);
+
+  const complianceRate = totalPlanned > 0
+    ? Math.round((totalCompleted / totalPlanned) * 100)
+    : 100;
+
+  if (activePlans.length < 5) {
+    score *= 0.7;
+    findings.push('Limited treatment plan data for visit compliance analysis');
+    recommendations.push('Ensure all patients have documented treatment plans with visit goals');
+  } else {
+    if (complianceRate < clinicalBenchmarks.visitComplianceRate * 0.7) {
+      score = maxScore * 0.4;
+      findings.push(`Visit compliance rate of ${complianceRate}% is significantly below target of ${clinicalBenchmarks.visitComplianceRate}%`);
+      recommendations.push('Implement patient engagement strategies to improve visit compliance');
+      recommendations.push('Review treatment plan visit frequency - may be too aggressive for patients');
+    } else if (complianceRate < clinicalBenchmarks.visitComplianceRate) {
+      score = maxScore * (complianceRate / clinicalBenchmarks.visitComplianceRate);
+      findings.push(`Visit compliance rate of ${complianceRate}% is below target of ${clinicalBenchmarks.visitComplianceRate}%`);
+      recommendations.push('Send appointment reminders and follow up on no-shows');
+    }
+  }
+
+  // Check for incomplete treatment plans
+  const incompletePlans = activePlans.filter(p =>
+    p.status !== 'COMPLETED' &&
+    p.plannedVisits &&
+    p.completedVisits < p.plannedVisits * 0.5
+  );
+
+  if (incompletePlans.length > activePlans.length * 0.3 && activePlans.length >= 5) {
+    score -= maxScore * 0.15;
+    findings.push(`${Math.round((incompletePlans.length / activePlans.length) * 100)}% of treatment plans have less than 50% visit completion`);
+    recommendations.push('Contact patients with incomplete treatment plans to discuss barriers');
+  }
+
+  return {
+    criteriaName: 'visitCompliance',
+    score: Math.max(0, score),
+    maxScore,
+    passed: score >= maxScore * 0.8,
+    metrics: {
+      measured: totalCompleted,
+      target: Math.round(totalPlanned * clinicalBenchmarks.visitComplianceRate / 100),
+      percentage: complianceRate,
+    },
+    findings,
+    recommendations,
+  };
+}
+
+/**
+ * Get provider performance comparison
+ */
+async function getProviderPerformanceComparison(
+  ctx: { prisma: import('@prisma/client').PrismaClient; user: { organizationId: string } },
+  startDate: Date,
+  endDate: Date
+): Promise<ProviderPerformanceMetrics[]> {
+  // Get all active providers
+  const providers = await ctx.prisma.provider.findMany({
+    where: {
+      organizationId: ctx.user.organizationId,
+      isActive: true,
+    },
+    include: {
+      user: true,
+    },
+  });
+
+  const providerMetrics: ProviderPerformanceMetrics[] = [];
+
+  for (const provider of providers) {
+    // Get patient count
+    const patientCount = await ctx.prisma.patient.count({
+      where: {
+        organizationId: ctx.user.organizationId,
+        status: 'ACTIVE',
+        encounters: {
+          some: {
+            providerId: provider.id,
+            encounterDate: { gte: startDate, lte: endDate },
+          },
+        },
+      },
+    });
+
+    // Skip providers with no patients in period
+    if (patientCount === 0) continue;
+
+    // Get completed treatment plans
+    const completedPlans = await ctx.prisma.treatmentPlan.count({
+      where: {
+        organizationId: ctx.user.organizationId,
+        providerId: provider.id,
+        status: 'COMPLETED',
+        endDate: { gte: startDate, lte: endDate },
+      },
+    });
+
+    // Get outcome improvements
+    const assessmentsWithChange = await ctx.prisma.outcomeAssessment.findMany({
+      where: {
+        patient: { organizationId: ctx.user.organizationId },
+        encounter: { providerId: provider.id },
+        changePercent: { not: null },
+        administeredAt: { gte: startDate, lte: endDate },
+      },
+      select: { changePercent: true },
+    });
+
+    const avgImprovement = assessmentsWithChange.length > 0
+      ? Math.abs(assessmentsWithChange.reduce((sum, a) => sum + Number(a.changePercent), 0) / assessmentsWithChange.length)
+      : 0;
+
+    // Get satisfaction scores (org-wide as ChatSession doesn't have provider assignment)
+    // Using overall org satisfaction as proxy for provider performance
+    const satisfactionScores = await ctx.prisma.chatSession.findMany({
+      where: {
+        organizationId: ctx.user.organizationId,
+        satisfactionScore: { not: null },
+        createdAt: { gte: startDate, lte: endDate },
+      },
+      select: { satisfactionScore: true },
+    });
+
+    const avgSatisfaction = satisfactionScores.length > 0
+      ? satisfactionScores.reduce((sum: number, s: { satisfactionScore: number | null }) => sum + (s.satisfactionScore || 0), 0) / satisfactionScores.length
+      : 0;
+
+    // Get care gap closure rate
+    const providerGapsIdentified = await ctx.prisma.encounter.count({
+      where: {
+        providerId: provider.id,
+        organizationId: ctx.user.organizationId,
+        patient: {
+          careGaps: {
+            some: {
+              createdAt: { gte: startDate, lte: endDate },
+            },
+          },
+        },
+      },
+    });
+
+    const providerGapsResolved = await ctx.prisma.encounter.count({
+      where: {
+        providerId: provider.id,
+        organizationId: ctx.user.organizationId,
+        patient: {
+          careGaps: {
+            some: {
+              status: 'RESOLVED',
+              resolvedDate: { gte: startDate, lte: endDate },
+            },
+          },
+        },
+      },
+    });
+
+    const careGapClosureRate = providerGapsIdentified > 0
+      ? Math.round((providerGapsResolved / providerGapsIdentified) * 100)
+      : 100;
+
+    // Get visit compliance
+    const providerPlans = await ctx.prisma.treatmentPlan.findMany({
+      where: {
+        organizationId: ctx.user.organizationId,
+        providerId: provider.id,
+        status: { in: ['ACTIVE', 'COMPLETED'] },
+        startDate: { lte: endDate },
+      },
+      select: {
+        plannedVisits: true,
+        completedVisits: true,
+      },
+    });
+
+    const totalPlanned = providerPlans.reduce((sum, p) => sum + (p.plannedVisits || 0), 0);
+    const totalCompleted = providerPlans.reduce((sum, p) => sum + (p.completedVisits || 0), 0);
+    const visitComplianceRate = totalPlanned > 0 ? Math.round((totalCompleted / totalPlanned) * 100) : 100;
+
+    // Calculate overall quality score
+    const overallScore = Math.round(
+      (avgImprovement * 0.3) +
+      (avgSatisfaction * 20 * 0.2) +
+      (careGapClosureRate * 0.25) +
+      (visitComplianceRate * 0.25)
+    );
+
+    // Get previous period metric for trend
+    const prevPeriodMetric = await ctx.prisma.qAMetric.findFirst({
+      where: {
+        organizationId: ctx.user.organizationId,
+        providerId: provider.id,
+        metricType: 'PROVIDER_PERFORMANCE',
+        periodEnd: { lt: startDate },
+      },
+      orderBy: { periodEnd: 'desc' },
+    });
+
+    const trend = prevPeriodMetric
+      ? (overallScore > Number(prevPeriodMetric.percentage) ? 'improving' :
+         overallScore < Number(prevPeriodMetric.percentage) ? 'declining' : 'stable')
+      : 'insufficient_data';
+
+    const user = provider.user as { firstName: string; lastName: string };
+    providerMetrics.push({
+      providerId: provider.id,
+      providerName: `${user.firstName} ${user.lastName}`,
+      totalPatients: patientCount,
+      activePatients: patientCount,
+      completedTreatmentPlans: completedPlans,
+      avgOutcomeImprovement: Math.round(avgImprovement),
+      avgSatisfactionScore: Number(avgSatisfaction.toFixed(1)),
+      careGapClosureRate,
+      visitComplianceRate,
+      overallQualityScore: overallScore,
+      rank: 0, // Will be set after sorting
+      trend,
+    });
+  }
+
+  // Sort by overall score and assign ranks
+  providerMetrics.sort((a, b) => b.overallQualityScore - a.overallQualityScore);
+  providerMetrics.forEach((p, i) => { p.rank = i + 1; });
+
+  return providerMetrics;
+}
+
+/**
+ * Update clinical quality metrics
+ */
+async function updateClinicalQualityMetrics(
+  ctx: { prisma: import('@prisma/client').PrismaClient; user: { organizationId: string } },
+  assessments: ClinicalQualityAssessment[],
+  overallScore: number,
+  providerId?: string
+): Promise<void> {
+  const now = new Date();
+  const periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+  // Update overall clinical quality metric
+  await upsertQualityMetric(ctx, 'CLINICAL_QUALITY_OVERALL', overallScore, periodStart, periodEnd, providerId);
+
+  // Update individual assessment metrics
+  for (const assessment of assessments) {
+    const metricType: 'OUTCOME_TRACKING' | 'TREATMENT_EFFECTIVENESS' | 'PATIENT_SATISFACTION' | 'CARE_GAP_CLOSURE' | 'VISIT_COMPLIANCE' =
+      assessment.criteriaName === 'outcomeTracking' ? 'OUTCOME_TRACKING' :
+      assessment.criteriaName === 'treatmentEffectiveness' ? 'TREATMENT_EFFECTIVENESS' :
+      assessment.criteriaName === 'patientSatisfaction' ? 'PATIENT_SATISFACTION' :
+      assessment.criteriaName === 'careGapClosure' ? 'CARE_GAP_CLOSURE' :
+      'VISIT_COMPLIANCE';
+
+    await upsertQualityMetric(ctx, metricType, assessment.metrics.percentage, periodStart, periodEnd, providerId);
+  }
+}
+
+/**
+ * Upsert a quality metric
+ */
+async function upsertQualityMetric(
+  ctx: { prisma: import('@prisma/client').PrismaClient; user: { organizationId: string } },
+  metricType: 'CLINICAL_QUALITY_OVERALL' | 'OUTCOME_TRACKING' | 'TREATMENT_EFFECTIVENESS' | 'PATIENT_SATISFACTION' | 'CARE_GAP_CLOSURE' | 'VISIT_COMPLIANCE' | 'PROVIDER_PERFORMANCE',
+  score: number,
+  periodStart: Date,
+  periodEnd: Date,
+  providerId?: string
+): Promise<void> {
+  const existing = await ctx.prisma.qAMetric.findFirst({
+    where: {
+      organizationId: ctx.user.organizationId,
+      metricType,
+      period: 'monthly',
+      periodStart,
+      providerId: providerId || null,
+    },
+  });
+
+  if (existing) {
+    const prevScore = Number(existing.percentage);
+    await ctx.prisma.qAMetric.update({
+      where: { id: existing.id },
+      data: {
+        score,
+        percentage: score,
+        meetsTarget: score >= 80,
+        trend: score > prevScore ? 'improving' : score < prevScore ? 'declining' : 'stable',
+      },
+    });
+  } else {
+    await ctx.prisma.qAMetric.create({
+      data: {
+        organizationId: ctx.user.organizationId,
+        metricType,
+        period: 'monthly',
+        periodStart,
+        periodEnd,
+        score,
+        maxScore: 100,
+        percentage: score,
+        target: 80,
+        benchmark: 75,
+        meetsTarget: score >= 80,
+        providerId,
+      },
+    });
+  }
+}
+
+/**
+ * Generate clinical quality improvement recommendations
+ */
+function generateClinicalQualityRecommendations(
+  assessments: ClinicalQualityAssessment[],
+  overallScore: number,
+  criticalCount: number,
+  highCount: number
+): string[] {
+  const recommendations: string[] = [];
+
+  // Sort assessments by score (lowest first)
+  const sortedAssessments = [...assessments].sort((a, b) =>
+    (a.score / a.maxScore) - (b.score / b.maxScore)
+  );
+
+  // Prioritize recommendations based on lowest scoring areas
+  const lowestArea = sortedAssessments[0];
+  if (lowestArea && (lowestArea.score / lowestArea.maxScore) < 0.7) {
+    recommendations.push(`Priority focus: ${lowestArea.criteriaName} - currently scoring ${Math.round((lowestArea.score / lowestArea.maxScore) * 100)}%`);
+  }
+
+  // Add area-specific recommendations
+  for (const assessment of sortedAssessments.slice(0, 3)) {
+    if (!assessment.passed && assessment.recommendations.length > 0) {
+      recommendations.push(assessment.recommendations[0]);
+    }
+  }
+
+  // Overall score-based recommendations
+  if (overallScore < 60) {
+    recommendations.push('Consider comprehensive quality improvement initiative across all clinical metrics');
+    recommendations.push('Schedule team meeting to review clinical quality goals and processes');
+  } else if (overallScore < 80) {
+    recommendations.push('Focus improvement efforts on the lowest-scoring quality metrics');
+  }
+
+  if (criticalCount > 0 || highCount > 0) {
+    recommendations.push(`Address ${criticalCount + highCount} high-priority findings to improve quality scores`);
+  }
+
+  // Dedup and limit recommendations
+  const uniqueRecs = [...new Set(recommendations)];
+  return uniqueRecs.slice(0, 7);
+}
+
+/**
+ * Generate education content for clinical findings
+ */
+function generateClinicalEducationContent(findingType: string): {
+  title: string;
+  description: string;
+  actionItems: string[];
+  resources: string[];
+} {
+  const educationMap: Record<string, ReturnType<typeof generateClinicalEducationContent>> = {
+    'CLINICAL_OUTCOME_TRACKING': {
+      title: 'Outcome Assessment Best Practices',
+      description: 'Regular outcome assessments are essential for tracking patient progress and demonstrating treatment effectiveness.',
+      actionItems: [
+        'Administer baseline outcome assessment at initial visit',
+        'Re-assess at regular intervals (every 4-6 weeks)',
+        'Use appropriate tools for the condition (ODI for lumbar, NDI for cervical)',
+        'Document and discuss results with patients',
+      ],
+      resources: [
+        'Oswestry Disability Index (ODI) administration guide',
+        'Neck Disability Index (NDI) scoring instructions',
+        'NPRS pain scale documentation tips',
+      ],
+    },
+    'CLINICAL_TREATMENT_EFFECTIVENESS': {
+      title: 'Improving Treatment Outcomes',
+      description: 'Treatment effectiveness is measured by meaningful improvement in patient-reported outcomes and functional status.',
+      actionItems: [
+        'Review treatment protocols for non-improving patients',
+        'Consider additional modalities or referrals for challenging cases',
+        'Engage patients in their treatment goals',
+        'Track minimum clinically important difference (MCID)',
+      ],
+      resources: [
+        'Evidence-based chiropractic protocols',
+        'MCID values for common outcome measures',
+        'Treatment modification guidelines',
+      ],
+    },
+    'CLINICAL_PATIENT_SATISFACTION': {
+      title: 'Patient Experience Excellence',
+      description: 'Patient satisfaction correlates with treatment adherence and outcomes.',
+      actionItems: [
+        'Communicate clearly about treatment plans and expectations',
+        'Address patient concerns promptly',
+        'Minimize wait times',
+        'Follow up after visits',
+      ],
+      resources: [
+        'Patient communication best practices',
+        'Service recovery guidelines',
+        'Satisfaction survey implementation guide',
+      ],
+    },
+    'CLINICAL_CARE_GAP': {
+      title: 'Care Gap Management',
+      description: 'Proactively identifying and closing care gaps improves patient outcomes and practice efficiency.',
+      actionItems: [
+        'Review care gap reports weekly',
+        'Implement patient outreach for overdue follow-ups',
+        'Track care gap closure rates by type',
+        'Address systemic issues causing gaps',
+      ],
+      resources: [
+        'Care gap identification criteria',
+        'Patient outreach templates',
+        'Care gap dashboard guide',
+      ],
+    },
+    'CLINICAL_VISIT_COMPLIANCE': {
+      title: 'Improving Visit Compliance',
+      description: 'Patients who complete recommended visits achieve better outcomes.',
+      actionItems: [
+        'Discuss importance of treatment plan completion with patients',
+        'Send appointment reminders',
+        'Follow up on no-shows promptly',
+        'Address barriers to care (scheduling, cost)',
+      ],
+      resources: [
+        'Patient engagement strategies',
+        'No-show reduction techniques',
+        'Flexible scheduling options',
+      ],
+    },
+  };
+
+  return educationMap[findingType] || {
+    title: 'Clinical Quality Improvement',
+    description: 'Focus on continuous improvement in clinical quality metrics.',
+    actionItems: ['Review finding details', 'Implement recommended changes', 'Monitor for improvement'],
+    resources: ['Quality improvement framework'],
+  };
+}
 
 // ============================================
 // Helper functions for documentation assessment
@@ -4087,6 +5642,59 @@ async function updateComplianceMetrics(
     });
   }
 }
+
+// ============================================
+// US-351: Clinical quality measures
+// ============================================
+
+// Clinical quality criteria weights
+const clinicalQualityCriteria: QualityCriteria[] = [
+  { name: 'outcomeTracking', weight: 25, description: 'Regular outcome assessments completed' },
+  { name: 'treatmentEffectiveness', weight: 25, description: 'Patients showing measurable improvement' },
+  { name: 'patientSatisfaction', weight: 15, description: 'Patient satisfaction scores' },
+  { name: 'careGapClosure', weight: 20, description: 'Care gaps resolved timely' },
+  { name: 'visitCompliance', weight: 15, description: 'Patients completing recommended visits' },
+];
+
+// Clinical quality assessment interface
+interface ClinicalQualityAssessment {
+  criteriaName: string;
+  score: number;
+  maxScore: number;
+  passed: boolean;
+  metrics: {
+    measured: number;
+    target: number;
+    percentage: number;
+  };
+  findings: string[];
+  recommendations: string[];
+}
+
+// Provider performance metrics interface
+interface ProviderPerformanceMetrics {
+  providerId: string;
+  providerName: string;
+  totalPatients: number;
+  activePatients: number;
+  completedTreatmentPlans: number;
+  avgOutcomeImprovement: number;
+  avgSatisfactionScore: number;
+  careGapClosureRate: number;
+  visitComplianceRate: number;
+  overallQualityScore: number;
+  rank: number;
+  trend: string;
+}
+
+// Benchmark data for clinical quality
+const clinicalBenchmarks = {
+  outcomeAssessmentRate: 80, // % of patients with outcome assessments
+  improvementRate: 70, // % of patients showing improvement
+  satisfactionScore: 4.0, // Average satisfaction (1-5)
+  careGapClosureRate: 85, // % of care gaps resolved
+  visitComplianceRate: 75, // % of recommended visits completed
+};
 
 /**
  * Generate compliance recommendations

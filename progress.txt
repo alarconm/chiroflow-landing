@@ -169,3 +169,65 @@ Date: 2026-01-22
 --- Iteration 4 completed at 2026-01-22 ---
 Story: US-350 - Compliance monitoring
 
+--- Iteration 4 completed at 2026-01-22 15:40:47 ---
+Story: US-350 - Compliance monitoring
+
+## US-351: Clinical quality measures - COMPLETED
+
+### What was implemented:
+- Created `aiQA.trackQuality` mutation for comprehensive clinical quality monitoring
+- Implemented 5 clinical quality assessment criteria:
+  1. **Outcome Tracking** (25%) - Monitors outcome assessment completion rates (ODI, NDI, NPRS, etc.)
+  2. **Treatment Effectiveness** (25%) - Tracks patient improvement rates based on outcome changes
+  3. **Patient Satisfaction** (15%) - Correlates satisfaction scores from chat sessions
+  4. **Care Gap Closure** (20%) - Measures rate of care gap resolution
+  5. **Visit Compliance** (15%) - Tracks completion of recommended treatment visits
+
+- Provider performance comparison:
+  - `aiQA.getProviderQualityComparison` - Compare providers by quality metrics
+  - Per-provider quality scores, rankings, and trends
+  - Organization-wide averages for benchmarking
+
+- Benchmark comparison:
+  - Industry benchmarks for each quality metric
+  - Visual comparison of actual vs benchmark performance
+  - Clear indication of whether benchmarks are met
+
+- Supporting endpoints:
+  - `aiQA.getQualityScoreHistory` - Quality score trends over time by metric type
+  - `aiQA.getClinicalQualityDashboard` - Summary dashboard with scores, trends, quick stats
+  - `aiQA.getClinicalQualityFinding` - Finding details with education content
+  - `aiQA.getClinicalQualityAuditHistory` - Past clinical quality audits
+
+- Quality improvement recommendations:
+  - Auto-generated recommendations based on lowest-scoring areas
+  - Prioritized action items for improvement
+  - Education content for each finding type
+
+- Added new QAMetricType enum values:
+  - CLINICAL_QUALITY_OVERALL, CARE_GAP_CLOSURE, PROVIDER_PERFORMANCE
+  - FUNCTIONAL_IMPROVEMENT, PAIN_REDUCTION, VISIT_COMPLIANCE
+
+- Added new AuditAction type:
+  - AI_QA_CLINICAL_QUALITY
+
+### Acceptance Criteria Met:
+- [x] aiQA.trackQuality - Monitor clinical quality
+- [x] Outcome measure tracking
+- [x] Treatment effectiveness metrics
+- [x] Patient satisfaction correlation
+- [x] Care gap closure rates
+- [x] Benchmark comparison
+- [x] Quality improvement recommendations
+- [x] Provider performance comparison
+
+### Files modified:
+- app/src/server/routers/aiQA.ts (~1400 lines added for clinical quality)
+- app/src/lib/audit.ts (added AI_QA_CLINICAL_QUALITY action)
+- app/prisma/schema.prisma (added 6 new QAMetricType enum values)
+
+### Status: COMPLETE
+Date: 2026-01-22
+--- Iteration 5 completed at 2026-01-22 ---
+Story: US-351 - Clinical quality measures
+
