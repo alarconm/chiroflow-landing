@@ -40,3 +40,25 @@ COMPLETED: Created aiRevenue.ts router with full leakage detection:
 - Router added to index.ts as aiRevenue
 - TypeScript compilation passes
 
+--- Iteration 7 completed at 2026-01-22 14:32:17 ---
+Story: US-340 - Revenue leakage detection
+
+--- Iteration 8 completed at 2026-01-22 ---
+Story: US-341 - Fee schedule optimization
+COMPLETED: Added comprehensive fee schedule optimization to aiRevenue.ts:
+- aiRevenue.analyzeFees - Main fee analysis procedure
+  - Compares to Medicare rates (built-in rate table for common chiro codes)
+  - Compares to regional benchmarks (geographic adjustment factors)
+  - Analyzes payer reimbursement patterns from claims data
+  - Identifies underpriced services (below 125% Medicare)
+  - Models revenue impact with annualized projections
+  - Generates prioritized fee update recommendations
+  - Persists analysis to FeeScheduleAnalysis table
+- aiRevenue.getFeeAnalyses - Query fee analyses with filters
+- aiRevenue.reviewFeeRecommendation - Approve/reject recommendations
+- aiRevenue.implementFeeChanges - Apply approved changes to fee schedules
+- aiRevenue.trackFeeEffectiveness - Track actual vs projected impact
+- aiRevenue.getFeeOptimizationSummary - Dashboard summary of opportunities
+- Creates OptimizationAction records for tracking
+- TypeScript compilation passes
+

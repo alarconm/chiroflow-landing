@@ -52,7 +52,7 @@
         "Track fee change effectiveness"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-342",

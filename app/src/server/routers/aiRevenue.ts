@@ -790,4 +790,788 @@ export const aiRevenueRouter = router({
       },
     };
   }),
+
+  // ============================================
+  // US-341: Fee Schedule Optimization
+  // ============================================
+
+  /**
+   * Analyze fee schedule and recommend optimal pricing
+   * Compares to Medicare rates, regional benchmarks, and payer reimbursement patterns
+   */
+  analyzeFees: billerProcedure
+    .input(
+      z.object({
+        feeScheduleId: z.string().optional(),
+        cptCodes: z.array(z.string()).optional(),
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+        minUtilization: z.number().default(5), // Minimum uses to include in analysis
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { feeScheduleId, cptCodes, dateFrom, dateTo, minUtilization } = input;
+      const organizationId = ctx.user.organizationId;
+
+      // Default date range: last 12 months
+      const endDate = dateTo || new Date();
+      const startDate = dateFrom || new Date(endDate.getTime() - 365 * 24 * 60 * 60 * 1000);
+
+      // Get the fee schedule (default or specified)
+      const feeSchedule = await ctx.prisma.feeSchedule.findFirst({
+        where: {
+          organizationId,
+          ...(feeScheduleId ? { id: feeScheduleId } : { isDefault: true }),
+        },
+        include: {
+          items: true,
+        },
+      });
+
+      if (!feeSchedule) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Fee schedule not found',
+        });
+      }
+
+      // Medicare rates for common chiropractic codes (2024 national average)
+      // In production, this would come from a regularly updated data source
+      const MEDICARE_RATES: Record<string, { rate: number; name: string }> = {
+        // E&M Codes
+        '99201': { rate: 45.0, name: 'Office Visit, New Patient, Level 1' },
+        '99202': { rate: 76.0, name: 'Office Visit, New Patient, Level 2' },
+        '99203': { rate: 110.0, name: 'Office Visit, New Patient, Level 3' },
+        '99204': { rate: 167.0, name: 'Office Visit, New Patient, Level 4' },
+        '99205': { rate: 211.0, name: 'Office Visit, New Patient, Level 5' },
+        '99211': { rate: 23.0, name: 'Office Visit, Established, Level 1' },
+        '99212': { rate: 46.0, name: 'Office Visit, Established, Level 2' },
+        '99213': { rate: 77.0, name: 'Office Visit, Established, Level 3' },
+        '99214': { rate: 113.0, name: 'Office Visit, Established, Level 4' },
+        '99215': { rate: 151.0, name: 'Office Visit, Established, Level 5' },
+        // CMT Codes
+        '98940': { rate: 28.0, name: 'CMT 1-2 Regions' },
+        '98941': { rate: 40.0, name: 'CMT 3-4 Regions' },
+        '98942': { rate: 52.0, name: 'CMT 5 Regions' },
+        '98943': { rate: 28.0, name: 'CMT Extraspinal' },
+        // Therapy Codes
+        '97110': { rate: 32.0, name: 'Therapeutic Exercise' },
+        '97112': { rate: 35.0, name: 'Neuromuscular Re-education' },
+        '97140': { rate: 33.0, name: 'Manual Therapy' },
+        '97530': { rate: 38.0, name: 'Therapeutic Activities' },
+        '97014': { rate: 14.0, name: 'Electrical Stimulation (unattended)' },
+        '97032': { rate: 19.0, name: 'Electrical Stimulation (manual)' },
+        '97035': { rate: 15.0, name: 'Ultrasound' },
+        // X-ray Codes
+        '72040': { rate: 28.0, name: 'X-ray Cervical Spine, 2-3 views' },
+        '72050': { rate: 37.0, name: 'X-ray Cervical Spine, 4+ views' },
+        '72070': { rate: 26.0, name: 'X-ray Thoracic Spine, 2 views' },
+        '72100': { rate: 30.0, name: 'X-ray Lumbar Spine, 2-3 views' },
+        '72110': { rate: 40.0, name: 'X-ray Lumbar Spine, 4+ views' },
+        // Exam Codes
+        '97161': { rate: 88.0, name: 'PT Eval, Low Complexity' },
+        '97162': { rate: 108.0, name: 'PT Eval, Moderate Complexity' },
+        '97163': { rate: 128.0, name: 'PT Eval, High Complexity' },
+      };
+
+      // Regional multiplier (would come from geographic adjustment factors)
+      const REGIONAL_MULTIPLIER = 1.05; // 5% above national average
+
+      // Analyze charges to get utilization and reimbursement data
+      const chargeAnalysis = await ctx.prisma.charge.groupBy({
+        by: ['cptCode'],
+        where: {
+          organizationId,
+          serviceDate: {
+            gte: startDate,
+            lte: endDate,
+          },
+          ...(cptCodes && { cptCode: { in: cptCodes } }),
+        },
+        _count: { id: true },
+        _sum: { fee: true, adjustments: true },
+        _avg: { fee: true },
+      });
+
+      // Get actual reimbursements from claims
+      const reimbursementData = await ctx.prisma.claimLine.groupBy({
+        by: ['cptCode'],
+        where: {
+          claim: {
+            organizationId,
+            status: 'PAID',
+            paidDate: {
+              gte: startDate,
+              lte: endDate,
+            },
+          },
+          ...(cptCodes && { cptCode: { in: cptCodes } }),
+        },
+        _count: { id: true },
+        _sum: { chargedAmount: true, paidAmount: true, allowedAmount: true },
+        _avg: { paidAmount: true, allowedAmount: true },
+      });
+
+      // Get top payer reimbursements per code
+      const payerReimbursements = await ctx.prisma.claimLine.findMany({
+        where: {
+          claim: {
+            organizationId,
+            status: 'PAID',
+            paidDate: {
+              gte: startDate,
+              lte: endDate,
+            },
+          },
+        },
+        include: {
+          claim: {
+            include: {
+              payer: true,
+            },
+          },
+        },
+        take: 5000,
+      });
+
+      // Group reimbursements by CPT code and payer
+      const payerByCode: Record<string, Record<string, { total: number; count: number }>> = {};
+      for (const line of payerReimbursements) {
+        const payerName = line.claim.payer?.name || 'Unknown';
+        if (!payerByCode[line.cptCode]) {
+          payerByCode[line.cptCode] = {};
+        }
+        if (!payerByCode[line.cptCode][payerName]) {
+          payerByCode[line.cptCode][payerName] = { total: 0, count: 0 };
+        }
+        payerByCode[line.cptCode][payerName].total += Number(line.paidAmount || 0);
+        payerByCode[line.cptCode][payerName].count++;
+      }
+
+      // Build analysis for each CPT code
+      interface FeeAnalysis {
+        cptCode: string;
+        cptName: string;
+        currentFee: number;
+        medicareRate: number | null;
+        regionalAverage: number | null;
+        percentOfMedicare: number | null;
+        avgReimbursement: number;
+        topPayerRate: number | null;
+        topPayerName: string | null;
+        utilizationCount: number;
+        recommendedFee: number;
+        feeChange: number;
+        changePercent: number;
+        projectedAnnualImpact: number;
+        reasoning: string;
+        confidence: number;
+        priority: 'low' | 'medium' | 'high' | 'critical';
+      }
+
+      const analyses: FeeAnalysis[] = [];
+
+      // Build a map of current fees from fee schedule
+      const currentFees: Record<string, number> = {};
+      for (const item of feeSchedule.items) {
+        currentFees[item.cptCode] = Number(item.fee);
+      }
+
+      // Analyze each CPT code with sufficient utilization
+      for (const chargeData of chargeAnalysis) {
+        const code = chargeData.cptCode;
+        const utilization = chargeData._count.id;
+
+        if (utilization < minUtilization) continue;
+
+        const currentFee = currentFees[code] || Number(chargeData._avg.fee) || 0;
+        const medicareData = MEDICARE_RATES[code];
+        const medicareRate = medicareData?.rate || null;
+        const regionalAverage = medicareRate ? medicareRate * REGIONAL_MULTIPLIER : null;
+        const cptName = medicareData?.name || `CPT ${code}`;
+
+        // Get reimbursement data for this code
+        const reimbData = reimbursementData.find((r) => r.cptCode === code);
+        const avgReimbursement = reimbData?._avg.paidAmount ? Number(reimbData._avg.paidAmount) : 0;
+        const avgAllowed = reimbData?._avg.allowedAmount ? Number(reimbData._avg.allowedAmount) : avgReimbursement;
+
+        // Find top paying payer for this code
+        let topPayerRate: number | null = null;
+        let topPayerName: string | null = null;
+        if (payerByCode[code]) {
+          for (const [payer, data] of Object.entries(payerByCode[code])) {
+            const avgPayerRate = data.total / data.count;
+            if (topPayerRate === null || avgPayerRate > topPayerRate) {
+              topPayerRate = avgPayerRate;
+              topPayerName = payer;
+            }
+          }
+        }
+
+        // Calculate percent of Medicare
+        const percentOfMedicare = medicareRate && currentFee > 0 ? (currentFee / medicareRate) * 100 : null;
+
+        // Determine recommended fee and reasoning
+        let recommendedFee = currentFee;
+        const reasoningParts: string[] = [];
+        let confidence = 50; // Base confidence
+
+        // Compare to Medicare benchmark
+        if (medicareRate) {
+          const idealPercentOfMedicare = 200; // Target 200% of Medicare for cash/standard fee schedule
+          const idealFee = medicareRate * (idealPercentOfMedicare / 100);
+
+          if (currentFee < medicareRate * 1.25) {
+            // Below 125% of Medicare - significantly underpriced
+            recommendedFee = Math.max(recommendedFee, medicareRate * 1.5);
+            reasoningParts.push(
+              `Current fee is only ${percentOfMedicare?.toFixed(0)}% of Medicare rate ($${medicareRate.toFixed(2)}). Minimum recommended: 150% of Medicare.`
+            );
+            confidence += 20;
+          } else if (currentFee < medicareRate * 1.75) {
+            // Below 175% - likely underpriced
+            recommendedFee = Math.max(recommendedFee, medicareRate * 1.75);
+            reasoningParts.push(
+              `Fee is ${percentOfMedicare?.toFixed(0)}% of Medicare. Industry standard for chiropractic is 150-250% of Medicare.`
+            );
+            confidence += 15;
+          } else if (currentFee > medicareRate * 3.0) {
+            // Above 300% - may be overpriced
+            reasoningParts.push(
+              `Fee is ${percentOfMedicare?.toFixed(0)}% of Medicare - higher than typical. Review if justified by market or specialty.`
+            );
+          }
+        }
+
+        // Compare to actual reimbursements
+        if (avgReimbursement > 0) {
+          if (currentFee < avgReimbursement * 1.2) {
+            // Fee is close to what payers actually pay - leaving money on table
+            recommendedFee = Math.max(recommendedFee, avgReimbursement * 1.5);
+            reasoningParts.push(
+              `Current fee ($${currentFee.toFixed(2)}) is close to avg reimbursement ($${avgReimbursement.toFixed(2)}). Raise fee to maximize contractual adjustments.`
+            );
+            confidence += 15;
+          }
+        }
+
+        // Compare to top payer rate
+        if (topPayerRate && topPayerRate > 0) {
+          if (currentFee < topPayerRate * 1.3) {
+            recommendedFee = Math.max(recommendedFee, topPayerRate * 1.5);
+            reasoningParts.push(
+              `Top payer (${topPayerName}) pays $${topPayerRate.toFixed(2)}. Fee should be at least 150% of best reimbursement.`
+            );
+            confidence += 10;
+          }
+        }
+
+        // Regional benchmark comparison
+        if (regionalAverage) {
+          if (recommendedFee < regionalAverage * 1.5) {
+            recommendedFee = Math.max(recommendedFee, regionalAverage * 1.75);
+            reasoningParts.push(
+              `Regional average (based on geographic adjustment) is $${regionalAverage.toFixed(2)}.`
+            );
+          }
+        }
+
+        // Cap confidence at 95
+        confidence = Math.min(confidence, 95);
+
+        // If no significant change needed
+        if (Math.abs(recommendedFee - currentFee) < 5) {
+          recommendedFee = currentFee;
+          reasoningParts.push('Current fee is within acceptable range based on benchmarks and reimbursement data.');
+        }
+
+        const feeChange = recommendedFee - currentFee;
+        const changePercent = currentFee > 0 ? (feeChange / currentFee) * 100 : 0;
+
+        // Calculate projected annual impact
+        // Assume fee increase would apply to a portion of payers (cash and some commercial)
+        const cashRatio = 0.3; // Assume 30% of volume is cash or fee-schedule sensitive
+        const projectedAnnualImpact = feeChange * utilization * cashRatio * (12 / ((endDate.getTime() - startDate.getTime()) / (30 * 24 * 60 * 60 * 1000)));
+
+        // Determine priority based on impact
+        let priority: 'low' | 'medium' | 'high' | 'critical' = 'low';
+        if (projectedAnnualImpact >= 5000) priority = 'critical';
+        else if (projectedAnnualImpact >= 2000) priority = 'high';
+        else if (projectedAnnualImpact >= 500) priority = 'medium';
+
+        analyses.push({
+          cptCode: code,
+          cptName,
+          currentFee,
+          medicareRate,
+          regionalAverage,
+          percentOfMedicare,
+          avgReimbursement,
+          topPayerRate,
+          topPayerName,
+          utilizationCount: utilization,
+          recommendedFee: Math.round(recommendedFee * 100) / 100,
+          feeChange: Math.round(feeChange * 100) / 100,
+          changePercent: Math.round(changePercent * 100) / 100,
+          projectedAnnualImpact: Math.round(projectedAnnualImpact * 100) / 100,
+          reasoning: reasoningParts.join(' ') || 'No significant pricing adjustments recommended.',
+          confidence,
+          priority,
+        });
+      }
+
+      // Sort by projected impact
+      analyses.sort((a, b) => b.projectedAnnualImpact - a.projectedAnnualImpact);
+
+      // Persist analysis results
+      for (const analysis of analyses) {
+        await ctx.prisma.feeScheduleAnalysis.create({
+          data: {
+            cptCode: analysis.cptCode,
+            cptName: analysis.cptName,
+            currentFee: new Decimal(analysis.currentFee),
+            recommendedFee: new Decimal(analysis.recommendedFee),
+            feeChange: new Decimal(analysis.feeChange),
+            changePercent: new Decimal(analysis.changePercent),
+            reasoning: analysis.reasoning,
+            medicareRate: analysis.medicareRate ? new Decimal(analysis.medicareRate) : null,
+            regionalAverage: analysis.regionalAverage ? new Decimal(analysis.regionalAverage) : null,
+            percentOfMedicare: analysis.percentOfMedicare ? new Decimal(analysis.percentOfMedicare) : null,
+            topPayerRate: analysis.topPayerRate ? new Decimal(analysis.topPayerRate) : null,
+            avgReimbursement: analysis.avgReimbursement ? new Decimal(analysis.avgReimbursement) : null,
+            utilizationCount: analysis.utilizationCount,
+            projectedAnnualImpact: new Decimal(analysis.projectedAnnualImpact),
+            confidence: new Decimal(analysis.confidence),
+            status: 'pending',
+            organizationId,
+          },
+        });
+      }
+
+      // Calculate summary
+      const summary = {
+        totalCodesAnalyzed: analyses.length,
+        codesWithRecommendations: analyses.filter((a) => a.feeChange !== 0).length,
+        totalProjectedImpact: analyses.reduce((sum, a) => sum + a.projectedAnnualImpact, 0),
+        avgChangePercent:
+          analyses.length > 0 ? analyses.reduce((sum, a) => sum + a.changePercent, 0) / analyses.length : 0,
+        topOpportunities: analyses.slice(0, 10),
+        byPriority: {
+          critical: analyses.filter((a) => a.priority === 'critical').length,
+          high: analyses.filter((a) => a.priority === 'high').length,
+          medium: analyses.filter((a) => a.priority === 'medium').length,
+          low: analyses.filter((a) => a.priority === 'low').length,
+        },
+      };
+
+      return {
+        success: true,
+        summary,
+        analyses,
+        feeSchedule: {
+          id: feeSchedule.id,
+          name: feeSchedule.name,
+        },
+        dateRange: {
+          from: startDate,
+          to: endDate,
+        },
+        analyzedAt: new Date(),
+      };
+    }),
+
+  /**
+   * Get fee schedule analysis results
+   */
+  getFeeAnalyses: billerProcedure
+    .input(
+      z.object({
+        status: z.enum(['pending', 'approved', 'rejected', 'implemented']).optional(),
+        minImpact: z.number().optional(),
+        limit: z.number().min(1).max(100).default(50),
+        offset: z.number().min(0).default(0),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { status, minImpact, limit, offset } = input;
+
+      const where = {
+        organizationId: ctx.user.organizationId,
+        ...(status && { status }),
+        ...(minImpact && { projectedAnnualImpact: { gte: minImpact } }),
+      };
+
+      const [analyses, total] = await Promise.all([
+        ctx.prisma.feeScheduleAnalysis.findMany({
+          where,
+          orderBy: [{ projectedAnnualImpact: 'desc' }],
+          take: limit,
+          skip: offset,
+        }),
+        ctx.prisma.feeScheduleAnalysis.count({ where }),
+      ]);
+
+      return {
+        analyses,
+        total,
+        hasMore: offset + analyses.length < total,
+      };
+    }),
+
+  /**
+   * Approve/reject fee recommendation
+   */
+  reviewFeeRecommendation: billerProcedure
+    .input(
+      z.object({
+        analysisId: z.string(),
+        action: z.enum(['approve', 'reject']),
+        effectiveDate: z.date().optional(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { analysisId, action, effectiveDate, notes } = input;
+
+      const analysis = await ctx.prisma.feeScheduleAnalysis.findFirst({
+        where: {
+          id: analysisId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!analysis) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Analysis not found',
+        });
+      }
+
+      const updated = await ctx.prisma.feeScheduleAnalysis.update({
+        where: { id: analysisId },
+        data: {
+          status: action === 'approve' ? 'approved' : 'rejected',
+          approvedBy: ctx.user.id,
+          approvedAt: new Date(),
+          effectiveDate: action === 'approve' ? effectiveDate : null,
+        },
+      });
+
+      // If approved, create an optimization action to track
+      if (action === 'approve') {
+        await ctx.prisma.optimizationAction.create({
+          data: {
+            actionType: 'fee_update',
+            action: `Approved fee change for ${analysis.cptCode}: $${analysis.currentFee} → $${analysis.recommendedFee}`,
+            projectedImpact: analysis.projectedAnnualImpact,
+            status: 'pending',
+            organizationId: ctx.user.organizationId,
+          },
+        });
+      }
+
+      return {
+        success: true,
+        analysis: updated,
+      };
+    }),
+
+  /**
+   * Implement approved fee changes
+   */
+  implementFeeChanges: billerProcedure
+    .input(
+      z.object({
+        analysisIds: z.array(z.string()),
+        feeScheduleId: z.string(),
+        effectiveDate: z.date().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { analysisIds, feeScheduleId, effectiveDate } = input;
+      const organizationId = ctx.user.organizationId;
+
+      // Get approved analyses
+      const analyses = await ctx.prisma.feeScheduleAnalysis.findMany({
+        where: {
+          id: { in: analysisIds },
+          organizationId,
+          status: 'approved',
+        },
+      });
+
+      if (analyses.length === 0) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'No approved analyses found to implement',
+        });
+      }
+
+      // Update fee schedule items
+      const results: { cptCode: string; oldFee: number; newFee: number; success: boolean }[] = [];
+
+      for (const analysis of analyses) {
+        try {
+          // Try to update existing item
+          const existingItem = await ctx.prisma.feeScheduleItem.findFirst({
+            where: {
+              feeScheduleId,
+              cptCode: analysis.cptCode,
+            },
+          });
+
+          if (existingItem) {
+            await ctx.prisma.feeScheduleItem.update({
+              where: { id: existingItem.id },
+              data: {
+                fee: analysis.recommendedFee,
+              },
+            });
+          } else {
+            // Create new item
+            await ctx.prisma.feeScheduleItem.create({
+              data: {
+                feeScheduleId,
+                cptCode: analysis.cptCode,
+                fee: analysis.recommendedFee,
+                description: analysis.cptName,
+              },
+            });
+          }
+
+          // Mark analysis as implemented
+          await ctx.prisma.feeScheduleAnalysis.update({
+            where: { id: analysis.id },
+            data: {
+              status: 'implemented',
+              effectiveDate: effectiveDate || new Date(),
+            },
+          });
+
+          results.push({
+            cptCode: analysis.cptCode,
+            oldFee: Number(analysis.currentFee),
+            newFee: Number(analysis.recommendedFee),
+            success: true,
+          });
+        } catch {
+          results.push({
+            cptCode: analysis.cptCode,
+            oldFee: Number(analysis.currentFee),
+            newFee: Number(analysis.recommendedFee),
+            success: false,
+          });
+        }
+      }
+
+      // Create optimization action record
+      const successCount = results.filter((r) => r.success).length;
+      const totalImpact = analyses.reduce((sum, a) => sum + Number(a.projectedAnnualImpact || 0), 0);
+
+      await ctx.prisma.optimizationAction.create({
+        data: {
+          actionType: 'fee_update',
+          action: `Implemented ${successCount} fee schedule changes`,
+          projectedImpact: new Decimal(totalImpact),
+          status: 'completed',
+          completedAt: new Date(),
+          completedBy: ctx.user.id,
+          organizationId,
+        },
+      });
+
+      return {
+        success: true,
+        implemented: successCount,
+        failed: results.length - successCount,
+        results,
+        totalProjectedImpact: totalImpact,
+      };
+    }),
+
+  /**
+   * Track effectiveness of fee changes
+   */
+  trackFeeEffectiveness: billerProcedure
+    .input(
+      z.object({
+        cptCode: z.string().optional(),
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { cptCode, dateFrom, dateTo } = input;
+      const organizationId = ctx.user.organizationId;
+
+      // Get implemented fee changes
+      const implementedChanges = await ctx.prisma.feeScheduleAnalysis.findMany({
+        where: {
+          organizationId,
+          status: 'implemented',
+          ...(cptCode && { cptCode }),
+          effectiveDate: {
+            ...(dateFrom && { gte: dateFrom }),
+            ...(dateTo && { lte: dateTo }),
+          },
+        },
+        orderBy: { effectiveDate: 'desc' },
+      });
+
+      // Analyze actual impact for each implemented change
+      const effectiveness: {
+        cptCode: string;
+        cptName: string | null;
+        implementedDate: Date | null;
+        projectedImpact: number;
+        actualImpact: number;
+        variance: number;
+        effectivenessPercent: number;
+      }[] = [];
+
+      for (const change of implementedChanges) {
+        if (!change.effectiveDate) continue;
+
+        // Get revenue before and after the change
+        const beforePeriodStart = new Date(change.effectiveDate.getTime() - 90 * 24 * 60 * 60 * 1000);
+        const afterPeriodEnd = new Date();
+
+        // Revenue before change
+        const beforeCharges = await ctx.prisma.charge.aggregate({
+          where: {
+            organizationId,
+            cptCode: change.cptCode,
+            serviceDate: {
+              gte: beforePeriodStart,
+              lt: change.effectiveDate,
+            },
+          },
+          _sum: { fee: true },
+          _count: { id: true },
+        });
+
+        // Revenue after change
+        const afterCharges = await ctx.prisma.charge.aggregate({
+          where: {
+            organizationId,
+            cptCode: change.cptCode,
+            serviceDate: {
+              gte: change.effectiveDate,
+              lte: afterPeriodEnd,
+            },
+          },
+          _sum: { fee: true },
+          _count: { id: true },
+        });
+
+        const beforeAvgFee = beforeCharges._count.id > 0
+          ? Number(beforeCharges._sum.fee || 0) / beforeCharges._count.id
+          : 0;
+        const afterAvgFee = afterCharges._count.id > 0
+          ? Number(afterCharges._sum.fee || 0) / afterCharges._count.id
+          : 0;
+
+        // Calculate actual impact (annualized)
+        const feeIncrease = afterAvgFee - beforeAvgFee;
+        const avgMonthlyVolume = afterCharges._count.id / Math.max(1, (afterPeriodEnd.getTime() - change.effectiveDate.getTime()) / (30 * 24 * 60 * 60 * 1000));
+        const actualAnnualImpact = feeIncrease * avgMonthlyVolume * 12 * 0.3; // 30% cash ratio
+
+        const projectedImpact = Number(change.projectedAnnualImpact || 0);
+        const variance = actualAnnualImpact - projectedImpact;
+        const effectivenessPercent = projectedImpact > 0 ? (actualAnnualImpact / projectedImpact) * 100 : 0;
+
+        effectiveness.push({
+          cptCode: change.cptCode,
+          cptName: change.cptName,
+          implementedDate: change.effectiveDate,
+          projectedImpact,
+          actualImpact: Math.round(actualAnnualImpact * 100) / 100,
+          variance: Math.round(variance * 100) / 100,
+          effectivenessPercent: Math.round(effectivenessPercent * 100) / 100,
+        });
+      }
+
+      // Calculate summary
+      const summary = {
+        totalChangesTracked: effectiveness.length,
+        totalProjectedImpact: effectiveness.reduce((sum, e) => sum + e.projectedImpact, 0),
+        totalActualImpact: effectiveness.reduce((sum, e) => sum + e.actualImpact, 0),
+        avgEffectiveness: effectiveness.length > 0
+          ? effectiveness.reduce((sum, e) => sum + e.effectivenessPercent, 0) / effectiveness.length
+          : 0,
+        underperforming: effectiveness.filter((e) => e.effectivenessPercent < 80).length,
+        overperforming: effectiveness.filter((e) => e.effectivenessPercent > 120).length,
+      };
+
+      return {
+        effectiveness,
+        summary,
+      };
+    }),
+
+  /**
+   * Get fee optimization summary
+   */
+  getFeeOptimizationSummary: billerProcedure.query(async ({ ctx }) => {
+    const organizationId = ctx.user.organizationId;
+
+    // Get pending recommendations
+    const pendingAnalyses = await ctx.prisma.feeScheduleAnalysis.findMany({
+      where: {
+        organizationId,
+        status: 'pending',
+      },
+    });
+
+    // Get implemented changes in last 12 months
+    const twelveMonthsAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+    const implementedAnalyses = await ctx.prisma.feeScheduleAnalysis.findMany({
+      where: {
+        organizationId,
+        status: 'implemented',
+        effectiveDate: {
+          gte: twelveMonthsAgo,
+        },
+      },
+    });
+
+    // Get optimization actions
+    const feeActions = await ctx.prisma.optimizationAction.findMany({
+      where: {
+        organizationId,
+        actionType: 'fee_update',
+        createdAt: {
+          gte: twelveMonthsAgo,
+        },
+      },
+    });
+
+    const summary = {
+      pending: {
+        count: pendingAnalyses.length,
+        totalProjectedImpact: pendingAnalyses.reduce((sum, a) => sum + Number(a.projectedAnnualImpact || 0), 0),
+      },
+      implemented: {
+        count: implementedAnalyses.length,
+        totalProjectedImpact: implementedAnalyses.reduce((sum, a) => sum + Number(a.projectedAnnualImpact || 0), 0),
+      },
+      actions: {
+        total: feeActions.length,
+        completed: feeActions.filter((a) => a.status === 'completed').length,
+        totalActualImpact: feeActions.reduce((sum, a) => sum + Number(a.actualImpact || 0), 0),
+      },
+      topOpportunities: pendingAnalyses
+        .sort((a, b) => Number(b.projectedAnnualImpact || 0) - Number(a.projectedAnnualImpact || 0))
+        .slice(0, 5)
+        .map((a) => ({
+          cptCode: a.cptCode,
+          cptName: a.cptName,
+          currentFee: Number(a.currentFee),
+          recommendedFee: Number(a.recommendedFee),
+          projectedImpact: Number(a.projectedAnnualImpact || 0),
+        })),
+    };
+
+    return summary;
+  }),
 });
