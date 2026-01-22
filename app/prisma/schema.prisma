@@ -143,6 +143,13 @@ model Organization {
   landingPages          LandingPage[]
   marketingConsents     MarketingConsent[]
 
+  // Chiropractic Clinical Intelligence relations (Epic 19)
+  techniques            Technique[]
+  subluxations          Subluxation[]
+  adjustments           Adjustment[]
+  vertebralListings     VertebralListing[]
+  chiropracticExams     ChiropracticExam[]
+
   @@index([subdomain])
 }
 
@@ -175,6 +182,9 @@ model User {
   // Relations
   auditLogs AuditLog[]
   provider  Provider? // If user is a clinical provider
+
+  // Chiropractic Clinical Intelligence relations (Epic 19)
+  subluxationHistoryEntries SubluxationHistory[]
 
   @@unique([email, organizationId])
   @@index([organizationId])
@@ -359,6 +369,11 @@ model Patient {
   leadsConverted         Lead[] @relation("LeadConversion")
   reviewRequests         ReviewRequest[]
   marketingConsents      MarketingConsent[]
+
+  // Chiropractic Clinical Intelligence relations (Epic 19)
+  subluxations           Subluxation[]
+  vertebralListings      VertebralListing[]
+  chiropracticExams      ChiropracticExam[]
 
   @@unique([mrn, organizationId])
   @@index([organizationId])
@@ -701,6 +716,9 @@ model Provider {
   schedulingGaps             SchedulingGap[]
   utilizations               ProviderUtilization[]
   schedulingSuggestions      SchedulingSuggestion[]
+
+  // Chiropractic Clinical Intelligence relations (Epic 19)
+  techniqueFavorites         TechniqueFavorite[]
 
   @@index([organizationId])
   @@index([isActive])
@@ -1115,6 +1133,13 @@ model Encounter {
   charges      Charge[]
   claims       Claim[]
 
+  // Chiropractic Clinical Intelligence relations (Epic 19)
+  subluxations          Subluxation[]
+  subluxationHistory    SubluxationHistory[]
+  adjustments           Adjustment[]
+  vertebralListings     VertebralListing[]
+  chiropracticExam      ChiropracticExam?
+
   @@index([organizationId])
   @@index([patientId])
   @@index([providerId])
@@ -1448,6 +1473,9 @@ model BodyDiagram {
   // Relations
   encounterId String
   encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+
+  // Chiropractic Clinical Intelligence relations (Epic 19)
+  subluxations Subluxation[]
 
   @@index([encounterId])
   @@index([diagramType])
@@ -6842,4 +6870,332 @@ model MarketingConsent {
   @@index([email])
   @@index([phone])
   @@index([consentType])
+}
+
+// =============================================================================
+// EPIC 19: CHIROPRACTIC CLINICAL INTELLIGENCE
+// =============================================================================
+
+// Spinal region enumeration
+enum SpinalRegion {
+  CERVICAL
+  THORACIC
+  LUMBAR
+  SACRAL
+  PELVIS
+}
+
+// Severity scale for subluxations
+enum SubluxationSeverity {
+  MINIMAL    // 1 - Minimal dysfunction
+  MILD       // 2 - Mild dysfunction
+  MODERATE   // 3 - Moderate dysfunction
+  SEVERE     // 4 - Severe dysfunction
+  EXTREME    // 5 - Extreme dysfunction
+}
+
+// Technique category
+enum TechniqueCategory {
+  MANUAL           // Traditional hands-on techniques
+  INSTRUMENT       // Instrument-assisted (Activator, etc.)
+  TABLE_ASSISTED   // Drop table, flexion-distraction
+  LOW_FORCE        // Gentle/low-force techniques
+}
+
+// Patient response to adjustment
+enum AdjustmentResponse {
+  EXCELLENT        // Cavitation, immediate relief
+  GOOD             // Partial correction, positive response
+  FAIR             // Minimal response
+  GUARDED          // Muscle guarding present
+  POOR             // No correction achieved
+}
+
+// Chiropractic technique library
+model Technique {
+  id                String            @id @default(cuid())
+  name              String            // e.g., "Diversified", "Gonstead", "Activator"
+  category          TechniqueCategory
+  description       String?           @db.Text
+  indications       String[]          // Conditions/areas where technique is indicated
+  contraindications String[]          // When NOT to use
+  instructions      String?           @db.Text // How to perform
+  imageUrl          String?           // Reference image
+  videoUrl          String?           // Tutorial video
+
+  // System vs custom
+  isSystem          Boolean           @default(false) // Pre-seeded techniques
+  isActive          Boolean           @default(true)
+
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  // Multi-tenant relation (null for system techniques)
+  organizationId    String?
+  organization      Organization?     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  adjustments       Adjustment[]
+  providerFavorites TechniqueFavorite[]
+
+  @@unique([name, organizationId])
+  @@index([organizationId])
+  @@index([category])
+  @@index([isSystem])
+}
+
+// Provider's favorite techniques for quick access
+model TechniqueFavorite {
+  id           String   @id @default(cuid())
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  providerId   String
+  provider     Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  techniqueId  String
+  technique    Technique @relation(fields: [techniqueId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, techniqueId])
+  @@index([providerId])
+}
+
+// Subluxation finding documentation
+model Subluxation {
+  id           String              @id @default(cuid())
+  vertebra     String              // e.g., "C1", "T5", "L4", "Sacrum", "Ilium"
+  region       SpinalRegion
+  listing      String              // Standard listing notation (e.g., "PLS", "PRI", "AS-IN")
+  severity     SubluxationSeverity @default(MODERATE)
+  notes        String?             @db.Text
+
+  // Body diagram reference (if marked on diagram)
+  bodyDiagramId String?
+  bodyDiagram   BodyDiagram?       @relation(fields: [bodyDiagramId], references: [id])
+
+  // Status tracking
+  isResolved    Boolean            @default(false)
+  resolvedAt    DateTime?
+  resolvedNotes String?            @db.Text
+
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  // Relations
+  patientId     String
+  patient       Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  encounterId   String
+  encounter     Encounter          @relation(fields: [encounterId], references: [id])
+
+  organizationId String
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // History tracking
+  history       SubluxationHistory[]
+  adjustments   Adjustment[]
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([encounterId])
+  @@index([vertebra])
+  @@index([region])
+  @@index([isResolved])
+}
+
+// Track subluxation changes over time
+model SubluxationHistory {
+  id             String              @id @default(cuid())
+  previousListing String?
+  newListing     String
+  previousSeverity SubluxationSeverity?
+  newSeverity    SubluxationSeverity
+  notes          String?             @db.Text
+  changeReason   String?             // Why the change occurred
+
+  createdAt      DateTime            @default(now())
+
+  subluxationId  String
+  subluxation    Subluxation         @relation(fields: [subluxationId], references: [id], onDelete: Cascade)
+
+  encounterId    String
+  encounter      Encounter           @relation(fields: [encounterId], references: [id])
+
+  // Who documented the change
+  documentedById String?
+  documentedBy   User?               @relation(fields: [documentedById], references: [id])
+
+  @@index([subluxationId])
+  @@index([encounterId])
+  @@index([createdAt])
+}
+
+// Adjustment documentation
+model Adjustment {
+  id              String             @id @default(cuid())
+  vertebra        String             // Segment adjusted
+  region          SpinalRegion
+
+  // Technique used
+  techniqueId     String?
+  technique       Technique?         @relation(fields: [techniqueId], references: [id])
+  techniqueNotes  String?            // Additional notes on technique variation
+
+  // Adjustment details
+  force           String?            // Light, Moderate, Firm
+  direction       String?            // Direction of thrust
+  position        String?            // Patient position (prone, supine, side-lying, seated)
+
+  // Pre-adjustment findings
+  preLegLength    String?            // Leg length difference before
+  preROM          String?            // Range of motion before
+  prePain         Int?               // Pain scale 0-10
+
+  // Post-adjustment findings
+  postLegLength   String?
+  postROM         String?
+  postPain        Int?
+
+  // Patient response
+  response        AdjustmentResponse @default(GOOD)
+  cavitation      Boolean            @default(false) // Audible release
+  muscleGuarding  Boolean            @default(false)
+  immediateRelief Boolean            @default(false)
+  responseNotes   String?            @db.Text
+
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  // Relations
+  encounterId     String
+  encounter       Encounter          @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+
+  // Optional link to subluxation being addressed
+  subluxationId   String?
+  subluxation     Subluxation?       @relation(fields: [subluxationId], references: [id])
+
+  organizationId  String
+  organization    Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([encounterId])
+  @@index([subluxationId])
+  @@index([vertebra])
+  @@index([region])
+  @@index([techniqueId])
+}
+
+// Vertebral listing documentation (detailed biomechanical analysis)
+model VertebralListing {
+  id           String       @id @default(cuid())
+  segment      String       // Vertebral segment (e.g., "C2", "T6", "L5")
+  region       SpinalRegion
+
+  // Gonstead listing notation
+  laterality   String?      // PL (Posterior Left), PR (Posterior Right)
+  rotation     String?      // S (Superior), I (Inferior)
+  listing      String       // Full listing (e.g., "PLS", "PRI", "PRS-m")
+
+  // Palmer listing notation (alternative)
+  palmerListing String?
+
+  // Positional analysis
+  flexion      Boolean      @default(false)
+  extension    Boolean      @default(false)
+  lateralFlexion String?    // Left/Right
+  rotationDir  String?      // Left/Right
+
+  // Additional findings
+  fixation     Boolean      @default(false)
+  hypermobility Boolean     @default(false)
+  edema        Boolean      @default(false)
+  tenderness   Int?         // 0-10 scale
+  muscleSpasm  Boolean      @default(false)
+
+  notes        String?      @db.Text
+
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  // Relations
+  patientId    String
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  encounterId  String
+  encounter    Encounter    @relation(fields: [encounterId], references: [id])
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([encounterId])
+  @@index([segment])
+  @@index([region])
+}
+
+// Comprehensive chiropractic examination
+model ChiropracticExam {
+  id               String   @id @default(cuid())
+
+  // Leg Length Assessment
+  legLengthProne   String?  // e.g., "Right short 1/4 inch"
+  legLengthSupine  String?
+  legLengthSeated  String?
+  legLengthNotes   String?  @db.Text
+
+  // Muscle Testing (grades 0-5)
+  muscleTestingData Json?   // { "muscle": grade, ... }
+  muscleTestingNotes String? @db.Text
+
+  // Static Palpation
+  staticPalpationFindings Json?   // { "segment": "finding", ... }
+  staticPalpationNotes    String? @db.Text
+
+  // Motion Palpation
+  motionPalpationFindings Json?   // { "segment": "restriction type", ... }
+  motionPalpationNotes    String? @db.Text
+
+  // Postural Analysis
+  posturalFindings  Json?   // Structured postural analysis data
+  posturalNotes     String? @db.Text
+
+  // Orthopedic Tests
+  orthopedicTests   Json?   // { "testName": { "result": "positive/negative", "notes": "" } }
+
+  // Neurological Screening
+  dtrFindings       Json?   // Deep tendon reflexes
+  dermatomeFindings Json?   // Dermatomal sensation
+  myotomeFindings   Json?   // Myotomal strength
+  neurologicalNotes String? @db.Text
+
+  // Range of Motion
+  cervicalROM       Json?   // { "flexion": 50, "extension": 60, ... }
+  thoracicROM       Json?
+  lumbarROM         Json?
+  romNotes          String? @db.Text
+
+  // Additional findings
+  vitalSigns        Json?   // BP, pulse, resp, temp if needed
+  generalObservations String? @db.Text
+
+  // Exam summary (for notes integration)
+  summary           String? @db.Text
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  patientId         String
+  patient           Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  encounterId       String   @unique
+  encounter         Encounter @relation(fields: [encounterId], references: [id])
+
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([encounterId])
 }
