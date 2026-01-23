@@ -794,3 +794,121 @@ Added comprehensive performance coaching system to `app/src/server/routers/aiTra
 --- Iteration 7 completed at 2026-01-22 ---
 Story: US-369 - Performance coaching
 
+--- Iteration 7 completed at 2026-01-22 19:02:23 ---
+Story: US-369 - Performance coaching
+
+### US-370: Training dashboard ✅ COMPLETED
+
+**Date:** 2026-01-22
+**Status:** PASSED
+
+**Implementation:**
+
+Created comprehensive training dashboard UI at `app/src/components/ai-training/` with 9 specialized components.
+
+**Components Created:**
+
+1. **AITrainingDashboard** - Main dashboard component
+   - Tab-based navigation across 8 sections
+   - Quick stats bar showing key metrics
+   - Responsive design with mobile support
+   - Quick actions footer for common tasks
+
+2. **StaffProgressOverview** - Staff training progress
+   - Summary cards (total staff, fully trained, avg score, needs attention)
+   - Staff list with progress bars and status badges
+   - Avatar display with initials fallback
+   - Certification status indicators (current/expiring/expired)
+
+3. **PracticeSessionHistory** - Practice session history with scores
+   - Filterable table by scenario type and status
+   - Score badges with color coding (green/yellow/red)
+   - Session details dialog with full breakdown
+   - Duration formatting and outcome indicators
+
+4. **CertificationStatusBoard** - Certification status board
+   - Summary stats (total, current, expiring, expired, compliance rate)
+   - Expiration alerts section with urgency badges
+   - Filterable certification list
+   - Send reminder functionality
+
+5. **OnboardingPipeline** - Onboarding pipeline view
+   - Summary stats (in onboarding, overdue, completed, avg days)
+   - Employee cards with progress tracking
+   - Checkpoint visualization
+   - Employee details dialog with full progress
+
+6. **TrainingContentLibrary** - Training content library
+   - Tabbed view for modules vs practice scenarios
+   - Card-based content display
+   - Search and filter functionality
+   - Module details dialog with full configuration
+
+7. **PerformanceImprovementTrends** - Performance improvement trends
+   - Period comparison (30/60/90 days)
+   - Category breakdown with trend indicators
+   - Visual timeline chart
+   - AI-generated insights section
+
+8. **ManagerAssignmentTools** - Manager assignment tools
+   - Bulk assign functionality with templates
+   - Individual assignment dialogs
+   - Auto-assign required training
+   - Staff list with assignment status
+
+9. **TrainingCompletionReports** - Training completion reports
+   - Summary stats (completion rate, avg score, avg time, overdue)
+   - Module performance summary table
+   - Detailed completion report with filters
+   - Export, print, and email options
+
+**Page Created:**
+- `app/src/app/(dashboard)/ai-training/page.tsx` - Dashboard route
+
+**Exports:**
+- `app/src/components/ai-training/index.ts` - Component barrel exports
+
+**UI Features:**
+- shadcn/ui components throughout
+- Lucide React icons
+- Responsive grid layouts
+- Loading skeletons
+- Dialog modals for details
+- Filter dropdowns
+- Progress bars with color coding
+- Badge system for status indicators
+- Tab navigation
+
+**Acceptance Criteria Fulfilled:**
+- ✅ Staff training progress overview
+- ✅ Practice session history with scores
+- ✅ Certification status board
+- ✅ Onboarding pipeline
+- ✅ Training content library
+- ✅ Performance improvement trends
+- ✅ Manager assignment tools
+- ✅ Training completion reports
+
+**Files Created:**
+- app/src/components/ai-training/index.ts
+- app/src/components/ai-training/AITrainingDashboard.tsx (~200 lines)
+- app/src/components/ai-training/StaffProgressOverview.tsx (~250 lines)
+- app/src/components/ai-training/PracticeSessionHistory.tsx (~400 lines)
+- app/src/components/ai-training/CertificationStatusBoard.tsx (~450 lines)
+- app/src/components/ai-training/OnboardingPipeline.tsx (~450 lines)
+- app/src/components/ai-training/TrainingContentLibrary.tsx (~550 lines)
+- app/src/components/ai-training/PerformanceImprovementTrends.tsx (~400 lines)
+- app/src/components/ai-training/ManagerAssignmentTools.tsx (~500 lines)
+- app/src/components/ai-training/TrainingCompletionReports.tsx (~450 lines)
+- app/src/app/(dashboard)/ai-training/page.tsx
+
+**Total:** ~3,600+ lines of UI code
+
+---
+
+## Stories Remaining: 0
+
+All stories in Epic 38 have been completed!
+--- Iteration 8 completed at 2026-01-22 ---
+Story: US-370 - Training dashboard
+
