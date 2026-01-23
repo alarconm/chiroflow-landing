@@ -35,7 +35,7 @@
         "Learn from provider selections"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-373",

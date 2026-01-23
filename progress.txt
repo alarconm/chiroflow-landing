@@ -33,3 +33,82 @@
 - Pre-existing TypeScript errors in mobile app (missing dependencies) are unrelated to this change
 - Pre-existing Next.js route typing issues are unrelated to this change
 - Schema compiles and generates correctly
+--- Iteration 1 completed at 2026-01-22 19:25:33 ---
+Story: US-371 - AI clinical decision schema
+
+## 2026-01-22 - US-372: Diagnosis suggestion
+
+### Completed
+- Created aiClinical.ts tRPC router with comprehensive diagnosis suggestion functionality:
+
+**Main Endpoints:**
+1. `aiClinical.suggestDiagnosis` - Get AI-powered diagnosis suggestions
+   - Analyzes chief complaint, subjective, and objective findings
+   - Uses rule-based matching with common chiropractic ICD-10 codes
+   - Integrates Claude Opus 4.5 for AI-enhanced suggestions (when API key present)
+   - Returns confidence scores (0-100) for each suggestion
+   - Identifies red flags with severity levels (CRITICAL, HIGH, MODERATE, LOW)
+   - Creates ClinicalAlert records for detected red flags
+   - Stores suggestions in DiagnosisSuggestion table for learning
+
+2. `aiClinical.acceptSuggestion` - Accept a suggestion and add diagnosis to encounter
+   - Creates Diagnosis record from suggestion
+   - Marks suggestion as accepted for learning
+   - Supports setting diagnosis as primary
+   - Full audit logging
+
+3. `aiClinical.rejectSuggestion` - Reject a suggestion with optional reason
+   - Marks suggestion as rejected with reason for learning
+   - Audit trail for improvement
+
+4. `aiClinical.getPendingSuggestions` - Get unprocessed suggestions for encounter
+
+5. `aiClinical.getPatientAlerts` - Get active clinical alerts for patient/encounter
+
+6. `aiClinical.acknowledgeAlert` - Acknowledge a clinical alert
+
+7. `aiClinical.getSuggestionStats` - Analytics for suggestion acceptance rate
+   - Total/accepted/rejected counts
+   - Acceptance rate calculation
+   - Top accepted and rejected codes for learning
+
+**Red Flag Detection:**
+- Cauda equina syndrome (CRITICAL)
+- Malignancy indicators (HIGH)
+- Fracture risk (HIGH)
+- Infection signs (HIGH)
+- Vascular emergencies (CRITICAL)
+- Cervical artery dysfunction (HIGH)
+
+**ICD-10 Code Support:**
+- 26 common chiropractic codes built-in
+- M54.x (back pain categories)
+- M99.0x (segmental/somatic dysfunction)
+- M53.x (dorsopathies)
+- M47.x (spondylosis)
+- M51.x (disc disorders)
+- S13.4/S33.5 (sprains)
+- And more...
+
+**Learning Capability:**
+- Tracks provider acceptance/rejection of suggestions
+- Stores rejection reasons for improvement
+- getSuggestionStats endpoint for analyzing patterns
+
+### Files Modified
+- app/src/server/routers/aiClinical.ts - NEW: Complete AI clinical router (~900 lines)
+- app/src/server/routers/index.ts - Added aiClinical router export
+- app/src/lib/audit.ts - Added AI Clinical Decision Support audit actions
+- prd.json - Marked US-372 as passes: true
+
+### Technical Notes
+- Follows existing tRPC patterns from other AI routers
+- Uses providerProcedure for clinical endpoints
+- Uses protectedProcedure for read-only endpoints
+- Full Prisma type safety with proper typing
+- Integrates with existing ai-service.ts pattern for Claude API
+- Pre-existing errors in mobile app and aiCare.ts are unrelated
+
+--- Iteration 2 completed at 2026-01-22 ---
+Story: US-372 - Diagnosis suggestion
+
