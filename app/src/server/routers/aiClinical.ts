@@ -333,8 +333,668 @@ const PATIENT_PREFERENCES = {
 };
 
 // ============================================
+// US-374: Contraindication Alert Constants
+// ============================================
+
+// Contraindication type definitions
+type ContraindicationSeverity = 'ABSOLUTE' | 'RELATIVE' | 'PRECAUTION';
+type AlertSeverityLevel = 'CRITICAL' | 'HIGH' | 'MODERATE' | 'LOW';
+
+interface ContraindicationRule {
+  id: string;
+  name: string;
+  type: ContraindicationSeverity;
+  alertSeverity: AlertSeverityLevel;
+  affectedProcedures: string[]; // Which procedures are contraindicated
+  source: 'condition' | 'medication' | 'age' | 'surgery' | 'trauma' | 'red_flag' | 'general';
+  keywords: string[];
+  reason: string;
+  recommendation: string;
+  overridable: boolean;
+  documentationRequired: boolean;
+  reviewPeriod?: number; // Days until review if applicable
+}
+
+// Comprehensive contraindication rules database
+const CONTRAINDICATION_RULES: ContraindicationRule[] = [
+  // ==========================================
+  // ABSOLUTE CONTRAINDICATIONS (Never perform)
+  // ==========================================
+  {
+    id: 'ci-cauda-equina',
+    name: 'Cauda Equina Syndrome',
+    type: 'ABSOLUTE',
+    alertSeverity: 'CRITICAL',
+    affectedProcedures: ['Spinal Manipulation', 'Diversified Technique', 'Gonstead Technique', 'Flexion-Distraction', 'Thompson Drop Technique', 'Toggle Recoil', 'NUCCA'],
+    source: 'red_flag',
+    keywords: ['cauda equina', 'bladder dysfunction', 'bowel dysfunction', 'saddle anesthesia', 'bilateral leg weakness', 'urinary retention', 'fecal incontinence'],
+    reason: 'Cauda equina syndrome is a surgical emergency. Spinal manipulation is absolutely contraindicated.',
+    recommendation: 'URGENT: Immediate emergency department referral for MRI and surgical consultation. Do not perform any spinal manipulation.',
+    overridable: false,
+    documentationRequired: true,
+  },
+  {
+    id: 'ci-spinal-fracture',
+    name: 'Acute Spinal Fracture',
+    type: 'ABSOLUTE',
+    alertSeverity: 'CRITICAL',
+    affectedProcedures: ['Spinal Manipulation', 'Diversified Technique', 'Gonstead Technique', 'Flexion-Distraction', 'Thompson Drop Technique', 'Toggle Recoil', 'NUCCA'],
+    source: 'trauma',
+    keywords: ['spinal fracture', 'vertebral fracture', 'compression fracture', 'burst fracture', 'unstable fracture'],
+    reason: 'Spinal manipulation of unstable or acute fractures can cause neurological damage.',
+    recommendation: 'Obtain imaging to rule out fracture before any manipulation. Refer to orthopedics or neurosurgery if fracture confirmed.',
+    overridable: false,
+    documentationRequired: true,
+  },
+  {
+    id: 'ci-spinal-infection',
+    name: 'Spinal Infection (Osteomyelitis/Discitis)',
+    type: 'ABSOLUTE',
+    alertSeverity: 'CRITICAL',
+    affectedProcedures: ['Spinal Manipulation', 'Diversified Technique', 'Gonstead Technique', 'Flexion-Distraction', 'Thompson Drop Technique'],
+    source: 'condition',
+    keywords: ['spinal infection', 'osteomyelitis', 'discitis', 'epidural abscess', 'vertebral osteomyelitis'],
+    reason: 'Active spinal infection requires medical management. Manipulation can spread infection.',
+    recommendation: 'Refer to infectious disease or primary care immediately. Monitor for fever, elevated ESR/CRP.',
+    overridable: false,
+    documentationRequired: true,
+  },
+  {
+    id: 'ci-spinal-malignancy',
+    name: 'Spinal Malignancy/Metastasis',
+    type: 'ABSOLUTE',
+    alertSeverity: 'CRITICAL',
+    affectedProcedures: ['Spinal Manipulation', 'Diversified Technique', 'Gonstead Technique', 'Flexion-Distraction', 'Thompson Drop Technique'],
+    source: 'condition',
+    keywords: ['spinal tumor', 'vertebral metastasis', 'spinal cancer', 'bone cancer', 'metastatic disease'],
+    reason: 'Pathological bone weakness from tumor can cause fracture with manipulation.',
+    recommendation: 'Refer to oncology. Imaging required before any manual therapy on affected region.',
+    overridable: false,
+    documentationRequired: true,
+  },
+  {
+    id: 'ci-vascular-emergency',
+    name: 'Vascular Emergency (AAA/Dissection)',
+    type: 'ABSOLUTE',
+    alertSeverity: 'CRITICAL',
+    affectedProcedures: ['Spinal Manipulation', 'Diversified Technique', 'All Manual Therapies'],
+    source: 'red_flag',
+    keywords: ['abdominal aortic aneurysm', 'aaa', 'aortic dissection', 'tearing pain', 'pulsatile mass'],
+    reason: 'Vascular emergencies require immediate surgical intervention. Manipulation could be fatal.',
+    recommendation: 'CALL 911. Immediate emergency department referral for vascular evaluation.',
+    overridable: false,
+    documentationRequired: true,
+  },
+  {
+    id: 'ci-cervical-instability',
+    name: 'Severe Cervical Instability',
+    type: 'ABSOLUTE',
+    alertSeverity: 'CRITICAL',
+    affectedProcedures: ['Cervical Manipulation', 'Diversified Technique', 'NUCCA', 'Toggle Recoil', 'Gonstead Technique'],
+    source: 'condition',
+    keywords: ['atlantoaxial instability', 'os odontoideum', 'dens fracture', 'c1-c2 instability', 'down syndrome cervical', 'rheumatoid arthritis cervical'],
+    reason: 'Cervical instability with manipulation can cause spinal cord injury.',
+    recommendation: 'Flexion-extension X-rays required. Neurosurgical consultation if instability confirmed.',
+    overridable: false,
+    documentationRequired: true,
+  },
+
+  // ==========================================
+  // HIGH SEVERITY RELATIVE CONTRAINDICATIONS
+  // ==========================================
+  {
+    id: 'ci-anticoagulation',
+    name: 'Anticoagulation Therapy',
+    type: 'RELATIVE',
+    alertSeverity: 'HIGH',
+    affectedProcedures: ['High-Velocity Manipulation', 'Diversified Technique', 'Gonstead Technique'],
+    source: 'medication',
+    keywords: ['warfarin', 'coumadin', 'eliquis', 'xarelto', 'apixaban', 'rivaroxaban', 'heparin', 'blood thinner', 'anticoagulant'],
+    reason: 'Increased bleeding risk with manipulation. Higher risk of spinal hematoma or vertebral artery dissection.',
+    recommendation: 'Use low-force techniques only. Check INR if on warfarin. Consider Activator Method or soft tissue techniques.',
+    overridable: true,
+    documentationRequired: true,
+    reviewPeriod: 30,
+  },
+  {
+    id: 'ci-severe-osteoporosis',
+    name: 'Severe Osteoporosis',
+    type: 'RELATIVE',
+    alertSeverity: 'HIGH',
+    affectedProcedures: ['High-Velocity Manipulation', 'Diversified Technique', 'Gonstead Technique', 'Thompson Drop Technique'],
+    source: 'condition',
+    keywords: ['severe osteoporosis', 'osteoporotic fracture', 't-score below -3', 'pathological fracture', 'bone density severe'],
+    reason: 'High risk of pathological fracture with manipulation forces.',
+    recommendation: 'Use only low-force techniques (Activator, SOT). Review DEXA scan results. Consider soft tissue therapy only.',
+    overridable: true,
+    documentationRequired: true,
+    reviewPeriod: 90,
+  },
+  {
+    id: 'ci-vertebral-artery-risk',
+    name: 'Vertebrobasilar Insufficiency Risk',
+    type: 'RELATIVE',
+    alertSeverity: 'HIGH',
+    affectedProcedures: ['Cervical Rotation Manipulation', 'Diversified Technique', 'Gonstead Technique'],
+    source: 'condition',
+    keywords: ['vertebral artery', 'vbi', 'vertebrobasilar insufficiency', 'dizziness with neck movement', 'drop attacks', 'dysarthria', 'diplopia', 'nystagmus'],
+    reason: 'Increased risk of vertebral artery dissection with cervical rotation.',
+    recommendation: 'Perform VBI screening tests. Avoid rotational cervical manipulation. Use modified techniques or flexion-only approaches.',
+    overridable: true,
+    documentationRequired: true,
+    reviewPeriod: 30,
+  },
+  {
+    id: 'ci-recent-surgery',
+    name: 'Recent Spinal Surgery',
+    type: 'RELATIVE',
+    alertSeverity: 'HIGH',
+    affectedProcedures: ['Spinal Manipulation', 'Diversified Technique', 'Gonstead Technique', 'Flexion-Distraction'],
+    source: 'surgery',
+    keywords: ['recent surgery', 'spinal fusion', 'laminectomy', 'discectomy', 'post-surgical', 'hardware', 'spinal surgery'],
+    reason: 'Surgical sites need time to heal. Hardware may be present.',
+    recommendation: 'Obtain surgical clearance. Wait minimum 6-12 weeks post-surgery. Avoid manipulation at surgical level.',
+    overridable: true,
+    documentationRequired: true,
+    reviewPeriod: 90,
+  },
+  {
+    id: 'ci-progressive-neuro',
+    name: 'Progressive Neurological Deficit',
+    type: 'RELATIVE',
+    alertSeverity: 'HIGH',
+    affectedProcedures: ['Spinal Manipulation', 'Diversified Technique', 'Flexion-Distraction'],
+    source: 'red_flag',
+    keywords: ['progressive weakness', 'worsening numbness', 'increasing deficit', 'myelopathy', 'progressive neuro'],
+    reason: 'Progressive deficits may indicate cord compression requiring surgical intervention.',
+    recommendation: 'Immediate neurological referral. MRI indicated. Hold manipulation until cleared.',
+    overridable: true,
+    documentationRequired: true,
+  },
+
+  // ==========================================
+  // MODERATE SEVERITY CONTRAINDICATIONS
+  // ==========================================
+  {
+    id: 'ci-mild-osteoporosis',
+    name: 'Mild-Moderate Osteoporosis',
+    type: 'RELATIVE',
+    alertSeverity: 'MODERATE',
+    affectedProcedures: ['High-Velocity Manipulation', 'Diversified Technique'],
+    source: 'condition',
+    keywords: ['osteoporosis', 'osteopenia', 'low bone density', 't-score -2'],
+    reason: 'Reduced bone density increases fracture risk with high-force techniques.',
+    recommendation: 'Use modified or low-force techniques. Consider Activator Method. Monitor closely.',
+    overridable: true,
+    documentationRequired: true,
+    reviewPeriod: 180,
+  },
+  {
+    id: 'ci-pregnancy',
+    name: 'Pregnancy',
+    type: 'PRECAUTION',
+    alertSeverity: 'MODERATE',
+    affectedProcedures: ['Prone Positioning', 'High-Force Lumbar Manipulation', 'Flexion-Distraction'],
+    source: 'condition',
+    keywords: ['pregnant', 'pregnancy', 'expecting', 'gestation'],
+    reason: 'Positioning modifications needed. Some techniques require adjustment.',
+    recommendation: 'Use pregnancy-modified techniques. Side-posture or specialized pregnancy pillows. Avoid deep abdominal pressure.',
+    overridable: true,
+    documentationRequired: true,
+  },
+  {
+    id: 'ci-steroid-use',
+    name: 'Long-term Corticosteroid Use',
+    type: 'RELATIVE',
+    alertSeverity: 'MODERATE',
+    affectedProcedures: ['High-Velocity Manipulation', 'Diversified Technique'],
+    source: 'medication',
+    keywords: ['prednisone', 'corticosteroid', 'steroid use', 'long-term steroids', 'chronic steroid'],
+    reason: 'Chronic steroid use can cause bone weakening and increased fracture risk.',
+    recommendation: 'Use low-force techniques. Consider DEXA scan if not recent. Monitor for osteoporosis.',
+    overridable: true,
+    documentationRequired: true,
+    reviewPeriod: 90,
+  },
+  {
+    id: 'ci-recent-trauma',
+    name: 'Recent Significant Trauma',
+    type: 'RELATIVE',
+    alertSeverity: 'MODERATE',
+    affectedProcedures: ['Spinal Manipulation', 'Diversified Technique'],
+    source: 'trauma',
+    keywords: ['recent trauma', 'car accident', 'fall', 'injury', 'mva', 'motor vehicle accident'],
+    reason: 'Recent trauma requires imaging to rule out occult fracture before manipulation.',
+    recommendation: 'Obtain X-rays or appropriate imaging before manipulation. Use conservative approach initially.',
+    overridable: true,
+    documentationRequired: true,
+    reviewPeriod: 14,
+  },
+  {
+    id: 'ci-inflammatory-arthritis',
+    name: 'Inflammatory Arthritis (RA, AS)',
+    type: 'RELATIVE',
+    alertSeverity: 'MODERATE',
+    affectedProcedures: ['Cervical Manipulation', 'High-Velocity Manipulation'],
+    source: 'condition',
+    keywords: ['rheumatoid arthritis', 'ankylosing spondylitis', 'inflammatory arthritis', 'psoriatic arthritis', 'ra cervical'],
+    reason: 'Inflammatory conditions can cause ligamentous laxity and joint instability.',
+    recommendation: 'Screen for cervical involvement in RA. Use low-force techniques. Flexion-extension films if cervical work needed.',
+    overridable: true,
+    documentationRequired: true,
+    reviewPeriod: 90,
+  },
+  {
+    id: 'ci-connective-tissue',
+    name: 'Connective Tissue Disorder',
+    type: 'RELATIVE',
+    alertSeverity: 'MODERATE',
+    affectedProcedures: ['High-Velocity Manipulation', 'Diversified Technique'],
+    source: 'condition',
+    keywords: ['ehlers-danlos', 'marfan syndrome', 'hypermobility', 'connective tissue disorder', 'joint hypermobility'],
+    reason: 'Increased risk of joint injury and vascular complications.',
+    recommendation: 'Use low-force techniques only. Focus on stabilization exercises. Avoid repeated manipulation.',
+    overridable: true,
+    documentationRequired: true,
+    reviewPeriod: 90,
+  },
+
+  // ==========================================
+  // AGE-SPECIFIC PRECAUTIONS
+  // ==========================================
+  {
+    id: 'ci-elderly-general',
+    name: 'Advanced Age (>75)',
+    type: 'PRECAUTION',
+    alertSeverity: 'MODERATE',
+    affectedProcedures: ['High-Velocity Manipulation', 'Diversified Technique'],
+    source: 'age',
+    keywords: [],
+    reason: 'Elderly patients have higher risk of osteoporosis and vascular complications.',
+    recommendation: 'Screen for osteoporosis. Use low-force techniques. Consider Activator Method or soft tissue focus.',
+    overridable: true,
+    documentationRequired: false,
+    reviewPeriod: 30,
+  },
+  {
+    id: 'ci-pediatric-cervical',
+    name: 'Pediatric Patient (<12) - Cervical',
+    type: 'PRECAUTION',
+    alertSeverity: 'LOW',
+    affectedProcedures: ['Cervical Manipulation', 'High-Velocity Cervical Adjustment'],
+    source: 'age',
+    keywords: [],
+    reason: 'Pediatric cervical spine has different biomechanics. Extra care required.',
+    recommendation: 'Use pediatric-specific techniques. Lower force. Parental consent required. Consider specialized training.',
+    overridable: true,
+    documentationRequired: true,
+  },
+
+  // ==========================================
+  // MEDICATION INTERACTIONS
+  // ==========================================
+  {
+    id: 'ci-nsaid-bleeding',
+    name: 'High-Dose NSAIDs',
+    type: 'PRECAUTION',
+    alertSeverity: 'LOW',
+    affectedProcedures: ['Deep Tissue Massage', 'Aggressive Soft Tissue Work'],
+    source: 'medication',
+    keywords: ['nsaid', 'ibuprofen', 'naproxen', 'aspirin', 'high dose'],
+    reason: 'NSAIDs can increase bruising and bleeding risk with aggressive soft tissue work.',
+    recommendation: 'Use moderate pressure. Be aware of increased bruising risk. Inform patient.',
+    overridable: true,
+    documentationRequired: false,
+  },
+  {
+    id: 'ci-muscle-relaxant',
+    name: 'Muscle Relaxants',
+    type: 'PRECAUTION',
+    alertSeverity: 'LOW',
+    affectedProcedures: ['Spinal Manipulation'],
+    source: 'medication',
+    keywords: ['muscle relaxant', 'flexeril', 'soma', 'baclofen', 'cyclobenzaprine', 'carisoprodol'],
+    reason: 'Muscle relaxants may mask protective muscle guarding.',
+    recommendation: 'Use lower force. Be aware patient may not guard normally. Proceed with caution.',
+    overridable: true,
+    documentationRequired: false,
+  },
+];
+
+// Procedure name mapping for CPT codes
+const PROCEDURE_CPT_MAP: Record<string, string[]> = {
+  'Spinal Manipulation': ['98940', '98941', '98942', '98943'],
+  'Cervical Manipulation': ['98940', '98941'],
+  'High-Velocity Manipulation': ['98940', '98941', '98942'],
+  'Diversified Technique': ['98940', '98941', '98942'],
+  'Gonstead Technique': ['98940', '98941', '98942'],
+  'Flexion-Distraction': ['98940', '98941', '98942'],
+  'Thompson Drop Technique': ['98940', '98941', '98942'],
+  'Activator Method': ['98940', '98941', '98942'],
+  'NUCCA': ['98940'],
+  'Toggle Recoil': ['98940'],
+  'SOT': ['98940', '98941'],
+  'ART': ['97140'],
+  'Myofascial Release': ['97140'],
+  'Trigger Point Therapy': ['97140'],
+  'Graston Technique': ['97140'],
+  'Deep Tissue Massage': ['97140'],
+  'Electrical Muscle Stimulation': ['97014', 'G0283'],
+  'Ultrasound Therapy': ['97035'],
+  'Cold Laser Therapy': ['97039'],
+  'Spinal Decompression': ['97012'],
+};
+
+// ============================================
 // Helper Functions
 // ============================================
+
+/**
+ * Check patient data against contraindication rules
+ */
+function checkContraindicationRules(
+  procedure: string,
+  procedureCode: string | null,
+  patientData: {
+    conditions?: string[];
+    medications?: string[];
+    age?: number;
+    recentSurgeries?: Array<{ procedure: string; date: Date }>;
+    recentTrauma?: Array<{ description: string; date: Date }>;
+    clinicalNotes?: string;
+  }
+): Array<{
+  rule: ContraindicationRule;
+  matchedKeywords: string[];
+  matchSource: string;
+  severity: AlertSeverityLevel;
+}> {
+  const detectedContraindications: Array<{
+    rule: ContraindicationRule;
+    matchedKeywords: string[];
+    matchSource: string;
+    severity: AlertSeverityLevel;
+  }> = [];
+
+  const normalizedProcedure = procedure.toLowerCase();
+  const normalizedNotes = (patientData.clinicalNotes || '').toLowerCase();
+
+  for (const rule of CONTRAINDICATION_RULES) {
+    // Check if this rule applies to the procedure
+    const procedureMatches = rule.affectedProcedures.some(
+      ap => normalizedProcedure.includes(ap.toLowerCase()) ||
+            (procedureCode && PROCEDURE_CPT_MAP[ap]?.includes(procedureCode))
+    );
+
+    if (!procedureMatches && !rule.affectedProcedures.includes('All Manual Therapies')) {
+      continue;
+    }
+
+    const matchedKeywords: string[] = [];
+    let matchSource = '';
+
+    // Check by source type
+    switch (rule.source) {
+      case 'condition':
+        // Check patient conditions
+        if (patientData.conditions) {
+          for (const condition of patientData.conditions) {
+            const normalizedCondition = condition.toLowerCase();
+            for (const keyword of rule.keywords) {
+              if (normalizedCondition.includes(keyword.toLowerCase())) {
+                matchedKeywords.push(keyword);
+                matchSource = `Condition: ${condition}`;
+              }
+            }
+          }
+        }
+        // Also check clinical notes for condition keywords
+        for (const keyword of rule.keywords) {
+          if (normalizedNotes.includes(keyword.toLowerCase()) && !matchedKeywords.includes(keyword)) {
+            matchedKeywords.push(keyword);
+            matchSource = matchSource || 'Clinical notes';
+          }
+        }
+        break;
+
+      case 'medication':
+        if (patientData.medications) {
+          for (const med of patientData.medications) {
+            const normalizedMed = med.toLowerCase();
+            for (const keyword of rule.keywords) {
+              if (normalizedMed.includes(keyword.toLowerCase())) {
+                matchedKeywords.push(keyword);
+                matchSource = `Medication: ${med}`;
+              }
+            }
+          }
+        }
+        // Check notes for medication mentions
+        for (const keyword of rule.keywords) {
+          if (normalizedNotes.includes(keyword.toLowerCase()) && !matchedKeywords.includes(keyword)) {
+            matchedKeywords.push(keyword);
+            matchSource = matchSource || 'Clinical notes';
+          }
+        }
+        break;
+
+      case 'age':
+        if (patientData.age !== undefined) {
+          if (rule.id === 'ci-elderly-general' && patientData.age > 75) {
+            matchedKeywords.push('age > 75');
+            matchSource = `Patient age: ${patientData.age}`;
+          }
+          if (rule.id === 'ci-pediatric-cervical' && patientData.age < 12 &&
+              normalizedProcedure.includes('cervical')) {
+            matchedKeywords.push('age < 12');
+            matchSource = `Patient age: ${patientData.age}`;
+          }
+        }
+        break;
+
+      case 'surgery':
+        if (patientData.recentSurgeries && patientData.recentSurgeries.length > 0) {
+          const sixMonthsAgo = new Date();
+          sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+          for (const surgery of patientData.recentSurgeries) {
+            const normalizedSurgery = surgery.procedure.toLowerCase();
+            const isRecent = new Date(surgery.date) > sixMonthsAgo;
+
+            if (isRecent) {
+              for (const keyword of rule.keywords) {
+                if (normalizedSurgery.includes(keyword.toLowerCase())) {
+                  matchedKeywords.push(keyword);
+                  matchSource = `Recent surgery: ${surgery.procedure}`;
+                }
+              }
+            }
+          }
+        }
+        // Check notes for surgery mentions
+        for (const keyword of rule.keywords) {
+          if (normalizedNotes.includes(keyword.toLowerCase()) && !matchedKeywords.includes(keyword)) {
+            matchedKeywords.push(keyword);
+            matchSource = matchSource || 'Clinical notes';
+          }
+        }
+        break;
+
+      case 'trauma':
+        if (patientData.recentTrauma && patientData.recentTrauma.length > 0) {
+          const twoWeeksAgo = new Date();
+          twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+
+          for (const trauma of patientData.recentTrauma) {
+            const normalizedTrauma = trauma.description.toLowerCase();
+            const isRecent = new Date(trauma.date) > twoWeeksAgo;
+
+            if (isRecent) {
+              for (const keyword of rule.keywords) {
+                if (normalizedTrauma.includes(keyword.toLowerCase())) {
+                  matchedKeywords.push(keyword);
+                  matchSource = `Recent trauma: ${trauma.description}`;
+                }
+              }
+            }
+          }
+        }
+        // Check notes for trauma keywords
+        for (const keyword of rule.keywords) {
+          if (normalizedNotes.includes(keyword.toLowerCase()) && !matchedKeywords.includes(keyword)) {
+            matchedKeywords.push(keyword);
+            matchSource = matchSource || 'Clinical notes';
+          }
+        }
+        break;
+
+      case 'red_flag':
+      case 'general':
+        // Check clinical notes for keywords
+        for (const keyword of rule.keywords) {
+          if (normalizedNotes.includes(keyword.toLowerCase())) {
+            matchedKeywords.push(keyword);
+            matchSource = 'Clinical notes';
+          }
+        }
+        // Also check conditions
+        if (patientData.conditions) {
+          for (const condition of patientData.conditions) {
+            const normalizedCondition = condition.toLowerCase();
+            for (const keyword of rule.keywords) {
+              if (normalizedCondition.includes(keyword.toLowerCase()) && !matchedKeywords.includes(keyword)) {
+                matchedKeywords.push(keyword);
+                matchSource = matchSource || `Condition: ${condition}`;
+              }
+            }
+          }
+        }
+        break;
+    }
+
+    // If any keywords matched, add to detected
+    if (matchedKeywords.length > 0) {
+      detectedContraindications.push({
+        rule,
+        matchedKeywords: [...new Set(matchedKeywords)],
+        matchSource,
+        severity: rule.alertSeverity,
+      });
+    }
+  }
+
+  // Sort by severity (CRITICAL first)
+  const severityOrder: Record<AlertSeverityLevel, number> = { CRITICAL: 0, HIGH: 1, MODERATE: 2, LOW: 3 };
+  detectedContraindications.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
+
+  return detectedContraindications;
+}
+
+/**
+ * Generate AI-enhanced contraindication analysis using Claude API
+ */
+async function generateAIContraindicationAnalysis(context: {
+  procedure: string;
+  patientProfile: {
+    age?: number;
+    conditions?: string[];
+    medications?: string[];
+    allergies?: string[];
+  };
+  clinicalNotes?: string;
+  existingContraindications?: string[];
+}): Promise<{
+  additionalContraindications: Array<{
+    condition: string;
+    type: ContraindicationSeverity;
+    reason: string;
+    recommendation: string;
+  }>;
+  safetyNotes: string[];
+  overallRiskLevel: 'LOW' | 'MODERATE' | 'HIGH' | 'VERY_HIGH';
+} | null> {
+  // If no API key, return null to use rule-based only
+  if (!env.ANTHROPIC_API_KEY) {
+    return null;
+  }
+
+  try {
+    const Anthropic = (await import('@anthropic-ai/sdk')).default;
+    const client = new Anthropic({
+      apiKey: env.ANTHROPIC_API_KEY,
+    });
+
+    const systemPrompt = `You are a clinical safety advisor for chiropractic practices.
+Analyze patient information for contraindications to the proposed treatment.
+Be thorough and conservative - patient safety is paramount.
+Focus on chiropractic-specific contraindications.
+
+IMPORTANT: Respond ONLY with valid JSON, no markdown code blocks.`;
+
+    const userPrompt = `Analyze contraindications for this patient and proposed treatment:
+
+Proposed Procedure: ${context.procedure}
+
+Patient Profile:
+- Age: ${context.patientProfile.age || 'Unknown'}
+- Conditions: ${context.patientProfile.conditions?.join(', ') || 'None listed'}
+- Medications: ${context.patientProfile.medications?.join(', ') || 'None listed'}
+- Allergies: ${context.patientProfile.allergies?.join(', ') || 'None listed'}
+
+${context.clinicalNotes ? `Clinical Notes:\n${context.clinicalNotes}\n` : ''}
+
+${context.existingContraindications?.length ? `Already Identified Contraindications:\n${context.existingContraindications.join('\n')}\n` : ''}
+
+Respond with JSON:
+{
+  "additionalContraindications": [
+    {
+      "condition": "Name of contraindication",
+      "type": "ABSOLUTE|RELATIVE|PRECAUTION",
+      "reason": "Why this is contraindicated",
+      "recommendation": "What to do instead"
+    }
+  ],
+  "safetyNotes": ["Important safety considerations"],
+  "overallRiskLevel": "LOW|MODERATE|HIGH|VERY_HIGH"
+}
+
+Only include contraindications NOT already identified. Focus on clinically significant findings.`;
+
+    const response = await client.messages.create({
+      model: 'claude-opus-4-5-20251101',
+      max_tokens: 1000,
+      messages: [
+        { role: 'user', content: userPrompt },
+      ],
+      system: systemPrompt,
+    });
+
+    const content = response.content[0];
+    if (content.type !== 'text') {
+      return null;
+    }
+
+    const parsed = JSON.parse(content.text);
+    return {
+      additionalContraindications: Array.isArray(parsed.additionalContraindications)
+        ? parsed.additionalContraindications.map((c: { condition?: string; type?: string; reason?: string; recommendation?: string }) => ({
+            condition: c.condition || '',
+            type: (['ABSOLUTE', 'RELATIVE', 'PRECAUTION'].includes(c.type || '') ? c.type : 'PRECAUTION') as ContraindicationSeverity,
+            reason: c.reason || '',
+            recommendation: c.recommendation || '',
+          }))
+        : [],
+      safetyNotes: Array.isArray(parsed.safetyNotes) ? parsed.safetyNotes : [],
+      overallRiskLevel: ['LOW', 'MODERATE', 'HIGH', 'VERY_HIGH'].includes(parsed.overallRiskLevel)
+        ? parsed.overallRiskLevel
+        : 'MODERATE',
+    };
+  } catch (error) {
+    console.error('AI contraindication analysis error:', error);
+    return null;
+  }
+}
 
 /**
  * Analyze text for red flags
@@ -1948,6 +2608,775 @@ export const aiClinicalRouter = router({
         topConditions: topConditions.map(c => ({
           code: c.conditionCode || 'Unknown',
           count: c._count.conditionCode,
+        })),
+      };
+    }),
+
+  // ============================================
+  // US-374: Contraindication Alerts
+  // ============================================
+
+  /**
+   * Check for contraindications before a treatment/procedure
+   * Analyzes patient conditions, medications, age, recent surgeries/trauma, and red flags
+   */
+  checkContraindications: providerProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        encounterId: z.string().optional(),
+        // Procedure being considered
+        procedure: z.string(),
+        procedureCode: z.string().optional(), // CPT code
+        // Optional overrides if not pulling from patient record
+        conditions: z.array(z.string()).optional(),
+        medications: z.array(z.string()).optional(),
+        allergies: z.array(z.string()).optional(),
+        clinicalNotes: z.string().optional(),
+        recentSurgeries: z.array(z.object({
+          procedure: z.string(),
+          date: z.coerce.date(),
+        })).optional(),
+        recentTrauma: z.array(z.object({
+          description: z.string(),
+          date: z.coerce.date(),
+        })).optional(),
+        includeAI: z.boolean().default(true),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const {
+        patientId,
+        encounterId,
+        procedure,
+        procedureCode,
+        conditions: inputConditions,
+        medications: inputMedications,
+        allergies: inputAllergies,
+        clinicalNotes: inputClinicalNotes,
+        recentSurgeries,
+        recentTrauma,
+        includeAI,
+      } = input;
+
+      // Fetch patient with demographics and existing contraindications
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          demographics: true,
+          contraindications: {
+            where: { isActive: true },
+          },
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      // Get encounter for additional context if provided
+      let encounter = null;
+      let encounterNotes = '';
+      if (encounterId) {
+        encounter = await ctx.prisma.encounter.findFirst({
+          where: {
+            id: encounterId,
+            organizationId: ctx.user.organizationId,
+          },
+          include: {
+            soapNote: true,
+          },
+        });
+        if (encounter) {
+          encounterNotes = [
+            encounter.chiefComplaint,
+            encounter.soapNote?.subjective,
+            encounter.soapNote?.objective,
+          ].filter(Boolean).join('\n');
+        }
+      }
+
+      // Gather patient data from record and inputs
+      const patientAge = patient.demographics?.dateOfBirth
+        ? Math.floor((Date.now() - new Date(patient.demographics.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+        : undefined;
+
+      // Use input conditions and medications (medical history would come from intake forms if available)
+      const patientConditions: string[] = inputConditions || [];
+      const patientMedications: string[] = inputMedications || [];
+
+      // Combine clinical notes
+      const clinicalNotes = [inputClinicalNotes, encounterNotes].filter(Boolean).join('\n');
+
+      // Run rule-based contraindication check
+      const ruleBasedResults = checkContraindicationRules(
+        procedure,
+        procedureCode || null,
+        {
+          conditions: patientConditions,
+          medications: patientMedications,
+          age: patientAge,
+          recentSurgeries,
+          recentTrauma,
+          clinicalNotes,
+        }
+      );
+
+      // Check existing patient contraindications
+      const existingContraindications = patient.contraindications
+        .filter((ci: { procedure: string; contraindicationType: string; reason: string; source: string | null; isOverridden: boolean; overrideReason: string | null; isPermanent: boolean; expiresAt: Date | null; id: string }) => {
+          // Check if this contraindication applies to the procedure
+          const normalizedProcedure = procedure.toLowerCase();
+          return ci.procedure.toLowerCase().includes(normalizedProcedure) ||
+                 normalizedProcedure.includes(ci.procedure.toLowerCase()) ||
+                 ci.procedure === 'All' ||
+                 ci.procedure.toLowerCase().includes('spinal manipulation');
+        })
+        .map((ci: { id: string; procedure: string; contraindicationType: string; reason: string; source: string | null; isOverridden: boolean; overrideReason: string | null; isPermanent: boolean; expiresAt: Date | null }) => ({
+          id: ci.id,
+          procedure: ci.procedure,
+          type: ci.contraindicationType,
+          reason: ci.reason,
+          source: ci.source,
+          isOverridden: ci.isOverridden,
+          overrideReason: ci.overrideReason,
+          isPermanent: ci.isPermanent,
+          expiresAt: ci.expiresAt,
+        }));
+
+      // Run AI analysis if enabled
+      let aiResults = null;
+      if (includeAI) {
+        aiResults = await generateAIContraindicationAnalysis({
+          procedure,
+          patientProfile: {
+            age: patientAge,
+            conditions: patientConditions,
+            medications: patientMedications,
+            allergies: inputAllergies,
+          },
+          clinicalNotes,
+          existingContraindications: [
+            ...ruleBasedResults.map(r => r.rule.name),
+            ...existingContraindications.map((ec: { reason: string }) => ec.reason),
+          ],
+        });
+      }
+
+      // Determine overall safety status
+      const hasAbsoluteContraindication = ruleBasedResults.some(r => r.rule.type === 'ABSOLUTE') ||
+        existingContraindications.some(ec => ec.type === 'ABSOLUTE' && !ec.isOverridden);
+      const hasCriticalAlert = ruleBasedResults.some(r => r.severity === 'CRITICAL');
+      const hasHighAlert = ruleBasedResults.some(r => r.severity === 'HIGH');
+
+      let safetyStatus: 'CLEAR' | 'PRECAUTION' | 'RELATIVE' | 'ABSOLUTE';
+      if (hasAbsoluteContraindication) {
+        safetyStatus = 'ABSOLUTE';
+      } else if (hasCriticalAlert || ruleBasedResults.some(r => r.rule.type === 'RELATIVE' && r.severity === 'HIGH')) {
+        safetyStatus = 'RELATIVE';
+      } else if (ruleBasedResults.length > 0 || existingContraindications.length > 0) {
+        safetyStatus = 'PRECAUTION';
+      } else {
+        safetyStatus = 'CLEAR';
+      }
+
+      // Create alerts for detected contraindications
+      const alertsToCreate = ruleBasedResults
+        .filter(r => r.severity === 'CRITICAL' || r.severity === 'HIGH')
+        .map(r => ({
+          patientId,
+          encounterId,
+          organizationId: ctx.user.organizationId,
+          alertType: 'CONTRAINDICATION' as const,
+          severity: r.severity,
+          message: `${r.rule.name}: ${r.rule.reason}`,
+          description: `Matched: ${r.matchedKeywords.join(', ')}. Source: ${r.matchSource}`,
+          recommendation: r.rule.recommendation,
+          triggeredBy: 'AI Contraindication Check',
+          relatedData: {
+            ruleId: r.rule.id,
+            procedure,
+            procedureCode,
+            contraindicationType: r.rule.type,
+          },
+        }));
+
+      if (alertsToCreate.length > 0) {
+        await ctx.prisma.$transaction(
+          alertsToCreate.map(alert => ctx.prisma.clinicalAlert.create({ data: alert }))
+        );
+      }
+
+      // Store new contraindications in patient record
+      const contraindicationsToStore = ruleBasedResults
+        .filter(r => r.rule.type === 'ABSOLUTE' || (r.rule.type === 'RELATIVE' && r.severity !== 'LOW'))
+        .filter(r => !existingContraindications.some((ec: { procedure: string; reason: string }) =>
+          ec.procedure.toLowerCase() === r.rule.affectedProcedures[0]?.toLowerCase() &&
+          ec.reason.toLowerCase().includes(r.rule.name.toLowerCase())
+        ));
+
+      if (contraindicationsToStore.length > 0) {
+        await ctx.prisma.$transaction(
+          contraindicationsToStore.map(ci => ctx.prisma.contraindication.create({
+            data: {
+              patientId,
+              organizationId: ctx.user.organizationId,
+              procedure: ci.rule.affectedProcedures[0] || procedure,
+              procedureCode: procedureCode || undefined,
+              contraindicationType: ci.rule.type,
+              reason: ci.rule.reason,
+              source: ci.matchSource,
+              sourceDetails: {
+                ruleId: ci.rule.id,
+                matchedKeywords: ci.matchedKeywords,
+              },
+              identifiedBy: ctx.user.id,
+              isPermanent: ci.rule.source === 'condition' && ci.rule.type === 'ABSOLUTE',
+              reviewDate: ci.rule.reviewPeriod
+                ? new Date(Date.now() + ci.rule.reviewPeriod * 24 * 60 * 60 * 1000)
+                : undefined,
+            },
+          }))
+        );
+      }
+
+      // Audit log
+      await auditLog('AI_CONTRAINDICATION_CHECK', 'Contraindication', {
+        entityId: patientId,
+        changes: {
+          procedure,
+          procedureCode,
+          safetyStatus,
+          contraindicationsFound: ruleBasedResults.length,
+          existingContraindicationsChecked: existingContraindications.length,
+          aiEnhanced: !!aiResults,
+          alertsCreated: alertsToCreate.length,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        safetyStatus,
+        canProceed: safetyStatus !== 'ABSOLUTE',
+        requiresOverride: safetyStatus === 'RELATIVE',
+        procedure: {
+          name: procedure,
+          code: procedureCode || null,
+        },
+        contraindications: {
+          detected: ruleBasedResults.map(r => ({
+            id: r.rule.id,
+            name: r.rule.name,
+            type: r.rule.type,
+            severity: r.severity,
+            reason: r.rule.reason,
+            recommendation: r.rule.recommendation,
+            matchedKeywords: r.matchedKeywords,
+            matchSource: r.matchSource,
+            overridable: r.rule.overridable,
+            documentationRequired: r.rule.documentationRequired,
+          })),
+          existing: existingContraindications,
+          aiIdentified: aiResults?.additionalContraindications || [],
+        },
+        alerts: {
+          critical: ruleBasedResults.filter(r => r.severity === 'CRITICAL').length,
+          high: ruleBasedResults.filter(r => r.severity === 'HIGH').length,
+          moderate: ruleBasedResults.filter(r => r.severity === 'MODERATE').length,
+          low: ruleBasedResults.filter(r => r.severity === 'LOW').length,
+        },
+        safetyNotes: aiResults?.safetyNotes || [],
+        overallRiskLevel: aiResults?.overallRiskLevel || (
+          hasCriticalAlert ? 'VERY_HIGH' :
+          hasHighAlert ? 'HIGH' :
+          ruleBasedResults.length > 0 ? 'MODERATE' : 'LOW'
+        ),
+        patientFactors: {
+          age: patientAge,
+          conditionsChecked: patientConditions.length,
+          medicationsChecked: patientMedications.length,
+        },
+      };
+    }),
+
+  /**
+   * Override a contraindication with documentation
+   * Allows provider to proceed despite relative contraindication with proper documentation
+   */
+  overrideContraindication: providerProcedure
+    .input(
+      z.object({
+        contraindicationId: z.string(),
+        reason: z.string().min(10, 'Override reason must be at least 10 characters'),
+        riskAcknowledged: z.boolean(),
+        patientConsent: z.boolean().default(false),
+        alternativesConsidered: z.array(z.string()).optional(),
+        precautionsTaken: z.array(z.string()).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const {
+        contraindicationId,
+        reason,
+        riskAcknowledged,
+        patientConsent,
+        alternativesConsidered,
+        precautionsTaken,
+      } = input;
+
+      if (!riskAcknowledged) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'You must acknowledge the risk before overriding a contraindication',
+        });
+      }
+
+      const contraindication = await ctx.prisma.contraindication.findFirst({
+        where: {
+          id: contraindicationId,
+          organizationId: ctx.user.organizationId,
+          isActive: true,
+        },
+      });
+
+      if (!contraindication) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Contraindication not found or already inactive',
+        });
+      }
+
+      // Check if this is an absolute contraindication (not overridable)
+      const matchingRule = CONTRAINDICATION_RULES.find(r =>
+        r.id === (contraindication.sourceDetails as { ruleId?: string })?.ruleId
+      );
+
+      if (matchingRule && !matchingRule.overridable) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'This is an absolute contraindication and cannot be overridden. Patient safety requires alternative treatment.',
+        });
+      }
+
+      if (contraindication.contraindicationType === 'ABSOLUTE') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Absolute contraindications cannot be overridden. Consider alternative treatments.',
+        });
+      }
+
+      // Update the contraindication with override
+      const updated = await ctx.prisma.contraindication.update({
+        where: { id: contraindicationId },
+        data: {
+          isOverridden: true,
+          overrideReason: `${reason}${patientConsent ? '\n\nPatient informed consent obtained.' : ''}${
+            alternativesConsidered?.length ? `\n\nAlternatives considered: ${alternativesConsidered.join(', ')}` : ''
+          }${
+            precautionsTaken?.length ? `\n\nPrecautions taken: ${precautionsTaken.join(', ')}` : ''
+          }`,
+          overriddenAt: new Date(),
+          overriddenBy: ctx.user.id,
+        },
+      });
+
+      // Resolve any active alerts related to this contraindication
+      await ctx.prisma.clinicalAlert.updateMany({
+        where: {
+          patientId: contraindication.patientId,
+          alertType: 'CONTRAINDICATION',
+          status: 'ACTIVE',
+          relatedData: {
+            path: ['procedure'],
+            equals: contraindication.procedure,
+          },
+        },
+        data: {
+          status: 'RESOLVED',
+          resolvedAt: new Date(),
+          resolutionNote: `Overridden by provider: ${reason}`,
+        },
+      });
+
+      // Audit log
+      await auditLog('CONTRAINDICATION_OVERRIDE', 'Contraindication', {
+        entityId: contraindicationId,
+        changes: {
+          procedure: contraindication.procedure,
+          type: contraindication.contraindicationType,
+          reason,
+          patientConsent,
+          alternativesConsidered,
+          precautionsTaken,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        id: updated.id,
+        overridden: true,
+        overriddenAt: updated.overriddenAt,
+        overrideReason: updated.overrideReason,
+        procedure: updated.procedure,
+      };
+    }),
+
+  /**
+   * Get active contraindications for a patient
+   */
+  getPatientContraindications: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        includeOverridden: z.boolean().default(false),
+        includeExpired: z.boolean().default(false),
+        procedureFilter: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { patientId, includeOverridden, includeExpired, procedureFilter } = input;
+
+      // Verify patient access
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      const where: Prisma.ContraindicationWhereInput = {
+        patientId,
+        organizationId: ctx.user.organizationId,
+      };
+
+      if (!includeOverridden) {
+        where.isOverridden = false;
+      }
+
+      if (!includeExpired) {
+        where.OR = [
+          { expiresAt: null },
+          { expiresAt: { gt: new Date() } },
+        ];
+        where.isActive = true;
+      }
+
+      if (procedureFilter) {
+        where.procedure = { contains: procedureFilter, mode: 'insensitive' };
+      }
+
+      const contraindications = await ctx.prisma.contraindication.findMany({
+        where,
+        orderBy: [
+          { contraindicationType: 'asc' }, // ABSOLUTE first
+          { createdAt: 'desc' },
+        ],
+      });
+
+      return contraindications.map(ci => ({
+        id: ci.id,
+        procedure: ci.procedure,
+        procedureCode: ci.procedureCode,
+        type: ci.contraindicationType,
+        reason: ci.reason,
+        source: ci.source,
+        isPermanent: ci.isPermanent,
+        expiresAt: ci.expiresAt,
+        reviewDate: ci.reviewDate,
+        isOverridden: ci.isOverridden,
+        overrideReason: ci.overrideReason,
+        overriddenAt: ci.overriddenAt,
+        isActive: ci.isActive,
+        createdAt: ci.createdAt,
+      }));
+    }),
+
+  /**
+   * Add a manual contraindication for a patient
+   */
+  addPatientContraindication: providerProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        procedure: z.string(),
+        procedureCode: z.string().optional(),
+        type: z.enum(['ABSOLUTE', 'RELATIVE', 'PRECAUTION']),
+        reason: z.string().min(5),
+        source: z.string().optional(),
+        isPermanent: z.boolean().default(false),
+        expiresAt: z.coerce.date().optional(),
+        reviewDate: z.coerce.date().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const {
+        patientId,
+        procedure,
+        procedureCode,
+        type,
+        reason,
+        source,
+        isPermanent,
+        expiresAt,
+        reviewDate,
+      } = input;
+
+      // Verify patient access
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      // Check for duplicate
+      const existing = await ctx.prisma.contraindication.findFirst({
+        where: {
+          patientId,
+          procedure: { contains: procedure, mode: 'insensitive' },
+          reason: { contains: reason.substring(0, 50), mode: 'insensitive' },
+          isActive: true,
+        },
+      });
+
+      if (existing) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'A similar contraindication already exists for this patient',
+        });
+      }
+
+      const contraindication = await ctx.prisma.contraindication.create({
+        data: {
+          patientId,
+          organizationId: ctx.user.organizationId,
+          procedure,
+          procedureCode,
+          contraindicationType: type,
+          reason,
+          source: source || 'Manual entry',
+          identifiedBy: ctx.user.id,
+          isPermanent,
+          expiresAt,
+          reviewDate,
+        },
+      });
+
+      // Create alert if high severity
+      if (type === 'ABSOLUTE' || type === 'RELATIVE') {
+        await ctx.prisma.clinicalAlert.create({
+          data: {
+            patientId,
+            organizationId: ctx.user.organizationId,
+            alertType: 'CONTRAINDICATION',
+            severity: type === 'ABSOLUTE' ? 'CRITICAL' : 'HIGH',
+            message: `Contraindication added: ${procedure} - ${reason}`,
+            recommendation: 'Review patient chart and consider alternative treatments',
+            triggeredBy: 'Manual contraindication entry',
+            relatedData: {
+              contraindicationId: contraindication.id,
+              procedure,
+            },
+          },
+        });
+      }
+
+      // Audit log
+      await auditLog('CONTRAINDICATION_ADDED', 'Contraindication', {
+        entityId: contraindication.id,
+        changes: {
+          procedure,
+          type,
+          reason,
+          source,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        id: contraindication.id,
+        procedure: contraindication.procedure,
+        type: contraindication.contraindicationType,
+        reason: contraindication.reason,
+        createdAt: contraindication.createdAt,
+      };
+    }),
+
+  /**
+   * Deactivate a contraindication (e.g., condition resolved)
+   */
+  deactivateContraindication: providerProcedure
+    .input(
+      z.object({
+        contraindicationId: z.string(),
+        reason: z.string().min(5),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { contraindicationId, reason } = input;
+
+      const contraindication = await ctx.prisma.contraindication.findFirst({
+        where: {
+          id: contraindicationId,
+          organizationId: ctx.user.organizationId,
+          isActive: true,
+        },
+      });
+
+      if (!contraindication) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Contraindication not found or already inactive',
+        });
+      }
+
+      const updated = await ctx.prisma.contraindication.update({
+        where: { id: contraindicationId },
+        data: {
+          isActive: false,
+          deactivatedAt: new Date(),
+          deactivationReason: reason,
+        },
+      });
+
+      // Resolve any active alerts
+      await ctx.prisma.clinicalAlert.updateMany({
+        where: {
+          patientId: contraindication.patientId,
+          alertType: 'CONTRAINDICATION',
+          status: 'ACTIVE',
+          relatedData: {
+            path: ['contraindicationId'],
+            equals: contraindicationId,
+          },
+        },
+        data: {
+          status: 'RESOLVED',
+          resolvedAt: new Date(),
+          resolutionNote: `Contraindication deactivated: ${reason}`,
+        },
+      });
+
+      // Audit log
+      await auditLog('CONTRAINDICATION_DEACTIVATED', 'Contraindication', {
+        entityId: contraindicationId,
+        changes: {
+          procedure: contraindication.procedure,
+          type: contraindication.contraindicationType,
+          deactivationReason: reason,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        id: updated.id,
+        deactivated: true,
+        deactivatedAt: updated.deactivatedAt,
+        reason,
+      };
+    }),
+
+  /**
+   * Get contraindication statistics for analytics
+   */
+  getContraindicationStats: protectedProcedure
+    .input(
+      z.object({
+        dateFrom: z.coerce.date().optional(),
+        dateTo: z.coerce.date().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { dateFrom, dateTo } = input;
+
+      const where: Prisma.ContraindicationWhereInput = {
+        organizationId: ctx.user.organizationId,
+      };
+
+      if (dateFrom || dateTo) {
+        where.createdAt = {};
+        if (dateFrom) where.createdAt.gte = dateFrom;
+        if (dateTo) where.createdAt.lte = dateTo;
+      }
+
+      const [total, absolute, relative, precaution, overridden, active] = await Promise.all([
+        ctx.prisma.contraindication.count({ where }),
+        ctx.prisma.contraindication.count({
+          where: { ...where, contraindicationType: 'ABSOLUTE' },
+        }),
+        ctx.prisma.contraindication.count({
+          where: { ...where, contraindicationType: 'RELATIVE' },
+        }),
+        ctx.prisma.contraindication.count({
+          where: { ...where, contraindicationType: 'PRECAUTION' },
+        }),
+        ctx.prisma.contraindication.count({
+          where: { ...where, isOverridden: true },
+        }),
+        ctx.prisma.contraindication.count({
+          where: { ...where, isActive: true },
+        }),
+      ]);
+
+      // Get top procedures with contraindications
+      const topProcedures = await ctx.prisma.contraindication.groupBy({
+        by: ['procedure'],
+        where,
+        _count: { procedure: true },
+        orderBy: { _count: { procedure: 'desc' } },
+        take: 10,
+      });
+
+      // Get top sources
+      const topSources = await ctx.prisma.contraindication.groupBy({
+        by: ['source'],
+        where: { ...where, source: { not: null } },
+        _count: { source: true },
+        orderBy: { _count: { source: 'desc' } },
+        take: 10,
+      });
+
+      return {
+        total,
+        byType: {
+          absolute,
+          relative,
+          precaution,
+        },
+        overridden,
+        active,
+        overrideRate: total > 0 ? Math.round((overridden / total) * 100) : 0,
+        topProcedures: topProcedures.map(p => ({
+          procedure: p.procedure,
+          count: p._count.procedure,
+        })),
+        topSources: topSources.map(s => ({
+          source: s.source || 'Unknown',
+          count: s._count.source,
         })),
       };
     }),

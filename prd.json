@@ -69,7 +69,7 @@
         "Override with documentation"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-375",

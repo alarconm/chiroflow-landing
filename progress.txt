@@ -200,3 +200,113 @@ Story: US-372 - Diagnosis suggestion
 --- Iteration 3 completed at 2026-01-22 ---
 Story: US-373 - Treatment recommendations
 
+--- Iteration 3 completed at 2026-01-22 19:39:01 ---
+Story: US-373 - Treatment recommendations
+
+## 2026-01-22 - US-374: Contraindication alerts
+
+### Completed
+- Added comprehensive contraindication alert functionality to aiClinical.ts router:
+
+**Contraindication Rules Database (20+ Rules):**
+- **Absolute Contraindications (6 rules):**
+  - Cauda equina syndrome (CRITICAL)
+  - Acute spinal fracture (CRITICAL)
+  - Spinal infection/osteomyelitis (CRITICAL)
+  - Spinal malignancy/metastasis (CRITICAL)
+  - Vascular emergency (AAA/dissection) (CRITICAL)
+  - Severe cervical instability (CRITICAL)
+
+- **Relative Contraindications - High Severity (5 rules):**
+  - Anticoagulation therapy (warfarin, eliquis, etc.)
+  - Severe osteoporosis
+  - Vertebrobasilar insufficiency risk
+  - Recent spinal surgery
+  - Progressive neurological deficit
+
+- **Moderate Severity (6 rules):**
+  - Mild-moderate osteoporosis
+  - Pregnancy
+  - Long-term corticosteroid use
+  - Recent significant trauma
+  - Inflammatory arthritis (RA, AS)
+  - Connective tissue disorders (Ehlers-Danlos, Marfan)
+
+- **Age-Specific Precautions:**
+  - Advanced age (>75) - MODERATE
+  - Pediatric cervical (<12) - LOW
+
+- **Medication Interactions:**
+  - High-dose NSAIDs
+  - Muscle relaxants
+
+**Main Endpoints:**
+1. `aiClinical.checkContraindications` - Comprehensive safety verification
+   - Analyzes patient conditions, medications, age
+   - Checks recent surgeries and trauma
+   - Detects red flag symptoms
+   - Rule-based matching against 20+ contraindication rules
+   - AI-enhanced analysis using Claude Opus 4.5 (when API key present)
+   - Creates ClinicalAlert records for detected contraindications
+   - Stores significant contraindications in patient record
+   - Returns safety status: CLEAR, PRECAUTION, RELATIVE, ABSOLUTE
+   - Alert severity levels: CRITICAL, HIGH, MODERATE, LOW
+
+2. `aiClinical.overrideContraindication` - Override with documentation
+   - Only allows override of relative/precaution contraindications
+   - Blocks override of absolute contraindications
+   - Requires risk acknowledgment
+   - Documents patient consent (optional)
+   - Records alternatives considered
+   - Records precautions taken
+   - Full audit trail
+
+3. `aiClinical.getPatientContraindications` - List active contraindications
+   - Filter by procedure
+   - Include/exclude overridden
+   - Include/exclude expired
+
+4. `aiClinical.addPatientContraindication` - Manual entry
+   - Add provider-identified contraindications
+   - Automatically creates clinical alerts for high severity
+
+5. `aiClinical.deactivateContraindication` - Mark as resolved
+   - Document resolution reason
+   - Resolves related alerts
+
+6. `aiClinical.getContraindicationStats` - Analytics
+   - Breakdown by type (absolute/relative/precaution)
+   - Override rates
+   - Top procedures and sources
+
+**Key Features:**
+- Procedure-CPT code mapping for accurate matching
+- Source-based detection (condition, medication, age, surgery, trauma, red_flag)
+- Review date scheduling for temporary contraindications
+- AI-enhanced analysis for additional safety insights
+- Full audit logging for all actions
+
+### Files Modified
+- app/src/server/routers/aiClinical.ts - Added ~800 lines:
+  - Contraindication rules database (20+ rules)
+  - Procedure-CPT code mapping
+  - checkContraindicationRules helper function
+  - generateAIContraindicationAnalysis helper function
+  - 6 new tRPC endpoints
+- app/src/lib/audit.ts - Added audit actions:
+  - CONTRAINDICATION_OVERRIDE
+  - CONTRAINDICATION_ADDED
+  - CONTRAINDICATION_DEACTIVATED
+- prd.json - Marked US-374 as passes: true
+
+### Technical Notes
+- Follows existing aiClinical patterns from US-372 and US-373
+- Uses providerProcedure for write operations
+- Uses protectedProcedure for read-only queries
+- Full Prisma type safety with proper typing
+- Uses Contraindication model from US-371 schema
+- Pre-existing errors in mobile app and aiCare.ts are unrelated
+
+--- Iteration 4 completed at 2026-01-22 ---
+Story: US-374 - Contraindication alerts
+
