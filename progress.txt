@@ -425,3 +425,121 @@ Added comprehensive onboarding workflow system to `app/src/server/routers/aiTrai
 --- Iteration 4 completed at 2026-01-22 ---
 Story: US-366 - Onboarding workflows
 
+--- Iteration 4 completed at 2026-01-22 18:33:48 ---
+Story: US-366 - Onboarding workflows
+
+### US-367: Script training and practice ✅ COMPLETED
+
+**Date:** 2026-01-22
+**Status:** PASSED
+
+**Implementation:**
+
+Added comprehensive script training and practice system to `app/src/server/routers/aiTraining.ts`.
+
+**New tRPC Procedures:**
+
+1. **practiceScript** - Start a script practice session
+   - Creates PracticeSession with script-specific context
+   - Auto-determines difficulty based on user history
+   - Configurable focus areas (KEY_PHRASES, AVOID_PHRASES, TIMING, PERSONALIZATION, FULL_SCRIPT)
+   - Generates AI persona based on script type and difficulty
+   - Returns key phrases, avoid phrases, and expected outcomes
+
+2. **submitScriptResponse** - Submit response during script practice
+   - Tracks key phrase and avoid phrase usage in real-time
+   - Generates contextual AI responses based on conversation phase
+   - Provides real-time feedback on script adherence
+   - Returns hints appropriate to difficulty level
+
+3. **completeScriptPractice** - Complete practice session with detailed analysis
+   - Calculates comprehensive scores (tone, empathy, script adherence, timing)
+   - Generates detailed key phrase and avoid phrase breakdowns
+   - Creates PerformanceFeedback entries
+   - Updates user's mastery level
+   - Returns recommended next steps
+
+4. **getScripts** - List available phone scripts
+   - Filter by type (SCHEDULING_CALL, BILLING_INQUIRY, etc.)
+   - Include/exclude archived scripts
+   - Returns user's mastery level for each script
+
+5. **getScript** - Get specific script with full details
+   - Practice history for the script
+   - Mastery progress and improvement trends
+   - Key phrases guide with context and examples
+   - Avoid phrases guide with reasons and alternatives
+
+6. **getScriptMasteryLevels** - View script mastery for all scripts
+   - Grouped by script type
+   - Overall progress statistics
+   - Admin can view other users' mastery
+
+7. **createScript** - Create custom training scripts (admin)
+   - Full script configuration
+   - Key phrases, avoid phrases, expected outcomes
+   - Persona and difficulty settings
+
+8. **getRecommendedScripts** - Get personalized script recommendations
+   - Based on user's weaknesses
+   - Identifies weak areas from practice history
+   - Suggests unpracticed script types
+
+**Script Types Supported:**
+- Scheduling call scripts
+- Insurance explanation scripts
+- Billing inquiry scripts
+- Complaint handling scripts
+- New patient intake scripts
+- Cancellation handling scripts
+- Follow-up call scripts
+- Emergency triage scripts
+
+**Mastery Level System:**
+- NOVICE: No practice yet
+- LEARNING: 1-2 practices or score < 60%
+- COMPETENT: 3+ practices with 60-74% score
+- PROFICIENT: 3+ practices with 75-89% score
+- MASTER: 3+ practices with 90%+ score
+
+**Helper Functions Added:**
+
+1. **getMasteryLevel()** - Calculate mastery based on practice count and score
+2. **calculateProgressToNextLevel()** - Track progress toward next level
+3. **calculateImprovementTrend()** - Analyze score trends over time
+4. **generateKeyPhrasesGuide()** - Context-aware key phrase guidance
+5. **generateAvoidPhrasesGuide()** - Reasons and alternatives for avoid phrases
+6. **determineRecommendedDifficulty()** - Auto-adjust difficulty based on history
+7. **determineConversationPhase()** - Track call progression
+8. **generateScriptAIResponse()** - Generate contextual AI responses
+9. **getScriptHints()** - Difficulty-appropriate hints
+10. **generateRealtimeScriptFeedback()** - Instant feedback during practice
+11. **analyzeScriptAdherenceDetailed()** - Comprehensive script analysis
+12. **calculateScriptPracticeScores()** - Multi-factor scoring
+13. **generateScriptPracticeFeedback()** - Detailed feedback generation
+14. **updateScriptMastery()** - Update mastery after practice
+15. **generateNextSteps()** - Personalized improvement recommendations
+
+**Acceptance Criteria Fulfilled:**
+- ✅ aiTraining.practiceScript - Practice specific scripts
+- ✅ Scheduling call scripts
+- ✅ Insurance explanation scripts
+- ✅ Billing inquiry scripts
+- ✅ Complaint handling scripts
+- ✅ AI evaluates script adherence
+- ✅ Personalization within script guidance
+- ✅ Track script mastery levels
+
+**Files Modified:**
+- app/src/server/routers/aiTraining.ts (added ~800 lines)
+
+---
+
+## Stories Remaining: 3
+
+- US-368: Compliance training
+- US-369: Performance coaching
+- US-370: Training dashboard
+--- Iteration 5 completed at 2026-01-22 ---
+Story: US-367 - Script training and practice
+

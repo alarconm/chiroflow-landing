@@ -1556,6 +1556,707 @@ async function notifyManagersOnOnboardingComplete(
   }
 }
 
+// ============================================
+// US-367: Script Training Helpers
+// ============================================
+
+type MasteryLevel = 'NOVICE' | 'LEARNING' | 'COMPETENT' | 'PROFICIENT' | 'MASTER';
+
+/**
+ * Calculate mastery level based on practice count and score
+ */
+function getMasteryLevel(practiceCount: number, avgScore: number): MasteryLevel {
+  if (practiceCount === 0) return 'NOVICE';
+  if (practiceCount < 3) return 'LEARNING';
+  if (avgScore < 60) return 'LEARNING';
+  if (avgScore < 75) return 'COMPETENT';
+  if (avgScore < 90) return 'PROFICIENT';
+  return 'MASTER';
+}
+
+/**
+ * Calculate progress to next mastery level
+ */
+function calculateProgressToNextLevel(scores: { scriptAdherenceScore: number | null }[]): {
+  currentLevel: MasteryLevel;
+  nextLevel: MasteryLevel | null;
+  progressPercent: number;
+  requirement: string;
+} {
+  const count = scores.length;
+  const avgScore = count > 0
+    ? scores.reduce((sum, s) => sum + (s.scriptAdherenceScore || 0), 0) / count
+    : 0;
+  const currentLevel = getMasteryLevel(count, avgScore);
+
+  const levels: MasteryLevel[] = ['NOVICE', 'LEARNING', 'COMPETENT', 'PROFICIENT', 'MASTER'];
+  const currentIndex = levels.indexOf(currentLevel);
+  const nextLevel = currentIndex < levels.length - 1 ? levels[currentIndex + 1] : null;
+
+  let progressPercent = 0;
+  let requirement = '';
+
+  switch (currentLevel) {
+    case 'NOVICE':
+      progressPercent = (count / 3) * 100;
+      requirement = `Complete ${3 - count} more practice sessions`;
+      break;
+    case 'LEARNING':
+      if (avgScore < 60) {
+        progressPercent = (avgScore / 60) * 100;
+        requirement = `Improve average score to 60% (currently ${Math.round(avgScore)}%)`;
+      } else {
+        progressPercent = (avgScore / 75) * 100;
+        requirement = `Improve average score to 75% (currently ${Math.round(avgScore)}%)`;
+      }
+      break;
+    case 'COMPETENT':
+      progressPercent = ((avgScore - 60) / 15) * 100;
+      requirement = `Improve average score to 75% (currently ${Math.round(avgScore)}%)`;
+      break;
+    case 'PROFICIENT':
+      progressPercent = ((avgScore - 75) / 15) * 100;
+      requirement = `Improve average score to 90% (currently ${Math.round(avgScore)}%)`;
+      break;
+    case 'MASTER':
+      progressPercent = 100;
+      requirement = 'Mastery achieved!';
+      break;
+  }
+
+  return {
+    currentLevel,
+    nextLevel,
+    progressPercent: Math.min(100, Math.round(progressPercent)),
+    requirement,
+  };
+}
+
+/**
+ * Calculate improvement trend over time
+ */
+function calculateImprovementTrend(scores: { scriptAdherenceScore: number | null; createdAt: Date }[]): {
+  trend: 'IMPROVING' | 'STABLE' | 'DECLINING';
+  changePercent: number;
+  details: string;
+} {
+  if (scores.length < 4) {
+    return { trend: 'STABLE', changePercent: 0, details: 'Need more practice sessions to determine trend' };
+  }
+
+  const half = Math.floor(scores.length / 2);
+  const firstHalf = scores.slice(0, half);
+  const secondHalf = scores.slice(half);
+
+  const firstAvg = firstHalf.reduce((sum, s) => sum + (s.scriptAdherenceScore || 0), 0) / firstHalf.length;
+  const secondAvg = secondHalf.reduce((sum, s) => sum + (s.scriptAdherenceScore || 0), 0) / secondHalf.length;
+
+  const change = secondAvg - firstAvg;
+  const changePercent = Math.round(Math.abs(change));
+
+  if (change > 5) {
+    return {
+      trend: 'IMPROVING',
+      changePercent,
+      details: `Average score improved by ${changePercent}% in recent sessions`,
+    };
+  } else if (change < -5) {
+    return {
+      trend: 'DECLINING',
+      changePercent,
+      details: `Average score declined by ${changePercent}% in recent sessions`,
+    };
+  }
+
+  return {
+    trend: 'STABLE',
+    changePercent,
+    details: 'Performance is consistent across recent sessions',
+  };
+}
+
+/**
+ * Generate guide for key phrases
+ */
+function generateKeyPhrasesGuide(keyPhrases: string[], type: ScenarioType): {
+  phrase: string;
+  context: string;
+  example: string;
+}[] {
+  const contextMap: Record<ScenarioType, Record<string, { context: string; example: string }>> = {
+    SCHEDULING_CALL: {
+      'default': { context: 'Use when booking appointments', example: 'I have an opening at 2pm on Tuesday.' },
+    },
+    BILLING_INQUIRY: {
+      'default': { context: 'Use when explaining charges', example: 'Let me break down these charges for you.' },
+    },
+    COMPLAINT_HANDLING: {
+      'I understand': { context: 'Show empathy for frustration', example: 'I understand how frustrating this must be.' },
+      'apologize': { context: 'Take responsibility', example: 'I sincerely apologize for the inconvenience.' },
+      'default': { context: 'Use to de-escalate', example: 'I want to make this right for you.' },
+    },
+    NEW_PATIENT_INTAKE: {
+      'default': { context: 'Welcome new patients warmly', example: 'We look forward to seeing you!' },
+    },
+    CANCELLATION: {
+      'default': { context: 'Be understanding about changes', example: 'No problem at all, things come up.' },
+    },
+    INSURANCE_QUESTIONS: {
+      'default': { context: 'Explain coverage clearly', example: 'Your plan covers up to X visits per year.' },
+    },
+    FOLLOW_UP_CALL: {
+      'default': { context: 'Check on patient progress', example: 'How have you been feeling since your last visit?' },
+    },
+    EMERGENCY_TRIAGE: {
+      'default': { context: 'Assess urgency carefully', example: 'Based on your symptoms, we should see you today.' },
+    },
+  };
+
+  const typeContext = contextMap[type] || {};
+
+  return keyPhrases.map((phrase) => {
+    const specific = typeContext[phrase.toLowerCase()];
+    const defaultContext = typeContext['default'] || { context: 'Use appropriately', example: phrase };
+    return {
+      phrase,
+      context: specific?.context || defaultContext.context,
+      example: specific?.example || `Example: "${phrase}"`,
+    };
+  });
+}
+
+/**
+ * Generate guide for phrases to avoid
+ */
+function generateAvoidPhrasesGuide(avoidPhrases: string[], type: ScenarioType): {
+  phrase: string;
+  reason: string;
+  alternative: string;
+}[] {
+  const avoidReasons: Record<string, { reason: string; alternative: string }> = {
+    "that's not my job": { reason: 'Sounds dismissive', alternative: 'Let me find the right person to help you' },
+    "calm down": { reason: 'Can escalate frustration', alternative: 'I understand this is frustrating' },
+    "you should have": { reason: 'Sounds blaming', alternative: "Let's focus on how we can help now" },
+    "we can't": { reason: 'Sounds negative', alternative: "Here's what we can do" },
+    "policy": { reason: 'Sounds bureaucratic', alternative: 'The way we handle this is...' },
+    "default": { reason: 'May come across negatively', alternative: 'Consider rephrasing positively' },
+  };
+
+  return avoidPhrases.map((phrase) => {
+    const specific = avoidReasons[phrase.toLowerCase()] || avoidReasons['default'];
+    return {
+      phrase,
+      reason: specific.reason,
+      alternative: specific.alternative,
+    };
+  });
+}
+
+/**
+ * Determine recommended difficulty based on user history
+ */
+async function determineRecommendedDifficulty(
+  ctx: { user: { id: string; organizationId: string }; prisma: typeof import('@prisma/client').PrismaClient.prototype },
+  scriptId: string
+): Promise<DifficultyLevel> {
+  const recentSessions = await ctx.prisma.practiceSession.findMany({
+    where: {
+      userId: ctx.user.id,
+      scenarioId: scriptId,
+      status: 'COMPLETED',
+    },
+    orderBy: { endedAt: 'desc' },
+    take: 5,
+    select: { scriptAdherenceScore: true, scenario: { select: { difficulty: true } } },
+  });
+
+  if (recentSessions.length === 0) return 'BEGINNER';
+
+  const avgScore = recentSessions.reduce((sum, s) => sum + (s.scriptAdherenceScore || 0), 0) / recentSessions.length;
+  const currentDifficulty = recentSessions[0]?.scenario?.difficulty || 'BEGINNER';
+
+  // Progress to next difficulty if scoring well
+  if (avgScore >= 85) {
+    const levels: DifficultyLevel[] = ['BEGINNER', 'INTERMEDIATE', 'ADVANCED', 'EXPERT'];
+    const currentIndex = levels.indexOf(currentDifficulty);
+    return currentIndex < levels.length - 1 ? levels[currentIndex + 1] : currentDifficulty;
+  }
+
+  // Stay at current or drop if struggling
+  if (avgScore < 50 && currentDifficulty !== 'BEGINNER') {
+    const levels: DifficultyLevel[] = ['BEGINNER', 'INTERMEDIATE', 'ADVANCED', 'EXPERT'];
+    const currentIndex = levels.indexOf(currentDifficulty);
+    return currentIndex > 0 ? levels[currentIndex - 1] : currentDifficulty;
+  }
+
+  return currentDifficulty;
+}
+
+/**
+ * Determine conversation phase
+ */
+function determineConversationPhase(
+  transcript: ConversationMessage[],
+  scenario: { expectedOutcomes: string[] }
+): 'opening' | 'discovery' | 'resolution' | 'closing' {
+  const messageCount = transcript.length;
+  const userMessages = transcript.filter((m) => m.role === 'user').map((m) => m.content.toLowerCase());
+  const allText = userMessages.join(' ');
+
+  // Check for closing indicators
+  if (
+    allText.includes('anything else') ||
+    allText.includes('thank you') ||
+    allText.includes('have a great day') ||
+    messageCount > 10
+  ) {
+    return 'closing';
+  }
+
+  // Check for resolution indicators
+  const hasResolution = scenario.expectedOutcomes.some((outcome) =>
+    allText.includes(outcome.toLowerCase().split(' ')[0])
+  );
+  if (hasResolution) return 'resolution';
+
+  // Check for discovery phase
+  if (messageCount > 3) return 'discovery';
+
+  return 'opening';
+}
+
+/**
+ * Generate AI response for script practice
+ */
+function generateScriptAIResponse(
+  scenario: {
+    type: ScenarioType;
+    personaName: string;
+    personaTraits: string[];
+    expectedOutcomes: string[];
+  },
+  transcript: ConversationMessage[],
+  phase: 'opening' | 'discovery' | 'resolution' | 'closing',
+  difficulty: DifficultyLevel
+): { message: string; emotion: string; scenarioState: 'ongoing' | 'resolved' | 'escalated'; nextExpectedAction: string } {
+  const userMessages = transcript.filter((m) => m.role === 'user').map((m) => m.content.toLowerCase());
+  const lastUserMessage = userMessages[userMessages.length - 1] || '';
+
+  // Check for empathetic response
+  const isEmpathetic = lastUserMessage.includes('understand') ||
+    lastUserMessage.includes('sorry') ||
+    lastUserMessage.includes('help you');
+
+  let message = '';
+  let emotion = 'neutral';
+  let scenarioState: 'ongoing' | 'resolved' | 'escalated' = 'ongoing';
+  let nextExpectedAction = '';
+
+  switch (phase) {
+    case 'opening':
+      message = getElaborationMessage(scenario.type, { name: scenario.personaName, traits: scenario.personaTraits } as AIPersona);
+      emotion = difficulty === 'ADVANCED' || difficulty === 'EXPERT' ? 'frustrated' : 'calm';
+      nextExpectedAction = 'Acknowledge the concern and ask clarifying questions';
+      break;
+
+    case 'discovery':
+      if (isEmpathetic) {
+        message = getPositiveResponseMessage(scenario.type, { name: scenario.personaName } as AIPersona);
+        emotion = 'calm';
+        nextExpectedAction = 'Continue gathering information and move toward resolution';
+      } else {
+        message = `I'm not sure you understood what I meant. ${getElaborationMessage(scenario.type, { name: scenario.personaName } as AIPersona)}`;
+        emotion = difficulty === 'BEGINNER' ? 'neutral' : 'frustrated';
+        nextExpectedAction = 'Show more empathy and acknowledge the concern';
+      }
+      break;
+
+    case 'resolution':
+      message = 'Okay, that sounds good. Is there anything else I need to know?';
+      emotion = 'calm';
+      scenarioState = 'resolved';
+      nextExpectedAction = 'Confirm all details and prepare to close the call';
+      break;
+
+    case 'closing':
+      message = 'Thank you for your help today!';
+      emotion = 'friendly';
+      scenarioState = 'resolved';
+      nextExpectedAction = 'Close the call professionally';
+      break;
+  }
+
+  return { message, emotion, scenarioState, nextExpectedAction };
+}
+
+/**
+ * Get script hints based on phase
+ */
+function getScriptHints(type: ScenarioType, difficulty: DifficultyLevel, phase: string): string[] {
+  if (difficulty === 'ADVANCED' || difficulty === 'EXPERT') return [];
+
+  const hints: Record<string, Record<string, string[]>> = {
+    opening: {
+      SCHEDULING_CALL: ['Greet warmly', 'Ask about preferred times', 'Confirm contact information'],
+      BILLING_INQUIRY: ['Listen actively', 'Ask for bill/invoice number', 'Express willingness to help'],
+      COMPLAINT_HANDLING: ['Show empathy immediately', 'Let them express frustration', 'Avoid being defensive'],
+      default: ['Greet professionally', 'Identify yourself and the practice', 'Ask how you can help'],
+    },
+    discovery: {
+      SCHEDULING_CALL: ['Offer multiple options', 'Confirm insurance if needed', 'Explain what to bring'],
+      BILLING_INQUIRY: ['Explain charges clearly', 'Offer payment plans if available', 'Document the conversation'],
+      COMPLAINT_HANDLING: ['Apologize sincerely', 'Take ownership of finding a solution', 'Avoid blaming others'],
+      default: ['Ask clarifying questions', 'Summarize understanding', 'Move toward resolution'],
+    },
+    resolution: {
+      default: ['Confirm all details', 'Provide next steps', 'Ask if there are other questions'],
+    },
+    closing: {
+      default: ['Thank them for calling', 'Confirm follow-up if needed', 'End on a positive note'],
+    },
+  };
+
+  const phaseHints = hints[phase] || hints['opening'];
+  return phaseHints[type] || phaseHints['default'] || [];
+}
+
+/**
+ * Generate real-time feedback during script practice
+ */
+function generateRealtimeScriptFeedback(
+  response: string,
+  keyPhrases: string[],
+  avoidPhrases: string[],
+  keyPhrasesUsed: string[],
+  avoidPhrasesUsed: string[]
+): {
+  type: 'positive' | 'warning' | 'suggestion';
+  message: string;
+}[] {
+  const feedback: { type: 'positive' | 'warning' | 'suggestion'; message: string }[] = [];
+
+  // Positive feedback for key phrases
+  if (keyPhrasesUsed.length > 0) {
+    feedback.push({
+      type: 'positive',
+      message: `Great use of key phrase: "${keyPhrasesUsed[0]}"`,
+    });
+  }
+
+  // Warning for avoid phrases
+  if (avoidPhrasesUsed.length > 0) {
+    feedback.push({
+      type: 'warning',
+      message: `Avoid using: "${avoidPhrasesUsed[0]}" - try rephrasing`,
+    });
+  }
+
+  // Suggestions for unused key phrases
+  const unusedKeyPhrases = keyPhrases.filter((p) => !response.toLowerCase().includes(p.toLowerCase()));
+  if (unusedKeyPhrases.length > 0 && keyPhrasesUsed.length === 0) {
+    feedback.push({
+      type: 'suggestion',
+      message: `Consider using: "${unusedKeyPhrases[0]}"`,
+    });
+  }
+
+  // Check for empathy indicators
+  const empathyWords = ['understand', 'sorry', 'appreciate', 'help'];
+  const hasEmpathy = empathyWords.some((w) => response.toLowerCase().includes(w));
+  if (!hasEmpathy && response.length > 50) {
+    feedback.push({
+      type: 'suggestion',
+      message: 'Consider adding empathetic language',
+    });
+  }
+
+  return feedback;
+}
+
+/**
+ * Analyze script adherence in detail
+ */
+function analyzeScriptAdherenceDetailed(
+  transcript: ConversationMessage[],
+  keyPhrases: string[],
+  avoidPhrases: string[],
+  expectedOutcomes: string[]
+): {
+  adherenceScore: number;
+  keyPhrasesBreakdown: { phrase: string; used: boolean; count: number; context: string }[];
+  avoidPhrasesBreakdown: { phrase: string; used: boolean; count: number; impact: string }[];
+  outcomesAchieved: number;
+  outcomesBreakdown: { outcome: string; achieved: boolean; evidence: string }[];
+} {
+  const userMessages = transcript.filter((m) => m.role === 'user').map((m) => m.content.toLowerCase());
+  const allUserText = userMessages.join(' ');
+
+  // Analyze key phrases
+  const keyPhrasesBreakdown = keyPhrases.map((phrase) => {
+    const lowerPhrase = phrase.toLowerCase();
+    const used = allUserText.includes(lowerPhrase);
+    const count = (allUserText.match(new RegExp(lowerPhrase, 'gi')) || []).length;
+    return {
+      phrase,
+      used,
+      count,
+      context: used ? 'Used appropriately' : 'Could have been used',
+    };
+  });
+
+  // Analyze avoid phrases
+  const avoidPhrasesBreakdown = avoidPhrases.map((phrase) => {
+    const lowerPhrase = phrase.toLowerCase();
+    const used = allUserText.includes(lowerPhrase);
+    const count = (allUserText.match(new RegExp(lowerPhrase, 'gi')) || []).length;
+    return {
+      phrase,
+      used,
+      count,
+      impact: used ? 'May have negatively impacted the interaction' : 'Successfully avoided',
+    };
+  });
+
+  // Analyze outcomes
+  const outcomesBreakdown = expectedOutcomes.map((outcome) => {
+    const keywords = outcome.toLowerCase().split(' ').filter((w) => w.length > 3);
+    const achieved = keywords.some((kw) => allUserText.includes(kw));
+    return {
+      outcome,
+      achieved,
+      evidence: achieved ? 'Found related content in conversation' : 'Not clearly addressed',
+    };
+  });
+
+  // Calculate adherence score
+  const keyPhraseScore = (keyPhrasesBreakdown.filter((p) => p.used).length / Math.max(keyPhrases.length, 1)) * 40;
+  const avoidPhraseScore = ((avoidPhrases.length - avoidPhrasesBreakdown.filter((p) => p.used).length) / Math.max(avoidPhrases.length, 1)) * 30;
+  const outcomeScore = (outcomesBreakdown.filter((o) => o.achieved).length / Math.max(expectedOutcomes.length, 1)) * 30;
+
+  return {
+    adherenceScore: Math.round(keyPhraseScore + avoidPhraseScore + outcomeScore),
+    keyPhrasesBreakdown,
+    avoidPhrasesBreakdown,
+    outcomesAchieved: outcomesBreakdown.filter((o) => o.achieved).length,
+    outcomesBreakdown,
+  };
+}
+
+/**
+ * Calculate script practice scores
+ */
+function calculateScriptPracticeScores(
+  transcript: ConversationMessage[],
+  scenario: { keyPhrases: string[]; avoidPhrases: string[]; expectedOutcomes: string[]; targetDurationSecs: number },
+  scriptAnalysis: ReturnType<typeof analyzeScriptAdherenceDetailed>,
+  duration: number
+): { overall: number; tone: number; empathy: number; scriptAdherence: number; timing: number } {
+  const userMessages = transcript.filter((m) => m.role === 'user').map((m) => m.content);
+  const allUserText = userMessages.join(' ').toLowerCase();
+
+  // Tone score
+  const politeWords = ['please', 'thank you', 'certainly', 'happy to', 'of course', 'appreciate'];
+  const politeCount = politeWords.filter((w) => allUserText.includes(w)).length;
+  const tone = Math.min(100, 50 + politeCount * 10);
+
+  // Empathy score
+  const empathyPhrases = ['understand', 'sorry to hear', 'i can see', 'that must be', 'i appreciate'];
+  const empathyCount = empathyPhrases.filter((p) => allUserText.includes(p)).length;
+  const empathy = Math.min(100, 40 + empathyCount * 15);
+
+  // Script adherence (from detailed analysis)
+  const scriptAdherence = scriptAnalysis.adherenceScore;
+
+  // Timing score
+  const targetDuration = scenario.targetDurationSecs;
+  const durationDiff = Math.abs(duration - targetDuration);
+  const timing = Math.max(0, 100 - (durationDiff / targetDuration) * 50);
+
+  // Overall weighted score
+  const overall = Math.round(tone * 0.2 + empathy * 0.25 + scriptAdherence * 0.4 + timing * 0.15);
+
+  return {
+    overall,
+    tone: Math.round(tone),
+    empathy: Math.round(empathy),
+    scriptAdherence: Math.round(scriptAdherence),
+    timing: Math.round(timing),
+  };
+}
+
+/**
+ * Generate detailed feedback for script practice
+ */
+function generateScriptPracticeFeedback(
+  transcript: ConversationMessage[],
+  scenario: { name: string; type: ScenarioType; keyPhrases: string[]; avoidPhrases: string[] },
+  scriptAnalysis: ReturnType<typeof analyzeScriptAdherenceDetailed>,
+  scores: { overall: number; tone: number; empathy: number; scriptAdherence: number; timing: number }
+): {
+  scriptAdherence: { summary: string; suggestions: string[] };
+  tone: { summary: string; suggestions: string[] };
+  empathy: { summary: string; suggestions: string[] };
+  overallSummary: string;
+  strengths: string[];
+  improvements: string[];
+} {
+  const strengths: string[] = [];
+  const improvements: string[] = [];
+
+  // Script adherence feedback
+  const keyUsed = scriptAnalysis.keyPhrasesBreakdown.filter((p) => p.used).length;
+  const keyTotal = scriptAnalysis.keyPhrasesBreakdown.length;
+  const avoidUsed = scriptAnalysis.avoidPhrasesBreakdown.filter((p) => p.used).length;
+
+  let scriptSummary = '';
+  const scriptSuggestions: string[] = [];
+
+  if (scores.scriptAdherence >= 80) {
+    scriptSummary = `Excellent script adherence! You used ${keyUsed}/${keyTotal} key phrases effectively.`;
+    strengths.push('Strong script adherence');
+  } else if (scores.scriptAdherence >= 60) {
+    scriptSummary = `Good script adherence with room for improvement. Used ${keyUsed}/${keyTotal} key phrases.`;
+    const unused = scriptAnalysis.keyPhrasesBreakdown.filter((p) => !p.used);
+    if (unused.length > 0) {
+      scriptSuggestions.push(`Try incorporating: "${unused[0].phrase}"`);
+    }
+  } else {
+    scriptSummary = `Script adherence needs work. Only ${keyUsed}/${keyTotal} key phrases used.`;
+    improvements.push('Practice using more key phrases from the script');
+    scriptAnalysis.keyPhrasesBreakdown.filter((p) => !p.used).slice(0, 2).forEach((p) => {
+      scriptSuggestions.push(`Practice using: "${p.phrase}"`);
+    });
+  }
+
+  if (avoidUsed > 0) {
+    improvements.push(`Avoid these phrases: ${scriptAnalysis.avoidPhrasesBreakdown.filter((p) => p.used).map((p) => p.phrase).join(', ')}`);
+    scriptSuggestions.push('Review the phrases to avoid and practice alternatives');
+  }
+
+  // Tone feedback
+  let toneSummary = '';
+  const toneSuggestions: string[] = [];
+
+  if (scores.tone >= 80) {
+    toneSummary = 'Professional and courteous tone throughout the conversation.';
+    strengths.push('Professional tone');
+  } else if (scores.tone >= 60) {
+    toneSummary = 'Acceptable tone with some room for improvement.';
+    toneSuggestions.push('Try using more courteous phrases like "certainly" or "happy to help"');
+  } else {
+    toneSummary = 'Tone could be more professional and courteous.';
+    improvements.push('Work on using more professional language');
+    toneSuggestions.push('Add phrases like "please", "thank you", and "I appreciate your patience"');
+  }
+
+  // Empathy feedback
+  let empathySummary = '';
+  const empathySuggestions: string[] = [];
+
+  if (scores.empathy >= 80) {
+    empathySummary = 'Showed strong empathy and understanding for the caller.';
+    strengths.push('Strong empathy');
+  } else if (scores.empathy >= 60) {
+    empathySummary = 'Demonstrated some empathy, but could be more supportive.';
+    empathySuggestions.push('Use phrases like "I understand how you feel" or "That must be frustrating"');
+  } else {
+    empathySummary = 'Empathy was lacking in the conversation.';
+    improvements.push('Focus on acknowledging the caller\'s feelings');
+    empathySuggestions.push('Before offering solutions, acknowledge the caller\'s situation');
+  }
+
+  // Overall summary
+  let overallSummary = '';
+  if (scores.overall >= 85) {
+    overallSummary = `Excellent performance on the ${scenario.name} script! You demonstrated strong communication skills.`;
+  } else if (scores.overall >= 70) {
+    overallSummary = `Good performance on the ${scenario.name} script. Focus on the suggested improvements to reach excellence.`;
+  } else if (scores.overall >= 50) {
+    overallSummary = `Satisfactory performance on the ${scenario.name} script. Regular practice will help improve your skills.`;
+  } else {
+    overallSummary = `The ${scenario.name} script needs more practice. Review the key phrases and try again.`;
+  }
+
+  return {
+    scriptAdherence: { summary: scriptSummary, suggestions: scriptSuggestions },
+    tone: { summary: toneSummary, suggestions: toneSuggestions },
+    empathy: { summary: empathySummary, suggestions: empathySuggestions },
+    overallSummary,
+    strengths,
+    improvements,
+  };
+}
+
+/**
+ * Update user's script mastery after practice
+ */
+async function updateScriptMastery(
+  ctx: { user: { id: string; organizationId: string }; prisma: typeof import('@prisma/client').PrismaClient.prototype },
+  scriptId: string,
+  newScore: number
+): Promise<MasteryLevel> {
+  const sessions = await ctx.prisma.practiceSession.findMany({
+    where: {
+      userId: ctx.user.id,
+      scenarioId: scriptId,
+      status: 'COMPLETED',
+    },
+    select: { scriptAdherenceScore: true },
+    orderBy: { endedAt: 'desc' },
+    take: 10,
+  });
+
+  const avgScore = sessions.reduce((sum, s) => sum + (s.scriptAdherenceScore || 0), 0) / sessions.length;
+  return getMasteryLevel(sessions.length, avgScore);
+}
+
+/**
+ * Generate next steps recommendations
+ */
+function generateNextSteps(
+  scores: { overall: number; tone: number; empathy: number; scriptAdherence: number; timing: number },
+  scenarioType: ScenarioType
+): string[] {
+  const nextSteps: string[] = [];
+
+  // Find weakest area
+  const categories = [
+    { name: 'tone', score: scores.tone },
+    { name: 'empathy', score: scores.empathy },
+    { name: 'scriptAdherence', score: scores.scriptAdherence },
+    { name: 'timing', score: scores.timing },
+  ].sort((a, b) => a.score - b.score);
+
+  const weakest = categories[0];
+
+  switch (weakest.name) {
+    case 'tone':
+      nextSteps.push('Practice using more courteous and professional language');
+      nextSteps.push('Review examples of professional phone etiquette');
+      break;
+    case 'empathy':
+      nextSteps.push('Practice acknowledging caller feelings before solving problems');
+      nextSteps.push('Try the complaint handling scenarios to build empathy skills');
+      break;
+    case 'scriptAdherence':
+      nextSteps.push('Review the key phrases for this script type');
+      nextSteps.push('Practice this script again focusing on key phrase usage');
+      break;
+    case 'timing':
+      nextSteps.push('Work on being more efficient while still thorough');
+      nextSteps.push('Practice transitioning smoothly between conversation phases');
+      break;
+  }
+
+  if (scores.overall >= 80) {
+    nextSteps.push('Try the same scenario at a higher difficulty level');
+  } else {
+    nextSteps.push('Practice this script a few more times before advancing');
+  }
+
+  return nextSteps;
+}
+
 export const aiTrainingRouter = router({
   // ============================================
   // US-364: Video Practice Sessions
@@ -4037,4 +4738,807 @@ export const aiTrainingRouter = router({
 
       return metrics;
     }),
+
+  // ============================================
+  // US-367: Script Training and Practice
+  // ============================================
+
+  /**
+   * Get available phone scripts for training
+   */
+  getScripts: protectedProcedure
+    .input(
+      z.object({
+        type: z
+          .enum([
+            'SCHEDULING_CALL',
+            'BILLING_INQUIRY',
+            'COMPLAINT_HANDLING',
+            'NEW_PATIENT_INTAKE',
+            'CANCELLATION',
+            'INSURANCE_QUESTIONS',
+            'FOLLOW_UP_CALL',
+            'EMERGENCY_TRIAGE',
+          ])
+          .optional(),
+        includeArchived: z.boolean().optional().default(false),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { type, includeArchived } = input;
+
+      // Get scripts from scenarios that have detailed script content
+      const scripts = await ctx.prisma.trainingScenario.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          ...(type && { type }),
+          ...(includeArchived ? {} : { isActive: true }),
+          script: { not: '' },
+        },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          type: true,
+          difficulty: true,
+          script: true,
+          keyPhrases: true,
+          avoidPhrases: true,
+          expectedOutcomes: true,
+          targetDurationSecs: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: [{ type: 'asc' }, { difficulty: 'asc' }, { name: 'asc' }],
+      });
+
+      // Get user's mastery levels for each script
+      const userMastery = await ctx.prisma.practiceSession.groupBy({
+        by: ['scenarioId'],
+        where: {
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+          status: 'COMPLETED',
+          scenarioId: { in: scripts.map((s) => s.id) },
+        },
+        _count: { id: true },
+        _avg: { scriptAdherenceScore: true, overallScore: true },
+        _max: { scriptAdherenceScore: true },
+      });
+
+      const masteryMap = new Map(
+        userMastery.map((m) => [
+          m.scenarioId,
+          {
+            practiceCount: m._count.id,
+            avgAdherence: Math.round(m._avg.scriptAdherenceScore || 0),
+            avgOverall: Math.round(m._avg.overallScore || 0),
+            bestAdherence: m._max.scriptAdherenceScore || 0,
+            masteryLevel: getMasteryLevel(m._count.id, m._avg.scriptAdherenceScore || 0),
+          },
+        ])
+      );
+
+      return scripts.map((script) => ({
+        ...script,
+        mastery: masteryMap.get(script.id) || {
+          practiceCount: 0,
+          avgAdherence: 0,
+          avgOverall: 0,
+          bestAdherence: 0,
+          masteryLevel: 'NOVICE' as const,
+        },
+      }));
+    }),
+
+  /**
+   * Get a specific script with full details
+   */
+  getScript: protectedProcedure
+    .input(z.object({ scriptId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const script = await ctx.prisma.trainingScenario.findFirst({
+        where: {
+          id: input.scriptId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!script) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Script not found',
+        });
+      }
+
+      // Get user's practice history for this script
+      const practiceHistory = await ctx.prisma.practiceSession.findMany({
+        where: {
+          userId: ctx.user.id,
+          scenarioId: script.id,
+          status: 'COMPLETED',
+        },
+        orderBy: { endedAt: 'desc' },
+        take: 10,
+        select: {
+          id: true,
+          overallScore: true,
+          scriptAdherenceScore: true,
+          endedAt: true,
+          feedback: {
+            where: { category: 'SCRIPT_ADHERENCE' },
+            select: { feedback: true, suggestions: true },
+          },
+        },
+      });
+
+      // Calculate mastery progress
+      const allScores = await ctx.prisma.practiceSession.findMany({
+        where: {
+          userId: ctx.user.id,
+          scenarioId: script.id,
+          status: 'COMPLETED',
+        },
+        select: { scriptAdherenceScore: true, createdAt: true },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      const masteryProgress = {
+        totalPractices: allScores.length,
+        currentLevel: getMasteryLevel(allScores.length, allScores[allScores.length - 1]?.scriptAdherenceScore || 0),
+        progressToNextLevel: calculateProgressToNextLevel(allScores),
+        improvementTrend: calculateImprovementTrend(allScores),
+      };
+
+      return {
+        script,
+        practiceHistory,
+        masteryProgress,
+        keyPhrasesGuide: generateKeyPhrasesGuide(script.keyPhrases, script.type),
+        avoidPhrasesGuide: generateAvoidPhrasesGuide(script.avoidPhrases, script.type),
+      };
+    }),
+
+  /**
+   * Start a script practice session
+   */
+  practiceScript: protectedProcedure
+    .input(
+      z.object({
+        scriptId: z.string(),
+        difficulty: difficultyLevelEnum.optional(),
+        focusAreas: z
+          .array(z.enum(['KEY_PHRASES', 'AVOID_PHRASES', 'TIMING', 'PERSONALIZATION', 'FULL_SCRIPT']))
+          .optional()
+          .default(['FULL_SCRIPT']),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { scriptId, difficulty, focusAreas } = input;
+
+      const script = await ctx.prisma.trainingScenario.findFirst({
+        where: {
+          id: scriptId,
+          organizationId: ctx.user.organizationId,
+          isActive: true,
+        },
+      });
+
+      if (!script) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Script not found',
+        });
+      }
+
+      // Determine difficulty based on user's history if not specified
+      const effectiveDifficulty = difficulty || (await determineRecommendedDifficulty(ctx, script.id));
+
+      // Generate AI persona for this practice
+      const persona = generateAIPersona(script, effectiveDifficulty);
+
+      // Create practice session
+      const session = await ctx.prisma.practiceSession.create({
+        data: {
+          userId: ctx.user.id,
+          scenarioId: script.id,
+          organizationId: ctx.user.organizationId,
+          status: 'IN_PROGRESS',
+          transcript: JSON.stringify([]),
+          aiAnalysis: {
+            sessionType: 'SCRIPT_PRACTICE',
+            difficulty: effectiveDifficulty,
+            focusAreas,
+            persona,
+            expectedKeyPhrases: script.keyPhrases,
+            avoidPhrases: script.avoidPhrases,
+            currentPhase: 'opening',
+          } as unknown as Prisma.InputJsonValue,
+        },
+      });
+
+      // Generate opening based on script type
+      const opening = generateOpeningLine(script.type, persona, script.openingLine);
+
+      // Update transcript with opening
+      await ctx.prisma.practiceSession.update({
+        where: { id: session.id },
+        data: {
+          transcript: JSON.stringify([
+            {
+              role: 'ai',
+              content: opening,
+              timestamp: Date.now(),
+              phase: 'opening',
+            },
+          ]),
+        },
+      });
+
+      await auditLog('CREATE', 'ScriptPractice', {
+        entityId: session.id,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: { scriptId, difficulty: effectiveDifficulty, focusAreas },
+      });
+
+      return {
+        sessionId: session.id,
+        scriptName: script.name,
+        scriptType: script.type,
+        difficulty: effectiveDifficulty,
+        persona: {
+          name: persona.name,
+          emotionalState: persona.emotionalState,
+          speakingStyle: persona.speakingStyle,
+        },
+        opening,
+        focusAreas,
+        keyPhrases: script.keyPhrases,
+        avoidPhrases: script.avoidPhrases,
+        expectedOutcomes: script.expectedOutcomes,
+        targetDurationSecs: script.targetDurationSecs,
+        hints: getScriptHints(script.type, effectiveDifficulty, 'opening'),
+      };
+    }),
+
+  /**
+   * Submit a response during script practice
+   */
+  submitScriptResponse: protectedProcedure
+    .input(
+      z.object({
+        sessionId: z.string(),
+        response: z.string().min(1),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { sessionId, response } = input;
+
+      const session = await ctx.prisma.practiceSession.findFirst({
+        where: {
+          id: sessionId,
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+          status: 'IN_PROGRESS',
+        },
+        include: { scenario: true },
+      });
+
+      if (!session) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Active practice session not found',
+        });
+      }
+
+      // Parse existing transcript
+      let transcript: ConversationMessage[] = [];
+      if (session.transcript) {
+        try {
+          transcript = JSON.parse(session.transcript);
+        } catch {
+          transcript = [];
+        }
+      }
+
+      // Analyze response for key phrases
+      const keyPhrasesUsed = session.scenario.keyPhrases.filter((phrase) =>
+        response.toLowerCase().includes(phrase.toLowerCase())
+      );
+      const avoidPhrasesUsed = session.scenario.avoidPhrases.filter((phrase) =>
+        response.toLowerCase().includes(phrase.toLowerCase())
+      );
+
+      // Add user response to transcript
+      transcript.push({
+        role: 'user',
+        content: response,
+        timestamp: Date.now(),
+        keyPhrasesUsed,
+        keyPhrasesAvoid: avoidPhrasesUsed,
+      });
+
+      // Determine current phase and generate AI response
+      const sessionAnalysis = (session.aiAnalysis as Record<string, unknown>) || {};
+      const sessionDifficulty = (sessionAnalysis.difficulty as DifficultyLevel) || session.scenario.difficulty;
+      const phase = determineConversationPhase(transcript, session.scenario);
+      const aiResponse = generateScriptAIResponse(session.scenario, transcript, phase, sessionDifficulty);
+
+      // Add AI response to transcript
+      transcript.push({
+        role: 'ai',
+        content: aiResponse.message,
+        timestamp: Date.now(),
+        sentiment: aiResponse.emotion as 'positive' | 'neutral' | 'negative',
+      });
+
+      // Update session
+      await ctx.prisma.practiceSession.update({
+        where: { id: sessionId },
+        data: {
+          transcript: JSON.stringify(transcript),
+          aiAnalysis: {
+            ...sessionAnalysis,
+            currentPhase: phase,
+          } as unknown as Prisma.InputJsonValue,
+        },
+      });
+
+      // Generate real-time feedback
+      const realtimeFeedback = generateRealtimeScriptFeedback(
+        response,
+        session.scenario.keyPhrases,
+        session.scenario.avoidPhrases,
+        keyPhrasesUsed,
+        avoidPhrasesUsed
+      );
+
+      return {
+        aiResponse: aiResponse.message,
+        aiEmotion: aiResponse.emotion,
+        scenarioState: aiResponse.scenarioState,
+        currentPhase: phase,
+        keyPhrasesUsed,
+        avoidPhrasesUsed,
+        realtimeFeedback,
+        hints: getScriptHints(session.scenario.type, sessionDifficulty, phase),
+        nextExpectedAction: aiResponse.nextExpectedAction,
+      };
+    }),
+
+  /**
+   * Complete a script practice session
+   */
+  completeScriptPractice: protectedProcedure
+    .input(
+      z.object({
+        sessionId: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { sessionId } = input;
+
+      const session = await ctx.prisma.practiceSession.findFirst({
+        where: {
+          id: sessionId,
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+          status: 'IN_PROGRESS',
+        },
+        include: { scenario: true },
+      });
+
+      if (!session) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Active practice session not found',
+        });
+      }
+
+      // Parse transcript
+      let transcript: ConversationMessage[] = [];
+      if (session.transcript) {
+        try {
+          transcript = JSON.parse(session.transcript);
+        } catch {
+          transcript = [];
+        }
+      }
+
+      // Calculate script adherence score
+      const scriptAnalysis = analyzeScriptAdherenceDetailed(
+        transcript,
+        session.scenario.keyPhrases,
+        session.scenario.avoidPhrases,
+        session.scenario.expectedOutcomes
+      );
+
+      // Calculate all scores
+      const duration = Math.round((Date.now() - session.createdAt.getTime()) / 1000);
+      const scores = calculateScriptPracticeScores(
+        transcript,
+        session.scenario,
+        scriptAnalysis,
+        duration
+      );
+
+      // Determine if outcomes achieved
+      const outcomeAchieved = scriptAnalysis.outcomesAchieved >= session.scenario.expectedOutcomes.length * 0.7;
+
+      // Generate detailed feedback
+      const detailedFeedback = generateScriptPracticeFeedback(
+        transcript,
+        session.scenario,
+        scriptAnalysis,
+        scores
+      );
+
+      // Update session
+      const updatedSession = await ctx.prisma.practiceSession.update({
+        where: { id: sessionId },
+        data: {
+          status: 'COMPLETED',
+          endedAt: new Date(),
+          durationSecs: duration,
+          overallScore: scores.overall,
+          toneScore: scores.tone,
+          empathyScore: scores.empathy,
+          scriptAdherenceScore: scores.scriptAdherence,
+          timingScore: scores.timing,
+          outcomeAchieved,
+          aiAnalysis: detailedFeedback as unknown as Prisma.InputJsonValue,
+        },
+      });
+
+      // Create performance feedback entries
+      await ctx.prisma.performanceFeedback.createMany({
+        data: [
+          {
+            sessionId,
+            category: 'SCRIPT_ADHERENCE',
+            feedback: detailedFeedback.scriptAdherence.summary,
+            suggestions: detailedFeedback.scriptAdherence.suggestions,
+            score: scores.scriptAdherence,
+            organizationId: ctx.user.organizationId,
+          },
+          {
+            sessionId,
+            category: 'TONE',
+            feedback: detailedFeedback.tone.summary,
+            suggestions: detailedFeedback.tone.suggestions,
+            score: scores.tone,
+            organizationId: ctx.user.organizationId,
+          },
+          {
+            sessionId,
+            category: 'EMPATHY',
+            feedback: detailedFeedback.empathy.summary,
+            suggestions: detailedFeedback.empathy.suggestions,
+            score: scores.empathy,
+            organizationId: ctx.user.organizationId,
+          },
+        ],
+      });
+
+      // Update mastery level
+      const newMasteryLevel = await updateScriptMastery(ctx, session.scenario.id, scores.scriptAdherence);
+
+      await auditLog('UPDATE', 'ScriptPractice', {
+        entityId: sessionId,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: { status: 'COMPLETED', scores, masteryLevel: newMasteryLevel },
+      });
+
+      return {
+        sessionId,
+        scores,
+        outcomeAchieved,
+        detailedFeedback,
+        scriptAnalysis,
+        masteryLevel: newMasteryLevel,
+        keyPhrasesBreakdown: scriptAnalysis.keyPhrasesBreakdown,
+        avoidPhrasesBreakdown: scriptAnalysis.avoidPhrasesBreakdown,
+        recommendedNextSteps: generateNextSteps(scores, session.scenario.type),
+      };
+    }),
+
+  /**
+   * Get script mastery levels for all scripts
+   */
+  getScriptMasteryLevels: protectedProcedure
+    .input(
+      z.object({
+        userId: z.string().optional(), // Admin can view other users
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const userId = input.userId || ctx.user.id;
+
+      // Verify access if viewing other user
+      if (input.userId && input.userId !== ctx.user.id) {
+        const user = await ctx.prisma.user.findFirst({
+          where: {
+            id: ctx.user.id,
+            organizationId: ctx.user.organizationId,
+            role: { in: ['OWNER', 'ADMIN'] },
+          },
+        });
+        if (!user) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Not authorized to view other users mastery',
+          });
+        }
+      }
+
+      // Get all scripts
+      const scripts = await ctx.prisma.trainingScenario.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          isActive: true,
+        },
+        select: {
+          id: true,
+          name: true,
+          type: true,
+          difficulty: true,
+        },
+      });
+
+      // Get mastery data for each script
+      const masteryData = await Promise.all(
+        scripts.map(async (script) => {
+          const sessions = await ctx.prisma.practiceSession.findMany({
+            where: {
+              userId,
+              scenarioId: script.id,
+              status: 'COMPLETED',
+            },
+            select: {
+              scriptAdherenceScore: true,
+              overallScore: true,
+              endedAt: true,
+            },
+            orderBy: { endedAt: 'desc' },
+          });
+
+          if (sessions.length === 0) {
+            return {
+              scriptId: script.id,
+              scriptName: script.name,
+              scriptType: script.type,
+              difficulty: script.difficulty,
+              masteryLevel: 'NOVICE' as const,
+              practiceCount: 0,
+              avgAdherence: 0,
+              bestAdherence: 0,
+              recentTrend: 'NEUTRAL' as const,
+              lastPracticed: null,
+            };
+          }
+
+          const avgAdherence = Math.round(
+            sessions.reduce((sum, s) => sum + (s.scriptAdherenceScore || 0), 0) / sessions.length
+          );
+          const bestAdherence = Math.max(...sessions.map((s) => s.scriptAdherenceScore || 0));
+          const masteryLevel = getMasteryLevel(sessions.length, avgAdherence);
+
+          // Calculate recent trend (last 5 vs previous 5)
+          const recent = sessions.slice(0, 5);
+          const previous = sessions.slice(5, 10);
+          const recentAvg =
+            recent.reduce((sum, s) => sum + (s.scriptAdherenceScore || 0), 0) / recent.length;
+          const previousAvg =
+            previous.length > 0
+              ? previous.reduce((sum, s) => sum + (s.scriptAdherenceScore || 0), 0) / previous.length
+              : recentAvg;
+
+          const recentTrend =
+            recentAvg > previousAvg + 5
+              ? ('IMPROVING' as const)
+              : recentAvg < previousAvg - 5
+                ? ('DECLINING' as const)
+                : ('STABLE' as const);
+
+          return {
+            scriptId: script.id,
+            scriptName: script.name,
+            scriptType: script.type,
+            difficulty: script.difficulty,
+            masteryLevel,
+            practiceCount: sessions.length,
+            avgAdherence,
+            bestAdherence,
+            recentTrend,
+            lastPracticed: sessions[0]?.endedAt || null,
+          };
+        })
+      );
+
+      // Group by type
+      const byType = masteryData.reduce(
+        (acc, item) => {
+          if (!acc[item.scriptType]) {
+            acc[item.scriptType] = [];
+          }
+          acc[item.scriptType].push(item);
+          return acc;
+        },
+        {} as Record<string, typeof masteryData>
+      );
+
+      // Calculate overall stats
+      const totalScripts = masteryData.length;
+      const masteredCount = masteryData.filter((m) => m.masteryLevel === 'MASTER').length;
+      const proficientCount = masteryData.filter((m) => m.masteryLevel === 'PROFICIENT').length;
+      const competentCount = masteryData.filter((m) => m.masteryLevel === 'COMPETENT').length;
+      const learningCount = masteryData.filter((m) => m.masteryLevel === 'LEARNING').length;
+      const noviceCount = masteryData.filter((m) => m.masteryLevel === 'NOVICE').length;
+
+      return {
+        userId,
+        overall: {
+          totalScripts,
+          masteredCount,
+          proficientCount,
+          competentCount,
+          learningCount,
+          noviceCount,
+          overallProgress: Math.round(
+            ((masteredCount * 100 + proficientCount * 80 + competentCount * 60 + learningCount * 30) /
+              totalScripts)
+          ),
+        },
+        byType,
+        scripts: masteryData,
+      };
+    }),
+
+  /**
+   * Create a custom script for training
+   */
+  createScript: adminProcedure
+    .input(
+      z.object({
+        name: z.string().min(1).max(200),
+        description: z.string().optional(),
+        type: scenarioTypeEnum,
+        difficulty: difficultyLevelEnum.default('BEGINNER'),
+        script: z.string().min(10),
+        keyPhrases: z.array(z.string()).min(1),
+        avoidPhrases: z.array(z.string()).default([]),
+        expectedOutcomes: z.array(z.string()).min(1),
+        personaName: z.string().default('Patient'),
+        personaTraits: z.array(z.string()).default([]),
+        openingLine: z.string().optional(),
+        targetDurationSecs: z.number().int().min(30).max(600).default(180),
+        maxDurationSecs: z.number().int().min(60).max(900).default(300),
+        tags: z.array(z.string()).default([]),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const script = await ctx.prisma.trainingScenario.create({
+        data: {
+          name: input.name,
+          description: input.description,
+          type: input.type,
+          difficulty: input.difficulty,
+          script: input.script,
+          keyPhrases: input.keyPhrases,
+          avoidPhrases: input.avoidPhrases,
+          expectedOutcomes: input.expectedOutcomes,
+          personaName: input.personaName,
+          personaTraits: input.personaTraits,
+          openingLine: input.openingLine,
+          targetDurationSecs: input.targetDurationSecs,
+          maxDurationSecs: input.maxDurationSecs,
+          tags: [...input.tags, 'script_training'],
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      await auditLog('CREATE', 'TrainingScript', {
+        entityId: script.id,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: input as Record<string, unknown>,
+      });
+
+      return script;
+    }),
+
+  /**
+   * Get recommended scripts based on user's weaknesses
+   */
+  getRecommendedScripts: protectedProcedure.query(async ({ ctx }) => {
+    // Get user's practice history
+    const recentSessions = await ctx.prisma.practiceSession.findMany({
+      where: {
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        status: 'COMPLETED',
+      },
+      include: {
+        scenario: {
+          select: {
+            type: true,
+            difficulty: true,
+          },
+        },
+      },
+      orderBy: { endedAt: 'desc' },
+      take: 50,
+    });
+
+    // Analyze weaknesses by type
+    const typeScores: Record<string, { total: number; count: number }> = {};
+    recentSessions.forEach((session) => {
+      const type = session.scenario.type;
+      if (!typeScores[type]) {
+        typeScores[type] = { total: 0, count: 0 };
+      }
+      typeScores[type].total += session.scriptAdherenceScore || 0;
+      typeScores[type].count++;
+    });
+
+    // Find weak areas
+    const weakTypes = Object.entries(typeScores)
+      .filter(([_, data]) => data.count >= 2 && data.total / data.count < 70)
+      .map(([type]) => type);
+
+    // Find unpracticed types
+    const practicedTypes = new Set(Object.keys(typeScores));
+    const allTypes: ScenarioType[] = [
+      'SCHEDULING_CALL',
+      'BILLING_INQUIRY',
+      'COMPLAINT_HANDLING',
+      'NEW_PATIENT_INTAKE',
+      'CANCELLATION',
+      'INSURANCE_QUESTIONS',
+      'FOLLOW_UP_CALL',
+      'EMERGENCY_TRIAGE',
+    ];
+    const unpracticedTypes = allTypes.filter((t) => !practicedTypes.has(t));
+
+    // Get recommended scripts
+    const recommendations = await ctx.prisma.trainingScenario.findMany({
+      where: {
+        organizationId: ctx.user.organizationId,
+        isActive: true,
+        OR: [
+          { type: { in: weakTypes as ScenarioType[] } },
+          { type: { in: unpracticedTypes } },
+        ],
+      },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        difficulty: true,
+        description: true,
+        keyPhrases: true,
+      },
+      take: 10,
+    });
+
+    return {
+      recommendations: recommendations.map((script) => ({
+        ...script,
+        reason: weakTypes.includes(script.type)
+          ? `Needs improvement - average score: ${Math.round((typeScores[script.type]?.total || 0) / (typeScores[script.type]?.count || 1))}%`
+          : 'Not yet practiced',
+        priority: weakTypes.includes(script.type) ? 'HIGH' : 'MEDIUM',
+      })),
+      weakAreas: weakTypes,
+      unpracticedTypes,
+      stats: {
+        totalPracticed: recentSessions.length,
+        typesCovered: practicedTypes.size,
+        typesRemaining: unpracticedTypes.length,
+      },
+    };
+  }),
 });
