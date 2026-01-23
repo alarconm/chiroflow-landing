@@ -530,3 +530,107 @@ Story: US-375 - Clinical guidelines integration
 --- Iteration 6 completed at 2026-01-22 ---
 Story: US-376 - Outcome prediction
 
+--- Iteration 6 completed at 2026-01-22 20:08:55 ---
+Story: US-376 - Outcome prediction
+
+## 2026-01-22 - US-377: Referral recommendations
+
+### Completed
+- Added comprehensive referral recommendation functionality to aiClinical.ts router:
+
+**New Prisma Model:**
+- **ReferralSuggestion**: AI-suggested specialist referrals with:
+  - Reason for referral, red flags identified, clinical findings
+  - Specialist type and alternative specialists
+  - Urgency levels (EMERGENT, URGENT, SOON, ROUTINE, WHEN_AVAILABLE)
+  - Status tracking (SUGGESTED, PENDING_REVIEW, ACCEPTED, REFERRAL_SENT, REJECTED, COMPLETED)
+  - Referral letter drafts (AI-generated and final approved)
+  - Outcome tracking (specialist diagnosis, recommendations, appropriateness)
+
+- **New Enums:**
+  - ReferralUrgency (EMERGENT, URGENT, SOON, ROUTINE, WHEN_AVAILABLE)
+  - ClinicalReferralStatus (8 statuses for full referral lifecycle)
+
+**Main Endpoints:**
+1. `aiClinical.suggestReferral` - Evaluate if patient needs referral
+   - Analyzes patient history, treatment response, and clinical findings
+   - Detects red flags (cauda equina, malignancy, fracture, infection, vascular)
+   - Evaluates non-response to treatment
+   - Creates ClinicalAlert for urgent referrals
+   - Rule-based and AI-enhanced suggestions
+   - Returns urgency level and confidence score
+
+2. `aiClinical.acceptReferralSuggestion` - Accept a referral suggestion
+   - Marks suggestion as accepted
+   - Resolves related clinical alerts
+   - Full audit logging
+
+3. `aiClinical.rejectReferralSuggestion` - Reject with reason
+   - Documents rejection for learning
+   - Audit trail
+
+4. `aiClinical.generateReferralLetter` - AI-generated referral letter draft
+   - Professional referral letter format
+   - Includes patient demographics, diagnoses, treatment history
+   - Red flags and clinical findings
+   - Customizable recipient information
+   - Urgency indication
+
+5. `aiClinical.approveReferralLetter` - Approve and send referral
+   - Finalizes letter with optional modifications
+   - Records send method (FAX, EMAIL, PORTAL, MAIL, HAND_DELIVERED)
+   - Updates status to REFERRAL_SENT
+
+6. `aiClinical.recordReferralOutcome` - Track referral outcome
+   - Records specialist diagnosis and recommendations
+   - Tracks if referral was appropriate (for learning)
+   - Completes referral lifecycle
+
+7. `aiClinical.getPatientReferralSuggestions` - List patient's referrals
+   - Filter by encounter, status, include/exclude resolved
+   - Sorted by urgency
+
+8. `aiClinical.getReferralStats` - Analytics for referral patterns
+   - Acceptance/rejection rates
+   - Appropriateness rate
+   - Urgency distribution
+   - Top specialist types
+   - Average confidence scores
+
+**AI Helper Function:**
+- `generateAIReferralSuggestions()` - Claude Opus 4.5 integration for enhanced referral analysis
+
+**Red Flag Detection (Built-in Rules):**
+- Cauda equina syndrome → EMERGENT → Emergency Dept/Neurosurgery
+- Vascular emergency → EMERGENT → Emergency Dept/Vascular Surgery
+- Malignancy indicators → URGENT → Oncology/Internal Medicine
+- Fracture risk → URGENT → Orthopedic Surgery
+- Infection signs → URGENT → Infectious Disease/Primary Care
+- Cervical artery dysfunction → SOON → Neurology
+
+**Non-Response Handling:**
+- Poor response after 4+ weeks → Specialist referral
+- Moderate response after 8+ weeks → PM&R co-management
+- Diagnosis-based specialist routing (disc → Spine Surgery, radicular → Pain Management)
+
+### Files Modified
+- app/prisma/schema.prisma - Added ReferralSuggestion model, 2 enums, relations
+- app/src/server/routers/aiClinical.ts - Added ~1000 lines:
+  - generateAIReferralSuggestions helper function
+  - 8 new tRPC endpoints
+  - Red flag detection integration
+  - Referral letter generation
+- prd.json - Marked US-377 as passes: true
+
+### Technical Notes
+- Follows existing aiClinical patterns from US-372 through US-376
+- Uses providerProcedure for write operations
+- Uses protectedProcedure for read-only queries
+- Full Prisma type safety with ReferralSuggestion model
+- Creates ClinicalAlert records for urgent referrals
+- Integrates with existing red flag detection from diagnosis suggestion
+- Pre-existing errors in mobile app and aiCare.ts are unrelated
+
+--- Iteration 7 completed at 2026-01-22 ---
+Story: US-377 - Referral recommendations
+

@@ -2810,6 +2810,109 @@ Respond with JSON:
 }
 
 // ============================================
+// US-377: AI Referral Suggestion Helper
+// ============================================
+
+async function generateAIReferralSuggestions(
+  clinicalText: string,
+  currentDiagnosis: string,
+  treatmentResponse: string,
+  treatmentWeeks: number,
+  redFlags: string[]
+): Promise<Array<{
+  specialistType: string;
+  urgency: string;
+  reason: string;
+  confidence: number;
+}>> {
+  if (!env.ANTHROPIC_API_KEY) {
+    return [];
+  }
+
+  try {
+    const Anthropic = (await import('@anthropic-ai/sdk')).default;
+    const anthropic = new Anthropic({
+      apiKey: env.ANTHROPIC_API_KEY,
+    });
+
+    const systemPrompt = `You are a clinical decision support AI assistant for a chiropractic practice.
+Analyze the clinical information and determine if a referral to a specialist is warranted.
+
+Consider:
+1. Red flags that require urgent specialist attention
+2. Failure to respond to conservative care
+3. Complex comorbidities requiring specialist input
+4. Conditions outside the scope of chiropractic care
+5. Need for advanced imaging or diagnostic workup
+
+Return a JSON array of referral suggestions (or empty array if none needed):
+[
+  {
+    "specialistType": "Type of specialist (e.g., Orthopedic Surgery, Neurology, Pain Management)",
+    "urgency": "EMERGENT|URGENT|SOON|ROUTINE|WHEN_AVAILABLE",
+    "reason": "Detailed clinical reason for referral",
+    "confidence": 0-100
+  }
+]
+
+Urgency definitions:
+- EMERGENT: Life or limb threatening, needs immediate ER care
+- URGENT: Within 24-48 hours
+- SOON: Within 1-2 weeks
+- ROUTINE: Standard scheduling
+- WHEN_AVAILABLE: Non-urgent, at patient convenience
+
+Only suggest referrals with clinical justification. Return valid JSON only.`;
+
+    const userPrompt = `Clinical Information:
+${clinicalText}
+
+Current Diagnosis: ${currentDiagnosis || 'Not specified'}
+Treatment Response: ${treatmentResponse}
+Weeks in Treatment: ${treatmentWeeks}
+Red Flags Detected: ${redFlags.length > 0 ? redFlags.join(', ') : 'None'}
+
+Based on this information, should this patient be referred to a specialist? If so, provide recommendations.`;
+
+    const response = await anthropic.messages.create({
+      model: 'claude-opus-4-5-20251101',
+      max_tokens: 1000,
+      messages: [
+        { role: 'user', content: userPrompt },
+      ],
+      system: systemPrompt,
+    });
+
+    const content = response.content[0];
+    if (content.type !== 'text') {
+      return [];
+    }
+
+    // Extract JSON from response
+    let jsonText = content.text.trim();
+    const jsonMatch = jsonText.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      jsonText = jsonMatch[0];
+    }
+
+    const parsed = JSON.parse(jsonText);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter(s =>
+      s.specialistType &&
+      s.urgency &&
+      s.reason &&
+      typeof s.confidence === 'number'
+    );
+  } catch (error) {
+    console.error('AI referral suggestion error:', error);
+    return [];
+  }
+}
+
+// ============================================
 // US-372: Diagnosis Suggestion Router
 // ============================================
 
@@ -6593,5 +6696,933 @@ export const aiClinicalRouter = router({
       };
 
       return communicationDoc;
+    }),
+
+  // ============================================
+  // US-377: Referral Recommendations
+  // ============================================
+
+  /**
+   * Suggest when referral to specialist is appropriate
+   * Evaluates red flags, non-response to treatment, and clinical findings
+   */
+  suggestReferral: providerProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        encounterId: z.string().optional(),
+        // Context for evaluation
+        currentDiagnosis: z.string().optional(),
+        treatmentDuration: z.string().optional(), // e.g., "6 weeks"
+        treatmentResponse: z.enum(['EXCELLENT', 'GOOD', 'MODERATE', 'POOR', 'NONE']).optional(),
+        clinicalFindings: z.string().optional(),
+        concernReason: z.string().optional(), // Provider's concern
+        includeAI: z.boolean().default(true),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { patientId, encounterId, includeAI } = input;
+
+      // Fetch patient with clinical history
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          demographics: true,
+          encounters: {
+            orderBy: { encounterDate: 'desc' },
+            take: 10,
+            include: {
+              soapNote: true,
+              diagnoses: true,
+            },
+          },
+          clinicalAlerts: {
+            where: { status: 'ACTIVE' },
+            orderBy: { createdAt: 'desc' },
+            take: 10,
+          },
+          contraindications: {
+            where: { isActive: true },
+            orderBy: { createdAt: 'desc' },
+          },
+          treatmentRecommendations: {
+            orderBy: { createdAt: 'desc' },
+            take: 5,
+          },
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      // Get current encounter if specified
+      let currentEncounter = null;
+      if (encounterId) {
+        currentEncounter = await ctx.prisma.encounter.findFirst({
+          where: {
+            id: encounterId,
+            organizationId: ctx.user.organizationId,
+          },
+          include: {
+            soapNote: true,
+            diagnoses: true,
+            chiropracticExam: true,
+          },
+        });
+      }
+
+      // Gather clinical text for analysis
+      const clinicalText = [
+        input.clinicalFindings || '',
+        input.concernReason || '',
+        currentEncounter?.soapNote?.subjective || '',
+        currentEncounter?.soapNote?.objective || '',
+        currentEncounter?.soapNote?.assessment || '',
+        ...patient.encounters.slice(0, 3).map(e => e.soapNote?.assessment || ''),
+      ].filter(Boolean).join(' ');
+
+      // Detect red flags from clinical text
+      const detectedRedFlags: { flag: string; severity: string; message: string }[] = [];
+      for (const [key, redFlag] of Object.entries(RED_FLAGS)) {
+        const isMatch = redFlag.keywords.some(keyword =>
+          clinicalText.toLowerCase().includes(keyword.toLowerCase())
+        );
+        if (isMatch) {
+          detectedRedFlags.push({
+            flag: key,
+            severity: redFlag.severity,
+            message: redFlag.message,
+          });
+        }
+      }
+
+      // Check for active critical alerts
+      const criticalAlerts = patient.clinicalAlerts.filter(
+        alert => alert.severity === 'CRITICAL' || alert.severity === 'HIGH'
+      );
+
+      // Evaluate treatment response
+      const poorResponse = input.treatmentResponse === 'POOR' || input.treatmentResponse === 'NONE';
+      const moderateResponse = input.treatmentResponse === 'MODERATE';
+
+      // Calculate treatment duration in weeks if provided
+      let treatmentWeeks = 0;
+      if (input.treatmentDuration) {
+        const match = input.treatmentDuration.match(/(\d+)\s*(week|month|day)/i);
+        if (match) {
+          const value = parseInt(match[1]);
+          const unit = match[2].toLowerCase();
+          if (unit.startsWith('month')) treatmentWeeks = value * 4;
+          else if (unit.startsWith('day')) treatmentWeeks = Math.floor(value / 7);
+          else treatmentWeeks = value;
+        }
+      }
+
+      // Build referral suggestions based on rules
+      const referralSuggestions: Array<{
+        specialistType: string;
+        urgency: 'EMERGENT' | 'URGENT' | 'SOON' | 'ROUTINE' | 'WHEN_AVAILABLE';
+        reason: string;
+        confidence: number;
+        redFlags: string[];
+      }> = [];
+
+      // Check for emergency referral needs
+      const hasCaudaEquina = detectedRedFlags.some(f => f.flag === 'cauda_equina');
+      const hasVascular = detectedRedFlags.some(f => f.flag === 'vascular');
+
+      if (hasCaudaEquina) {
+        referralSuggestions.push({
+          specialistType: 'Emergency Department / Neurosurgery',
+          urgency: 'EMERGENT',
+          reason: 'Suspected cauda equina syndrome - requires immediate surgical evaluation',
+          confidence: 95,
+          redFlags: ['Cauda equina syndrome indicators'],
+        });
+      }
+
+      if (hasVascular) {
+        referralSuggestions.push({
+          specialistType: 'Emergency Department / Vascular Surgery',
+          urgency: 'EMERGENT',
+          reason: 'Suspected vascular emergency - requires immediate evaluation',
+          confidence: 95,
+          redFlags: ['Vascular emergency indicators'],
+        });
+      }
+
+      // Check for malignancy concerns
+      const hasMalignancy = detectedRedFlags.some(f => f.flag === 'malignancy');
+      if (hasMalignancy) {
+        referralSuggestions.push({
+          specialistType: 'Oncology / Internal Medicine',
+          urgency: 'URGENT',
+          reason: 'Red flags for potential malignancy - further workup needed',
+          confidence: 85,
+          redFlags: ['Malignancy risk factors'],
+        });
+      }
+
+      // Check for fracture concerns
+      const hasFracture = detectedRedFlags.some(f => f.flag === 'fracture');
+      if (hasFracture) {
+        referralSuggestions.push({
+          specialistType: 'Orthopedic Surgery',
+          urgency: 'URGENT',
+          reason: 'Possible fracture - imaging and orthopedic evaluation recommended',
+          confidence: 80,
+          redFlags: ['Fracture risk indicators'],
+        });
+      }
+
+      // Check for infection concerns
+      const hasInfection = detectedRedFlags.some(f => f.flag === 'infection');
+      if (hasInfection) {
+        referralSuggestions.push({
+          specialistType: 'Infectious Disease / Primary Care',
+          urgency: 'URGENT',
+          reason: 'Potential spinal infection - urgent workup required',
+          confidence: 85,
+          redFlags: ['Infection indicators'],
+        });
+      }
+
+      // Check for cervical artery concerns
+      const hasCervicalArtery = detectedRedFlags.some(f => f.flag === 'cervical_artery');
+      if (hasCervicalArtery) {
+        referralSuggestions.push({
+          specialistType: 'Neurology',
+          urgency: 'SOON',
+          reason: 'Cervical artery dysfunction symptoms - neurological evaluation recommended',
+          confidence: 75,
+          redFlags: ['Cervical artery dysfunction indicators'],
+        });
+      }
+
+      // Non-response to treatment referrals
+      if (poorResponse && treatmentWeeks >= 4) {
+        // Determine appropriate specialist based on diagnosis
+        const diagnosis = input.currentDiagnosis || currentEncounter?.diagnoses[0]?.icd10Code || '';
+        let specialist = 'Orthopedic Surgery / Physical Medicine';
+        let reason = 'Poor response to conservative care after adequate trial';
+
+        if (diagnosis.startsWith('M51') || clinicalText.toLowerCase().includes('disc')) {
+          specialist = 'Spine Surgery / Pain Management';
+          reason = 'Disc pathology with poor response to conservative care';
+        } else if (diagnosis.startsWith('M54.4') || clinicalText.toLowerCase().includes('sciatica')) {
+          specialist = 'Pain Management / Neurology';
+          reason = 'Radicular symptoms with inadequate response to treatment';
+        } else if (clinicalText.toLowerCase().includes('headache')) {
+          specialist = 'Neurology';
+          reason = 'Persistent headaches not responding to chiropractic care';
+        }
+
+        referralSuggestions.push({
+          specialistType: specialist,
+          urgency: 'SOON',
+          reason,
+          confidence: 70,
+          redFlags: [],
+        });
+      }
+
+      // Moderate response with extended treatment
+      if (moderateResponse && treatmentWeeks >= 8) {
+        referralSuggestions.push({
+          specialistType: 'Physical Medicine & Rehabilitation',
+          urgency: 'ROUTINE',
+          reason: 'Limited improvement after extended conservative care - co-management recommended',
+          confidence: 60,
+          redFlags: [],
+        });
+      }
+
+      // Check contraindications that might need specialist input
+      const seriousContraindications = patient.contraindications.filter(
+        (c: { contraindicationType: string; reason: string }) => c.contraindicationType === 'ABSOLUTE'
+      );
+      if (seriousContraindications.length > 0 && referralSuggestions.length === 0) {
+        referralSuggestions.push({
+          specialistType: 'Appropriate Specialist',
+          urgency: 'ROUTINE',
+          reason: `Patient has contraindications that may benefit from specialist evaluation: ${seriousContraindications.map((c: { reason: string }) => c.reason).join('; ')}`,
+          confidence: 55,
+          redFlags: [],
+        });
+      }
+
+      // AI-enhanced referral suggestions
+      let aiSuggestions: Array<{
+        specialistType: string;
+        urgency: string;
+        reason: string;
+        confidence: number;
+      }> = [];
+
+      if (includeAI && env.ANTHROPIC_API_KEY) {
+        aiSuggestions = await generateAIReferralSuggestions(
+          clinicalText,
+          input.currentDiagnosis || '',
+          input.treatmentResponse || 'UNKNOWN',
+          treatmentWeeks,
+          detectedRedFlags.map(f => f.message)
+        );
+      }
+
+      // Combine and deduplicate suggestions
+      const allSuggestions = [
+        ...referralSuggestions.map(s => ({ ...s, source: 'rule-based' as const })),
+        ...aiSuggestions.map(s => ({
+          ...s,
+          urgency: s.urgency as 'EMERGENT' | 'URGENT' | 'SOON' | 'ROUTINE' | 'WHEN_AVAILABLE',
+          redFlags: [] as string[],
+          source: 'ai' as const,
+        })),
+      ];
+
+      // Sort by urgency and confidence
+      const urgencyOrder = { EMERGENT: 0, URGENT: 1, SOON: 2, ROUTINE: 3, WHEN_AVAILABLE: 4 };
+      allSuggestions.sort((a, b) => {
+        const urgencyDiff = urgencyOrder[a.urgency] - urgencyOrder[b.urgency];
+        if (urgencyDiff !== 0) return urgencyDiff;
+        return b.confidence - a.confidence;
+      });
+
+      // Store top suggestions in database
+      const storedSuggestions = [];
+      for (const suggestion of allSuggestions.slice(0, 5)) {
+        const stored = await ctx.prisma.referralSuggestion.create({
+          data: {
+            patientId,
+            encounterId: encounterId || null,
+            organizationId: ctx.user.organizationId,
+            reason: suggestion.reason,
+            redFlagsIdentified: suggestion.redFlags,
+            clinicalFindings: {
+              treatmentDuration: input.treatmentDuration,
+              treatmentResponse: input.treatmentResponse,
+              detectedFlags: detectedRedFlags,
+            },
+            nonResponseDetails: poorResponse || moderateResponse
+              ? `Treatment response: ${input.treatmentResponse}, Duration: ${input.treatmentDuration}`
+              : null,
+            specialistType: suggestion.specialistType,
+            alternativeSpecialists: [],
+            urgency: suggestion.urgency,
+            urgencyReason: suggestion.urgency === 'EMERGENT' || suggestion.urgency === 'URGENT'
+              ? 'Red flag symptoms requiring immediate attention'
+              : undefined,
+            confidenceScore: suggestion.confidence,
+            status: 'SUGGESTED',
+          },
+        });
+        storedSuggestions.push(stored);
+      }
+
+      // Create clinical alerts for urgent referrals
+      for (const suggestion of allSuggestions.filter(s => s.urgency === 'EMERGENT' || s.urgency === 'URGENT')) {
+        await ctx.prisma.clinicalAlert.create({
+          data: {
+            patientId,
+            encounterId: encounterId || null,
+            organizationId: ctx.user.organizationId,
+            alertType: 'REFERRAL_NEEDED',
+            severity: suggestion.urgency === 'EMERGENT' ? 'CRITICAL' : 'HIGH',
+            message: `Referral recommended: ${suggestion.specialistType} - ${suggestion.reason}`,
+            recommendation: `Refer to ${suggestion.specialistType}`,
+            status: 'ACTIVE',
+          },
+        });
+      }
+
+      // Audit log
+      await auditLog('AI_REFERRAL_SUGGESTION', 'ReferralSuggestion', {
+        entityId: encounterId,
+        changes: {
+          suggestionsCount: allSuggestions.length,
+          hasEmergent: allSuggestions.some(s => s.urgency === 'EMERGENT'),
+          hasUrgent: allSuggestions.some(s => s.urgency === 'URGENT'),
+          redFlagsDetected: detectedRedFlags.length,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        metadata: { patientId },
+      });
+
+      return {
+        suggestions: allSuggestions,
+        storedSuggestionIds: storedSuggestions.map(s => s.id),
+        redFlagsDetected: detectedRedFlags,
+        criticalAlerts: criticalAlerts.map(a => ({
+          id: a.id,
+          message: a.message,
+          severity: a.severity,
+        })),
+        treatmentContext: {
+          duration: input.treatmentDuration,
+          response: input.treatmentResponse,
+          weeksInTreatment: treatmentWeeks,
+        },
+        requiresImmediateAction: allSuggestions.some(s => s.urgency === 'EMERGENT'),
+      };
+    }),
+
+  /**
+   * Accept a referral suggestion
+   */
+  acceptReferralSuggestion: providerProcedure
+    .input(
+      z.object({
+        suggestionId: z.string(),
+        notes: z.string().optional(),
+        selectedSpecialist: z.object({
+          name: z.string(),
+          address: z.string().optional(),
+          phone: z.string().optional(),
+          fax: z.string().optional(),
+        }).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const suggestion = await ctx.prisma.referralSuggestion.findFirst({
+        where: {
+          id: input.suggestionId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!suggestion) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Referral suggestion not found',
+        });
+      }
+
+      const updated = await ctx.prisma.referralSuggestion.update({
+        where: { id: input.suggestionId },
+        data: {
+          status: 'ACCEPTED',
+          acceptedAt: new Date(),
+          reviewedAt: new Date(),
+          reviewedBy: ctx.user.id,
+          suggestedProviders: input.selectedSpecialist
+            ? { selected: input.selectedSpecialist }
+            : undefined,
+        },
+      });
+
+      // Resolve related alert
+      await ctx.prisma.clinicalAlert.updateMany({
+        where: {
+          patientId: suggestion.patientId,
+          alertType: 'REFERRAL_NEEDED',
+          status: 'ACTIVE',
+          message: { contains: suggestion.specialistType },
+        },
+        data: {
+          status: 'RESOLVED',
+          acknowledgedAt: new Date(),
+          acknowledgedBy: ctx.user.id,
+        },
+      });
+
+      await auditLog('AI_SUGGESTION_ACCEPTED', 'ReferralSuggestion', {
+        entityId: input.suggestionId,
+        changes: {
+          specialistType: suggestion.specialistType,
+          urgency: suggestion.urgency,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        metadata: { patientId: suggestion.patientId },
+      });
+
+      return updated;
+    }),
+
+  /**
+   * Reject a referral suggestion with reason
+   */
+  rejectReferralSuggestion: providerProcedure
+    .input(
+      z.object({
+        suggestionId: z.string(),
+        reason: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const suggestion = await ctx.prisma.referralSuggestion.findFirst({
+        where: {
+          id: input.suggestionId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!suggestion) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Referral suggestion not found',
+        });
+      }
+
+      const updated = await ctx.prisma.referralSuggestion.update({
+        where: { id: input.suggestionId },
+        data: {
+          status: 'REJECTED',
+          rejectedAt: new Date(),
+          rejectionReason: input.reason,
+          reviewedAt: new Date(),
+          reviewedBy: ctx.user.id,
+        },
+      });
+
+      await auditLog('AI_SUGGESTION_REJECTED', 'ReferralSuggestion', {
+        entityId: input.suggestionId,
+        changes: {
+          specialistType: suggestion.specialistType,
+          reason: input.reason,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        metadata: { patientId: suggestion.patientId },
+      });
+
+      return updated;
+    }),
+
+  /**
+   * Generate referral letter draft
+   */
+  generateReferralLetter: providerProcedure
+    .input(
+      z.object({
+        suggestionId: z.string(),
+        recipientInfo: z.object({
+          name: z.string(),
+          title: z.string().optional(),
+          practice: z.string().optional(),
+          address: z.string().optional(),
+          fax: z.string().optional(),
+        }),
+        includeHistory: z.boolean().default(true),
+        additionalNotes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const suggestion = await ctx.prisma.referralSuggestion.findFirst({
+        where: {
+          id: input.suggestionId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          patient: {
+            include: {
+              demographics: true,
+            },
+          },
+          encounter: {
+            include: {
+              soapNote: true,
+              diagnoses: true,
+            },
+          },
+          organization: true,
+        },
+      });
+
+      if (!suggestion) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Referral suggestion not found',
+        });
+      }
+
+      // Get patient demographics
+      const demo = suggestion.patient.demographics;
+      const patientName = demo
+        ? `${demo.firstName || ''} ${demo.lastName || ''}`.trim()
+        : 'Patient';
+      const patientDOB = demo?.dateOfBirth
+        ? new Date(demo.dateOfBirth).toLocaleDateString()
+        : 'N/A';
+
+      // Get recent diagnoses
+      const diagnoses = suggestion.encounter?.diagnoses || [];
+
+      // Get clinical history if requested
+      let historySection = '';
+      if (input.includeHistory) {
+        const recentEncounters = await ctx.prisma.encounter.findMany({
+          where: {
+            patientId: suggestion.patientId,
+            organizationId: ctx.user.organizationId,
+          },
+          orderBy: { encounterDate: 'desc' },
+          take: 5,
+          include: {
+            soapNote: true,
+            diagnoses: true,
+          },
+        });
+
+        historySection = `
+TREATMENT HISTORY:
+${recentEncounters.map(e => `
+  Date: ${e.encounterDate.toLocaleDateString()}
+  Chief Complaint: ${e.chiefComplaint || 'N/A'}
+  Assessment: ${e.soapNote?.assessment || 'N/A'}
+  Diagnoses: ${e.diagnoses.map((d: { icd10Code: string; description: string }) => `${d.icd10Code} - ${d.description}`).join(', ') || 'None documented'}
+`).join('\n')}
+`;
+      }
+
+      // Generate letter
+      const today = new Date().toLocaleDateString();
+      const recipientTitle = input.recipientInfo.title || 'Dr.';
+      const recipientName = input.recipientInfo.name;
+
+      const letterDraft = `
+${suggestion.organization.name || 'Chiropractic Practice'}
+${today}
+
+${recipientTitle} ${recipientName}
+${input.recipientInfo.practice || ''}
+${input.recipientInfo.address || ''}
+
+RE: Referral for ${patientName}
+    DOB: ${patientDOB}
+
+Dear ${recipientTitle} ${recipientName},
+
+I am referring ${patientName} to your care for evaluation and management of the following condition(s):
+
+REASON FOR REFERRAL:
+${suggestion.reason}
+
+${suggestion.redFlagsIdentified.length > 0 ? `
+RED FLAGS IDENTIFIED:
+${suggestion.redFlagsIdentified.map(f => `• ${f}`).join('\n')}
+` : ''}
+
+CURRENT DIAGNOSES:
+${diagnoses.length > 0
+  ? diagnoses.map(d => `• ${d.icd10Code} - ${d.description}`).join('\n')
+  : '• See attached clinical documentation'}
+
+${suggestion.nonResponseDetails ? `
+TREATMENT RESPONSE:
+${suggestion.nonResponseDetails}
+` : ''}
+
+CLINICAL FINDINGS:
+${suggestion.encounter?.soapNote?.assessment || 'Please see attached clinical documentation for detailed findings.'}
+
+${historySection}
+
+${input.additionalNotes ? `
+ADDITIONAL NOTES:
+${input.additionalNotes}
+` : ''}
+
+Please contact our office if you need any additional information. We appreciate your assistance with this patient's care and look forward to your consultation report.
+
+Sincerely,
+
+_______________________________
+[Provider Name], DC
+${suggestion.organization.name || ''}
+${suggestion.organization.primaryContactPhone || ''}
+
+URGENCY: ${suggestion.urgency}
+`.trim();
+
+      // Update suggestion with letter draft
+      const updated = await ctx.prisma.referralSuggestion.update({
+        where: { id: input.suggestionId },
+        data: {
+          referralLetterDraft: letterDraft,
+          letterGeneratedAt: new Date(),
+          suggestedProviders: {
+            ...((suggestion.suggestedProviders as Record<string, unknown>) || {}),
+            recipient: input.recipientInfo,
+          },
+        },
+      });
+
+      await auditLog('AI_REFERRAL_SUGGESTION', 'ReferralSuggestion', {
+        entityId: input.suggestionId,
+        changes: {
+          action: 'letter_generated',
+          recipient: input.recipientInfo.name,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        metadata: { patientId: suggestion.patientId },
+      });
+
+      return {
+        letterDraft,
+        suggestionId: updated.id,
+        patientName,
+        urgency: suggestion.urgency,
+      };
+    }),
+
+  /**
+   * Approve and finalize referral letter
+   */
+  approveReferralLetter: providerProcedure
+    .input(
+      z.object({
+        suggestionId: z.string(),
+        finalLetter: z.string(),
+        sendMethod: z.enum(['FAX', 'EMAIL', 'PORTAL', 'MAIL', 'HAND_DELIVERED']).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const suggestion = await ctx.prisma.referralSuggestion.findFirst({
+        where: {
+          id: input.suggestionId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!suggestion) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Referral suggestion not found',
+        });
+      }
+
+      const updated = await ctx.prisma.referralSuggestion.update({
+        where: { id: input.suggestionId },
+        data: {
+          referralLetterFinal: input.finalLetter,
+          letterApprovedAt: new Date(),
+          letterSentMethod: input.sendMethod,
+          status: 'REFERRAL_SENT',
+          letterSentAt: new Date(),
+        },
+      });
+
+      await auditLog('AI_REFERRAL_SUGGESTION', 'ReferralSuggestion', {
+        entityId: input.suggestionId,
+        changes: {
+          action: 'letter_approved_and_sent',
+          sendMethod: input.sendMethod,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        metadata: { patientId: suggestion.patientId },
+      });
+
+      return updated;
+    }),
+
+  /**
+   * Track referral outcome
+   */
+  recordReferralOutcome: providerProcedure
+    .input(
+      z.object({
+        suggestionId: z.string(),
+        outcome: z.string(),
+        specialistDiagnosis: z.string().optional(),
+        specialistRecommendation: z.string().optional(),
+        wasAppropriate: z.boolean(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const suggestion = await ctx.prisma.referralSuggestion.findFirst({
+        where: {
+          id: input.suggestionId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!suggestion) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Referral suggestion not found',
+        });
+      }
+
+      const updated = await ctx.prisma.referralSuggestion.update({
+        where: { id: input.suggestionId },
+        data: {
+          status: 'COMPLETED',
+          referralOutcome: input.outcome,
+          specialistDiagnosis: input.specialistDiagnosis,
+          specialistRecommendation: input.specialistRecommendation,
+          wasReferralAppropriate: input.wasAppropriate,
+          outcomeNotes: input.notes,
+          outcomeReceivedAt: new Date(),
+        },
+      });
+
+      await auditLog('AI_REFERRAL_SUGGESTION', 'ReferralSuggestion', {
+        entityId: input.suggestionId,
+        changes: {
+          action: 'outcome_recorded',
+          wasAppropriate: input.wasAppropriate,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        metadata: { patientId: suggestion.patientId },
+      });
+
+      return updated;
+    }),
+
+  /**
+   * Get patient's referral suggestions
+   */
+  getPatientReferralSuggestions: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        encounterId: z.string().optional(),
+        includeResolved: z.boolean().default(false),
+        status: z.array(z.enum([
+          'SUGGESTED', 'PENDING_REVIEW', 'ACCEPTED', 'REFERRAL_SENT',
+          'PATIENT_DECLINED', 'REJECTED', 'COMPLETED', 'CANCELLED'
+        ])).optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const whereClause: Prisma.ReferralSuggestionWhereInput = {
+        patientId: input.patientId,
+        organizationId: ctx.user.organizationId,
+      };
+
+      if (input.encounterId) {
+        whereClause.encounterId = input.encounterId;
+      }
+
+      if (!input.includeResolved) {
+        whereClause.status = {
+          notIn: ['COMPLETED', 'CANCELLED', 'REJECTED'],
+        };
+      }
+
+      if (input.status && input.status.length > 0) {
+        whereClause.status = { in: input.status };
+      }
+
+      const suggestions = await ctx.prisma.referralSuggestion.findMany({
+        where: whereClause,
+        orderBy: [
+          { urgency: 'asc' },
+          { createdAt: 'desc' },
+        ],
+        include: {
+          encounter: {
+            select: {
+              id: true,
+              encounterDate: true,
+              chiefComplaint: true,
+            },
+          },
+        },
+      });
+
+      // Map urgency for sorting (EMERGENT first)
+      const urgencyOrder: Record<string, number> = {
+        EMERGENT: 0,
+        URGENT: 1,
+        SOON: 2,
+        ROUTINE: 3,
+        WHEN_AVAILABLE: 4,
+      };
+
+      return suggestions.sort((a, b) =>
+        (urgencyOrder[a.urgency] || 5) - (urgencyOrder[b.urgency] || 5)
+      );
+    }),
+
+  /**
+   * Get referral statistics for analytics
+   */
+  getReferralStats: protectedProcedure
+    .input(
+      z.object({
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const whereClause: Prisma.ReferralSuggestionWhereInput = {
+        organizationId: ctx.user.organizationId,
+      };
+
+      if (input.startDate || input.endDate) {
+        whereClause.createdAt = {};
+        if (input.startDate) whereClause.createdAt.gte = input.startDate;
+        if (input.endDate) whereClause.createdAt.lte = input.endDate;
+      }
+
+      const allSuggestions = await ctx.prisma.referralSuggestion.findMany({
+        where: whereClause,
+        select: {
+          status: true,
+          urgency: true,
+          specialistType: true,
+          wasReferralAppropriate: true,
+          confidenceScore: true,
+        },
+      });
+
+      const total = allSuggestions.length;
+      const accepted = allSuggestions.filter(s => s.status === 'ACCEPTED' || s.status === 'REFERRAL_SENT' || s.status === 'COMPLETED').length;
+      const rejected = allSuggestions.filter(s => s.status === 'REJECTED').length;
+      const pending = allSuggestions.filter(s => s.status === 'SUGGESTED' || s.status === 'PENDING_REVIEW').length;
+
+      // Appropriateness rate
+      const withOutcome = allSuggestions.filter(s => s.wasReferralAppropriate !== null);
+      const appropriate = withOutcome.filter(s => s.wasReferralAppropriate === true).length;
+      const appropriatenessRate = withOutcome.length > 0 ? (appropriate / withOutcome.length) * 100 : 0;
+
+      // Urgency distribution
+      const urgencyDistribution: Record<string, number> = {};
+      for (const s of allSuggestions) {
+        urgencyDistribution[s.urgency] = (urgencyDistribution[s.urgency] || 0) + 1;
+      }
+
+      // Top specialist types
+      const specialistCounts: Record<string, number> = {};
+      for (const s of allSuggestions) {
+        specialistCounts[s.specialistType] = (specialistCounts[s.specialistType] || 0) + 1;
+      }
+      const topSpecialists = Object.entries(specialistCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([type, count]) => ({ type, count }));
+
+      // Average confidence
+      const avgConfidence = total > 0
+        ? allSuggestions.reduce((sum, s) => sum + Number(s.confidenceScore), 0) / total
+        : 0;
+
+      return {
+        total,
+        accepted,
+        rejected,
+        pending,
+        acceptanceRate: total > 0 ? (accepted / total) * 100 : 0,
+        withOutcomes: withOutcome.length,
+        appropriate,
+        appropriatenessRate,
+        urgencyDistribution,
+        topSpecialists,
+        averageConfidence: avgConfidence,
+      };
     }),
 });

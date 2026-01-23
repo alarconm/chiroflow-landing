@@ -301,6 +301,7 @@ model Organization {
   contraindications         Contraindication[]
   clinicalGuidelines        ClinicalGuideline[]
   outcomePredictions        OutcomePrediction[]
+  referralSuggestions       ReferralSuggestion[]
 
   @@index([subdomain])
 }
@@ -634,6 +635,7 @@ model Patient {
   treatmentRecommendations TreatmentRecommendation[]
   contraindications        Contraindication[]
   outcomePredictions       OutcomePrediction[]
+  referralSuggestions      ReferralSuggestion[]
 
   @@unique([mrn, organizationId])
   @@index([organizationId])
@@ -1499,6 +1501,7 @@ model Encounter {
   diagnosisSuggestions     DiagnosisSuggestion[]
   treatmentRecommendations TreatmentRecommendation[]
   outcomePredictions       OutcomePrediction[]
+  referralSuggestions      ReferralSuggestion[]
 
   @@index([organizationId])
   @@index([patientId])
@@ -14208,4 +14211,92 @@ model OutcomePrediction {
   @@index([conditionCode])
   @@index([confidenceScore])
   @@index([wasAccurate])
+}
+
+// US-377: AI Referral Suggestion
+// Tracks when the AI suggests a patient should be referred to a specialist
+enum ReferralUrgency {
+  EMERGENT // Immediate referral needed (ER)
+  URGENT // Within 24-48 hours
+  SOON // Within 1-2 weeks
+  ROUTINE // Standard scheduling
+  WHEN_AVAILABLE // Non-urgent, at patient convenience
+}
+
+enum ClinicalReferralStatus {
+  SUGGESTED // AI has suggested referral
+  PENDING_REVIEW // Provider is reviewing
+  ACCEPTED // Provider accepted, referral to be made
+  REFERRAL_SENT // Referral letter sent
+  PATIENT_DECLINED // Patient declined referral
+  REJECTED // Provider rejected suggestion
+  COMPLETED // Referral completed, outcome received
+  CANCELLED // Cancelled for any reason
+}
+
+model ReferralSuggestion {
+  id String @id @default(cuid())
+
+  // Reason for referral
+  reason               String   @db.Text // Why referral is recommended
+  redFlagsIdentified   String[] // Red flags that triggered suggestion
+  clinicalFindings     Json? // Relevant clinical findings
+  nonResponseDetails   String?  @db.Text // Details if non-response to treatment
+
+  // Specialist information
+  specialistType       String // Type of specialist (e.g., "Orthopedic Surgeon", "Neurologist")
+  alternativeSpecialists String[] // Other appropriate specialists
+  suggestedProviders   Json? // Specific providers if known (name, address, phone, fax)
+
+  // Urgency assessment
+  urgency              ReferralUrgency @default(ROUTINE)
+  urgencyReason        String? // Why this urgency level
+
+  // Status tracking
+  status               ClinicalReferralStatus @default(SUGGESTED)
+  confidenceScore      Decimal @db.Decimal(5, 2) // 0-100 confidence
+
+  // Provider action
+  reviewedAt           DateTime?
+  reviewedBy           String? // User ID
+  acceptedAt           DateTime?
+  rejectedAt           DateTime?
+  rejectionReason      String?
+
+  // Referral letter
+  referralLetterDraft  String? @db.Text // AI-generated referral letter draft
+  referralLetterFinal  String? @db.Text // Final approved letter
+  letterGeneratedAt    DateTime?
+  letterApprovedAt     DateTime?
+  letterSentAt         DateTime?
+  letterSentMethod     String? // Fax, email, portal, mail
+
+  // Outcome tracking
+  referralOutcome      String? @db.Text // What was the outcome
+  specialistDiagnosis  String? // Specialist's diagnosis
+  specialistRecommendation String? @db.Text // Specialist's recommendations
+  outcomeReceivedAt    DateTime?
+  wasReferralAppropriate Boolean? // For learning
+  outcomeNotes         String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  encounterId String?
+  encounter   Encounter? @relation(fields: [encounterId], references: [id], onDelete: SetNull)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([encounterId])
+  @@index([status])
+  @@index([urgency])
+  @@index([specialistType])
+  @@index([createdAt])
 }
