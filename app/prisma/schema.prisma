@@ -303,6 +303,12 @@ model Organization {
   outcomePredictions        OutcomePrediction[]
   referralSuggestions       ReferralSuggestion[]
 
+  // AI Predictive Analytics Agent relations (Epic 40)
+  predictions               Prediction[]
+  patientRiskScores         PatientRiskScore[]
+  demandForecasts           DemandForecast[]
+  trendAnalyses             TrendAnalysis[]
+
   @@index([subdomain])
 }
 
@@ -636,6 +642,10 @@ model Patient {
   contraindications        Contraindication[]
   outcomePredictions       OutcomePrediction[]
   referralSuggestions      ReferralSuggestion[]
+
+  // AI Predictive Analytics Agent relations (Epic 40)
+  predictions              Prediction[]
+  patientRiskScores        PatientRiskScore[]
 
   @@unique([mrn, organizationId])
   @@index([organizationId])
@@ -14299,4 +14309,304 @@ model ReferralSuggestion {
   @@index([urgency])
   @@index([specialistType])
   @@index([createdAt])
+}
+
+// ============================================
+// EPIC 40: AI PREDICTIVE ANALYTICS AGENT
+// ============================================
+
+// Prediction types for the general prediction model
+enum PredictionType {
+  CHURN           // Patient likely to stop coming
+  NO_SHOW         // Appointment no-show likelihood
+  REVENUE         // Revenue forecast
+  DEMAND          // Appointment demand
+  OUTCOME         // Treatment outcome
+  RISK            // Patient risk score
+  TREND           // Trend detection
+  CUSTOM          // Custom prediction type
+}
+
+// Prediction status
+enum PredictionStatus {
+  PENDING         // Prediction calculated, waiting for validation
+  VALIDATED       // Prediction was checked and confirmed accurate
+  INVALIDATED     // Prediction was checked and found inaccurate
+  EXPIRED         // Prediction expired without validation
+}
+
+// Risk type for patient risk scores
+enum RiskType {
+  CHURN                 // Risk of patient churning
+  NO_SHOW               // Risk of no-show
+  NON_COMPLIANCE        // Treatment non-compliance risk
+  CHRONIC_PROGRESSION   // Risk of condition becoming chronic
+  ADVERSE_EVENT         // Risk of adverse event
+  BILLING_ISSUE         // Risk of billing/payment issues
+  DISSATISFACTION       // Risk of patient dissatisfaction
+}
+
+// Trend direction
+enum TrendDirection {
+  INCREASING    // Trend is going up
+  DECREASING    // Trend is going down
+  STABLE        // Trend is stable
+  VOLATILE      // Trend is unpredictable
+}
+
+// Seasonality pattern
+enum SeasonalityPattern {
+  NONE          // No seasonality detected
+  WEEKLY        // Weekly pattern
+  MONTHLY       // Monthly pattern
+  QUARTERLY     // Quarterly pattern
+  YEARLY        // Yearly/annual pattern
+  CUSTOM        // Custom pattern
+}
+
+// General Prediction model - stores all types of AI predictions
+model Prediction {
+  id             String           @id @default(cuid())
+  predictionType PredictionType
+  status         PredictionStatus @default(PENDING)
+
+  // Target of prediction
+  targetEntityType String?        // "Patient", "Appointment", "Revenue", etc.
+  targetEntityId   String?        // ID of the specific entity
+
+  // Prediction details
+  prediction       Json           // The actual prediction data (flexible structure)
+  confidence       Decimal        @db.Decimal(5, 4) // 0.0000-1.0000 confidence score
+  confidenceLevel  String?        // "high", "medium", "low" for display
+
+  // Model metadata
+  modelName        String?        // Name of the model used
+  modelVersion     String?        // Version of the model
+  features         Json?          // Features used for prediction
+  featureImportance Json?         // Feature importance scores
+
+  // Timing
+  predictionDate   DateTime       @default(now()) // When prediction was made
+  validFrom        DateTime?      // When prediction becomes valid
+  validUntil       DateTime?      // When prediction expires
+  horizon          String?        // Prediction horizon (e.g., "7d", "30d", "1y")
+
+  // Actual outcome tracking (for model improvement)
+  actualOutcome    Json?          // What actually happened
+  outcomeDate      DateTime?      // When outcome was recorded
+  wasAccurate      Boolean?       // Was the prediction accurate
+  accuracyScore    Decimal?       @db.Decimal(5, 4) // Numerical accuracy measure
+  accuracyNotes    String?        @db.Text
+
+  // Processing metadata
+  processingTimeMs Int?           // How long prediction took
+  dataPointsUsed   Int?           // Number of data points used
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientId String?
+  patient   Patient? @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([predictionType])
+  @@index([status])
+  @@index([predictionDate])
+  @@index([targetEntityType, targetEntityId])
+  @@index([validUntil])
+}
+
+// Patient Risk Score - tracks various risk factors for patients
+model PatientRiskScore {
+  id        String   @id @default(cuid())
+  riskType  RiskType
+
+  // Score details
+  score            Int            // 0-100 risk score
+  scoreLevel       String         // "critical", "high", "medium", "low", "minimal"
+  confidence       Decimal        @db.Decimal(5, 4) // 0.0000-1.0000
+
+  // Contributing factors
+  factors          Json           // Array of { factor, weight, value, impact, description }
+  topFactors       String[]       // Top 3-5 contributing factors
+
+  // Trend tracking
+  previousScore    Int?           // Previous score for comparison
+  scoreChange      Int?           // Change from previous score
+  scoreTrend       TrendDirection?// Trend direction
+
+  // Thresholds and alerts
+  alertThreshold   Int?           // Score at which to alert
+  isAboveThreshold Boolean        @default(false)
+  alertTriggered   Boolean        @default(false)
+  alertTriggeredAt DateTime?
+
+  // Intervention tracking
+  interventionRecommended String?  @db.Text // Recommended intervention
+  interventionTaken       String?  @db.Text // What intervention was taken
+  interventionDate        DateTime?
+  interventionOutcome     String?  // Result of intervention
+
+  // Calculation metadata
+  calculatedAt     DateTime       @default(now())
+  dataWindowDays   Int            @default(90) // Days of data used
+  expiresAt        DateTime?      // When to recalculate
+  recalculateAt    DateTime?      // Scheduled recalculation
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([patientId, riskType, organizationId])
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([riskType])
+  @@index([score])
+  @@index([scoreLevel])
+  @@index([isAboveThreshold])
+  @@index([calculatedAt])
+}
+
+// Demand Forecast - predicts appointment demand
+model DemandForecast {
+  id String @id @default(cuid())
+
+  // Forecast target
+  forecastDate     DateTime       // Date being forecasted
+  appointmentType  String?        // Type of appointment (null = all types)
+  providerId       String?        // Provider (null = all providers)
+  locationId       String?        // Location (null = all locations)
+
+  // Predictions
+  predictedVolume  Int            // Predicted number of appointments
+  predictedRange   Json?          // { min, max, p25, p50, p75 } confidence intervals
+  confidence       Decimal        @db.Decimal(5, 4) // 0.0000-1.0000
+
+  // Granularity
+  granularity      String         @default("daily") // "hourly", "daily", "weekly", "monthly"
+
+  // Seasonality and patterns
+  seasonalFactor   Decimal?       @db.Decimal(6, 4) // Seasonal adjustment factor
+  dayOfWeekFactor  Decimal?       @db.Decimal(6, 4) // Day of week adjustment
+  holidayImpact    Decimal?       @db.Decimal(6, 4) // Holiday impact factor
+  eventImpact      Json?          // Special events affecting demand
+
+  // Actual outcome
+  actualVolume     Int?           // Actual appointments that occurred
+  variance         Int?           // Difference from prediction
+  variancePercent  Decimal?       @db.Decimal(8, 4) // Variance as percentage
+  wasAccurate      Boolean?       // Within acceptable range
+
+  // Staffing recommendations
+  recommendedStaff Int?           // Recommended staff count
+  recommendedRooms Int?           // Recommended rooms needed
+  capacityUtilization Decimal?    @db.Decimal(5, 4) // Predicted capacity utilization
+
+  // Model metadata
+  modelVersion     String?
+  features         Json?          // Features used
+
+  calculatedAt     DateTime       @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, forecastDate, appointmentType, providerId, locationId])
+  @@index([organizationId])
+  @@index([forecastDate])
+  @@index([appointmentType])
+  @@index([providerId])
+  @@index([locationId])
+  @@index([calculatedAt])
+}
+
+// Trend Analysis - detects and tracks trends in metrics
+model TrendAnalysis {
+  id String @id @default(cuid())
+
+  // What's being analyzed
+  metricType       String         // "revenue", "patient_volume", "no_shows", "new_patients", etc.
+  metricSubtype    String?        // More specific classification
+  entityType       String?        // "organization", "provider", "location"
+  entityId         String?        // Specific entity ID
+
+  // Trend details
+  trend            TrendDirection
+  trendStrength    Decimal        @db.Decimal(5, 4) // 0-1, how strong the trend is
+  trendDescription String?        @db.Text // Human-readable trend description
+
+  // Current values
+  currentValue     Decimal        @db.Decimal(12, 4)
+  previousValue    Decimal?       @db.Decimal(12, 4)
+  changePercent    Decimal?       @db.Decimal(8, 4)
+  changeAbsolute   Decimal?       @db.Decimal(12, 4)
+
+  // Statistical analysis
+  mean             Decimal?       @db.Decimal(12, 4)
+  median           Decimal?       @db.Decimal(12, 4)
+  stdDev           Decimal?       @db.Decimal(12, 4)
+  minValue         Decimal?       @db.Decimal(12, 4)
+  maxValue         Decimal?       @db.Decimal(12, 4)
+
+  // Seasonality
+  seasonality      SeasonalityPattern @default(NONE)
+  seasonalIndex    Decimal?       @db.Decimal(6, 4) // Seasonal adjustment index
+  seasonalPattern  Json?          // Detailed seasonal pattern data
+
+  // Forecasting
+  forecast         Json?          // { period, value, confidence } array
+  forecastHorizon  String?        // "7d", "30d", "90d", "1y"
+  forecastAccuracy Decimal?       @db.Decimal(5, 4) // Historical accuracy
+
+  // Anomaly detection
+  isAnomaly        Boolean        @default(false)
+  anomalyScore     Decimal?       @db.Decimal(5, 4) // How anomalous (0-1)
+  anomalyType      String?        // "spike", "drop", "pattern_break"
+  anomalyExplanation String?      @db.Text
+
+  // Alerts
+  alertTriggered   Boolean        @default(false)
+  alertReason      String?
+  alertSeverity    String?        // "info", "warning", "critical"
+
+  // Recommendations
+  recommendations  Json?          // Array of recommended actions
+  aiInsights       String?        @db.Text // AI-generated insights
+
+  // Analysis window
+  analysisStart    DateTime       // Start of analysis period
+  analysisEnd      DateTime       // End of analysis period
+  dataPoints       Int?           // Number of data points analyzed
+
+  calculatedAt     DateTime       @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([metricType])
+  @@index([trend])
+  @@index([isAnomaly])
+  @@index([alertTriggered])
+  @@index([analysisEnd])
+  @@index([calculatedAt])
 }

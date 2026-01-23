@@ -1,140 +1,143 @@
 {
-  "branch": "feature/ai-clinical-decision",
-  "title": "Epic 39: AI Clinical Decision Support Agent",
-  "description": "AI agent that provides real-time clinical decision support including diagnosis suggestions, treatment recommendations, contraindication alerts, and evidence-based care guidance. Enhances clinical outcomes through intelligent assistance.",
-  "epic": "39-ai-clinical-decision",
-  "dependencies": ["05-ehr-soap-notes", "19-chiropractic-clinical"],
+  "branch": "feature/ai-predictive-analytics",
+  "title": "Epic 40: AI Predictive Analytics Agent",
+  "description": "AI agent that continuously analyzes practice data to predict future trends, patient behaviors, and business outcomes. Enables proactive decision-making through forecasting and pattern recognition.",
+  "epic": "40-ai-predictive-analytics",
+  "dependencies": ["15-reporting"],
   "userStories": [
     {
-      "id": "US-371",
-      "title": "AI clinical decision schema",
-      "description": "Create database models for clinical decision support.",
+      "id": "US-379",
+      "title": "Predictive analytics schema",
+      "description": "Create database models for predictive analytics.",
       "acceptanceCriteria": [
-        "ClinicalAlert model with patientId, alertType, severity, message, acknowledged",
-        "DiagnosisSuggestion model with encounterId, suggestedCode, confidence, reasoning",
-        "TreatmentRecommendation model with patientId, condition, recommendation, evidence",
-        "Contraindication model with patientId, procedure, reason, source",
-        "ClinicalGuideline model with condition, recommendations, evidence, source",
+        "Prediction model with type, targetId, prediction, confidence, actualOutcome",
+        "PatientRiskScore model with patientId, riskType, score, factors, date",
+        "DemandForecast model with date, appointmentType, predictedVolume, actual",
+        "ChurnPrediction model with patientId, churnProbability, factors, intervention",
+        "TrendAnalysis model with metricType, trend, seasonality, forecast",
         "Prisma migrations run successfully"
       ],
       "priority": 1,
       "passes": true
     },
     {
-      "id": "US-372",
-      "title": "Diagnosis suggestion",
-      "description": "AI suggests diagnoses based on symptoms and findings.",
+      "id": "US-380",
+      "title": "Patient churn prediction",
+      "description": "Predict which patients are likely to stop coming.",
       "acceptanceCriteria": [
-        "aiClinical.suggestDiagnosis - Get diagnosis suggestions",
-        "Analyze subjective complaints",
-        "Consider examination findings",
-        "Differential diagnosis list",
-        "Confidence scoring",
-        "Supporting evidence from findings",
-        "Red flag identification",
-        "Learn from provider selections"
+        "aiPredict.predictChurn - Identify churn risk",
+        "Behavioral signals analysis",
+        "Visit pattern changes",
+        "Engagement score decline",
+        "Churn probability scoring",
+        "Churn risk factors identification",
+        "Recommended retention actions",
+        "Track prediction accuracy"
       ],
       "priority": 2,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-373",
-      "title": "Treatment recommendations",
-      "description": "AI recommends treatment approaches based on diagnosis.",
+      "id": "US-381",
+      "title": "Demand forecasting",
+      "description": "Predict future appointment demand.",
       "acceptanceCriteria": [
-        "aiClinical.recommendTreatment - Get treatment suggestions",
-        "Evidence-based treatment options",
-        "Chiropractic technique suggestions",
-        "Treatment frequency recommendations",
-        "Expected outcomes and timeline",
-        "Alternative approaches",
-        "Consider patient preferences",
-        "Citation to clinical guidelines"
+        "aiPredict.forecastDemand - Predict volume",
+        "Daily/weekly/monthly forecasts",
+        "By appointment type",
+        "By provider",
+        "Seasonal pattern recognition",
+        "Event impact modeling",
+        "Staffing recommendations",
+        "Capacity planning insights"
       ],
       "priority": 3,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-374",
-      "title": "Contraindication alerts",
-      "description": "Real-time alerts for treatment contraindications.",
+      "id": "US-382",
+      "title": "No-show prediction",
+      "description": "Predict appointment no-shows for proactive management.",
       "acceptanceCriteria": [
-        "aiClinical.checkContraindications - Verify safety",
-        "Patient condition contraindications",
-        "Medication interactions",
-        "Age-specific precautions",
-        "Recent surgery/trauma alerts",
-        "Red flag symptom warnings",
-        "Alert severity levels",
-        "Override with documentation"
+        "aiPredict.predictNoShow - Identify no-show risk",
+        "Patient history analysis",
+        "Appointment characteristics",
+        "Weather and external factors",
+        "No-show probability score",
+        "Recommended interventions",
+        "Overbooking suggestions",
+        "Confirmation strategy optimization"
       ],
       "priority": 4,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-375",
-      "title": "Clinical guidelines integration",
-      "description": "Access and apply clinical practice guidelines.",
+      "id": "US-383",
+      "title": "Revenue forecasting",
+      "description": "Predict future revenue with confidence intervals.",
       "acceptanceCriteria": [
-        "aiClinical.getGuidelines - Retrieve relevant guidelines",
-        "Chiropractic clinical guidelines",
-        "Condition-specific protocols",
-        "Evidence grading display",
-        "Guideline-based care suggestions",
-        "Track guideline adherence",
-        "Update alerts for new guidelines"
+        "aiPredict.forecastRevenue - Project revenue",
+        "Collections forecast",
+        "AR recovery predictions",
+        "New patient revenue impact",
+        "Scenario modeling",
+        "Confidence intervals",
+        "Variance analysis",
+        "Goal attainment probability"
       ],
       "priority": 5,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-376",
-      "title": "Outcome prediction",
-      "description": "AI predicts patient outcomes based on similar cases.",
+      "id": "US-384",
+      "title": "Treatment outcome prediction",
+      "description": "Predict patient treatment outcomes.",
       "acceptanceCriteria": [
-        "aiClinical.predictOutcome - Forecast treatment outcome",
-        "Similar case analysis",
-        "Expected improvement timeline",
-        "Factors affecting prognosis",
-        "Treatment response likelihood",
-        "Risk of chronicity",
-        "Patient communication of expectations"
+        "aiPredict.predictOutcome - Forecast clinical outcome",
+        "Response to treatment prediction",
+        "Time to improvement estimate",
+        "Risk of non-response",
+        "Optimal treatment duration",
+        "Factors affecting outcome",
+        "Similar patient comparison",
+        "Outcome tracking validation"
       ],
       "priority": 6,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-377",
-      "title": "Referral recommendations",
-      "description": "AI suggests when referral is appropriate.",
+      "id": "US-385",
+      "title": "Trend detection and alerts",
+      "description": "Detect emerging trends and anomalies.",
       "acceptanceCriteria": [
-        "aiClinical.suggestReferral - Evaluate referral need",
-        "Red flag detection for immediate referral",
-        "Non-responding patient identification",
-        "Appropriate specialist suggestion",
-        "Referral urgency level",
-        "Generate referral letter draft",
-        "Track referral outcomes"
+        "aiPredict.detectTrends - Find patterns",
+        "Revenue trend analysis",
+        "Patient volume trends",
+        "Payer mix shifts",
+        "Anomaly detection",
+        "Early warning alerts",
+        "Trend explanation",
+        "Recommended actions"
       ],
       "priority": 7,
-      "passes": true
+      "passes": false
     },
     {
-      "id": "US-378",
-      "title": "Clinical decision support UI",
-      "description": "Interface for clinical decision support features.",
+      "id": "US-386",
+      "title": "Predictive analytics dashboard",
+      "description": "Dashboard for predictive insights.",
       "acceptanceCriteria": [
-        "Alert panel in encounter workflow",
-        "Diagnosis suggestion sidebar",
-        "Treatment recommendation display",
-        "Guideline quick reference",
-        "Contraindication warnings",
-        "One-click acceptance of suggestions",
-        "Override documentation",
-        "Evidence and reasoning display"
+        "Churn risk patient list",
+        "Demand forecast visualization",
+        "Revenue projection charts",
+        "No-show risk calendar overlay",
+        "Trend indicators",
+        "Prediction accuracy metrics",
+        "Actionable insight cards",
+        "Scenario comparison tool"
       ],
       "priority": 8,
-      "passes": true
+      "passes": false
     }
   ]
 }
