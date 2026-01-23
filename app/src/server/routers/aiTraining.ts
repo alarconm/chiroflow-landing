@@ -1450,6 +1450,112 @@ function getCategoryTrainingResources(category: string): {
   return resources[category] || [];
 }
 
+// ============================================
+// US-366: Onboarding Workflow Helpers
+// ============================================
+
+/**
+ * Notify managers when a module is completed
+ */
+async function notifyManagersOnCompletion(
+  ctx: { user: { id: string; organizationId: string; firstName?: string; lastName?: string }; prisma: typeof import('@prisma/client').PrismaClient.prototype },
+  moduleName: string,
+  score: number | null
+): Promise<void> {
+  // Get managers (ADMIN and OWNER roles)
+  const managers = await ctx.prisma.user.findMany({
+    where: {
+      organizationId: ctx.user.organizationId,
+      role: { in: ['ADMIN', 'OWNER'] },
+      id: { not: ctx.user.id },
+    },
+    select: { id: true, email: true, firstName: true },
+  });
+
+  // Create notification records (using audit log for now, could be expanded to actual notifications)
+  for (const manager of managers) {
+    await ctx.prisma.auditLog.create({
+      data: {
+        action: 'ONBOARDING_MODULE_COMPLETED_NOTIFICATION',
+        userId: manager.id,
+        organizationId: ctx.user.organizationId,
+        entityType: 'notification',
+        entityId: ctx.user.id,
+        changes: {
+          type: 'module_completion',
+          completedBy: ctx.user.id,
+          completedByName: `${ctx.user.firstName || ''} ${ctx.user.lastName || ''}`.trim() || 'Staff Member',
+          moduleName,
+          score,
+          timestamp: new Date().toISOString(),
+        },
+      },
+    });
+  }
+}
+
+/**
+ * Notify managers when all onboarding is complete
+ */
+async function notifyManagersOnOnboardingComplete(
+  ctx: { user: { id: string; organizationId: string; firstName?: string; lastName?: string }; prisma: typeof import('@prisma/client').PrismaClient.prototype }
+): Promise<void> {
+  // Get managers
+  const managers = await ctx.prisma.user.findMany({
+    where: {
+      organizationId: ctx.user.organizationId,
+      role: { in: ['ADMIN', 'OWNER'] },
+      id: { not: ctx.user.id },
+    },
+    select: { id: true, email: true },
+  });
+
+  // Get completion stats
+  const progress = await ctx.prisma.trainingProgress.findMany({
+    where: {
+      userId: ctx.user.id,
+      module: { type: 'ONBOARDING' },
+    },
+    select: {
+      score: true,
+      startedAt: true,
+      completedAt: true,
+    },
+  });
+
+  const avgScore = Math.round(
+    progress.reduce((sum, p) => sum + (p.score || 0), 0) / progress.length
+  );
+
+  const startDate = progress[0]?.startedAt;
+  const endDate = progress[progress.length - 1]?.completedAt;
+  const daysToComplete = startDate && endDate
+    ? Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+    : null;
+
+  // Create notification records
+  for (const manager of managers) {
+    await ctx.prisma.auditLog.create({
+      data: {
+        action: 'ONBOARDING_COMPLETE_NOTIFICATION',
+        userId: manager.id,
+        organizationId: ctx.user.organizationId,
+        entityType: 'notification',
+        entityId: ctx.user.id,
+        changes: {
+          type: 'onboarding_complete',
+          completedBy: ctx.user.id,
+          completedByName: `${ctx.user.firstName || ''} ${ctx.user.lastName || ''}`.trim() || 'Staff Member',
+          averageScore: avgScore,
+          daysToComplete,
+          modulesCompleted: progress.length,
+          timestamp: new Date().toISOString(),
+        },
+      },
+    });
+  }
+}
+
 export const aiTrainingRouter = router({
   // ============================================
   // US-364: Video Practice Sessions
@@ -2917,4 +3023,1018 @@ export const aiTrainingRouter = router({
       byDifficulty,
     };
   }),
+
+  // ============================================
+  // US-366: Onboarding Workflows
+  // ============================================
+
+  /**
+   * Start onboarding journey for a new employee
+   * Creates personalized onboarding path based on role
+   */
+  startOnboarding: protectedProcedure
+    .input(
+      z.object({
+        userId: z.string().optional(), // If not provided, starts for current user
+        role: z.enum(['OWNER', 'ADMIN', 'PROVIDER', 'STAFF', 'BILLER']).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const targetUserId = input.userId || ctx.user.id;
+
+      // Get user to determine role
+      const user = await ctx.prisma.user.findUnique({
+        where: { id: targetUserId },
+        select: { id: true, firstName: true, lastName: true, role: true, email: true },
+      });
+
+      if (!user) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'User not found',
+        });
+      }
+
+      const userRole = input.role || user.role;
+
+      // Get role-specific onboarding modules
+      const onboardingModules = await ctx.prisma.trainingModule.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          type: 'ONBOARDING',
+          isActive: true,
+          requiredFor: { has: userRole },
+        },
+        orderBy: { order: 'asc' },
+      });
+
+      if (onboardingModules.length === 0) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: `No onboarding modules configured for role: ${userRole}`,
+        });
+      }
+
+      // Create or update progress for each module
+      const progressRecords = await Promise.all(
+        onboardingModules.map(async (module, index) => {
+          // Calculate due date based on module's dueWithinDays
+          const dueDate = module.dueWithinDays
+            ? new Date(Date.now() + module.dueWithinDays * 24 * 60 * 60 * 1000)
+            : null;
+
+          // Check if progress already exists
+          const existing = await ctx.prisma.trainingProgress.findUnique({
+            where: {
+              userId_moduleId: {
+                userId: targetUserId,
+                moduleId: module.id,
+              },
+            },
+          });
+
+          if (existing) {
+            // Reset if failed or expired
+            if (existing.status === 'FAILED' || existing.status === 'EXPIRED') {
+              return ctx.prisma.trainingProgress.update({
+                where: { id: existing.id },
+                data: {
+                  status: index === 0 ? 'IN_PROGRESS' : 'NOT_STARTED',
+                  startedAt: index === 0 ? new Date() : null,
+                  completedAt: null,
+                  score: null,
+                  attemptNumber: existing.attemptNumber + 1,
+                  currentStep: 0,
+                  progressData: Prisma.JsonNull,
+                  quizResults: Prisma.JsonNull,
+                  dueDate,
+                },
+              });
+            }
+            return existing;
+          }
+
+          // Create new progress record
+          return ctx.prisma.trainingProgress.create({
+            data: {
+              userId: targetUserId,
+              moduleId: module.id,
+              organizationId: ctx.user.organizationId,
+              status: index === 0 ? 'IN_PROGRESS' : 'NOT_STARTED',
+              startedAt: index === 0 ? new Date() : null,
+              totalSteps: (module.content as { steps?: unknown[] })?.steps?.length || 1,
+              dueDate,
+            },
+          });
+        })
+      );
+
+      // Audit log
+      await auditLog('CREATE', 'OnboardingProgress', {
+        entityId: targetUserId,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          targetUser: `${user.firstName} ${user.lastName}`,
+          role: userRole,
+          modulesCount: onboardingModules.length,
+        },
+      });
+
+      // Calculate onboarding path summary
+      const totalDuration = onboardingModules.reduce((sum, m) => sum + m.duration, 0);
+      const firstModule = onboardingModules[0];
+
+      return {
+        userId: targetUserId,
+        userName: `${user.firstName} ${user.lastName}`,
+        role: userRole,
+        onboardingPath: {
+          totalModules: onboardingModules.length,
+          totalDurationMinutes: totalDuration,
+          estimatedCompletionDays: Math.ceil(totalDuration / 120), // ~2 hours/day
+          modules: onboardingModules.map((m, i) => ({
+            id: m.id,
+            name: m.name,
+            description: m.description,
+            duration: m.duration,
+            order: i + 1,
+            status: progressRecords[i].status,
+            dueDate: progressRecords[i].dueDate,
+          })),
+        },
+        currentModule: {
+          id: firstModule.id,
+          name: firstModule.name,
+          description: firstModule.description,
+          type: firstModule.type,
+          content: firstModule.content,
+          duration: firstModule.duration,
+          passingScore: firstModule.passingScore,
+        },
+        startedAt: new Date(),
+      };
+    }),
+
+  /**
+   * Get onboarding progress for a user
+   */
+  getOnboardingProgress: protectedProcedure
+    .input(
+      z.object({
+        userId: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const targetUserId = input.userId || ctx.user.id;
+
+      // Get user info
+      const user = await ctx.prisma.user.findUnique({
+        where: { id: targetUserId },
+        select: { id: true, firstName: true, lastName: true, role: true, createdAt: true },
+      });
+
+      if (!user) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'User not found',
+        });
+      }
+
+      // Get all onboarding progress
+      const progress = await ctx.prisma.trainingProgress.findMany({
+        where: {
+          userId: targetUserId,
+          organizationId: ctx.user.organizationId,
+          module: {
+            type: 'ONBOARDING',
+          },
+        },
+        include: {
+          module: {
+            select: {
+              id: true,
+              name: true,
+              description: true,
+              type: true,
+              duration: true,
+              passingScore: true,
+              order: true,
+              content: true,
+            },
+          },
+        },
+        orderBy: { module: { order: 'asc' } },
+      });
+
+      if (progress.length === 0) {
+        return {
+          userId: targetUserId,
+          userName: `${user.firstName} ${user.lastName}`,
+          role: user.role,
+          onboardingStarted: false,
+          modules: [],
+          overallProgress: 0,
+          currentModule: null,
+          checkpoints: [],
+          timeToCompetency: null,
+        };
+      }
+
+      // Calculate overall progress
+      const completedCount = progress.filter((p) => p.status === 'COMPLETED').length;
+      const overallProgress = Math.round((completedCount / progress.length) * 100);
+
+      // Find current module (first non-completed)
+      const currentProgress = progress.find(
+        (p) => p.status === 'IN_PROGRESS' || p.status === 'NOT_STARTED'
+      );
+
+      // Calculate time to competency
+      const startDate = progress[0]?.startedAt || user.createdAt;
+      const completionDate = progress.every((p) => p.status === 'COMPLETED')
+        ? progress[progress.length - 1]?.completedAt
+        : null;
+      const timeToCompetencyDays = completionDate
+        ? Math.ceil((completionDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+        : null;
+
+      // Build checkpoints
+      const checkpoints = progress
+        .filter((p) => p.status === 'COMPLETED')
+        .map((p) => ({
+          moduleId: p.moduleId,
+          moduleName: p.module.name,
+          completedAt: p.completedAt,
+          score: p.score,
+          timeSpentMinutes: p.timeSpentMinutes,
+        }));
+
+      return {
+        userId: targetUserId,
+        userName: `${user.firstName} ${user.lastName}`,
+        role: user.role,
+        onboardingStarted: true,
+        startedAt: startDate,
+        completedAt: completionDate,
+        modules: progress.map((p) => ({
+          id: p.module.id,
+          name: p.module.name,
+          description: p.module.description,
+          duration: p.module.duration,
+          status: p.status,
+          score: p.score,
+          startedAt: p.startedAt,
+          completedAt: p.completedAt,
+          currentStep: p.currentStep,
+          totalSteps: p.totalSteps,
+          dueDate: p.dueDate,
+          progressPercent: p.totalSteps > 0 ? Math.round((p.currentStep / p.totalSteps) * 100) : 0,
+        })),
+        overallProgress,
+        currentModule: currentProgress
+          ? {
+              id: currentProgress.module.id,
+              name: currentProgress.module.name,
+              description: currentProgress.module.description,
+              content: currentProgress.module.content,
+              duration: currentProgress.module.duration,
+              passingScore: currentProgress.module.passingScore,
+              currentStep: currentProgress.currentStep,
+              totalSteps: currentProgress.totalSteps,
+            }
+          : null,
+        checkpoints,
+        timeToCompetency: timeToCompetencyDays
+          ? {
+              days: timeToCompetencyDays,
+              completedAt: completionDate,
+            }
+          : null,
+      };
+    }),
+
+  /**
+   * Update onboarding progress (advance step, complete module)
+   */
+  updateOnboardingProgress: protectedProcedure
+    .input(
+      z.object({
+        moduleId: z.string(),
+        currentStep: z.number().optional(),
+        progressData: jsonSchema.optional(),
+        quizResults: jsonSchema.optional(),
+        markComplete: z.boolean().optional(),
+        score: z.number().min(0).max(100).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { moduleId, currentStep, progressData, quizResults, markComplete, score } = input;
+
+      // Get current progress
+      const progress = await ctx.prisma.trainingProgress.findUnique({
+        where: {
+          userId_moduleId: {
+            userId: ctx.user.id,
+            moduleId,
+          },
+        },
+        include: {
+          module: {
+            select: {
+              id: true,
+              name: true,
+              passingScore: true,
+              maxAttempts: true,
+              order: true,
+            },
+          },
+        },
+      });
+
+      if (!progress) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Training progress not found',
+        });
+      }
+
+      if (progress.status === 'COMPLETED') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Module already completed',
+        });
+      }
+
+      const updateData: Prisma.TrainingProgressUpdateInput = {
+        lastAccessAt: new Date(),
+      };
+
+      // Update step progress
+      if (currentStep !== undefined) {
+        updateData.currentStep = currentStep;
+        if (progress.status === 'NOT_STARTED') {
+          updateData.status = 'IN_PROGRESS';
+          updateData.startedAt = new Date();
+        }
+      }
+
+      // Update progress data
+      if (progressData !== undefined) {
+        updateData.progressData = progressData;
+      }
+
+      // Update quiz results
+      if (quizResults !== undefined) {
+        updateData.quizResults = quizResults;
+      }
+
+      // Handle completion
+      if (markComplete && score !== undefined) {
+        const passed = score >= progress.module.passingScore;
+
+        if (passed) {
+          updateData.status = 'COMPLETED';
+          updateData.completedAt = new Date();
+          updateData.score = score;
+          updateData.currentStep = progress.totalSteps;
+        } else {
+          // Check if max attempts exceeded
+          if (progress.attemptNumber >= progress.module.maxAttempts) {
+            updateData.status = 'FAILED';
+          } else {
+            updateData.attemptNumber = progress.attemptNumber + 1;
+            updateData.currentStep = 0;
+            updateData.progressData = Prisma.JsonNull;
+            updateData.quizResults = Prisma.JsonNull;
+          }
+          updateData.score = score;
+        }
+      }
+
+      // Calculate time spent
+      if (progress.startedAt) {
+        const timeSpent = Math.round((Date.now() - progress.startedAt.getTime()) / 60000);
+        updateData.timeSpentMinutes = timeSpent;
+      }
+
+      const updated = await ctx.prisma.trainingProgress.update({
+        where: { id: progress.id },
+        data: updateData,
+        include: {
+          module: true,
+        },
+      });
+
+      // If completed, start next module and notify manager
+      let nextModule = null;
+      if (updated.status === 'COMPLETED') {
+        // Find next module
+        const nextProgress = await ctx.prisma.trainingProgress.findFirst({
+          where: {
+            userId: ctx.user.id,
+            organizationId: ctx.user.organizationId,
+            module: { type: 'ONBOARDING' },
+            status: 'NOT_STARTED',
+          },
+          include: { module: true },
+          orderBy: { module: { order: 'asc' } },
+        });
+
+        if (nextProgress) {
+          await ctx.prisma.trainingProgress.update({
+            where: { id: nextProgress.id },
+            data: {
+              status: 'IN_PROGRESS',
+              startedAt: new Date(),
+            },
+          });
+          nextModule = nextProgress.module;
+        }
+
+        // Notify managers
+        await notifyManagersOnCompletion(ctx, progress.module.name, updated.score);
+
+        // Check if all onboarding complete
+        const remainingModules = await ctx.prisma.trainingProgress.count({
+          where: {
+            userId: ctx.user.id,
+            organizationId: ctx.user.organizationId,
+            module: { type: 'ONBOARDING' },
+            status: { notIn: ['COMPLETED'] },
+          },
+        });
+
+        if (remainingModules === 0) {
+          // All onboarding complete - notify managers
+          await notifyManagersOnOnboardingComplete(ctx);
+        }
+      }
+
+      // Audit log
+      await auditLog('UPDATE', 'TrainingProgress', {
+        entityId: progress.moduleId,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          moduleName: progress.module.name,
+          status: updated.status,
+          score: updated.score,
+          currentStep: updated.currentStep,
+        },
+      });
+
+      return {
+        progress: {
+          id: updated.id,
+          moduleId: updated.moduleId,
+          moduleName: updated.module.name,
+          status: updated.status,
+          score: updated.score,
+          currentStep: updated.currentStep,
+          totalSteps: updated.totalSteps,
+          completedAt: updated.completedAt,
+        },
+        passed: updated.status === 'COMPLETED',
+        nextModule: nextModule
+          ? {
+              id: nextModule.id,
+              name: nextModule.name,
+              description: nextModule.description,
+              duration: nextModule.duration,
+            }
+          : null,
+      };
+    }),
+
+  /**
+   * Get onboarding pipeline (for managers)
+   * Shows all employees in onboarding with their progress
+   */
+  getOnboardingPipeline: adminProcedure
+    .input(
+      z.object({
+        status: z
+          .enum(['all', 'in_progress', 'completed', 'overdue'])
+          .optional()
+          .default('all'),
+        role: z.enum(['OWNER', 'ADMIN', 'PROVIDER', 'STAFF', 'BILLER']).optional(),
+        limit: z.number().min(1).max(50).default(20),
+        cursor: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { status, role, limit, cursor } = input;
+
+      // Get all users with onboarding progress
+      const userWhere: Prisma.UserWhereInput = {
+        organizationId: ctx.user.organizationId,
+        ...(role && { role }),
+        trainingProgress: {
+          some: {
+            module: { type: 'ONBOARDING' },
+          },
+        },
+      };
+
+      const users = await ctx.prisma.user.findMany({
+        where: userWhere,
+        take: limit + 1,
+        cursor: cursor ? { id: cursor } : undefined,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          role: true,
+          createdAt: true,
+          trainingProgress: {
+            where: {
+              module: { type: 'ONBOARDING' },
+            },
+            include: {
+              module: {
+                select: {
+                  id: true,
+                  name: true,
+                  order: true,
+                  duration: true,
+                },
+              },
+            },
+            orderBy: { module: { order: 'asc' } },
+          },
+        },
+      });
+
+      let hasMore = false;
+      if (users.length > limit) {
+        hasMore = true;
+        users.pop();
+      }
+
+      // Process users into pipeline view
+      const pipeline = users
+        .map((user) => {
+          const progress = user.trainingProgress;
+          const completedCount = progress.filter((p) => p.status === 'COMPLETED').length;
+          const totalCount = progress.length;
+          const overallPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
+          // Check for overdue
+          const hasOverdue = progress.some(
+            (p) => p.dueDate && p.dueDate < new Date() && p.status !== 'COMPLETED'
+          );
+
+          // Current module
+          const current = progress.find(
+            (p) => p.status === 'IN_PROGRESS' || p.status === 'NOT_STARTED'
+          );
+
+          // Time tracking
+          const startDate = progress[0]?.startedAt || user.createdAt;
+          const completionDate =
+            completedCount === totalCount ? progress[totalCount - 1]?.completedAt : null;
+          const daysInOnboarding = Math.ceil(
+            (Date.now() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+          );
+
+          const userStatus =
+            completedCount === totalCount
+              ? 'completed'
+              : hasOverdue
+                ? 'overdue'
+                : 'in_progress';
+
+          return {
+            userId: user.id,
+            userName: `${user.firstName} ${user.lastName}`,
+            email: user.email,
+            role: user.role,
+            startDate,
+            completionDate,
+            daysInOnboarding,
+            status: userStatus,
+            progress: {
+              completed: completedCount,
+              total: totalCount,
+              percent: overallPercent,
+            },
+            currentModule: current
+              ? {
+                  id: current.module.id,
+                  name: current.module.name,
+                  dueDate: current.dueDate,
+                  isOverdue: current.dueDate && current.dueDate < new Date(),
+                }
+              : null,
+            hasOverdue,
+          };
+        })
+        .filter((u) => {
+          if (status === 'all') return true;
+          return u.status === status;
+        });
+
+      // Summary stats
+      const summary = {
+        total: pipeline.length,
+        inProgress: pipeline.filter((p) => p.status === 'in_progress').length,
+        completed: pipeline.filter((p) => p.status === 'completed').length,
+        overdue: pipeline.filter((p) => p.status === 'overdue').length,
+        averageDaysToComplete:
+          pipeline.filter((p) => p.status === 'completed').length > 0
+            ? Math.round(
+                pipeline
+                  .filter((p) => p.status === 'completed')
+                  .reduce((sum, p) => sum + p.daysInOnboarding, 0) /
+                  pipeline.filter((p) => p.status === 'completed').length
+              )
+            : null,
+      };
+
+      return {
+        employees: pipeline,
+        summary,
+        hasMore,
+        nextCursor: hasMore ? users[users.length - 1].id : null,
+      };
+    }),
+
+  /**
+   * Create onboarding module (admin)
+   */
+  createOnboardingModule: adminProcedure
+    .input(
+      z.object({
+        name: z.string().min(1).max(200),
+        description: z.string().optional(),
+        content: jsonSchema,
+        duration: z.number().min(1), // minutes
+        requiredFor: z.array(z.enum(['OWNER', 'ADMIN', 'PROVIDER', 'STAFF', 'BILLER'])),
+        prerequisiteIds: z.array(z.string()).optional(),
+        order: z.number().optional(),
+        passingScore: z.number().min(0).max(100).default(80),
+        maxAttempts: z.number().min(1).default(3),
+        dueWithinDays: z.number().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const module = await ctx.prisma.trainingModule.create({
+        data: {
+          name: input.name,
+          description: input.description,
+          type: 'ONBOARDING',
+          content: input.content,
+          duration: input.duration,
+          requiredFor: input.requiredFor,
+          prerequisiteIds: input.prerequisiteIds || [],
+          order: input.order || 0,
+          passingScore: input.passingScore,
+          maxAttempts: input.maxAttempts,
+          dueWithinDays: input.dueWithinDays,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      await auditLog('CREATE', 'TrainingModule', {
+        entityId: module.id,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          moduleName: module.name,
+          requiredFor: input.requiredFor,
+        },
+      });
+
+      return module;
+    }),
+
+  /**
+   * Update onboarding module (admin)
+   */
+  updateOnboardingModule: adminProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        name: z.string().min(1).max(200).optional(),
+        description: z.string().optional(),
+        content: jsonSchema.optional(),
+        duration: z.number().min(1).optional(),
+        requiredFor: z.array(z.enum(['OWNER', 'ADMIN', 'PROVIDER', 'STAFF', 'BILLER'])).optional(),
+        prerequisiteIds: z.array(z.string()).optional(),
+        order: z.number().optional(),
+        passingScore: z.number().min(0).max(100).optional(),
+        maxAttempts: z.number().min(1).optional(),
+        dueWithinDays: z.number().nullable().optional(),
+        isActive: z.boolean().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...updateData } = input;
+
+      const module = await ctx.prisma.trainingModule.update({
+        where: { id, organizationId: ctx.user.organizationId },
+        data: updateData,
+      });
+
+      await auditLog('UPDATE', 'TrainingModule', {
+        entityId: module.id,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: { moduleName: module.name, updates: Object.keys(updateData) },
+      });
+
+      return module;
+    }),
+
+  /**
+   * Get onboarding modules (list for configuration)
+   */
+  getOnboardingModules: protectedProcedure
+    .input(
+      z.object({
+        includeInactive: z.boolean().optional().default(false),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const modules = await ctx.prisma.trainingModule.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          type: 'ONBOARDING',
+          ...(input.includeInactive ? {} : { isActive: true }),
+        },
+        orderBy: { order: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          duration: true,
+          requiredFor: true,
+          prerequisiteIds: true,
+          order: true,
+          passingScore: true,
+          maxAttempts: true,
+          dueWithinDays: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
+          _count: {
+            select: {
+              progress: true,
+            },
+          },
+        },
+      });
+
+      return modules;
+    }),
+
+  /**
+   * Assign onboarding to user (manager action)
+   */
+  assignOnboarding: adminProcedure
+    .input(
+      z.object({
+        userId: z.string(),
+        moduleIds: z.array(z.string()).optional(), // If not provided, assigns all required for role
+        dueDate: z.date().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { userId, moduleIds, dueDate } = input;
+
+      // Get user
+      const user = await ctx.prisma.user.findUnique({
+        where: { id: userId, organizationId: ctx.user.organizationId },
+        select: { id: true, firstName: true, lastName: true, role: true },
+      });
+
+      if (!user) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'User not found',
+        });
+      }
+
+      // Get modules to assign
+      let modules;
+      if (moduleIds && moduleIds.length > 0) {
+        modules = await ctx.prisma.trainingModule.findMany({
+          where: {
+            id: { in: moduleIds },
+            organizationId: ctx.user.organizationId,
+            type: 'ONBOARDING',
+            isActive: true,
+          },
+          orderBy: { order: 'asc' },
+        });
+      } else {
+        modules = await ctx.prisma.trainingModule.findMany({
+          where: {
+            organizationId: ctx.user.organizationId,
+            type: 'ONBOARDING',
+            isActive: true,
+            requiredFor: { has: user.role },
+          },
+          orderBy: { order: 'asc' },
+        });
+      }
+
+      if (modules.length === 0) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'No modules found to assign',
+        });
+      }
+
+      // Create progress records
+      const created = await Promise.all(
+        modules.map(async (module, index) => {
+          const moduleDueDate = dueDate
+            ? dueDate
+            : module.dueWithinDays
+              ? new Date(Date.now() + module.dueWithinDays * 24 * 60 * 60 * 1000)
+              : null;
+
+          return ctx.prisma.trainingProgress.upsert({
+            where: {
+              userId_moduleId: {
+                userId,
+                moduleId: module.id,
+              },
+            },
+            create: {
+              userId,
+              moduleId: module.id,
+              organizationId: ctx.user.organizationId,
+              status: index === 0 ? 'IN_PROGRESS' : 'NOT_STARTED',
+              startedAt: index === 0 ? new Date() : null,
+              totalSteps: (module.content as { steps?: unknown[] })?.steps?.length || 1,
+              dueDate: moduleDueDate,
+            },
+            update: {}, // Don't update if already exists
+          });
+        })
+      );
+
+      await auditLog('CREATE', 'OnboardingAssignment', {
+        entityId: userId,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          targetUser: `${user.firstName} ${user.lastName}`,
+          modulesAssigned: modules.length,
+          moduleNames: modules.map((m) => m.name),
+        },
+      });
+
+      return {
+        userId,
+        userName: `${user.firstName} ${user.lastName}`,
+        assignedModules: modules.length,
+        modules: modules.map((m, i) => ({
+          id: m.id,
+          name: m.name,
+          status: created[i].status,
+          dueDate: created[i].dueDate,
+        })),
+      };
+    }),
+
+  /**
+   * Get time-to-competency metrics
+   */
+  getTimeToCompetencyStats: adminProcedure
+    .input(
+      z.object({
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+        role: z.enum(['OWNER', 'ADMIN', 'PROVIDER', 'STAFF', 'BILLER']).optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { startDate, endDate, role } = input;
+
+      // Get completed onboarding users
+      const completedUsers = await ctx.prisma.user.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          ...(role && { role }),
+          trainingProgress: {
+            some: {
+              module: { type: 'ONBOARDING' },
+              status: 'COMPLETED',
+              ...(startDate && { completedAt: { gte: startDate } }),
+              ...(endDate && { completedAt: { lte: endDate } }),
+            },
+          },
+        },
+        select: {
+          id: true,
+          role: true,
+          createdAt: true,
+          trainingProgress: {
+            where: {
+              module: { type: 'ONBOARDING' },
+            },
+            select: {
+              status: true,
+              startedAt: true,
+              completedAt: true,
+              score: true,
+              timeSpentMinutes: true,
+              module: {
+                select: { name: true, duration: true },
+              },
+            },
+            orderBy: { module: { order: 'asc' } },
+          },
+        },
+      });
+
+      // Calculate metrics
+      const metrics: {
+        byRole: Record<
+          string,
+          { count: number; avgDays: number; avgScore: number; avgTimeMinutes: number }
+        >;
+        overall: { count: number; avgDays: number; avgScore: number; avgTimeMinutes: number };
+        byModule: Record<string, { avgScore: number; avgTimeMinutes: number; completionRate: number }>;
+      } = {
+        byRole: {},
+        overall: { count: 0, avgDays: 0, avgScore: 0, avgTimeMinutes: 0 },
+        byModule: {},
+      };
+
+      completedUsers.forEach((user) => {
+        const allCompleted = user.trainingProgress.every((p) => p.status === 'COMPLETED');
+        if (!allCompleted) return;
+
+        const firstStart = user.trainingProgress[0]?.startedAt || user.createdAt;
+        const lastComplete = user.trainingProgress[user.trainingProgress.length - 1]?.completedAt;
+        if (!lastComplete) return;
+
+        const daysToComplete = Math.ceil(
+          (lastComplete.getTime() - firstStart.getTime()) / (1000 * 60 * 60 * 24)
+        );
+        const avgScore =
+          user.trainingProgress.reduce((sum, p) => sum + (p.score || 0), 0) /
+          user.trainingProgress.length;
+        const totalTime = user.trainingProgress.reduce((sum, p) => sum + p.timeSpentMinutes, 0);
+
+        // Overall
+        metrics.overall.count++;
+        metrics.overall.avgDays += daysToComplete;
+        metrics.overall.avgScore += avgScore;
+        metrics.overall.avgTimeMinutes += totalTime;
+
+        // By role
+        if (!metrics.byRole[user.role]) {
+          metrics.byRole[user.role] = { count: 0, avgDays: 0, avgScore: 0, avgTimeMinutes: 0 };
+        }
+        metrics.byRole[user.role].count++;
+        metrics.byRole[user.role].avgDays += daysToComplete;
+        metrics.byRole[user.role].avgScore += avgScore;
+        metrics.byRole[user.role].avgTimeMinutes += totalTime;
+
+        // By module
+        user.trainingProgress.forEach((p) => {
+          const moduleName = p.module.name;
+          if (!metrics.byModule[moduleName]) {
+            metrics.byModule[moduleName] = { avgScore: 0, avgTimeMinutes: 0, completionRate: 0 };
+          }
+          metrics.byModule[moduleName].avgScore += p.score || 0;
+          metrics.byModule[moduleName].avgTimeMinutes += p.timeSpentMinutes;
+          metrics.byModule[moduleName].completionRate++;
+        });
+      });
+
+      // Calculate averages
+      if (metrics.overall.count > 0) {
+        metrics.overall.avgDays = Math.round(metrics.overall.avgDays / metrics.overall.count);
+        metrics.overall.avgScore = Math.round(metrics.overall.avgScore / metrics.overall.count);
+        metrics.overall.avgTimeMinutes = Math.round(
+          metrics.overall.avgTimeMinutes / metrics.overall.count
+        );
+      }
+
+      Object.keys(metrics.byRole).forEach((r) => {
+        const data = metrics.byRole[r];
+        data.avgDays = Math.round(data.avgDays / data.count);
+        data.avgScore = Math.round(data.avgScore / data.count);
+        data.avgTimeMinutes = Math.round(data.avgTimeMinutes / data.count);
+      });
+
+      Object.keys(metrics.byModule).forEach((m) => {
+        const data = metrics.byModule[m];
+        const count = data.completionRate;
+        data.avgScore = Math.round(data.avgScore / count);
+        data.avgTimeMinutes = Math.round(data.avgTimeMinutes / count);
+        data.completionRate = count;
+      });
+
+      return metrics;
+    }),
 });

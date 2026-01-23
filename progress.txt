@@ -313,3 +313,115 @@ Added comprehensive real-time feedback analysis system to `app/src/server/router
 --- Iteration 3 completed at 2026-01-22 ---
 Story: US-365 - Real-time practice feedback
 
+--- Iteration 3 completed at 2026-01-22 18:26:01 ---
+Story: US-365 - Real-time practice feedback
+
+### US-366: Onboarding workflows ✅ COMPLETED
+
+**Date:** 2026-01-22
+**Status:** PASSED
+
+**Implementation:**
+
+Added comprehensive onboarding workflow system to `app/src/server/routers/aiTraining.ts`.
+
+**New tRPC Procedures:**
+
+1. **startOnboarding** - Begin onboarding journey for a new employee
+   - Creates personalized onboarding path based on user role
+   - Auto-assigns role-specific training modules
+   - Sets up progress tracking with due dates
+   - Returns onboarding path summary with first module
+
+2. **getOnboardingProgress** - Get onboarding progress for a user
+   - Returns overall progress percentage
+   - Shows current module and checkpoints
+   - Tracks time-to-competency
+
+3. **updateOnboardingProgress** - Update module progress
+   - Advance step within module
+   - Save quiz results and progress data
+   - Complete modules with scoring
+   - Auto-starts next module on completion
+   - Triggers manager notifications
+
+4. **getOnboardingPipeline** - Manager view of all onboarding employees
+   - Shows all employees in onboarding
+   - Filter by status (in_progress, completed, overdue)
+   - Summary statistics (total, overdue, avg days to complete)
+   - Pagination support
+
+5. **createOnboardingModule** - Create onboarding modules (admin)
+   - Define role requirements
+   - Set prerequisites, passing score, max attempts
+   - Configure due dates
+
+6. **updateOnboardingModule** - Update existing modules (admin)
+
+7. **getOnboardingModules** - List configured modules
+
+8. **assignOnboarding** - Manager assigns onboarding to user
+   - Can assign specific modules or all required for role
+   - Set custom due dates
+
+9. **getTimeToCompetencyStats** - Analytics on onboarding performance
+   - Average days to complete by role
+   - Average scores by module
+   - Completion rates
+
+**Helper Functions Added:**
+
+1. **notifyManagersOnCompletion()** - Notify managers when staff completes a module
+   - Creates audit log entries for each manager
+   - Includes module name, score, and completion details
+
+2. **notifyManagersOnOnboardingComplete()** - Notify when all onboarding complete
+   - Includes average score and days to complete
+   - Triggers for each manager in the organization
+
+**Role-Specific Onboarding:**
+- Modules can be configured with `requiredFor` field containing roles
+- OWNER, ADMIN, PROVIDER, STAFF, BILLER roles supported
+- System training, policy training, and practice scenarios per role
+
+**Progress Tracking Features:**
+- Step-by-step progress within modules
+- Quiz/assessment results storage
+- Time spent tracking
+- Due date enforcement
+- Overdue alerts in pipeline view
+
+**Checkpoints:**
+- Each completed module creates a checkpoint
+- Score, completion time, and time spent recorded
+- Manager visibility into progress
+
+**Time-to-Competency Tracking:**
+- Days from start to completion
+- Metrics by role and by module
+- Comparison across employees
+
+**Acceptance Criteria Fulfilled:**
+- ✅ aiTraining.startOnboarding - Begin onboarding journey
+- ✅ Role-specific onboarding paths
+- ✅ System training modules
+- ✅ Policy and procedure training
+- ✅ Practice scenarios for each skill
+- ✅ Progress tracking and checkpoints
+- ✅ Manager notifications on completion
+- ✅ Time-to-competency tracking
+
+**Files Modified:**
+- app/src/server/routers/aiTraining.ts (added ~700 lines)
+
+---
+
+## Stories Remaining: 4
+
+- US-367: Script training and practice
+- US-368: Compliance training
+- US-369: Performance coaching
+- US-370: Training dashboard
+--- Iteration 4 completed at 2026-01-22 ---
+Story: US-366 - Onboarding workflows
+

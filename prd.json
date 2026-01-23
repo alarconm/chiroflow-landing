@@ -70,7 +70,7 @@
         "Time-to-competency tracking"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-367",
