@@ -52,7 +52,7 @@
         "Citation to clinical guidelines"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-374",

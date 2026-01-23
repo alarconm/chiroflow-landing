@@ -112,3 +112,91 @@ Story: US-371 - AI clinical decision schema
 --- Iteration 2 completed at 2026-01-22 ---
 Story: US-372 - Diagnosis suggestion
 
+--- Iteration 2 completed at 2026-01-22 19:32:38 ---
+Story: US-372 - Diagnosis suggestion
+
+## 2026-01-22 - US-373: Treatment recommendations
+
+### Completed
+- Added comprehensive treatment recommendation functionality to aiClinical.ts router:
+
+**Main Endpoints:**
+1. `aiClinical.recommendTreatment` - Get AI-powered treatment recommendations
+   - Analyzes diagnosis code and clinical presentation
+   - Matches against 11 built-in chiropractic treatment protocols
+   - 20+ chiropractic technique database with evidence levels
+   - Determines condition acuity (acute/subacute/chronic/wellness)
+   - Frequency guidelines based on acuity phase (initial/transition/maintenance)
+   - Expected outcomes and prognosis
+   - Alternative treatment approaches
+   - Patient preference consideration (lowForce, noManual, activeInvolvement, quickVisits)
+   - Integrates Claude Opus 4.5 for AI-enhanced recommendations (when API key present)
+   - Red flag detection and contraindication alerts
+   - Evidence-based citations to clinical guidelines
+
+2. `aiClinical.acceptTreatmentRecommendation` - Accept a recommendation
+   - Marks recommendation as accepted
+   - Supports modification notes
+   - Full audit logging
+
+3. `aiClinical.rejectTreatmentRecommendation` - Reject with reason
+   - Documents rejection reason for learning
+   - Audit trail for improvement
+
+4. `aiClinical.getPendingTreatmentRecommendations` - Get unprocessed recommendations
+   - Filter by patient or encounter
+   - Excludes already accepted/rejected
+
+5. `aiClinical.getTreatmentRecommendationStats` - Analytics for learning
+   - Acceptance/rejection rates
+   - Modification rates
+   - Top techniques used
+   - Top conditions treated
+
+**Treatment Protocols (11 Built-in):**
+- Acute Low Back Pain (M54.5, M54.50, M54.51)
+- Chronic Low Back Pain (M54.5, M54.50, G89.29)
+- Cervicalgia (M54.2)
+- Thoracic Spine Pain (M54.6)
+- Lumbar Disc Herniation (M51.16, M51.26, M54.41, M54.42)
+- Cervicogenic Headache (R51.9, M53.0)
+- Segmental Dysfunction (M99.01-M99.05)
+- Muscle Spasm (M62.830, M79.1)
+- Spondylosis (M47.812, M47.816)
+- Cervical Sprain/Strain (S13.4XXA)
+- Lumbar Sprain/Strain (S33.5XXA)
+
+**Chiropractic Techniques (20 Supported):**
+- Diversified, Gonstead, Activator Method, Thompson Drop
+- Flexion-Distraction, Cox Flexion-Distraction
+- SOT, Toggle Recoil, NUCCA
+- ART, Graston Technique, Myofascial Release, Trigger Point Therapy
+- EMS, Ultrasound, Cold Laser, Spinal Decompression
+- Kinesio Taping, McKenzie Method, Stabilization Exercises
+
+**Frequency Guidelines by Acuity:**
+- Acute: 3x/week initial → 2x/week → 1x/week PRN
+- Subacute: 2-3x/week initial → 1-2x/week → 1x/2 weeks
+- Chronic: 2x/week initial → 1x/week → 1-2x/month ongoing
+- Wellness: 1x/month to 1x/quarter
+
+### Files Modified
+- app/src/server/routers/aiClinical.ts - Added ~600 lines:
+  - Treatment protocols database
+  - Chiropractic technique database
+  - Frequency guidelines
+  - Patient preference handling
+  - Helper functions (determineAcuity, findMatchingProtocol, scoreTechniqueSuitability, generateAITreatmentRecommendations)
+  - 5 new tRPC endpoints
+- prd.json - Marked US-373 as passes: true
+
+### Technical Notes
+- Follows existing aiClinical patterns from US-372
+- Uses providerProcedure for write operations
+- Uses protectedProcedure for read-only queries
+- Full Prisma type safety with proper typing
+- Pre-existing errors in mobile app and aiCare.ts are unrelated
+
+--- Iteration 3 completed at 2026-01-22 ---
+Story: US-373 - Treatment recommendations
+
