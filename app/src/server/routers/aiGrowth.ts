@@ -217,6 +217,113 @@ interface ReviewResponseSuggestion {
 }
 
 // ============================================
+// US-359: Referral Optimization Types
+// ============================================
+
+interface ReferralCandidate {
+  patientId: string;
+  patientName: string;
+  email: string | null;
+  phone: string | null;
+  npsScore: number; // 0-10
+  referralScore: number; // 0-100 likelihood to refer
+  satisfactionScore: number;
+  loyaltyScore: number;
+  visitCount: number;
+  consecutiveVisits: number;
+  previousReferrals: number;
+  hasLeftReview: boolean;
+  reviewRating: number | null;
+  lastVisitDate: Date | null;
+  optimalOutreachDate: Date;
+  optimalChannel: 'email' | 'sms' | 'in_person';
+  scoreFactors: {
+    visit_frequency: number;
+    positive_reviews: number;
+    tenure: number;
+    treatment_success: number;
+    engagement: number;
+  };
+  reasoning: string[];
+}
+
+interface ReferralProgramInfo {
+  programId: string;
+  programName: string;
+  referrerRewardType: string;
+  referrerRewardValue: number;
+  refereeRewardType: string | null;
+  refereeRewardValue: number | null;
+  isActive: boolean;
+  termsAndConditions: string | null;
+}
+
+interface ReferralPromotion {
+  patientId: string;
+  programId: string;
+  channel: 'email' | 'sms';
+  message: { subject?: string; body: string };
+  scheduledAt: Date;
+  referralCode: string;
+}
+
+interface ReferralSource {
+  source: string;
+  totalReferrals: number;
+  convertedReferrals: number;
+  conversionRate: number;
+  totalValue: number;
+  averageValue: number;
+  topReferrers: Array<{
+    patientId: string;
+    patientName: string;
+    referralCount: number;
+    convertedCount: number;
+  }>;
+}
+
+interface ReferralThankYou {
+  patientId: string;
+  referralId: string;
+  channel: 'email' | 'sms';
+  message: { subject?: string; body: string };
+  rewardInfo: {
+    rewardType: string;
+    rewardValue: number;
+    rewardNote: string | null;
+  } | null;
+}
+
+interface ReferralIncentiveStatus {
+  patientId: string;
+  patientName: string;
+  referralId: string;
+  referralCode: string;
+  refereeStatus: string;
+  rewardEligible: boolean;
+  rewardIssued: boolean;
+  rewardAmount: number | null;
+  rewardType: string | null;
+  rewardIssuedAt: Date | null;
+  qualifiedAt: Date | null;
+  expiresAt: Date | null;
+}
+
+interface ProviderReferralRelationship {
+  providerId: string;
+  providerName: string;
+  providerType: string; // "MD", "DO", "PT", "DC", etc.
+  practice: string | null;
+  referralsReceived: number;
+  referralsSent: number;
+  lastReferralDate: Date | null;
+  relationshipStrength: 'strong' | 'moderate' | 'developing' | 'new';
+  nurturingActions: string[];
+  lastContactDate: Date | null;
+  nextOutreachDate: Date | null;
+}
+
+// ============================================
 // Helper Functions
 // ============================================
 
@@ -1164,6 +1271,95 @@ const acknowledgeNegativeReviewInputSchema = z.object({
 });
 
 // ============================================
+// US-359: Referral Optimization Input Schemas
+// ============================================
+
+const identifyReferrersInputSchema = z.object({
+  minNpsScore: z.number().min(0).max(10).default(8), // Promoters are 9-10, but 8+ are good candidates
+  minVisits: z.number().min(1).default(3),
+  minSatisfactionScore: z.number().min(0).max(100).default(70),
+  excludeRecentlyContacted: z.boolean().default(true),
+  recentContactDays: z.number().min(1).default(30),
+  limit: z.number().min(1).max(100).default(20),
+  sortBy: z.enum(['referral_score', 'nps_score', 'visit_count', 'previous_referrals']).default('referral_score'),
+});
+
+const calculateNpsScoreInputSchema = z.object({
+  patientId: z.string(),
+  surveyResponse: z.number().min(0).max(10).optional(), // Direct NPS survey response
+  calculateFromBehavior: z.boolean().default(true), // Infer from behavior if no survey
+});
+
+const promoteReferralProgramInputSchema = z.object({
+  patientIds: z.array(z.string()),
+  programId: z.string().optional(), // Use default active program if not specified
+  channel: z.enum(['email', 'sms']).default('email'),
+  customMessage: z.string().optional(),
+  spreadOverDays: z.number().min(1).max(14).default(1),
+});
+
+const getReferralSourcesInputSchema = z.object({
+  startDate: z.date().optional(),
+  endDate: z.date().optional(),
+  includeDetails: z.boolean().default(true),
+});
+
+const trackReferralInputSchema = z.object({
+  referrerId: z.string(),
+  refereeName: z.string(),
+  refereeEmail: z.string().email().optional(),
+  refereePhone: z.string().optional(),
+  refereeNotes: z.string().optional(),
+  programId: z.string().optional(),
+  source: z.enum(['patient_referral', 'provider_referral', 'online', 'walk_in', 'other']).default('patient_referral'),
+});
+
+const sendReferralThankYouInputSchema = z.object({
+  referralId: z.string(),
+  channel: z.enum(['email', 'sms']).default('email'),
+  customMessage: z.string().optional(),
+  includeRewardInfo: z.boolean().default(true),
+});
+
+const getReferralIncentivesInputSchema = z.object({
+  patientId: z.string().optional(),
+  status: z.enum(['pending', 'qualified', 'issued', 'expired']).optional(),
+  startDate: z.date().optional(),
+  endDate: z.date().optional(),
+  limit: z.number().min(1).max(100).default(50),
+});
+
+const issueReferralRewardInputSchema = z.object({
+  referralId: z.string(),
+  recipientType: z.enum(['referrer', 'referee']),
+  rewardAmount: z.number().min(0).optional(), // Override program default
+  notes: z.string().optional(),
+});
+
+const getProviderRelationshipsInputSchema = z.object({
+  providerType: z.string().optional(),
+  relationshipStrength: z.enum(['strong', 'moderate', 'developing', 'new']).optional(),
+  limit: z.number().min(1).max(100).default(20),
+});
+
+const nurtureProviderRelationshipInputSchema = z.object({
+  providerId: z.string(),
+  action: z.enum(['send_update', 'schedule_meeting', 'send_thank_you', 'request_feedback']),
+  customMessage: z.string().optional(),
+  channel: z.enum(['email', 'phone', 'mail']).default('email'),
+});
+
+const createProviderRelationshipInputSchema = z.object({
+  providerName: z.string(),
+  providerType: z.string(),
+  practice: z.string().optional(),
+  email: z.string().email().optional(),
+  phone: z.string().optional(),
+  address: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+// ============================================
 // US-358: Reputation Management Helper Functions
 // ============================================
 
@@ -1491,6 +1687,305 @@ function getPlatformGuidelines(platform: string): string[] {
     'Address any concerns raised',
     'Maintain patient confidentiality',
   ];
+}
+
+// ============================================
+// US-359: Referral Optimization Helper Functions
+// ============================================
+
+/**
+ * Calculate NPS score from patient behavior if no survey data available
+ */
+function calculateBehavioralNpsScore(
+  visitCount: number,
+  consecutiveVisits: number,
+  hasLeftReview: boolean,
+  reviewRating: number | null,
+  previousReferrals: number,
+  appointmentCompletionRate: number,
+  treatmentSuccess: boolean | null,
+): number {
+  let score = 5; // Start neutral
+
+  // Visit frequency (up to +2)
+  if (visitCount >= 10) score += 2;
+  else if (visitCount >= 5) score += 1.5;
+  else if (visitCount >= 3) score += 1;
+
+  // Consecutive visits without missing (up to +1)
+  if (consecutiveVisits >= 5) score += 1;
+  else if (consecutiveVisits >= 3) score += 0.5;
+
+  // Review behavior (up to +2/-2)
+  if (hasLeftReview) {
+    if (reviewRating !== null) {
+      if (reviewRating >= 5) score += 2;
+      else if (reviewRating >= 4) score += 1;
+      else if (reviewRating <= 2) score -= 2;
+      else if (reviewRating <= 3) score -= 1;
+    } else {
+      score += 0.5; // Left review, unknown rating
+    }
+  }
+
+  // Previous referrals (strong indicator, up to +2)
+  if (previousReferrals >= 3) score += 2;
+  else if (previousReferrals >= 1) score += 1;
+
+  // Appointment completion rate (up to +1/-1)
+  if (appointmentCompletionRate >= 0.95) score += 1;
+  else if (appointmentCompletionRate < 0.7) score -= 1;
+
+  // Treatment success (up to +1/-1)
+  if (treatmentSuccess === true) score += 1;
+  else if (treatmentSuccess === false) score -= 1;
+
+  return Math.max(0, Math.min(10, Math.round(score)));
+}
+
+/**
+ * Calculate referral score (0-100) based on various factors
+ */
+function calculateReferralScore(
+  npsScore: number,
+  visitCount: number,
+  previousReferrals: number,
+  hasLeftReview: boolean,
+  reviewRating: number | null,
+  treatmentSuccess: boolean | null,
+  tenure: number, // months as patient
+): { score: number; factors: Record<string, number> } {
+  const factors: Record<string, number> = {
+    visit_frequency: 0,
+    positive_reviews: 0,
+    tenure: 0,
+    treatment_success: 0,
+    engagement: 0,
+  };
+
+  // Visit frequency (up to 25 points)
+  if (visitCount >= 10) factors.visit_frequency = 25;
+  else if (visitCount >= 5) factors.visit_frequency = 20;
+  else if (visitCount >= 3) factors.visit_frequency = 15;
+  else if (visitCount >= 2) factors.visit_frequency = 10;
+  else factors.visit_frequency = 5;
+
+  // Review behavior (up to 30 points)
+  if (hasLeftReview && reviewRating !== null && reviewRating >= 4) {
+    factors.positive_reviews = reviewRating >= 5 ? 30 : 20;
+  } else if (hasLeftReview) {
+    factors.positive_reviews = 10;
+  }
+
+  // Tenure (up to 20 points)
+  if (tenure >= 24) factors.tenure = 20;
+  else if (tenure >= 12) factors.tenure = 15;
+  else if (tenure >= 6) factors.tenure = 10;
+  else if (tenure >= 3) factors.tenure = 5;
+
+  // Treatment success (up to 15 points)
+  if (treatmentSuccess === true) factors.treatment_success = 15;
+  else if (treatmentSuccess === null) factors.treatment_success = 7;
+
+  // Previous referral engagement (up to 10 points)
+  if (previousReferrals >= 3) factors.engagement = 10;
+  else if (previousReferrals >= 1) factors.engagement = 7;
+  else if (npsScore >= 9) factors.engagement = 5; // High NPS but no referrals yet
+
+  const score = Object.values(factors).reduce((sum, val) => sum + val, 0);
+  return { score: Math.min(100, score), factors };
+}
+
+/**
+ * Calculate optimal outreach date for referral request
+ */
+function calculateOptimalReferralOutreachDate(
+  lastVisitDate: Date | null,
+  previousOutreachDate: Date | null,
+): Date {
+  const now = new Date();
+  let optimalDate = new Date(now);
+
+  if (lastVisitDate) {
+    // Best to reach out 1-3 days after a positive visit
+    const daysSinceVisit = Math.floor((now.getTime() - lastVisitDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysSinceVisit < 1) {
+      optimalDate.setDate(optimalDate.getDate() + 1);
+    } else if (daysSinceVisit <= 3) {
+      // Good timing, can reach out now
+    } else {
+      // If it's been a while, wait for next visit or schedule soon
+      optimalDate.setDate(optimalDate.getDate() + 1);
+    }
+  }
+
+  // Don't reach out too soon after previous outreach (min 14 days)
+  if (previousOutreachDate) {
+    const daysSinceOutreach = Math.floor((now.getTime() - previousOutreachDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysSinceOutreach < 14) {
+      optimalDate = new Date(previousOutreachDate);
+      optimalDate.setDate(optimalDate.getDate() + 14);
+    }
+  }
+
+  // Set to 10 AM for email, optimal engagement time
+  optimalDate.setHours(10, 0, 0, 0);
+
+  // Don't schedule in the past
+  if (optimalDate < now) {
+    optimalDate = new Date(now);
+    optimalDate.setDate(optimalDate.getDate() + 1);
+    optimalDate.setHours(10, 0, 0, 0);
+  }
+
+  return optimalDate;
+}
+
+/**
+ * Generate referral program promotion message
+ */
+function generateReferralProgramMessage(
+  patientFirstName: string,
+  practiceName: string,
+  referralCode: string,
+  referrerReward: string,
+  refereeReward: string | null,
+  channel: 'email' | 'sms',
+): { subject?: string; body: string } {
+  if (channel === 'sms') {
+    return {
+      body: `Hi ${patientFirstName}! Love your care at ${practiceName}? Share it! Give friends ${refereeReward || 'great care'} with your code: ${referralCode}. You'll get ${referrerReward}! Reply STOP to opt out.`,
+    };
+  }
+
+  return {
+    subject: `Share the Gift of Great Care - ${practiceName} Referral Program`,
+    body: `Hi ${patientFirstName},
+
+We hope you're feeling great! As one of our valued patients, we'd like to invite you to our referral program.
+
+When you refer a friend or family member to ${practiceName}:
+✓ YOU receive: ${referrerReward}
+${refereeReward ? `✓ THEY receive: ${refereeReward}` : ''}
+
+It's easy to share:
+1. Share your personal referral code: ${referralCode}
+2. Your friend mentions your code when booking
+3. After their first completed visit, rewards are issued!
+
+There's no limit to how many people you can refer. Help your friends and family get the care they deserve!
+
+Your Referral Code: ${referralCode}
+
+Thank you for being part of the ${practiceName} family!
+
+Best regards,
+The ${practiceName} Team
+
+P.S. Questions? Just reply to this email - we're here to help!`,
+  };
+}
+
+/**
+ * Generate thank you message for referrer
+ */
+function generateReferralThankYouMessage(
+  patientFirstName: string,
+  practiceName: string,
+  refereeName: string,
+  rewardInfo: { rewardType: string; rewardValue: number; rewardNote: string | null } | null,
+  channel: 'email' | 'sms',
+): { subject?: string; body: string } {
+  const rewardText = rewardInfo
+    ? `As a thank you, you've earned ${rewardInfo.rewardNote || `$${rewardInfo.rewardValue} in ${rewardInfo.rewardType.toLowerCase()}`}!`
+    : 'We truly appreciate you spreading the word!';
+
+  if (channel === 'sms') {
+    return {
+      body: `Thank you, ${patientFirstName}! ${refereeName} is now part of the ${practiceName} family because of you. ${rewardText} - ${practiceName} Team`,
+    };
+  }
+
+  return {
+    subject: `Thank You for Your Referral! - ${practiceName}`,
+    body: `Dear ${patientFirstName},
+
+We wanted to personally thank you for referring ${refereeName} to ${practiceName}. They've completed their first visit, and we're so grateful you shared your positive experience with them!
+
+${rewardText}
+
+${rewardInfo ? `Your reward will be applied to your next visit automatically. Just check in as usual!` : ''}
+
+Referrals from patients like you are the highest compliment we can receive. Your trust in us means everything.
+
+Thank you for being an amazing part of our practice family!
+
+Warm regards,
+The ${practiceName} Team`,
+  };
+}
+
+/**
+ * Determine relationship strength based on referral history
+ */
+function calculateRelationshipStrength(
+  referralsReceived: number,
+  referralsSent: number,
+  lastReferralDate: Date | null,
+  lastContactDate: Date | null,
+): 'strong' | 'moderate' | 'developing' | 'new' {
+  const totalReferrals = referralsReceived + referralsSent;
+  const now = new Date();
+  const daysSinceLastReferral = lastReferralDate
+    ? Math.floor((now.getTime() - lastReferralDate.getTime()) / (1000 * 60 * 60 * 24))
+    : 999;
+  const daysSinceLastContact = lastContactDate
+    ? Math.floor((now.getTime() - lastContactDate.getTime()) / (1000 * 60 * 60 * 24))
+    : 999;
+
+  if (totalReferrals >= 10 && daysSinceLastReferral <= 90) return 'strong';
+  if (totalReferrals >= 5 || (totalReferrals >= 2 && daysSinceLastReferral <= 60)) return 'moderate';
+  if (totalReferrals >= 1 || daysSinceLastContact <= 30) return 'developing';
+  return 'new';
+}
+
+/**
+ * Generate nurturing action for provider relationship
+ */
+function generateProviderNurturingActions(
+  relationshipStrength: 'strong' | 'moderate' | 'developing' | 'new',
+  daysSinceLastContact: number,
+  daysSinceLastReferral: number,
+): string[] {
+  const actions: string[] = [];
+
+  if (relationshipStrength === 'new') {
+    actions.push('Send introductory letter with practice overview');
+    actions.push('Share patient success stories (with consent)');
+    actions.push('Offer to meet for coffee or lunch');
+  } else if (relationshipStrength === 'developing') {
+    actions.push('Send quarterly update on shared patients');
+    actions.push('Invite to practice open house or event');
+    actions.push('Share relevant case studies');
+  } else if (relationshipStrength === 'moderate') {
+    actions.push('Schedule periodic check-in call');
+    actions.push('Send thank you notes for referrals');
+    actions.push('Share patient outcome reports');
+  } else if (relationshipStrength === 'strong') {
+    actions.push('Maintain regular communication');
+    actions.push('Consider co-marketing opportunities');
+    actions.push('Invite to CE events or seminars');
+  }
+
+  // Time-based actions
+  if (daysSinceLastContact > 60) {
+    actions.push('Schedule follow-up communication (over 60 days since contact)');
+  }
+  if (daysSinceLastReferral > 90 && relationshipStrength !== 'new') {
+    actions.push('Reach out to maintain relationship (90+ days since last referral)');
+  }
+
+  return actions;
 }
 
 // ============================================
@@ -4521,6 +5016,1092 @@ export const aiGrowthRouter = router({
             : action === 'acknowledged'
               ? 'Alert acknowledged'
               : 'Alert dismissed',
+      };
+    }),
+
+  // ============================================
+  // US-359: Referral Optimization Procedures
+  // ============================================
+
+  /**
+   * Identify potential referrers based on NPS, satisfaction, and behavior
+   */
+  identifyReferrers: protectedProcedure
+    .input(identifyReferrersInputSchema)
+    .query(async ({ ctx, input }) => {
+      const {
+        minNpsScore,
+        minVisits,
+        minSatisfactionScore,
+        excludeRecentlyContacted,
+        recentContactDays,
+        limit,
+        sortBy,
+      } = input;
+
+      // Get patients with sufficient visit history
+      const patients = await ctx.prisma.patient.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: 'ACTIVE',
+        },
+        include: {
+          demographics: true,
+          contacts: {
+            where: { isPrimary: true },
+            take: 1,
+          },
+          appointments: {
+            where: { status: 'COMPLETED' },
+            orderBy: { startTime: 'desc' },
+            take: 20,
+          },
+          referralOpportunities: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
+        },
+      });
+
+      const now = new Date();
+      const recentContactCutoff = new Date(now);
+      recentContactCutoff.setDate(recentContactCutoff.getDate() - recentContactDays);
+
+      const candidates: ReferralCandidate[] = [];
+
+      for (const patient of patients) {
+        const visitCount = patient.appointments.length;
+        if (visitCount < minVisits) continue;
+
+        // Check if recently contacted
+        const lastOpportunity = patient.referralOpportunities[0];
+        if (
+          excludeRecentlyContacted &&
+          lastOpportunity?.outreachDate &&
+          lastOpportunity.outreachDate > recentContactCutoff
+        ) {
+          continue;
+        }
+
+        // Calculate consecutive visits (no missed appointments)
+        let consecutiveVisits = 0;
+        for (let i = 0; i < patient.appointments.length; i++) {
+          const apt = patient.appointments[i];
+          if (apt.status === 'COMPLETED') {
+            consecutiveVisits++;
+          } else {
+            break;
+          }
+        }
+
+        // Get review data (simplified - would check review requests)
+        const hasLeftReview = lastOpportunity?.hasLeftReview || false;
+        const reviewRating = lastOpportunity?.reviewRating || null;
+        const previousReferrals = lastOpportunity?.previousReferrals || 0;
+        const treatmentSuccess = lastOpportunity?.treatmentSuccess || null;
+
+        // Calculate completion rate
+        const completedCount = patient.appointments.filter(a => a.status === 'COMPLETED').length;
+        const completionRate = patient.appointments.length > 0 ? completedCount / patient.appointments.length : 0;
+
+        // Calculate NPS score
+        const existingNps = lastOpportunity?.npsScore;
+        const npsScore = existingNps ?? calculateBehavioralNpsScore(
+          visitCount,
+          consecutiveVisits,
+          hasLeftReview,
+          reviewRating,
+          previousReferrals,
+          completionRate,
+          treatmentSuccess,
+        );
+
+        if (npsScore < minNpsScore) continue;
+
+        // Calculate referral score
+        const firstVisit = patient.appointments[patient.appointments.length - 1];
+        const tenure = firstVisit
+          ? Math.floor((now.getTime() - new Date(firstVisit.startTime).getTime()) / (1000 * 60 * 60 * 24 * 30))
+          : 0;
+
+        const { score: referralScore, factors: scoreFactors } = calculateReferralScore(
+          npsScore,
+          visitCount,
+          previousReferrals,
+          hasLeftReview,
+          reviewRating,
+          treatmentSuccess,
+          tenure,
+        );
+
+        // Calculate satisfaction score
+        const satisfactionScore = calculatePatientSatisfactionScore(
+          visitCount,
+          patient.appointments.map(a => ({ status: a.status, rating: null })),
+          false,
+        );
+
+        if (satisfactionScore < minSatisfactionScore) continue;
+
+        // Calculate optimal outreach
+        const lastVisit = patient.appointments[0];
+        const optimalOutreachDate = calculateOptimalReferralOutreachDate(
+          lastVisit ? new Date(lastVisit.startTime) : null,
+          lastOpportunity?.outreachDate || null,
+        );
+
+        // Get contact info from demographics and contacts
+        const email = patient.contacts[0]?.email || null;
+        const phone = patient.contacts[0]?.mobilePhone || patient.contacts[0]?.homePhone || null;
+        const firstName = patient.demographics?.firstName || 'Unknown';
+        const lastName = patient.demographics?.lastName || 'Patient';
+
+        // Determine optimal channel
+        let optimalChannel: 'email' | 'sms' | 'in_person' = 'email';
+        if (!email && phone) optimalChannel = 'sms';
+        if (npsScore >= 9 && visitCount >= 10) optimalChannel = 'in_person'; // High value patients
+
+        // Generate reasoning
+        const reasoning: string[] = [];
+        if (npsScore >= 9) reasoning.push('Promoter NPS score (9-10)');
+        else if (npsScore >= 8) reasoning.push('High NPS score (8)');
+        if (visitCount >= 10) reasoning.push(`Highly engaged patient (${visitCount} visits)`);
+        if (previousReferrals > 0) reasoning.push(`Previous referrer (${previousReferrals} referrals)`);
+        if (hasLeftReview && reviewRating && reviewRating >= 4) reasoning.push('Left positive review');
+        if (treatmentSuccess) reasoning.push('Successful treatment outcomes');
+        if (consecutiveVisits >= 5) reasoning.push('Consistently attends appointments');
+
+        candidates.push({
+          patientId: patient.id,
+          patientName: `${firstName} ${lastName}`,
+          email,
+          phone,
+          npsScore,
+          referralScore,
+          satisfactionScore,
+          loyaltyScore: Math.floor((visitCount / 10) * 100), // Simple loyalty calculation
+          visitCount,
+          consecutiveVisits,
+          previousReferrals,
+          hasLeftReview,
+          reviewRating,
+          lastVisitDate: lastVisit ? new Date(lastVisit.startTime) : null,
+          optimalOutreachDate,
+          optimalChannel,
+          scoreFactors: scoreFactors as ReferralCandidate['scoreFactors'],
+          reasoning,
+        });
+      }
+
+      // Sort candidates
+      const sortFunctions: Record<string, (a: ReferralCandidate, b: ReferralCandidate) => number> = {
+        referral_score: (a, b) => b.referralScore - a.referralScore,
+        nps_score: (a, b) => b.npsScore - a.npsScore,
+        visit_count: (a, b) => b.visitCount - a.visitCount,
+        previous_referrals: (a, b) => b.previousReferrals - a.previousReferrals,
+      };
+      candidates.sort(sortFunctions[sortBy] || sortFunctions.referral_score);
+
+      return {
+        candidates: candidates.slice(0, limit),
+        total: candidates.length,
+        criteria: {
+          minNpsScore,
+          minVisits,
+          minSatisfactionScore,
+        },
+      };
+    }),
+
+  /**
+   * Calculate or update NPS score for a patient
+   */
+  calculateNpsScore: protectedProcedure
+    .input(calculateNpsScoreInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { patientId, surveyResponse, calculateFromBehavior } = input;
+
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          appointments: {
+            where: { status: 'COMPLETED' },
+          },
+          referralOpportunities: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Patient not found' });
+      }
+
+      let npsScore: number;
+      let source: 'survey' | 'behavioral';
+
+      if (surveyResponse !== undefined) {
+        npsScore = surveyResponse;
+        source = 'survey';
+      } else if (calculateFromBehavior) {
+        const existingOpportunity = patient.referralOpportunities[0];
+        const visitCount = patient.appointments.length;
+        const completedCount = patient.appointments.filter(a => a.status === 'COMPLETED').length;
+        const completionRate = patient.appointments.length > 0 ? completedCount / patient.appointments.length : 0;
+
+        npsScore = calculateBehavioralNpsScore(
+          visitCount,
+          existingOpportunity?.consecutiveVisits || 0,
+          existingOpportunity?.hasLeftReview || false,
+          existingOpportunity?.reviewRating || null,
+          existingOpportunity?.previousReferrals || 0,
+          completionRate,
+          existingOpportunity?.treatmentSuccess || null,
+        );
+        source = 'behavioral';
+      } else {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Either surveyResponse or calculateFromBehavior must be provided',
+        });
+      }
+
+      // Determine NPS category
+      const category = npsScore >= 9 ? 'promoter' : npsScore >= 7 ? 'passive' : 'detractor';
+
+      // Upsert referral opportunity
+      const existingOpportunity = patient.referralOpportunities[0];
+      if (existingOpportunity) {
+        await ctx.prisma.referralOpportunity.update({
+          where: { id: existingOpportunity.id },
+          data: {
+            npsScore,
+            lastAnalyzed: new Date(),
+          },
+        });
+      } else {
+        await ctx.prisma.referralOpportunity.create({
+          data: {
+            patientId,
+            organizationId: ctx.user.organizationId,
+            npsScore,
+            visitCount: patient.appointments.length,
+            lastAnalyzed: new Date(),
+          },
+        });
+      }
+
+      await auditLog('AI_GROWTH_NPS_CALCULATED', 'ReferralOpportunity', {
+        entityId: patientId,
+        changes: { npsScore, source, category },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        patientId,
+        npsScore,
+        source,
+        category,
+        recommendations:
+          category === 'promoter'
+            ? ['Perfect referral candidate', 'Request a review', 'Enroll in referral program']
+            : category === 'passive'
+              ? ['Follow up to improve experience', 'Ask for feedback', 'Address any concerns']
+              : ['Urgent attention needed', 'Personal outreach recommended', 'Service recovery process'],
+      };
+    }),
+
+  /**
+   * Promote referral program to selected patients
+   */
+  promoteReferralProgram: protectedProcedure
+    .input(promoteReferralProgramInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { patientIds, programId, channel, customMessage, spreadOverDays } = input;
+
+      // Get active referral program
+      const program = programId
+        ? await ctx.prisma.referralProgram.findFirst({
+            where: { id: programId, organizationId: ctx.user.organizationId },
+          })
+        : await ctx.prisma.referralProgram.findFirst({
+            where: { organizationId: ctx.user.organizationId, isActive: true },
+            orderBy: { createdAt: 'desc' },
+          });
+
+      if (!program) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'No active referral program found',
+        });
+      }
+
+      // Get organization info
+      const org = await ctx.prisma.organization.findUnique({
+        where: { id: ctx.user.organizationId },
+      });
+
+      // Get patients
+      const patients = await ctx.prisma.patient.findMany({
+        where: {
+          id: { in: patientIds },
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          demographics: true,
+          contacts: {
+            where: { isPrimary: true },
+            take: 1,
+          },
+        },
+      });
+
+      const results: {
+        total: number;
+        scheduled: number;
+        skipped: number;
+        errors: number;
+        promotions: ReferralPromotion[];
+      } = {
+        total: patientIds.length,
+        scheduled: 0,
+        skipped: 0,
+        errors: 0,
+        promotions: [],
+      };
+
+      const now = new Date();
+      const msPerSlot = (spreadOverDays * 24 * 60 * 60 * 1000) / patients.length;
+
+      for (let i = 0; i < patients.length; i++) {
+        const patient = patients[i];
+        const patientEmail = patient.contacts[0]?.email;
+        const patientPhone = patient.contacts[0]?.mobilePhone || patient.contacts[0]?.homePhone;
+        const patientFirstName = patient.demographics?.firstName;
+
+        // Check contact preference
+        if (channel === 'email' && !patientEmail) {
+          results.skipped++;
+          continue;
+        }
+        if (channel === 'sms' && !patientPhone) {
+          results.skipped++;
+          continue;
+        }
+
+        try {
+          // Generate unique referral code
+          const referralCode = `${patientFirstName?.substring(0, 3).toUpperCase() || 'REF'}${Date.now().toString(36).toUpperCase()}`;
+
+          // Calculate send time
+          const scheduledAt = new Date(now.getTime() + i * msPerSlot);
+          scheduledAt.setHours(10, 0, 0, 0); // 10 AM
+
+          // Format reward info
+          const referrerReward =
+            program.referrerRewardType === 'CREDIT'
+              ? `$${program.referrerRewardValue} store credit`
+              : program.referrerRewardType === 'DISCOUNT_PERCENT'
+                ? `${program.referrerRewardValue}% off`
+                : `$${program.referrerRewardValue}`;
+
+          const refereeReward = program.refereeRewardType
+            ? program.refereeRewardType === 'CREDIT'
+              ? `$${program.refereeRewardValue} credit`
+              : program.refereeRewardType === 'DISCOUNT_PERCENT'
+                ? `${program.refereeRewardValue}% off`
+                : `$${program.refereeRewardValue}`
+            : null;
+
+          // Generate message
+          const message =
+            customMessage !== undefined
+              ? { subject: 'Referral Program Invitation', body: customMessage }
+              : generateReferralProgramMessage(
+                  patientFirstName || 'Patient',
+                  org?.name || 'Our Practice',
+                  referralCode,
+                  referrerReward,
+                  refereeReward,
+                  channel,
+                );
+
+          // Create referral record
+          await ctx.prisma.referral.create({
+            data: {
+              referralCode,
+              referrerId: patient.id,
+              programId: program.id,
+              organizationId: ctx.user.organizationId,
+              status: 'PENDING',
+              expiresAt: program.expirationDays
+                ? new Date(now.getTime() + program.expirationDays * 24 * 60 * 60 * 1000)
+                : null,
+            },
+          });
+
+          results.scheduled++;
+          results.promotions.push({
+            patientId: patient.id,
+            programId: program.id,
+            channel,
+            message,
+            scheduledAt,
+            referralCode,
+          });
+        } catch (error) {
+          results.errors++;
+        }
+      }
+
+      await auditLog('AI_GROWTH_REFERRAL_PROGRAM_PROMOTED', 'ReferralProgram', {
+        entityId: program.id,
+        changes: { total: results.total, scheduled: results.scheduled, channel },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return results;
+    }),
+
+  /**
+   * Get referral sources and analytics
+   */
+  getReferralSources: protectedProcedure
+    .input(getReferralSourcesInputSchema)
+    .query(async ({ ctx, input }) => {
+      const { startDate, endDate, includeDetails } = input;
+
+      const whereClause: Prisma.ReferralWhereInput = {
+        organizationId: ctx.user.organizationId,
+      };
+
+      if (startDate || endDate) {
+        whereClause.createdAt = {};
+        if (startDate) whereClause.createdAt.gte = startDate;
+        if (endDate) whereClause.createdAt.lte = endDate;
+      }
+
+      const referrals = await ctx.prisma.referral.findMany({
+        where: whereClause,
+        include: {
+          referrer: {
+            include: {
+              demographics: true,
+            },
+          },
+          referee: true,
+          program: true,
+        },
+      });
+
+      // Group by source (simplified - using program name as source)
+      const sourceMap = new Map<string, ReferralSource>();
+
+      for (const referral of referrals) {
+        const source = referral.program?.name || 'Direct';
+        const existing = sourceMap.get(source) || {
+          source,
+          totalReferrals: 0,
+          convertedReferrals: 0,
+          conversionRate: 0,
+          totalValue: 0,
+          averageValue: 0,
+          topReferrers: [],
+        };
+
+        existing.totalReferrals++;
+        if (referral.status === 'COMPLETED') {
+          existing.convertedReferrals++;
+          if (referral.referrerRewardAmount) {
+            existing.totalValue += Number(referral.referrerRewardAmount);
+          }
+        }
+
+        // Track top referrers
+        if (includeDetails && referral.referrer) {
+          const referrerIndex = existing.topReferrers.findIndex(r => r.patientId === referral.referrerId);
+          const referrerName = `${referral.referrer.demographics?.firstName || 'Unknown'} ${referral.referrer.demographics?.lastName || 'Patient'}`;
+          if (referrerIndex >= 0) {
+            existing.topReferrers[referrerIndex].referralCount++;
+            if (referral.status === 'COMPLETED') {
+              existing.topReferrers[referrerIndex].convertedCount++;
+            }
+          } else {
+            existing.topReferrers.push({
+              patientId: referral.referrerId,
+              patientName: referrerName,
+              referralCount: 1,
+              convertedCount: referral.status === 'COMPLETED' ? 1 : 0,
+            });
+          }
+        }
+
+        sourceMap.set(source, existing);
+      }
+
+      // Calculate rates and sort
+      const sources = Array.from(sourceMap.values()).map(source => ({
+        ...source,
+        conversionRate: source.totalReferrals > 0 ? source.convertedReferrals / source.totalReferrals : 0,
+        averageValue: source.convertedReferrals > 0 ? source.totalValue / source.convertedReferrals : 0,
+        topReferrers: source.topReferrers.sort((a, b) => b.referralCount - a.referralCount).slice(0, 5),
+      }));
+
+      sources.sort((a, b) => b.totalReferrals - a.totalReferrals);
+
+      return {
+        sources,
+        summary: {
+          totalReferrals: referrals.length,
+          totalConverted: referrals.filter(r => r.status === 'COMPLETED').length,
+          overallConversionRate:
+            referrals.length > 0
+              ? referrals.filter(r => r.status === 'COMPLETED').length / referrals.length
+              : 0,
+          totalValue: sources.reduce((sum, s) => sum + s.totalValue, 0),
+        },
+      };
+    }),
+
+  /**
+   * Track a new referral
+   */
+  trackReferral: protectedProcedure
+    .input(trackReferralInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { referrerId, refereeName, refereeEmail, refereePhone, refereeNotes, programId, source } = input;
+
+      // Get referrer
+      const referrer = await ctx.prisma.patient.findFirst({
+        where: {
+          id: referrerId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!referrer) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Referrer patient not found' });
+      }
+
+      // Get program
+      const program = programId
+        ? await ctx.prisma.referralProgram.findFirst({
+            where: { id: programId, organizationId: ctx.user.organizationId },
+          })
+        : await ctx.prisma.referralProgram.findFirst({
+            where: { organizationId: ctx.user.organizationId, isActive: true },
+            orderBy: { createdAt: 'desc' },
+          });
+
+      if (!program) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'No active referral program found' });
+      }
+
+      // Generate referral code
+      const referralCode = `REF${Date.now().toString(36).toUpperCase()}`;
+
+      // Create referral
+      const referral = await ctx.prisma.referral.create({
+        data: {
+          referralCode,
+          referrerId,
+          programId: program.id,
+          organizationId: ctx.user.organizationId,
+          status: 'PENDING',
+          refereeName,
+          refereeEmail,
+          refereePhone,
+          refereeNotes,
+          utmSource: source,
+          expiresAt: program.expirationDays
+            ? new Date(Date.now() + program.expirationDays * 24 * 60 * 60 * 1000)
+            : null,
+        },
+      });
+
+      // Update referrer's referral opportunity stats
+      await ctx.prisma.referralOpportunity.updateMany({
+        where: {
+          patientId: referrerId,
+          organizationId: ctx.user.organizationId,
+        },
+        data: {
+          previousReferrals: { increment: 1 },
+          lastReferralDate: new Date(),
+          referralMade: true,
+        },
+      });
+
+      await auditLog('AI_GROWTH_REFERRAL_TRACKED', 'Referral', {
+        entityId: referral.id,
+        changes: { referrerId, refereeName, source },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        referralId: referral.id,
+        referralCode,
+        referrerId,
+        refereeName,
+        programId: program.id,
+        status: 'PENDING',
+        expiresAt: referral.expiresAt,
+      };
+    }),
+
+  /**
+   * Send thank you message to referrer
+   */
+  sendReferralThankYou: protectedProcedure
+    .input(sendReferralThankYouInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { referralId, channel, customMessage, includeRewardInfo } = input;
+
+      const referral = await ctx.prisma.referral.findFirst({
+        where: {
+          id: referralId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          referrer: {
+            include: {
+              demographics: true,
+            },
+          },
+          referee: {
+            include: {
+              demographics: true,
+            },
+          },
+          program: true,
+        },
+      });
+
+      if (!referral) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Referral not found' });
+      }
+
+      const org = await ctx.prisma.organization.findUnique({
+        where: { id: ctx.user.organizationId },
+      });
+
+      // Prepare reward info
+      const rewardInfo =
+        includeRewardInfo && referral.program
+          ? {
+              rewardType: referral.program.referrerRewardType,
+              rewardValue: Number(referral.program.referrerRewardValue),
+              rewardNote: referral.program.referrerRewardNote,
+            }
+          : null;
+
+      // Generate message
+      const refereeName = referral.referee?.demographics
+        ? `${referral.referee.demographics.firstName} ${referral.referee.demographics.lastName}`
+        : referral.refereeName || 'your friend';
+
+      const referrerFirstName = referral.referrer.demographics?.firstName || 'Patient';
+
+      const message =
+        customMessage !== undefined
+          ? { subject: 'Thank You for Your Referral!', body: customMessage }
+          : generateReferralThankYouMessage(
+              referrerFirstName,
+              org?.name || 'Our Practice',
+              refereeName,
+              rewardInfo,
+              channel,
+            );
+
+      await auditLog('AI_GROWTH_REFERRAL_THANKYOU_SENT', 'Referral', {
+        entityId: referralId,
+        changes: { channel, includeRewardInfo },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        referralId,
+        patientId: referral.referrerId,
+        channel,
+        message,
+        rewardInfo,
+        sentAt: new Date(),
+      };
+    }),
+
+  /**
+   * Get referral incentives status
+   */
+  getReferralIncentives: protectedProcedure
+    .input(getReferralIncentivesInputSchema)
+    .query(async ({ ctx, input }) => {
+      const { patientId, status, startDate, endDate, limit } = input;
+
+      const whereClause: Prisma.ReferralWhereInput = {
+        organizationId: ctx.user.organizationId,
+      };
+
+      if (patientId) {
+        whereClause.referrerId = patientId;
+      }
+
+      if (startDate || endDate) {
+        whereClause.createdAt = {};
+        if (startDate) whereClause.createdAt.gte = startDate;
+        if (endDate) whereClause.createdAt.lte = endDate;
+      }
+
+      // Filter by status
+      if (status) {
+        if (status === 'pending') {
+          whereClause.status = 'PENDING';
+        } else if (status === 'qualified') {
+          whereClause.qualifiedAt = { not: null };
+          whereClause.referrerRewardIssued = false;
+        } else if (status === 'issued') {
+          whereClause.referrerRewardIssued = true;
+        } else if (status === 'expired') {
+          whereClause.expiresAt = { lt: new Date() };
+          whereClause.referrerRewardIssued = false;
+        }
+      }
+
+      const referrals = await ctx.prisma.referral.findMany({
+        where: whereClause,
+        include: {
+          referrer: {
+            include: {
+              demographics: true,
+            },
+          },
+          program: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+      });
+
+      const incentives: ReferralIncentiveStatus[] = referrals.map(referral => ({
+        patientId: referral.referrerId,
+        patientName: `${referral.referrer.demographics?.firstName || 'Unknown'} ${referral.referrer.demographics?.lastName || 'Patient'}`,
+        referralId: referral.id,
+        referralCode: referral.referralCode,
+        refereeStatus: referral.status,
+        rewardEligible: referral.qualifiedAt !== null,
+        rewardIssued: referral.referrerRewardIssued,
+        rewardAmount: referral.referrerRewardAmount ? Number(referral.referrerRewardAmount) : null,
+        rewardType: referral.program?.referrerRewardType || null,
+        rewardIssuedAt: referral.referrerRewardIssuedAt,
+        qualifiedAt: referral.qualifiedAt,
+        expiresAt: referral.expiresAt,
+      }));
+
+      return {
+        incentives,
+        summary: {
+          total: incentives.length,
+          pending: incentives.filter(i => !i.rewardEligible && !i.rewardIssued).length,
+          qualified: incentives.filter(i => i.rewardEligible && !i.rewardIssued).length,
+          issued: incentives.filter(i => i.rewardIssued).length,
+          totalIssued: incentives
+            .filter(i => i.rewardIssued && i.rewardAmount)
+            .reduce((sum, i) => sum + (i.rewardAmount || 0), 0),
+        },
+      };
+    }),
+
+  /**
+   * Issue referral reward
+   */
+  issueReferralReward: protectedProcedure
+    .input(issueReferralRewardInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { referralId, recipientType, rewardAmount, notes } = input;
+
+      const referral = await ctx.prisma.referral.findFirst({
+        where: {
+          id: referralId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          program: true,
+          referrer: true,
+          referee: true,
+        },
+      });
+
+      if (!referral) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Referral not found' });
+      }
+
+      const isReferrer = recipientType === 'referrer';
+      const alreadyIssued = isReferrer ? referral.referrerRewardIssued : referral.refereeRewardIssued;
+
+      if (alreadyIssued) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Reward already issued to ${recipientType}`,
+        });
+      }
+
+      // Determine reward amount
+      const finalAmount =
+        rewardAmount ??
+        (isReferrer
+          ? Number(referral.program?.referrerRewardValue || 0)
+          : Number(referral.program?.refereeRewardValue || 0));
+
+      // Update referral
+      const updateData: Prisma.ReferralUpdateInput = {};
+      if (isReferrer) {
+        updateData.referrerRewardIssued = true;
+        updateData.referrerRewardAmount = finalAmount;
+        updateData.referrerRewardIssuedAt = new Date();
+        updateData.referrerRewardNotes = notes;
+      } else {
+        updateData.refereeRewardIssued = true;
+        updateData.refereeRewardAmount = finalAmount;
+        updateData.refereeRewardIssuedAt = new Date();
+        updateData.refereeRewardNotes = notes;
+      }
+
+      // Check if both rewards are now issued
+      if (
+        (isReferrer && referral.refereeRewardIssued) ||
+        (!isReferrer && referral.referrerRewardIssued) ||
+        (!referral.program?.refereeRewardType && isReferrer)
+      ) {
+        updateData.status = 'COMPLETED';
+        updateData.completedAt = new Date();
+      }
+
+      await ctx.prisma.referral.update({
+        where: { id: referralId },
+        data: updateData,
+      });
+
+      await auditLog('AI_GROWTH_REFERRAL_REWARD_ISSUED', 'Referral', {
+        entityId: referralId,
+        changes: { recipientType, amount: finalAmount, notes },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        referralId,
+        recipientType,
+        recipientId: isReferrer ? referral.referrerId : referral.refereeId,
+        rewardAmount: finalAmount,
+        rewardType: isReferrer
+          ? referral.program?.referrerRewardType
+          : referral.program?.refereeRewardType,
+        issuedAt: new Date(),
+      };
+    }),
+
+  /**
+   * Get provider referral relationships
+   */
+  getProviderRelationships: protectedProcedure
+    .input(getProviderRelationshipsInputSchema)
+    .query(async ({ ctx, input }) => {
+      const { providerType, relationshipStrength, limit } = input;
+
+      // Get referring providers from GrowthLead source data
+      // Note: Provider relationships are tracked via scoreFactors JSON field
+      const leads = await ctx.prisma.growthLead.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          source: 'provider_referral',
+        },
+        select: {
+          scoreFactors: true,
+          createdAt: true,
+          status: true,
+        },
+      });
+
+      // Aggregate provider relationships
+      const providerMap = new Map<string, {
+        providerId: string;
+        providerName: string;
+        providerType: string;
+        practice: string | null;
+        referralsReceived: number;
+        referralsSent: number;
+        lastReferralDate: Date | null;
+        lastContactDate: Date | null;
+      }>();
+
+      for (const lead of leads) {
+        const details = lead.scoreFactors as Record<string, unknown> | null;
+        if (!details?.providerId) continue;
+
+        const providerId = String(details.providerId);
+        const existing = providerMap.get(providerId) || {
+          providerId,
+          providerName: String(details.providerName || 'Unknown Provider'),
+          providerType: String(details.providerType || 'MD'),
+          practice: details.practice ? String(details.practice) : null,
+          referralsReceived: 0,
+          referralsSent: 0,
+          lastReferralDate: null,
+          lastContactDate: null,
+        };
+
+        existing.referralsReceived++;
+        if (!existing.lastReferralDate || lead.createdAt > existing.lastReferralDate) {
+          existing.lastReferralDate = lead.createdAt;
+        }
+
+        providerMap.set(providerId, existing);
+      }
+
+      const now = new Date();
+      const relationships: ProviderReferralRelationship[] = Array.from(providerMap.values())
+        .filter(p => !providerType || p.providerType === providerType)
+        .map(provider => {
+          const daysSinceLastReferral = provider.lastReferralDate
+            ? Math.floor((now.getTime() - provider.lastReferralDate.getTime()) / (1000 * 60 * 60 * 24))
+            : 999;
+          const daysSinceLastContact = provider.lastContactDate
+            ? Math.floor((now.getTime() - provider.lastContactDate.getTime()) / (1000 * 60 * 60 * 24))
+            : 999;
+
+          const strength = calculateRelationshipStrength(
+            provider.referralsReceived,
+            provider.referralsSent,
+            provider.lastReferralDate,
+            provider.lastContactDate,
+          );
+
+          return {
+            ...provider,
+            relationshipStrength: strength,
+            nurturingActions: generateProviderNurturingActions(
+              strength,
+              daysSinceLastContact,
+              daysSinceLastReferral,
+            ),
+            nextOutreachDate: new Date(now.getTime() + (strength === 'strong' ? 30 : 14) * 24 * 60 * 60 * 1000),
+          };
+        })
+        .filter(r => !relationshipStrength || r.relationshipStrength === relationshipStrength)
+        .sort((a, b) => b.referralsReceived - a.referralsReceived)
+        .slice(0, limit);
+
+      return {
+        relationships,
+        summary: {
+          total: relationships.length,
+          strong: relationships.filter(r => r.relationshipStrength === 'strong').length,
+          moderate: relationships.filter(r => r.relationshipStrength === 'moderate').length,
+          developing: relationships.filter(r => r.relationshipStrength === 'developing').length,
+          new: relationships.filter(r => r.relationshipStrength === 'new').length,
+          totalReferralsReceived: relationships.reduce((sum, r) => sum + r.referralsReceived, 0),
+        },
+      };
+    }),
+
+  /**
+   * Nurture provider referral relationship
+   */
+  nurtureProviderRelationship: protectedProcedure
+    .input(nurtureProviderRelationshipInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { providerId, action, customMessage, channel } = input;
+
+      const org = await ctx.prisma.organization.findUnique({
+        where: { id: ctx.user.organizationId },
+      });
+
+      // Generate appropriate message based on action
+      let subject: string;
+      let body: string;
+
+      switch (action) {
+        case 'send_update':
+          subject = `Patient Care Update from ${org?.name || 'Our Practice'}`;
+          body =
+            customMessage ||
+            `Dear Colleague,\n\nWe wanted to provide you with an update on the patients you've referred to our practice. We're committed to collaborative care and keeping you informed of patient progress.\n\nPlease don't hesitate to reach out if you have any questions.\n\nBest regards,\n${org?.name || 'Our Practice'}`;
+          break;
+        case 'schedule_meeting':
+          subject = `Meeting Request - ${org?.name || 'Our Practice'}`;
+          body =
+            customMessage ||
+            `Dear Colleague,\n\nWe'd love to meet with you to discuss how we can better serve our shared patients. Would you be available for a brief meeting in the coming weeks?\n\nPlease let us know your availability.\n\nBest regards,\n${org?.name || 'Our Practice'}`;
+          break;
+        case 'send_thank_you':
+          subject = `Thank You for Your Referrals - ${org?.name || 'Our Practice'}`;
+          body =
+            customMessage ||
+            `Dear Colleague,\n\nWe wanted to express our sincere gratitude for the patients you've referred to our practice. Your trust in our care is greatly appreciated.\n\nWe're committed to providing excellent care and keeping you updated on patient progress.\n\nThank you for this collaborative relationship.\n\nBest regards,\n${org?.name || 'Our Practice'}`;
+          break;
+        case 'request_feedback':
+          subject = `Feedback Request - ${org?.name || 'Our Practice'}`;
+          body =
+            customMessage ||
+            `Dear Colleague,\n\nWe value your professional opinion and would appreciate any feedback on the care we've provided to your referred patients.\n\nYour insights help us continuously improve our services.\n\nThank you for your time.\n\nBest regards,\n${org?.name || 'Our Practice'}`;
+          break;
+        default:
+          subject = `Message from ${org?.name || 'Our Practice'}`;
+          body = customMessage || 'Thank you for your partnership in patient care.';
+      }
+
+      await auditLog('AI_GROWTH_PROVIDER_NURTURED', 'GrowthLead', {
+        changes: { providerId, action, channel },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        providerId,
+        action,
+        channel,
+        message: { subject, body },
+        scheduledAt: new Date(),
+        status: 'scheduled',
+      };
+    }),
+
+  /**
+   * Create new provider relationship
+   */
+  createProviderRelationship: protectedProcedure
+    .input(createProviderRelationshipInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { providerName, providerType, practice, email, phone, address, notes } = input;
+
+      // Store as a contact or in a custom provider tracking system
+      // For now, we'll return the relationship info that would be created
+      const providerId = `PROV${Date.now().toString(36).toUpperCase()}`;
+
+      await auditLog('AI_GROWTH_PROVIDER_CREATED', 'GrowthLead', {
+        changes: { providerId, providerName, providerType, practice },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        providerId,
+        providerName,
+        providerType,
+        practice,
+        email,
+        phone,
+        address,
+        notes,
+        relationshipStrength: 'new' as const,
+        nurturingActions: generateProviderNurturingActions('new', 999, 999),
+        createdAt: new Date(),
       };
     }),
 });

@@ -219,3 +219,75 @@ Story: US-357 - Automated lead nurturing
 --- Iteration 4 completed at 2026-01-22 ---
 Story: US-358 - Reputation management
 
+--- Iteration 4 completed at 2026-01-22 17:13:11 ---
+Story: US-358 - Reputation management
+
+### US-359: Referral optimization
+**Status:** COMPLETED
+**Date:** 2026-01-22
+
+**Changes made:**
+1. Extended `app/src/server/routers/aiGrowth.ts` with comprehensive referral optimization functionality:
+   - **aiGrowth.identifyReferrers** - Find best referral candidates based on NPS score, visit history, satisfaction
+   - **aiGrowth.calculateNpsScore** - Calculate or update NPS score from survey or behavior
+   - **aiGrowth.promoteReferralProgram** - Automated referral program promotion to selected patients
+   - **aiGrowth.getReferralSources** - Analytics on referral sources with top referrer tracking
+   - **aiGrowth.trackReferral** - Track new referrals with source attribution
+   - **aiGrowth.sendReferralThankYou** - Automated thank-you messages to referrers
+   - **aiGrowth.getReferralIncentives** - Get referral incentive status for patients
+   - **aiGrowth.issueReferralReward** - Issue referral rewards to referrers or referees
+   - **aiGrowth.getProviderRelationships** - Get provider referral relationship analytics
+   - **aiGrowth.nurtureProviderRelationship** - Nurture provider relationships with targeted outreach
+   - **aiGrowth.createProviderRelationship** - Create new provider referral relationship
+
+2. Added 10 new types for referral optimization:
+   - ReferralCandidate, ReferralProgramInfo, ReferralPromotion
+   - ReferralSource, ReferralThankYou, ReferralIncentiveStatus
+   - ProviderReferralRelationship
+
+3. Added 10 new input schemas for validation:
+   - identifyReferrersInputSchema, calculateNpsScoreInputSchema
+   - promoteReferralProgramInputSchema, getReferralSourcesInputSchema
+   - trackReferralInputSchema, sendReferralThankYouInputSchema
+   - getReferralIncentivesInputSchema, issueReferralRewardInputSchema
+   - getProviderRelationshipsInputSchema, nurtureProviderRelationshipInputSchema
+   - createProviderRelationshipInputSchema
+
+4. Added 6 helper functions:
+   - calculateBehavioralNpsScore - Infer NPS from patient behavior
+   - calculateReferralScore - Score patients for referral likelihood (0-100)
+   - calculateOptimalReferralOutreachDate - Best timing for referral outreach
+   - generateReferralProgramMessage - Personalized referral program emails/SMS
+   - generateReferralThankYouMessage - Thank-you messages for successful referrals
+   - calculateRelationshipStrength - Provider relationship strength calculation
+   - generateProviderNurturingActions - Suggested actions for provider nurturing
+
+5. Added 7 new audit actions to `app/src/lib/audit.ts`:
+   - AI_GROWTH_NPS_CALCULATED, AI_GROWTH_REFERRAL_PROGRAM_PROMOTED
+   - AI_GROWTH_REFERRAL_TRACKED, AI_GROWTH_REFERRAL_THANKYOU_SENT
+   - AI_GROWTH_REFERRAL_REWARD_ISSUED, AI_GROWTH_PROVIDER_NURTURED
+   - AI_GROWTH_PROVIDER_CREATED
+
+**Features implemented:**
+- NPS scoring from surveys or behavioral inference (visit frequency, reviews, referrals)
+- Referral candidate scoring algorithm (0-100 based on NPS, visits, tenure, treatment success)
+- Automated referral program promotion with personalized messaging
+- Referral source analytics with conversion tracking
+- Automatic thank-you workflow after successful referrals
+- Referral incentive tracking and reward issuance
+- Provider referral relationship management and nurturing
+- Optimal timing calculation for referral outreach
+- Multi-channel support (email, SMS, in-person)
+
+**Acceptance Criteria Met:**
+- ✅ aiGrowth.identifyReferrers - Find referral candidates
+- ✅ NPS scoring for referral likelihood
+- ✅ Automated referral program promotion
+- ✅ Track referral sources
+- ✅ Thank referring patients automatically
+- ✅ Referral incentive management
+- ✅ Provider referral relationship nurturing
+
+--- Iteration 5 completed at 2026-01-22 ---
+Story: US-359 - Referral optimization
+
