@@ -278,6 +278,14 @@ model Organization {
   complianceAlerts ComplianceAlert[]
   qaRules          QARule[]
 
+  // AI Practice Growth Agent relations (Epic 37)
+  growthLeads              GrowthLead[]
+  growthCampaigns          GrowthCampaign[]
+  referralOpportunities    ReferralOpportunity[]
+  reputationMetrics        ReputationMetric[]
+  reactivationOpportunities ReactivationOpportunity[]
+  growthMetrics            GrowthMetric[]
+
   @@index([subdomain])
 }
 
@@ -595,6 +603,10 @@ model Patient {
   patientEngagementScores PatientEngagementScore[]
   careJourneys            CareJourney[]
   careCoordinatorActions  CareCoordinatorAction[]
+
+  // AI Practice Growth Agent relations (Epic 37)
+  referralOpportunities     ReferralOpportunity[]
+  reactivationOpportunities ReactivationOpportunity[]
 
   @@unique([mrn, organizationId])
   @@index([organizationId])
@@ -12989,4 +13001,445 @@ model QARule {
   @@index([trigger])
   @@index([isActive])
   @@index([priority])
+}
+
+// ============================================
+// EPIC 37: AI PRACTICE GROWTH AGENT
+// ============================================
+
+// Growth lead status for AI tracking
+enum GrowthLeadStatus {
+  NEW // Just identified
+  SCORING // AI is scoring
+  HOT // High conversion probability
+  WARM // Medium conversion probability
+  COLD // Low conversion probability
+  NURTURING // In nurture sequence
+  READY // Ready for staff follow-up
+  CONVERTED // Became a patient
+  LOST // Did not convert
+}
+
+// Growth campaign type
+enum GrowthCampaignType {
+  LEAD_GENERATION // New patient acquisition
+  REACTIVATION // Win back lapsed patients
+  REFERRAL // Referral program promotion
+  REVIEW // Review/reputation management
+  RETENTION // Patient retention
+  UPSELL // Additional services promotion
+  SEASONAL // Holiday/seasonal campaigns
+  EVENT // Event-based campaigns
+}
+
+// Growth campaign status
+enum GrowthCampaignStatus {
+  DRAFT // Being created
+  SCHEDULED // Scheduled for future
+  ACTIVE // Currently running
+  PAUSED // Temporarily paused
+  COMPLETED // Finished running
+  CANCELLED // Cancelled before completion
+}
+
+// Referral opportunity status
+enum ReferralOpportunityStatus {
+  IDENTIFIED // AI identified potential
+  PENDING // Waiting for outreach
+  CONTACTED // Outreach sent
+  ENGAGED // Patient responded positively
+  REFERRED // Patient made referral
+  EXPIRED // Opportunity window passed
+  DECLINED // Patient declined
+}
+
+// AI-managed growth lead scoring and tracking
+model GrowthLead {
+  id     String           @id @default(cuid())
+  status GrowthLeadStatus @default(NEW)
+
+  // Link to base Lead model (optional - can exist independently)
+  leadId String?
+
+  // Contact info (if not linked to Lead)
+  firstName String?
+  lastName  String?
+  email     String?
+  phone     String?
+
+  // AI scoring
+  qualityScore        Int       @default(0) // 0-100 quality score
+  conversionProbability Decimal @db.Decimal(5, 4) // 0.0000-1.0000
+  urgencyScore        Int       @default(0) // 0-100 urgency
+  intentSignals       Json?     // Array of detected intent signals
+
+  // Scoring factors
+  scoreFactors Json? // { "website_visits": 20, "form_partial": 15, "email_opened": 10 }
+  scoreHistory Json? // Array of score changes over time
+
+  // Source attribution
+  source         String?  // "website", "google_ads", "referral", "social"
+  sourceDetail   String?  // Specific source details
+  campaignId     String?  // Growth campaign that generated this lead
+
+  // Behavioral data
+  websiteVisits     Int      @default(0)
+  pageViews         Int      @default(0)
+  lastPageViewed    String?
+  timeOnSite        Int?     // Seconds
+  formAbandoned     Boolean  @default(false)
+  emailsOpened      Int      @default(0)
+  linksClicked      Int      @default(0)
+
+  // Assignment and follow-up
+  assignedToUserId String?
+  priorityRank     Int?     // Rank among all leads
+  nextActionDate   DateTime?
+  nextAction       String?  // Recommended next action
+
+  // Nurturing
+  nurtureSequenceId String?
+  nurtureStepNumber Int?
+  nurtureStartedAt  DateTime?
+
+  // Conversion tracking
+  convertedToPatientId String?
+  convertedAt          DateTime?
+  conversionValue      Decimal? @db.Decimal(10, 2) // Estimated lifetime value
+
+  // AI analysis
+  lastAnalyzedAt DateTime?
+  aiNotes        String?   @db.Text // AI observations and recommendations
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  campaign GrowthCampaign? @relation(fields: [campaignId], references: [id])
+
+  activities GrowthLeadActivity[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([qualityScore])
+  @@index([conversionProbability])
+  @@index([assignedToUserId])
+  @@index([nextActionDate])
+  @@index([createdAt])
+}
+
+// Activity tracking for growth leads
+model GrowthLeadActivity {
+  id           String   @id @default(cuid())
+  activityType String   // "score_updated", "status_changed", "email_sent", "sms_sent", "call_made", "ai_analysis"
+  description  String   @db.Text
+
+  // Activity details
+  metadata     Json?    // Activity-specific data
+  oldValue     String?  // Previous value (for changes)
+  newValue     String?  // New value (for changes)
+
+  // Performer
+  performedBy  String?  // User ID or "AI"
+  isAutomated  Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+
+  // Relations
+  growthLeadId String
+  growthLead   GrowthLead @relation(fields: [growthLeadId], references: [id], onDelete: Cascade)
+
+  @@index([growthLeadId])
+  @@index([activityType])
+  @@index([createdAt])
+}
+
+// AI-driven growth campaigns
+model GrowthCampaign {
+  id           String               @id @default(cuid())
+  name         String
+  description  String?              @db.Text
+  campaignType GrowthCampaignType
+  status       GrowthCampaignStatus @default(DRAFT)
+
+  // Schedule
+  startDate DateTime?
+  endDate   DateTime?
+
+  // Targeting
+  targetAudience     Json?    // Audience criteria
+  targetPatientCount Int?     // Estimated target count
+  actualReach        Int      @default(0)
+
+  // Goals
+  targetLeads       Int?
+  targetConversions Int?
+  targetRevenue     Decimal? @db.Decimal(10, 2)
+  targetROI         Decimal? @db.Decimal(10, 4)
+
+  // Budget
+  budget      Decimal? @db.Decimal(10, 2)
+  actualSpend Decimal? @db.Decimal(10, 2)
+
+  // Content strategy (AI-generated)
+  contentStrategy Json?    // AI-recommended content approach
+  messagingTone   String?  // "professional", "friendly", "urgent"
+  channels        String[] // ["email", "sms", "social"]
+
+  // Execution
+  sequences   Json?    // Array of campaign sequences/steps
+  abTestConfig Json?   // A/B testing configuration
+
+  // Results
+  totalImpressions Int     @default(0)
+  totalClicks      Int     @default(0)
+  totalLeads       Int     @default(0)
+  totalConversions Int     @default(0)
+  totalRevenue     Decimal @default(0) @db.Decimal(10, 2)
+
+  // Calculated metrics
+  clickThroughRate  Decimal? @db.Decimal(5, 4)
+  conversionRate    Decimal? @db.Decimal(5, 4)
+  costPerLead       Decimal? @db.Decimal(10, 2)
+  costPerConversion Decimal? @db.Decimal(10, 2)
+  roi               Decimal? @db.Decimal(10, 4)
+
+  // AI optimization
+  optimizationScore Int?     // How well AI optimized this campaign
+  aiRecommendations Json?    // AI recommendations for improvement
+  lastOptimizedAt   DateTime?
+
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  leads GrowthLead[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([campaignType])
+  @@index([startDate])
+}
+
+// AI-identified referral opportunities
+model ReferralOpportunity {
+  id     String                    @id @default(cuid())
+  status ReferralOpportunityStatus @default(IDENTIFIED)
+
+  // Patient who could refer
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  // Scoring
+  referralScore       Int      @default(0) // 0-100 likelihood to refer
+  npsScore            Int?     // Net Promoter Score (0-10)
+  satisfactionScore   Int?     // Overall satisfaction (0-100)
+  loyaltyScore        Int?     // Patient loyalty score
+
+  // Score factors
+  scoreFactors Json? // { "visit_frequency": 25, "positive_reviews": 30, "tenure": 20 }
+
+  // Patient indicators
+  visitCount          Int      @default(0) // Total visits
+  consecutiveVisits   Int      @default(0) // Visits without missing
+  treatmentSuccess    Boolean? // Has treatment been successful
+  hasLeftReview       Boolean  @default(false)
+  reviewRating        Int?     // If they left a review, what was rating
+
+  // Referral history
+  previousReferrals   Int      @default(0) // Past referrals made
+  lastReferralDate    DateTime?
+
+  // Outreach
+  outreachDate       DateTime?
+  outreachMethod     String?   // "email", "sms", "in_person"
+  outreachMessageId  String?   // Reference to message sent
+  outreachResponse   String?   // Patient's response
+
+  // Outcome
+  referralMade       Boolean   @default(false)
+  referralDate       DateTime?
+  referredPatientId  String?   // New patient referred
+
+  // Timing optimization
+  optimalOutreachDate DateTime? // AI-calculated best time
+  optimalChannel      String?   // AI-recommended channel
+
+  // AI analysis
+  aiAnalysis    String?   @db.Text // AI observations
+  aiConfidence  Decimal?  @db.Decimal(5, 4) // Confidence in scoring
+  lastAnalyzed  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([status])
+  @@index([referralScore])
+  @@index([optimalOutreachDate])
+}
+
+// Reputation monitoring and tracking
+model ReputationMetric {
+  id String @id @default(cuid())
+
+  // Platform
+  platform     String   // "google", "yelp", "facebook", "healthgrades"
+  platformUrl  String?  // Direct link to profile
+
+  // Metrics
+  averageRating     Decimal  @db.Decimal(3, 2) // 0.00-5.00
+  totalReviews      Int      @default(0)
+  newReviewsCount   Int      @default(0) // Since last check
+  responseRate      Decimal? @db.Decimal(5, 4) // Percentage of reviews responded to
+
+  // Breakdown by rating
+  fiveStarCount  Int @default(0)
+  fourStarCount  Int @default(0)
+  threeStarCount Int @default(0)
+  twoStarCount   Int @default(0)
+  oneStarCount   Int @default(0)
+
+  // Sentiment analysis
+  sentimentScore    Decimal? @db.Decimal(5, 4) // -1 to 1
+  commonPraises     Json?    // Array of common positive themes
+  commonComplaints  Json?    // Array of common negative themes
+  keywordFrequency  Json?    // Most mentioned keywords
+
+  // Competitive comparison
+  competitorAverage Decimal? @db.Decimal(3, 2) // Area average
+  marketRank        Int?     // Rank among local competitors
+
+  // Alerts
+  hasNewNegative    Boolean  @default(false)
+  unrepliedCount    Int      @default(0)
+
+  // Snapshot timestamp
+  snapshotDate DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([platform])
+  @@index([snapshotDate])
+  @@index([averageRating])
+}
+
+// Patient reactivation tracking
+model ReactivationOpportunity {
+  id     String @id @default(cuid())
+  status String @default("IDENTIFIED") // IDENTIFIED, CONTACTED, ENGAGED, REACTIVATED, DECLINED, LOST
+
+  // Lapsed patient
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  // Lapse analysis
+  lastVisitDate       DateTime
+  daysSinceLastVisit  Int
+  expectedReturnDate  DateTime? // Based on treatment plan
+  daysOverdue         Int?      // Days past expected return
+
+  // Patient value
+  lifetimeValue       Decimal? @db.Decimal(10, 2)
+  averageVisitValue   Decimal? @db.Decimal(10, 2)
+  potentialRecovery   Decimal? @db.Decimal(10, 2) // Estimated value if reactivated
+
+  // Lapse reason analysis
+  likelyReason        String?  // AI-determined likely reason
+  reasonConfidence    Decimal? @db.Decimal(5, 4)
+  reasonFactors       Json?    // Factors contributing to determination
+
+  // Reactivation strategy
+  recommendedApproach String?  // "special_offer", "wellness_check", "personal_outreach"
+  recommendedOffer    String?  // Specific offer recommendation
+  recommendedChannel  String?  // "email", "sms", "phone"
+  recommendedTiming   DateTime?
+
+  // Outreach tracking
+  outreachAttempts    Int       @default(0)
+  lastOutreachDate    DateTime?
+  lastOutreachMethod  String?
+  responseReceived    Boolean   @default(false)
+  responseDate        DateTime?
+  responseContent     String?   @db.Text
+
+  // Outcome
+  reactivated         Boolean   @default(false)
+  reactivationDate    DateTime?
+  reactivationVisitId String?   // First appointment after reactivation
+
+  // AI scoring
+  reactivationScore   Int       @default(0) // 0-100 likelihood
+  priorityRank        Int?      // Rank among reactivation opportunities
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([status])
+  @@index([reactivationScore])
+  @@index([lastVisitDate])
+  @@index([daysSinceLastVisit])
+}
+
+// Practice growth KPIs and metrics
+model GrowthMetric {
+  id         String   @id @default(cuid())
+  metricType String   // "new_patients", "referrals", "reactivations", "reviews", "conversion_rate"
+  period     String   // "daily", "weekly", "monthly", "quarterly"
+  periodStart DateTime
+  periodEnd   DateTime
+
+  // Metric values
+  value      Decimal  @db.Decimal(12, 4)
+  target     Decimal? @db.Decimal(12, 4)
+  benchmark  Decimal? @db.Decimal(12, 4)
+
+  // Comparison
+  previousPeriodValue Decimal? @db.Decimal(12, 4)
+  changePercent       Decimal? @db.Decimal(8, 4)
+  trend               String?  // "improving", "stable", "declining"
+
+  // Breakdown
+  breakdown   Json?    // Detailed breakdown by source, channel, etc.
+
+  // AI analysis
+  aiInsight   String?  @db.Text // AI interpretation
+  aiActions   Json?    // Recommended actions
+
+  calculatedAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+
+  // Relations
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, metricType, period, periodStart])
+  @@index([organizationId])
+  @@index([metricType])
+  @@index([periodStart])
 }
