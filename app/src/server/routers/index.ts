@@ -111,6 +111,8 @@ import { aiGrowthRouter } from './aiGrowth';
 import { aiTrainingRouter } from './aiTraining';
 // AI Clinical Decision Support Agent (Epic 39)
 import { aiClinicalRouter } from './aiClinical';
+// AI Predictive Analytics Agent (Epic 40)
+import { aiPredictRouter } from './aiPredict';
 
 export const appRouter = router({
   auth: authRouter,
@@ -226,6 +228,8 @@ export const appRouter = router({
   aiTraining: aiTrainingRouter,
   // AI Clinical Decision Support Agent (Epic 39)
   aiClinical: aiClinicalRouter,
+  // AI Predictive Analytics Agent (Epic 40)
+  aiPredict: aiPredictRouter,
 });
 
 

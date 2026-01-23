@@ -60,3 +60,102 @@ Date: 2026-01-22
 - The new Prediction model is more general-purpose for all prediction types
 - PatientRiskScore complements ChurnPrediction with additional risk types
 - All models include proper indexing for query performance
+--- Iteration 1 completed at 2026-01-22 20:49:44 ---
+Story: US-379 - Predictive analytics schema
+
+## US-380: Patient churn prediction - COMPLETED
+
+Date: 2026-01-22
+
+### What was done:
+1. Created `app/src/lib/ai-predict/` library with:
+   - `types.ts` - Comprehensive type definitions:
+     - ChurnPredictionConfig (thresholds, factor weights, analysis params)
+     - ChurnRiskFactor (name, weight, rawValue, normalizedScore, impact, contribution)
+     - ChurnBehavioralSignal (signal detection with severity levels)
+     - VisitPatternChange (period comparison, trend analysis, overdue calculation)
+     - EngagementScoreDetails (portal, forms, messages, attendance, payments)
+     - ChurnPredictionResult (full prediction with all analysis)
+     - RetentionAction (recommended interventions with priority and impact)
+     - BatchChurnPredictionResult (bulk processing results)
+
+   - `churn-prediction.ts` - Core prediction engine:
+     - `predictChurn()` - Analyze single patient churn risk
+     - `batchPredictChurn()` - Batch analyze all patients
+     - `saveChurnPrediction()` - Persist to Prediction and PatientRiskScore models
+     - `trackChurnPredictionAccuracy()` - Track prediction outcomes
+     - `getChurnPredictionAccuracy()` - Get accuracy metrics
+
+2. Implemented 7 risk factor calculations:
+   - Visit Recency (days since last visit)
+   - Visit Frequency Change (period-over-period comparison)
+   - No-Show Rate (no-show percentage)
+   - Cancellation Rate (cancellation percentage)
+   - Engagement Score (portal, forms, messages, attendance, payments)
+   - Outstanding Balance (relative to average visit value)
+   - Treatment Completion (adherence to treatment plan)
+
+3. Behavioral signal detection:
+   - extended_absence (>60 days)
+   - declining_frequency (decreasing trend)
+   - high_no_show (>20% rate)
+   - high_cancellation (>30% rate)
+   - no_upcoming_appointment
+   - low_engagement (<30 score)
+   - balance_barrier (high outstanding balance)
+
+4. Retention action generation:
+   - Action recommendations based on top risk factors
+   - Priority levels (immediate, soon, scheduled)
+   - Expected impact assessment
+   - Automatable vs manual actions
+
+5. Created `app/src/server/routers/aiPredict.ts` router with procedures:
+   - `predictChurn` - Predict churn for single patient
+   - `batchPredictChurn` - Batch prediction with save option
+   - `getAtRiskPatients` - List at-risk patients with pagination
+   - `getChurnSummary` - Summary dashboard data
+   - `saveChurnPrediction` - Save prediction to database
+   - `trackPredictionOutcome` - Record actual outcomes
+   - `getPredictionAccuracy` - Get model accuracy metrics
+   - `getPatientRiskScore` - Get risk scores for patient
+   - `getAllRiskScores` - List all risk scores
+   - `recordIntervention` - Record intervention taken
+
+6. Added new audit action types in `app/src/lib/audit.ts`:
+   - AI_BATCH_CHURN_PREDICTION
+   - AI_CHURN_PREDICTION_SAVED
+   - AI_PREDICTION_OUTCOME_TRACKED
+   - RISK_SCORE_INTERVENTION
+
+7. Registered aiPredictRouter in `app/src/server/routers/index.ts`
+
+### Files created:
+- app/src/lib/ai-predict/types.ts
+- app/src/lib/ai-predict/churn-prediction.ts
+- app/src/lib/ai-predict/index.ts
+- app/src/server/routers/aiPredict.ts
+
+### Files modified:
+- app/src/server/routers/index.ts (added aiPredictRouter)
+- app/src/lib/audit.ts (added new audit actions)
+
+### Acceptance Criteria Met:
+- ✅ aiPredict.predictChurn - Identify churn risk
+- ✅ Behavioral signals analysis
+- ✅ Visit pattern changes
+- ✅ Engagement score decline
+- ✅ Churn probability scoring
+- ✅ Churn risk factors identification
+- ✅ Recommended retention actions
+- ✅ Track prediction accuracy
+
+### Notes:
+- Uses new Epic 40 Prediction and PatientRiskScore models
+- Complements existing Epic 16 ChurnPrediction model
+- Configurable thresholds and factor weights
+- Supports batch processing for all patients
+- Includes accuracy tracking for model improvement
+--- Iteration 2 completed at 2026-01-22 ---
+Story: US-380 - Patient churn prediction
+
