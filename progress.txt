@@ -96,3 +96,55 @@ Story: US-355 - AI practice growth schema
 --- Iteration 2 completed at 2026-01-22 ---
 Story: US-356 - Intelligent lead management
 
+--- Iteration 2 completed at 2026-01-22 16:51:55 ---
+Story: US-356 - Intelligent lead management
+
+### US-357: Automated lead nurturing
+**Status:** COMPLETED
+**Date:** 2026-01-22
+
+**Changes made:**
+1. Extended `app/src/server/routers/aiGrowth.ts` with comprehensive lead nurturing functionality:
+   - **aiGrowth.nurtureLead** - Start or continue nurturing with personalized sequences
+   - **aiGrowth.advanceNurtureStep** - Advance lead to next step in sequence
+   - **aiGrowth.recordNurtureEngagement** - Track email opens, link clicks, replies
+   - **aiGrowth.handleLeadResponse** - Process responses and determine next actions
+   - **aiGrowth.getOptimalTiming** - Calculate best send times based on engagement
+   - **aiGrowth.getNurtureSequences** - Get available sequences with recommendations
+   - **aiGrowth.pauseNurture** - Pause nurturing for a lead
+   - **aiGrowth.resumeNurture** - Resume nurturing from where left off
+   - **aiGrowth.escalateHotLead** - Escalate hot leads to staff immediately
+   - **aiGrowth.getNurtureAnalytics** - Get performance metrics for sequences
+
+2. Created 4 pre-built nurture sequence templates:
+   - **Awareness Sequence** (5 steps) - Educational content for new leads
+   - **Consideration Sequence** (4 steps) - Case studies and testimonials
+   - **Decision Sequence** (3 steps) - Special offers for ready-to-book leads
+   - **Re-engagement Sequence** (3 steps) - Win-back campaign for cold leads
+
+3. Added intelligent features:
+   - **Personalized content** - Dynamic variables ({{firstName}}, {{practiceName}}, etc.)
+   - **Optimal timing calculation** - Best day/time based on engagement patterns
+   - **Sentiment analysis** - Detect positive/negative/neutral responses
+   - **Engagement scoring** - Calculate lead engagement (0-100)
+   - **Auto-escalation** - Hot leads automatically flagged for staff follow-up
+   - **Multi-channel support** - Email and SMS nurturing
+
+4. Added new audit actions to `app/src/lib/audit.ts`:
+   - AI_GROWTH_NURTURE_ADVANCED, AI_GROWTH_NURTURE_ENGAGEMENT
+   - AI_GROWTH_RESPONSE_HANDLED, AI_GROWTH_NURTURE_PAUSED
+   - AI_GROWTH_NURTURE_RESUMED, AI_GROWTH_LEAD_ESCALATED
+
+**Acceptance Criteria Met:**
+- ✅ aiGrowth.nurtureLead - Automated follow-up
+- ✅ Personalized email sequences
+- ✅ SMS follow-up campaigns
+- ✅ Content delivery based on interest (sequence selection)
+- ✅ Optimal timing for outreach
+- ✅ Handle responses automatically (sentiment analysis + action determination)
+- ✅ Escalate hot leads to staff
+- ✅ Track engagement and adjust (engagement scoring, analytics)
+
+--- Iteration 3 completed at 2026-01-22 ---
+Story: US-357 - Automated lead nurturing
+

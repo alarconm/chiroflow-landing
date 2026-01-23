@@ -7,6 +7,11 @@
  * - Lead source tracking and conversion prediction
  * - Priority ranking and auto-assignment
  * - Nurturing sequence triggers and conversion tracking
+ * - Automated lead nurturing (US-357)
+ * - Personalized email sequences
+ * - SMS follow-up campaigns
+ * - Content delivery based on interest
+ * - Response handling and hot lead escalation
  */
 
 import { z } from 'zod';
@@ -70,6 +75,67 @@ interface StaffAssignment {
   averageResponseTime: number;
   matchScore: number;
   specialties: string[];
+}
+
+// ============================================
+// US-357: Automated Lead Nurturing Types
+// ============================================
+
+interface NurtureSequenceTemplate {
+  id: string;
+  name: string;
+  description: string;
+  steps: NurtureStep[];
+  targetAudience: string;
+  averageConversionRate: number;
+}
+
+interface NurtureStep {
+  stepNumber: number;
+  delayDays: number;
+  channel: 'EMAIL' | 'SMS';
+  subject?: string;
+  content: string;
+  contentType: 'educational' | 'promotional' | 'testimonial' | 'offer' | 'reminder';
+  dynamicContent?: boolean;
+  abVariant?: 'A' | 'B';
+}
+
+interface NurtureMessage {
+  leadId: string;
+  channel: 'EMAIL' | 'SMS';
+  subject?: string;
+  body: string;
+  scheduledAt: Date;
+  stepNumber: number;
+  sequenceId: string;
+}
+
+interface NurtureEngagement {
+  emailsOpened: number;
+  linksClicked: number;
+  replies: number;
+  optOuts: number;
+  lastEngagementDate: Date | null;
+  engagementScore: number;
+}
+
+interface LeadResponse {
+  leadId: string;
+  responseType: 'email_reply' | 'sms_reply' | 'call_request' | 'booking_attempt' | 'unsubscribe';
+  content?: string;
+  sentiment: 'positive' | 'neutral' | 'negative';
+  urgency: 'high' | 'medium' | 'low';
+  requiresHumanFollowUp: boolean;
+  suggestedAction: string;
+}
+
+interface OptimalTiming {
+  bestDayOfWeek: string;
+  bestTimeOfDay: string;
+  timezone: string;
+  nextOptimalSendTime: Date;
+  reasoning: string;
 }
 
 // ============================================
@@ -393,6 +459,375 @@ async function findBestStaffAssignment(
 }
 
 // ============================================
+// US-357: Lead Nurturing Helper Functions
+// ============================================
+
+/**
+ * Get nurture sequence templates based on lead characteristics
+ */
+function getNurtureSequenceTemplates(): NurtureSequenceTemplate[] {
+  return [
+    {
+      id: 'awareness',
+      name: 'Awareness Sequence',
+      description: 'Educational content about chiropractic care benefits for new leads',
+      targetAudience: 'New leads with low engagement',
+      averageConversionRate: 0.15,
+      steps: [
+        {
+          stepNumber: 1,
+          delayDays: 0,
+          channel: 'EMAIL',
+          subject: 'Welcome! Here\'s what chiropractic care can do for you',
+          content: 'Hi {{firstName}},\n\nThank you for your interest in {{practiceName}}. We\'re excited to share how chiropractic care can help you live a healthier, pain-free life.\n\nChiropractic care offers:\n- Natural pain relief without medications\n- Improved mobility and flexibility\n- Better posture and spinal alignment\n- Enhanced overall wellness\n\nWould you like to learn more? Reply to this email or call us at {{practicePhone}}.\n\nBest,\n{{practiceName}} Team',
+          contentType: 'educational',
+          dynamicContent: true,
+        },
+        {
+          stepNumber: 2,
+          delayDays: 3,
+          channel: 'EMAIL',
+          subject: 'Common conditions we treat',
+          content: 'Hi {{firstName}},\n\nDid you know chiropractic care can help with:\n\n• Back pain and sciatica\n• Neck pain and headaches\n• Sports injuries\n• Work-related strain\n• Poor posture\n\nMany of our patients find relief after just a few visits. If you\'re experiencing any of these issues, we\'re here to help.\n\nSchedule a consultation: {{bookingLink}}\n\nBest,\n{{practiceName}} Team',
+          contentType: 'educational',
+          dynamicContent: true,
+        },
+        {
+          stepNumber: 3,
+          delayDays: 7,
+          channel: 'SMS',
+          content: 'Hi {{firstName}}! Quick reminder from {{practiceName}} - we offer free 15-min consultations to discuss your health goals. Interested? Reply YES to learn more!',
+          contentType: 'offer',
+          dynamicContent: true,
+        },
+        {
+          stepNumber: 4,
+          delayDays: 10,
+          channel: 'EMAIL',
+          subject: 'See what our patients are saying',
+          content: 'Hi {{firstName}},\n\nDon\'t just take our word for it! Here\'s what our patients say:\n\n"After years of back pain, I finally found relief. The team at {{practiceName}} changed my life!" - Sarah M.\n\n"I was skeptical at first, but now I can\'t imagine life without regular adjustments." - Mike T.\n\nReady to start your journey? Book your first appointment today: {{bookingLink}}\n\nBest,\n{{practiceName}} Team',
+          contentType: 'testimonial',
+          dynamicContent: true,
+        },
+        {
+          stepNumber: 5,
+          delayDays: 14,
+          channel: 'EMAIL',
+          subject: 'Special offer just for you',
+          content: 'Hi {{firstName}},\n\nWe\'d love to welcome you to {{practiceName}}! For a limited time, new patients receive:\n\n✓ Free initial consultation\n✓ Comprehensive health assessment\n✓ Personalized treatment plan\n\nDon\'t miss this opportunity to invest in your health.\n\nBook now: {{bookingLink}}\n\nBest,\n{{practiceName}} Team',
+          contentType: 'offer',
+          dynamicContent: true,
+        },
+      ],
+    },
+    {
+      id: 'consideration',
+      name: 'Consideration Sequence',
+      description: 'Case studies and testimonials for engaged leads',
+      targetAudience: 'Leads showing interest but not yet converted',
+      averageConversionRate: 0.25,
+      steps: [
+        {
+          stepNumber: 1,
+          delayDays: 0,
+          channel: 'EMAIL',
+          subject: 'Your personalized care plan awaits',
+          content: 'Hi {{firstName}},\n\nThank you for exploring {{practiceName}}! Based on your interest, we\'ve put together some resources just for you.\n\nWhat to expect at your first visit:\n1. Health history review\n2. Physical examination\n3. Digital X-rays (if needed)\n4. Treatment plan discussion\n\nMost patients feel improvement within the first few visits. Ready to get started?\n\nBook your appointment: {{bookingLink}}\n\nBest,\n{{practiceName}} Team',
+          contentType: 'educational',
+          dynamicContent: true,
+        },
+        {
+          stepNumber: 2,
+          delayDays: 2,
+          channel: 'SMS',
+          content: 'Hi {{firstName}}, noticed you\'ve been looking into chiropractic care. Have questions? Text back and our team will help! - {{practiceName}}',
+          contentType: 'reminder',
+          dynamicContent: true,
+        },
+        {
+          stepNumber: 3,
+          delayDays: 5,
+          channel: 'EMAIL',
+          subject: 'Real results: Patient success story',
+          content: 'Hi {{firstName}},\n\nMeet John, a 45-year-old office worker who suffered from chronic lower back pain for over 5 years.\n\nAfter starting treatment at {{practiceName}}:\n• Week 1: 30% pain reduction\n• Week 4: Able to sit without discomfort\n• Week 8: Back to playing golf!\n\n"I wish I had come in sooner," John says.\n\nYour success story could be next. Schedule your first appointment: {{bookingLink}}\n\nBest,\n{{practiceName}} Team',
+          contentType: 'testimonial',
+          dynamicContent: true,
+        },
+        {
+          stepNumber: 4,
+          delayDays: 8,
+          channel: 'EMAIL',
+          subject: 'Your questions answered',
+          content: 'Hi {{firstName}},\n\nStill considering chiropractic care? Here are answers to common questions:\n\nQ: Is chiropractic treatment safe?\nA: Yes! Chiropractic care is one of the safest drug-free, non-invasive therapies available.\n\nQ: How many visits will I need?\nA: This varies by condition. Most patients see improvement in 4-8 visits.\n\nQ: Do you accept my insurance?\nA: We accept most major insurance plans. Contact us to verify your coverage.\n\nReady to take the next step? {{bookingLink}}\n\nBest,\n{{practiceName}} Team',
+          contentType: 'educational',
+          dynamicContent: true,
+        },
+      ],
+    },
+    {
+      id: 'decision',
+      name: 'Decision Sequence',
+      description: 'Special offers and appointment incentives for ready-to-book leads',
+      targetAudience: 'Hot leads ready to convert',
+      averageConversionRate: 0.45,
+      steps: [
+        {
+          stepNumber: 1,
+          delayDays: 0,
+          channel: 'EMAIL',
+          subject: 'We\'re holding a spot for you',
+          content: 'Hi {{firstName}},\n\nWe noticed you\'ve been exploring treatment options at {{practiceName}}. Great news - we have availability this week!\n\n🗓️ Available appointments:\n• Tomorrow at 10:00 AM\n• Thursday at 2:00 PM\n• Friday at 11:00 AM\n\nBook now to secure your preferred time: {{bookingLink}}\n\nLimited spots available!\n\nBest,\n{{practiceName}} Team',
+          contentType: 'offer',
+          dynamicContent: true,
+        },
+        {
+          stepNumber: 2,
+          delayDays: 1,
+          channel: 'SMS',
+          content: '⏰ {{firstName}}, your exclusive appointment slot is waiting! Book today and get a FREE consultation. Call {{practicePhone}} or book online.',
+          contentType: 'offer',
+          dynamicContent: true,
+        },
+        {
+          stepNumber: 3,
+          delayDays: 3,
+          channel: 'EMAIL',
+          subject: 'Last chance: Special offer expires soon',
+          content: 'Hi {{firstName}},\n\nThis is your final reminder about our new patient special:\n\n🎁 FREE initial consultation (Value: $75)\n🎁 Complimentary posture analysis\n🎁 10% off your first treatment\n\nOffer expires in 48 hours!\n\nDon\'t let this opportunity pass: {{bookingLink}}\n\nWe hope to see you soon!\n\n{{practiceName}} Team',
+          contentType: 'offer',
+          dynamicContent: true,
+        },
+      ],
+    },
+    {
+      id: 're_engagement',
+      name: 'Re-engagement Sequence',
+      description: 'Win-back campaign for cold or inactive leads',
+      targetAudience: 'Leads who have gone cold or stopped engaging',
+      averageConversionRate: 0.10,
+      steps: [
+        {
+          stepNumber: 1,
+          delayDays: 0,
+          channel: 'EMAIL',
+          subject: 'We miss you, {{firstName}}!',
+          content: 'Hi {{firstName}},\n\nIt\'s been a while since we heard from you, and we wanted to check in.\n\nLife gets busy, but your health shouldn\'t wait. If you\'re still dealing with:\n• Persistent pain\n• Limited mobility\n• Poor sleep due to discomfort\n\n...we\'re here to help when you\'re ready.\n\nAs a returning visitor, enjoy 15% off your first treatment.\n\nBook when you\'re ready: {{bookingLink}}\n\nBest,\n{{practiceName}} Team',
+          contentType: 'promotional',
+          dynamicContent: true,
+        },
+        {
+          stepNumber: 2,
+          delayDays: 7,
+          channel: 'EMAIL',
+          subject: 'Something new at {{practiceName}}',
+          content: 'Hi {{firstName}},\n\nSince you last visited our website, we\'ve added:\n\n✨ Extended evening hours\n✨ Online booking for your convenience\n✨ New treatment modalities\n\nWe\'d love to show you what\'s new. Your first visit includes a comprehensive assessment at no extra charge.\n\nSee you soon? {{bookingLink}}\n\nBest,\n{{practiceName}} Team',
+          contentType: 'promotional',
+          dynamicContent: true,
+        },
+        {
+          stepNumber: 3,
+          delayDays: 14,
+          channel: 'SMS',
+          content: '{{firstName}}, we haven\'t forgotten about you! Ready to feel better? Reply READY and we\'ll call you to schedule. - {{practiceName}}',
+          contentType: 'reminder',
+          dynamicContent: true,
+        },
+      ],
+    },
+  ];
+}
+
+/**
+ * Get the appropriate nurture sequence based on lead characteristics
+ */
+function selectNurtureSequence(
+  qualityScore: number,
+  urgencyScore: number,
+  conversionProbability: number,
+  daysSinceCreated: number,
+  engagement: NurtureEngagement | null,
+): NurtureSequenceTemplate {
+  const templates = getNurtureSequenceTemplates();
+
+  // Re-engagement for cold leads
+  if (daysSinceCreated > 21 && (engagement?.engagementScore || 0) < 20) {
+    return templates.find(t => t.id === 're_engagement')!;
+  }
+
+  // Decision sequence for hot leads
+  if (qualityScore >= 70 && urgencyScore >= 50) {
+    return templates.find(t => t.id === 'decision')!;
+  }
+
+  // Consideration sequence for warm leads
+  if (qualityScore >= 40 || conversionProbability >= 0.3) {
+    return templates.find(t => t.id === 'consideration')!;
+  }
+
+  // Default to awareness sequence
+  return templates.find(t => t.id === 'awareness')!;
+}
+
+/**
+ * Calculate optimal send time based on lead behavior and general patterns
+ */
+function calculateOptimalTiming(
+  leadData: {
+    lastPageViewed: string | null;
+    websiteVisits: number;
+    timeOnSite: number | null;
+    emailsOpened: number;
+    linksClicked: number;
+  },
+  timezone: string = 'America/Los_Angeles',
+): OptimalTiming {
+  const now = new Date();
+
+  // Default optimal times based on industry research
+  // Best days: Tuesday, Wednesday, Thursday
+  // Best times: 10am, 2pm, 8pm
+
+  const dayOfWeek = now.getDay();
+  let bestDayOfWeek = 'Tuesday';
+  let daysToAdd = 0;
+
+  // Find next Tuesday, Wednesday, or Thursday
+  if (dayOfWeek === 0) daysToAdd = 2; // Sunday -> Tuesday
+  else if (dayOfWeek === 1) daysToAdd = 1; // Monday -> Tuesday
+  else if (dayOfWeek === 2) daysToAdd = 0; // Tuesday -> Tuesday
+  else if (dayOfWeek === 3) daysToAdd = 0; // Wednesday -> Wednesday
+  else if (dayOfWeek === 4) daysToAdd = 0; // Thursday -> Thursday
+  else if (dayOfWeek === 5) daysToAdd = 4; // Friday -> Tuesday
+  else if (dayOfWeek === 6) daysToAdd = 3; // Saturday -> Tuesday
+
+  const weekDays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const targetDay = (dayOfWeek + daysToAdd) % 7;
+  bestDayOfWeek = weekDays[targetDay];
+
+  // Determine best time of day based on engagement patterns
+  let bestTimeOfDay = '10:00 AM';
+  let reasoning = 'Default mid-morning time for professional communications';
+
+  // If lead has shown evening engagement (e.g., visited after 6pm), schedule for evening
+  const timeOnSiteSeconds = leadData.timeOnSite || 0;
+  if (timeOnSiteSeconds > 300 && leadData.emailsOpened > 0) {
+    bestTimeOfDay = '2:00 PM';
+    reasoning = 'Lead shows strong engagement; optimal afternoon timing for follow-up';
+  }
+
+  if (leadData.linksClicked > 2) {
+    bestTimeOfDay = '10:00 AM';
+    reasoning = 'High-engagement lead; morning timing for immediate action';
+  }
+
+  // Calculate next optimal send time
+  const nextOptimalSendTime = new Date(now);
+  nextOptimalSendTime.setDate(nextOptimalSendTime.getDate() + daysToAdd);
+
+  const timeParts = bestTimeOfDay.match(/(\d+):(\d+)\s*(AM|PM)/i);
+  if (timeParts) {
+    let hours = parseInt(timeParts[1]);
+    if (timeParts[3].toUpperCase() === 'PM' && hours !== 12) hours += 12;
+    if (timeParts[3].toUpperCase() === 'AM' && hours === 12) hours = 0;
+    nextOptimalSendTime.setHours(hours, parseInt(timeParts[2]), 0, 0);
+  }
+
+  // If the calculated time is in the past, move to next week
+  if (nextOptimalSendTime <= now) {
+    nextOptimalSendTime.setDate(nextOptimalSendTime.getDate() + 7);
+  }
+
+  return {
+    bestDayOfWeek,
+    bestTimeOfDay,
+    timezone,
+    nextOptimalSendTime,
+    reasoning,
+  };
+}
+
+/**
+ * Process template variables in nurture content
+ */
+function processNurtureContent(
+  content: string,
+  variables: {
+    firstName: string;
+    lastName: string;
+    practiceName: string;
+    practicePhone: string;
+    bookingLink: string;
+  },
+): string {
+  return content
+    .replace(/\{\{firstName\}\}/g, variables.firstName)
+    .replace(/\{\{lastName\}\}/g, variables.lastName)
+    .replace(/\{\{practiceName\}\}/g, variables.practiceName)
+    .replace(/\{\{practicePhone\}\}/g, variables.practicePhone)
+    .replace(/\{\{bookingLink\}\}/g, variables.bookingLink);
+}
+
+/**
+ * Analyze response sentiment and determine urgency
+ */
+function analyzeResponseSentiment(
+  content: string,
+): { sentiment: 'positive' | 'neutral' | 'negative'; urgency: 'high' | 'medium' | 'low' } {
+  const lowerContent = content.toLowerCase();
+
+  // Positive indicators
+  const positiveWords = ['yes', 'interested', 'ready', 'book', 'schedule', 'appointment', 'great', 'thanks', 'perfect', 'love'];
+  const positiveCount = positiveWords.filter(w => lowerContent.includes(w)).length;
+
+  // Negative indicators
+  const negativeWords = ['no', 'not interested', 'unsubscribe', 'stop', 'remove', 'cancel', 'spam'];
+  const negativeCount = negativeWords.filter(w => lowerContent.includes(w)).length;
+
+  // Urgency indicators
+  const urgentWords = ['pain', 'hurt', 'urgent', 'asap', 'soon', 'today', 'tomorrow', 'emergency'];
+  const urgentCount = urgentWords.filter(w => lowerContent.includes(w)).length;
+
+  let sentiment: 'positive' | 'neutral' | 'negative' = 'neutral';
+  if (positiveCount > negativeCount) sentiment = 'positive';
+  else if (negativeCount > positiveCount) sentiment = 'negative';
+
+  let urgency: 'high' | 'medium' | 'low' = 'low';
+  if (urgentCount >= 2 || (positiveCount >= 2 && urgentCount >= 1)) urgency = 'high';
+  else if (positiveCount >= 1 || urgentCount >= 1) urgency = 'medium';
+
+  return { sentiment, urgency };
+}
+
+/**
+ * Calculate engagement score from nurture interactions
+ */
+function calculateEngagementScore(
+  emailsOpened: number,
+  linksClicked: number,
+  replies: number,
+  stepNumber: number,
+): number {
+  // Score out of 100
+  let score = 0;
+
+  // Email opens: up to 30 points
+  score += Math.min(30, emailsOpened * 10);
+
+  // Link clicks: up to 40 points (more valuable than opens)
+  score += Math.min(40, linksClicked * 15);
+
+  // Replies: up to 30 points (most valuable)
+  score += Math.min(30, replies * 20);
+
+  // Bonus for early engagement (engaged quickly in sequence)
+  if (stepNumber <= 2 && score >= 30) {
+    score = Math.min(100, score + 10);
+  }
+
+  return Math.min(100, score);
+}
+
+// ============================================
 // Input Schemas
 // ============================================
 
@@ -487,6 +922,71 @@ const bulkScoreLeadsInputSchema = z.object({
     .array(z.enum(['NEW', 'SCORING', 'HOT', 'WARM', 'COLD', 'NURTURING', 'READY']))
     .optional(),
   maxLeads: z.number().min(1).max(500).default(100),
+});
+
+// ============================================
+// US-357: Lead Nurturing Input Schemas
+// ============================================
+
+const nurtureLeadInputSchema = z.object({
+  leadId: z.string(),
+  sequenceType: z.enum(['awareness', 'consideration', 'decision', 're_engagement']).optional(),
+  customContent: z.string().optional(),
+  immediateStart: z.boolean().default(true),
+});
+
+const advanceNurtureStepInputSchema = z.object({
+  leadId: z.string(),
+  skipToStep: z.number().min(1).optional(),
+  markEngaged: z.boolean().default(false),
+});
+
+const recordNurtureEngagementInputSchema = z.object({
+  leadId: z.string(),
+  engagementType: z.enum(['email_opened', 'link_clicked', 'reply_received', 'sms_reply', 'opt_out']),
+  metadata: z.object({
+    stepNumber: z.number().optional(),
+    linkUrl: z.string().optional(),
+    replyContent: z.string().optional(),
+  }).optional(),
+});
+
+const handleLeadResponseInputSchema = z.object({
+  leadId: z.string(),
+  responseType: z.enum(['email_reply', 'sms_reply', 'call_request', 'booking_attempt', 'unsubscribe']),
+  content: z.string().optional(),
+});
+
+const getOptimalTimingInputSchema = z.object({
+  leadId: z.string(),
+  channel: z.enum(['EMAIL', 'SMS']).default('EMAIL'),
+});
+
+const getNurtureSequencesInputSchema = z.object({
+  leadId: z.string().optional(),
+});
+
+const pauseNurtureInputSchema = z.object({
+  leadId: z.string(),
+  reason: z.string().optional(),
+});
+
+const resumeNurtureInputSchema = z.object({
+  leadId: z.string(),
+  restartSequence: z.boolean().default(false),
+});
+
+const escalateHotLeadInputSchema = z.object({
+  leadId: z.string(),
+  urgency: z.enum(['high', 'medium', 'low']).default('high'),
+  reason: z.string(),
+  preferredStaffId: z.string().optional(),
+});
+
+const getNurtureAnalyticsInputSchema = z.object({
+  sequenceType: z.enum(['awareness', 'consideration', 'decision', 're_engagement']).optional(),
+  startDate: z.date().optional(),
+  endDate: z.date().optional(),
 });
 
 // ============================================
@@ -1679,5 +2179,1000 @@ export const aiGrowthRouter = router({
       analytics.sort((a, b) => b.totalLeads - a.totalLeads);
 
       return { analytics };
+    }),
+
+  // ============================================
+  // US-357: Automated Lead Nurturing
+  // ============================================
+
+  /**
+   * Start or continue nurturing a lead with personalized sequences
+   */
+  nurtureLead: protectedProcedure
+    .input(nurtureLeadInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { leadId, sequenceType, customContent, immediateStart } = input;
+
+      const lead = await ctx.prisma.growthLead.findFirst({
+        where: {
+          id: leadId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!lead) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Lead not found',
+        });
+      }
+
+      // Get organization settings for message personalization
+      const org = await ctx.prisma.organization.findUnique({
+        where: { id: ctx.user.organizationId },
+      });
+
+      const orgSettings = (org?.settings || {}) as Record<string, unknown>;
+      const practiceName = org?.name || 'Our Practice';
+      const practicePhone = (orgSettings.phone as string) || '';
+      const bookingLink = (orgSettings.bookingUrl as string) || `https://booking.${org?.subdomain || 'practice'}.com`;
+
+      // Calculate engagement metrics
+      const engagement: NurtureEngagement = {
+        emailsOpened: lead.emailsOpened,
+        linksClicked: lead.linksClicked,
+        replies: 0, // Would track separately
+        optOuts: 0,
+        lastEngagementDate: lead.lastAnalyzedAt,
+        engagementScore: calculateEngagementScore(
+          lead.emailsOpened,
+          lead.linksClicked,
+          0,
+          lead.nurtureStepNumber || 0,
+        ),
+      };
+
+      // Select appropriate sequence
+      const daysSinceCreated = Math.floor(
+        (Date.now() - lead.createdAt.getTime()) / (1000 * 60 * 60 * 24),
+      );
+
+      const selectedSequence = sequenceType
+        ? getNurtureSequenceTemplates().find(t => t.id === sequenceType)!
+        : selectNurtureSequence(
+            lead.qualityScore,
+            lead.urgencyScore,
+            Number(lead.conversionProbability),
+            daysSinceCreated,
+            engagement,
+          );
+
+      // Calculate optimal timing
+      const optimalTiming = calculateOptimalTiming({
+        lastPageViewed: lead.lastPageViewed,
+        websiteVisits: lead.websiteVisits,
+        timeOnSite: lead.timeOnSite,
+        emailsOpened: lead.emailsOpened,
+        linksClicked: lead.linksClicked,
+      });
+
+      // Determine starting step (continue from where they left off or start fresh)
+      const startStep = lead.nurtureStepNumber && lead.nurtureSequenceId === selectedSequence.id
+        ? Math.min(lead.nurtureStepNumber + 1, selectedSequence.steps.length)
+        : 1;
+
+      const currentStep = selectedSequence.steps.find(s => s.stepNumber === startStep);
+      if (!currentStep) {
+        return {
+          success: true,
+          message: 'Nurture sequence completed',
+          sequenceCompleted: true,
+          lead,
+        };
+      }
+
+      // Process content with personalization
+      const processedContent = processNurtureContent(currentStep.content, {
+        firstName: lead.firstName || 'there',
+        lastName: lead.lastName || '',
+        practiceName,
+        practicePhone,
+        bookingLink,
+      });
+
+      const processedSubject = currentStep.subject
+        ? processNurtureContent(currentStep.subject, {
+            firstName: lead.firstName || 'there',
+            lastName: lead.lastName || '',
+            practiceName,
+            practicePhone,
+            bookingLink,
+          })
+        : undefined;
+
+      // Calculate next send time
+      const nextSendTime = immediateStart && startStep === 1
+        ? new Date()
+        : new Date(Date.now() + currentStep.delayDays * 24 * 60 * 60 * 1000);
+
+      // Update lead with nurture info
+      const updatedLead = await ctx.prisma.growthLead.update({
+        where: { id: leadId },
+        data: {
+          status: 'NURTURING',
+          nurtureSequenceId: selectedSequence.id,
+          nurtureStepNumber: startStep,
+          nurtureStartedAt: lead.nurtureStartedAt || new Date(),
+          nextAction: `Send ${selectedSequence.name} step ${startStep}`,
+          nextActionDate: nextSendTime,
+        },
+      });
+
+      // Log activity
+      await ctx.prisma.growthLeadActivity.create({
+        data: {
+          growthLeadId: leadId,
+          activityType: 'nurture_step_scheduled',
+          description: `${selectedSequence.name} step ${startStep} scheduled for ${nextSendTime.toLocaleDateString()}`,
+          performedBy: ctx.user.id,
+          isAutomated: false,
+          metadata: {
+            sequenceId: selectedSequence.id,
+            sequenceName: selectedSequence.name,
+            stepNumber: startStep,
+            channel: currentStep.channel,
+            scheduledAt: nextSendTime.toISOString(),
+            contentType: currentStep.contentType,
+          } as unknown as Prisma.InputJsonValue,
+        },
+      });
+
+      await auditLog('AI_GROWTH_NURTURE_STARTED', 'GrowthLead', {
+        entityId: leadId,
+        changes: {
+          sequenceId: selectedSequence.id,
+          stepNumber: startStep,
+          channel: currentStep.channel,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        success: true,
+        message: `Lead added to ${selectedSequence.name} nurture sequence`,
+        sequenceCompleted: false,
+        lead: updatedLead,
+        currentStep: {
+          stepNumber: startStep,
+          totalSteps: selectedSequence.steps.length,
+          channel: currentStep.channel,
+          contentType: currentStep.contentType,
+          scheduledAt: nextSendTime,
+          subject: processedSubject,
+          content: processedContent,
+        },
+        sequence: {
+          id: selectedSequence.id,
+          name: selectedSequence.name,
+          description: selectedSequence.description,
+          expectedConversionRate: selectedSequence.averageConversionRate,
+        },
+        optimalTiming,
+        engagement,
+      };
+    }),
+
+  /**
+   * Advance a lead to the next nurture step
+   */
+  advanceNurtureStep: protectedProcedure
+    .input(advanceNurtureStepInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { leadId, skipToStep, markEngaged } = input;
+
+      const lead = await ctx.prisma.growthLead.findFirst({
+        where: {
+          id: leadId,
+          organizationId: ctx.user.organizationId,
+          status: 'NURTURING',
+        },
+      });
+
+      if (!lead) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Lead not found or not in nurturing status',
+        });
+      }
+
+      if (!lead.nurtureSequenceId) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Lead is not in a nurture sequence',
+        });
+      }
+
+      const sequence = getNurtureSequenceTemplates().find(t => t.id === lead.nurtureSequenceId);
+      if (!sequence) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Nurture sequence not found',
+        });
+      }
+
+      const currentStep = lead.nurtureStepNumber || 1;
+      const nextStep = skipToStep || currentStep + 1;
+
+      // Check if sequence is complete
+      if (nextStep > sequence.steps.length) {
+        const updatedLead = await ctx.prisma.growthLead.update({
+          where: { id: leadId },
+          data: {
+            status: lead.qualityScore >= 70 ? 'HOT' : 'WARM',
+            nurtureStepNumber: sequence.steps.length,
+            nextAction: 'Nurture sequence completed - manual follow-up recommended',
+            aiNotes: `Completed ${sequence.name}. Consider direct outreach.`,
+          },
+        });
+
+        await ctx.prisma.growthLeadActivity.create({
+          data: {
+            growthLeadId: leadId,
+            activityType: 'nurture_completed',
+            description: `Completed ${sequence.name} (${sequence.steps.length} steps)`,
+            performedBy: 'AI',
+            isAutomated: true,
+          },
+        });
+
+        return {
+          success: true,
+          sequenceCompleted: true,
+          lead: updatedLead,
+          message: 'Nurture sequence completed',
+        };
+      }
+
+      const nextStepData = sequence.steps.find(s => s.stepNumber === nextStep);
+      const nextSendTime = new Date(Date.now() + (nextStepData?.delayDays || 0) * 24 * 60 * 60 * 1000);
+
+      // Update engagement if marked
+      const engagementUpdate = markEngaged
+        ? {
+            emailsOpened: { increment: 1 },
+            lastAnalyzedAt: new Date(),
+          }
+        : {};
+
+      const updatedLead = await ctx.prisma.growthLead.update({
+        where: { id: leadId },
+        data: {
+          nurtureStepNumber: nextStep,
+          nextActionDate: nextSendTime,
+          nextAction: `Send ${sequence.name} step ${nextStep}`,
+          ...engagementUpdate,
+        },
+      });
+
+      await ctx.prisma.growthLeadActivity.create({
+        data: {
+          growthLeadId: leadId,
+          activityType: 'nurture_step_advanced',
+          description: `Advanced to ${sequence.name} step ${nextStep}`,
+          oldValue: currentStep.toString(),
+          newValue: nextStep.toString(),
+          performedBy: markEngaged ? 'AI' : ctx.user.id,
+          isAutomated: markEngaged,
+        },
+      });
+
+      await auditLog('AI_GROWTH_NURTURE_ADVANCED', 'GrowthLead', {
+        entityId: leadId,
+        changes: { fromStep: currentStep, toStep: nextStep },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        success: true,
+        sequenceCompleted: false,
+        lead: updatedLead,
+        currentStep: nextStep,
+        totalSteps: sequence.steps.length,
+        nextSendTime,
+        message: `Advanced to step ${nextStep} of ${sequence.steps.length}`,
+      };
+    }),
+
+  /**
+   * Record engagement with nurture content (email opens, link clicks, replies)
+   */
+  recordNurtureEngagement: protectedProcedure
+    .input(recordNurtureEngagementInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { leadId, engagementType, metadata } = input;
+
+      const lead = await ctx.prisma.growthLead.findFirst({
+        where: {
+          id: leadId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!lead) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Lead not found',
+        });
+      }
+
+      // Update engagement metrics
+      const updateData: Record<string, unknown> = {
+        lastAnalyzedAt: new Date(),
+      };
+
+      let activityDescription = '';
+      let shouldEscalate = false;
+
+      switch (engagementType) {
+        case 'email_opened':
+          updateData.emailsOpened = { increment: 1 };
+          activityDescription = `Opened email (step ${metadata?.stepNumber || 'unknown'})`;
+          break;
+        case 'link_clicked':
+          updateData.linksClicked = { increment: 1 };
+          activityDescription = `Clicked link: ${metadata?.linkUrl || 'unknown'}`;
+          // Link clicks are high-value engagement
+          if (lead.linksClicked >= 2) {
+            updateData.urgencyScore = Math.min(100, lead.urgencyScore + 15);
+            shouldEscalate = true;
+          }
+          break;
+        case 'reply_received':
+        case 'sms_reply':
+          activityDescription = `Replied to ${engagementType === 'sms_reply' ? 'SMS' : 'email'}`;
+          // Replies are very high-value - escalate immediately
+          shouldEscalate = true;
+          updateData.status = 'HOT';
+          updateData.urgencyScore = Math.min(100, lead.urgencyScore + 25);
+          break;
+        case 'opt_out':
+          activityDescription = 'Opted out of communications';
+          updateData.status = 'LOST';
+          break;
+      }
+
+      const updatedLead = await ctx.prisma.growthLead.update({
+        where: { id: leadId },
+        data: updateData as Prisma.GrowthLeadUpdateInput,
+      });
+
+      // Log activity
+      await ctx.prisma.growthLeadActivity.create({
+        data: {
+          growthLeadId: leadId,
+          activityType: `nurture_${engagementType}`,
+          description: activityDescription,
+          performedBy: 'SYSTEM',
+          isAutomated: true,
+          metadata: metadata as unknown as Prisma.InputJsonValue,
+        },
+      });
+
+      // Calculate new engagement score
+      const engagementScore = calculateEngagementScore(
+        updatedLead.emailsOpened,
+        updatedLead.linksClicked,
+        engagementType === 'reply_received' || engagementType === 'sms_reply' ? 1 : 0,
+        updatedLead.nurtureStepNumber || 1,
+      );
+
+      await auditLog('AI_GROWTH_NURTURE_ENGAGEMENT', 'GrowthLead', {
+        entityId: leadId,
+        changes: { engagementType, engagementScore },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        success: true,
+        lead: updatedLead,
+        engagementScore,
+        shouldEscalate,
+        escalationReason: shouldEscalate
+          ? `High engagement detected: ${engagementType}`
+          : null,
+      };
+    }),
+
+  /**
+   * Handle lead response (email reply, SMS reply, etc.) and determine next action
+   */
+  handleLeadResponse: protectedProcedure
+    .input(handleLeadResponseInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { leadId, responseType, content } = input;
+
+      const lead = await ctx.prisma.growthLead.findFirst({
+        where: {
+          id: leadId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!lead) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Lead not found',
+        });
+      }
+
+      // Handle unsubscribe immediately
+      if (responseType === 'unsubscribe') {
+        const updatedLead = await ctx.prisma.growthLead.update({
+          where: { id: leadId },
+          data: {
+            status: 'LOST',
+            aiNotes: 'Lead opted out of communications',
+            nextAction: 'Respect opt-out - no further outreach',
+          },
+        });
+
+        await ctx.prisma.growthLeadActivity.create({
+          data: {
+            growthLeadId: leadId,
+            activityType: 'lead_opted_out',
+            description: 'Lead unsubscribed from communications',
+            performedBy: 'SYSTEM',
+            isAutomated: true,
+          },
+        });
+
+        return {
+          success: true,
+          lead: updatedLead,
+          response: {
+            leadId,
+            responseType,
+            sentiment: 'negative' as const,
+            urgency: 'low' as const,
+            requiresHumanFollowUp: false,
+            suggestedAction: 'Lead has opted out. Respect their preference.',
+          },
+        };
+      }
+
+      // Analyze sentiment if content provided
+      const { sentiment, urgency } = content
+        ? analyzeResponseSentiment(content)
+        : { sentiment: 'neutral' as const, urgency: 'medium' as const };
+
+      // Determine if human follow-up is needed
+      const requiresHumanFollowUp =
+        urgency === 'high' ||
+        sentiment === 'positive' ||
+        responseType === 'call_request' ||
+        responseType === 'booking_attempt';
+
+      // Generate suggested action
+      let suggestedAction = '';
+      if (responseType === 'booking_attempt') {
+        suggestedAction = 'Lead attempted to book - call immediately to complete booking';
+      } else if (responseType === 'call_request') {
+        suggestedAction = 'Lead requested a call - respond within 1 hour';
+      } else if (sentiment === 'positive' && urgency === 'high') {
+        suggestedAction = 'Hot lead with urgent need - call immediately';
+      } else if (sentiment === 'positive') {
+        suggestedAction = 'Positive response - schedule follow-up call within 24 hours';
+      } else if (sentiment === 'negative') {
+        suggestedAction = 'Address concerns - personalized response needed';
+      } else {
+        suggestedAction = 'Continue nurture sequence with personalized touch';
+      }
+
+      // Update lead status based on response
+      let newStatus: GrowthLeadStatus = lead.status;
+      if (sentiment === 'positive' && urgency === 'high') {
+        newStatus = 'HOT';
+      } else if (sentiment === 'positive' || responseType === 'booking_attempt') {
+        newStatus = 'READY';
+      }
+
+      const updatedLead = await ctx.prisma.growthLead.update({
+        where: { id: leadId },
+        data: {
+          status: newStatus,
+          urgencyScore: urgency === 'high' ? Math.min(100, lead.urgencyScore + 30) : lead.urgencyScore,
+          nextAction: suggestedAction,
+          aiNotes: content ? `Last response (${sentiment}): ${content.substring(0, 200)}...` : lead.aiNotes,
+        },
+      });
+
+      // Log activity
+      await ctx.prisma.growthLeadActivity.create({
+        data: {
+          growthLeadId: leadId,
+          activityType: `response_${responseType}`,
+          description: `Lead responded via ${responseType}: ${sentiment} sentiment, ${urgency} urgency`,
+          performedBy: 'SYSTEM',
+          isAutomated: true,
+          metadata: {
+            content: content?.substring(0, 500),
+            sentiment,
+            urgency,
+            requiresHumanFollowUp,
+          } as unknown as Prisma.InputJsonValue,
+        },
+      });
+
+      await auditLog('AI_GROWTH_RESPONSE_HANDLED', 'GrowthLead', {
+        entityId: leadId,
+        changes: { responseType, sentiment, urgency, newStatus },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      const response: LeadResponse = {
+        leadId,
+        responseType,
+        content,
+        sentiment,
+        urgency,
+        requiresHumanFollowUp,
+        suggestedAction,
+      };
+
+      return {
+        success: true,
+        lead: updatedLead,
+        response,
+      };
+    }),
+
+  /**
+   * Get optimal timing for next outreach
+   */
+  getOptimalTiming: protectedProcedure
+    .input(getOptimalTimingInputSchema)
+    .query(async ({ ctx, input }) => {
+      const lead = await ctx.prisma.growthLead.findFirst({
+        where: {
+          id: input.leadId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!lead) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Lead not found',
+        });
+      }
+
+      const optimalTiming = calculateOptimalTiming({
+        lastPageViewed: lead.lastPageViewed,
+        websiteVisits: lead.websiteVisits,
+        timeOnSite: lead.timeOnSite,
+        emailsOpened: lead.emailsOpened,
+        linksClicked: lead.linksClicked,
+      });
+
+      return {
+        leadId: lead.id,
+        channel: input.channel,
+        ...optimalTiming,
+        leadEngagement: {
+          emailsOpened: lead.emailsOpened,
+          linksClicked: lead.linksClicked,
+          websiteVisits: lead.websiteVisits,
+        },
+      };
+    }),
+
+  /**
+   * Get available nurture sequences with personalized recommendations
+   */
+  getNurtureSequences: protectedProcedure
+    .input(getNurtureSequencesInputSchema)
+    .query(async ({ ctx, input }) => {
+      const templates = getNurtureSequenceTemplates();
+
+      // If leadId provided, recommend the best sequence
+      if (input.leadId) {
+        const lead = await ctx.prisma.growthLead.findFirst({
+          where: {
+            id: input.leadId,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+
+        if (lead) {
+          const daysSinceCreated = Math.floor(
+            (Date.now() - lead.createdAt.getTime()) / (1000 * 60 * 60 * 24),
+          );
+
+          const engagement: NurtureEngagement = {
+            emailsOpened: lead.emailsOpened,
+            linksClicked: lead.linksClicked,
+            replies: 0,
+            optOuts: 0,
+            lastEngagementDate: lead.lastAnalyzedAt,
+            engagementScore: calculateEngagementScore(
+              lead.emailsOpened,
+              lead.linksClicked,
+              0,
+              lead.nurtureStepNumber || 0,
+            ),
+          };
+
+          const recommended = selectNurtureSequence(
+            lead.qualityScore,
+            lead.urgencyScore,
+            Number(lead.conversionProbability),
+            daysSinceCreated,
+            engagement,
+          );
+
+          return {
+            sequences: templates.map(t => ({
+              ...t,
+              isRecommended: t.id === recommended.id,
+              currentStep: t.id === lead.nurtureSequenceId ? lead.nurtureStepNumber : null,
+            })),
+            recommendedSequenceId: recommended.id,
+            leadStatus: lead.status,
+            leadEngagement: engagement,
+          };
+        }
+      }
+
+      return {
+        sequences: templates.map(t => ({
+          ...t,
+          isRecommended: false,
+          currentStep: null,
+        })),
+        recommendedSequenceId: null,
+      };
+    }),
+
+  /**
+   * Pause nurturing for a lead
+   */
+  pauseNurture: protectedProcedure
+    .input(pauseNurtureInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { leadId, reason } = input;
+
+      const lead = await ctx.prisma.growthLead.findFirst({
+        where: {
+          id: leadId,
+          organizationId: ctx.user.organizationId,
+          status: 'NURTURING',
+        },
+      });
+
+      if (!lead) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Lead not found or not in nurturing status',
+        });
+      }
+
+      const updatedLead = await ctx.prisma.growthLead.update({
+        where: { id: leadId },
+        data: {
+          status: 'WARM',
+          nextAction: 'Nurturing paused - manual follow-up may be needed',
+          aiNotes: reason ? `Nurturing paused: ${reason}` : 'Nurturing paused by user',
+        },
+      });
+
+      await ctx.prisma.growthLeadActivity.create({
+        data: {
+          growthLeadId: leadId,
+          activityType: 'nurture_paused',
+          description: reason || 'Nurturing paused',
+          performedBy: ctx.user.id,
+          isAutomated: false,
+        },
+      });
+
+      await auditLog('AI_GROWTH_NURTURE_PAUSED', 'GrowthLead', {
+        entityId: leadId,
+        changes: { reason },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        success: true,
+        lead: updatedLead,
+        message: 'Nurturing paused',
+      };
+    }),
+
+  /**
+   * Resume nurturing for a lead
+   */
+  resumeNurture: protectedProcedure
+    .input(resumeNurtureInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { leadId, restartSequence } = input;
+
+      const lead = await ctx.prisma.growthLead.findFirst({
+        where: {
+          id: leadId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!lead) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Lead not found',
+        });
+      }
+
+      if (!lead.nurtureSequenceId) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Lead was not previously in a nurture sequence',
+        });
+      }
+
+      const sequence = getNurtureSequenceTemplates().find(t => t.id === lead.nurtureSequenceId);
+      if (!sequence) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Previous nurture sequence not found',
+        });
+      }
+
+      const stepNumber = restartSequence ? 1 : (lead.nurtureStepNumber || 1);
+      const nextStep = sequence.steps.find(s => s.stepNumber === stepNumber);
+      const nextSendTime = new Date(Date.now() + (nextStep?.delayDays || 0) * 24 * 60 * 60 * 1000);
+
+      const updatedLead = await ctx.prisma.growthLead.update({
+        where: { id: leadId },
+        data: {
+          status: 'NURTURING',
+          nurtureStepNumber: stepNumber,
+          nurtureStartedAt: restartSequence ? new Date() : lead.nurtureStartedAt,
+          nextActionDate: nextSendTime,
+          nextAction: `Send ${sequence.name} step ${stepNumber}`,
+        },
+      });
+
+      await ctx.prisma.growthLeadActivity.create({
+        data: {
+          growthLeadId: leadId,
+          activityType: 'nurture_resumed',
+          description: restartSequence
+            ? `Restarted ${sequence.name} from beginning`
+            : `Resumed ${sequence.name} at step ${stepNumber}`,
+          performedBy: ctx.user.id,
+          isAutomated: false,
+        },
+      });
+
+      await auditLog('AI_GROWTH_NURTURE_RESUMED', 'GrowthLead', {
+        entityId: leadId,
+        changes: { sequenceId: sequence.id, stepNumber, restartSequence },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        success: true,
+        lead: updatedLead,
+        sequence: {
+          id: sequence.id,
+          name: sequence.name,
+          currentStep: stepNumber,
+          totalSteps: sequence.steps.length,
+        },
+        message: restartSequence
+          ? `Nurturing restarted from step 1`
+          : `Nurturing resumed at step ${stepNumber}`,
+      };
+    }),
+
+  /**
+   * Escalate a hot lead to staff for immediate follow-up
+   */
+  escalateHotLead: protectedProcedure
+    .input(escalateHotLeadInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { leadId, urgency, reason, preferredStaffId } = input;
+
+      const lead = await ctx.prisma.growthLead.findFirst({
+        where: {
+          id: leadId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!lead) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Lead not found',
+        });
+      }
+
+      // Find best staff to assign
+      let assignedUserId = preferredStaffId;
+      let assignmentReason = preferredStaffId ? 'Assigned to preferred staff member' : '';
+
+      if (!assignedUserId) {
+        const bestMatch = await findBestStaffAssignment(
+          ctx.prisma,
+          ctx.user.organizationId,
+          lead.source,
+          lead.qualityScore,
+        );
+
+        if (bestMatch) {
+          assignedUserId = bestMatch.userId;
+          assignmentReason = `Auto-assigned to ${bestMatch.userName} based on availability and performance`;
+        }
+      }
+
+      // Update lead
+      const updatedLead = await ctx.prisma.growthLead.update({
+        where: { id: leadId },
+        data: {
+          status: 'HOT',
+          assignedToUserId: assignedUserId,
+          urgencyScore: urgency === 'high' ? 100 : urgency === 'medium' ? 75 : 50,
+          nextAction: `URGENT: ${reason}`,
+          nextActionDate: new Date(), // Immediate
+          aiNotes: `Escalated (${urgency} urgency): ${reason}`,
+        },
+      });
+
+      // Log activity
+      await ctx.prisma.growthLeadActivity.create({
+        data: {
+          growthLeadId: leadId,
+          activityType: 'lead_escalated',
+          description: `Lead escalated with ${urgency} urgency: ${reason}`,
+          performedBy: ctx.user.id,
+          isAutomated: false,
+          metadata: {
+            urgency,
+            reason,
+            assignedTo: assignedUserId,
+            assignmentReason,
+          } as unknown as Prisma.InputJsonValue,
+        },
+      });
+
+      await auditLog('AI_GROWTH_LEAD_ESCALATED', 'GrowthLead', {
+        entityId: leadId,
+        changes: { urgency, reason, assignedUserId },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        success: true,
+        lead: updatedLead,
+        assignedTo: assignedUserId,
+        assignmentReason,
+        message: `Lead escalated with ${urgency} urgency`,
+      };
+    }),
+
+  /**
+   * Get nurture sequence analytics
+   */
+  getNurtureAnalytics: protectedProcedure
+    .input(getNurtureAnalyticsInputSchema)
+    .query(async ({ ctx, input }) => {
+      const { sequenceType, startDate, endDate } = input;
+
+      const where: Prisma.GrowthLeadWhereInput = {
+        organizationId: ctx.user.organizationId,
+        nurtureSequenceId: { not: null },
+        ...(sequenceType && { nurtureSequenceId: sequenceType }),
+        ...(startDate && { nurtureStartedAt: { gte: startDate } }),
+        ...(endDate && { nurtureStartedAt: { lte: endDate } }),
+      };
+
+      const leads = await ctx.prisma.growthLead.findMany({
+        where,
+        select: {
+          id: true,
+          nurtureSequenceId: true,
+          nurtureStepNumber: true,
+          status: true,
+          qualityScore: true,
+          conversionProbability: true,
+          emailsOpened: true,
+          linksClicked: true,
+          nurtureStartedAt: true,
+          convertedAt: true,
+        },
+      });
+
+      // Aggregate by sequence
+      const sequenceStats: Record<string, {
+        totalLeads: number;
+        completedLeads: number;
+        convertedLeads: number;
+        avgEmailsOpened: number;
+        avgLinksClicked: number;
+        avgStepsCompleted: number;
+        conversionRate: number;
+        dropoffByStep: Record<number, number>;
+      }> = {};
+
+      const templates = getNurtureSequenceTemplates();
+
+      for (const template of templates) {
+        sequenceStats[template.id] = {
+          totalLeads: 0,
+          completedLeads: 0,
+          convertedLeads: 0,
+          avgEmailsOpened: 0,
+          avgLinksClicked: 0,
+          avgStepsCompleted: 0,
+          conversionRate: 0,
+          dropoffByStep: {},
+        };
+      }
+
+      for (const lead of leads) {
+        const seqId = lead.nurtureSequenceId || 'unknown';
+        if (!sequenceStats[seqId]) continue;
+
+        sequenceStats[seqId].totalLeads++;
+        sequenceStats[seqId].avgEmailsOpened += lead.emailsOpened;
+        sequenceStats[seqId].avgLinksClicked += lead.linksClicked;
+        sequenceStats[seqId].avgStepsCompleted += lead.nurtureStepNumber || 0;
+
+        if (lead.status === 'CONVERTED') {
+          sequenceStats[seqId].convertedLeads++;
+        }
+
+        const template = templates.find(t => t.id === seqId);
+        if (template && (lead.nurtureStepNumber || 0) >= template.steps.length) {
+          sequenceStats[seqId].completedLeads++;
+        }
+
+        // Track dropoff
+        const step = lead.nurtureStepNumber || 1;
+        sequenceStats[seqId].dropoffByStep[step] =
+          (sequenceStats[seqId].dropoffByStep[step] || 0) + 1;
+      }
+
+      // Calculate averages
+      for (const seqId of Object.keys(sequenceStats)) {
+        const stats = sequenceStats[seqId];
+        if (stats.totalLeads > 0) {
+          stats.avgEmailsOpened = stats.avgEmailsOpened / stats.totalLeads;
+          stats.avgLinksClicked = stats.avgLinksClicked / stats.totalLeads;
+          stats.avgStepsCompleted = stats.avgStepsCompleted / stats.totalLeads;
+          stats.conversionRate = stats.convertedLeads / stats.totalLeads;
+        }
+      }
+
+      return {
+        sequences: Object.entries(sequenceStats).map(([id, stats]) => {
+          const template = templates.find(t => t.id === id);
+          return {
+            sequenceId: id,
+            sequenceName: template?.name || id,
+            ...stats,
+            benchmarkConversionRate: template?.averageConversionRate || 0,
+            performanceVsBenchmark: stats.conversionRate - (template?.averageConversionRate || 0),
+          };
+        }),
+        totalLeadsNurtured: leads.length,
+        overallConversionRate: leads.filter(l => l.status === 'CONVERTED').length / (leads.length || 1),
+        dateRange: { startDate, endDate },
+      };
     }),
 });
