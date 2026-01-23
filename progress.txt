@@ -34,3 +34,65 @@
 - The existing Lead, LeadActivity, ReviewRequest, and Campaign models from Epic 18 (Marketing) remain unchanged
 - The new GrowthLead and GrowthCampaign models are specifically for AI-driven automation with enhanced scoring and behavioral tracking
 - All models follow existing patterns with proper organization scoping and indexes
+--- Iteration 1 completed at 2026-01-22 16:41:18 ---
+Story: US-355 - AI practice growth schema
+
+### US-356: Intelligent lead management
+**Status:** COMPLETED
+**Date:** 2026-01-22
+
+**Changes made:**
+1. Created new tRPC router `app/src/server/routers/aiGrowth.ts` with comprehensive lead management:
+   - **aiGrowth.scoreLead** - Calculate lead quality score (0-100), conversion probability, and urgency score
+   - **aiGrowth.captureLead** - Auto-capture leads from website, phone calls, referrals, walk-ins, and ads
+   - **aiGrowth.listLeads** - List leads with filtering by status, quality score, source, and assignment
+   - **aiGrowth.getPriorityRankings** - Get priority-ranked leads for follow-up
+   - **aiGrowth.getConversionPrediction** - Detailed conversion prediction with factors and recommended actions
+   - **aiGrowth.autoAssignLead** - Auto-assign leads to staff based on availability and conversion rate
+   - **aiGrowth.triggerNurturing** - Start nurturing sequences (awareness, consideration, decision, re-engagement)
+   - **aiGrowth.trackConversion** - Track lead conversion to patient with value tracking
+   - **aiGrowth.updateLeadStatus** - Manually update lead status
+   - **aiGrowth.bulkScoreLeads** - Bulk score multiple leads at once
+   - **aiGrowth.getLeadActivity** - Get lead activity history
+   - **aiGrowth.getSourceAnalytics** - Analytics by lead source
+
+2. Lead scoring algorithm includes:
+   - Website visits (0-20 points)
+   - Page views (0-15 points)
+   - Time on site (0-15 points)
+   - Form interaction (0-15 points)
+   - Email engagement (0-15 points)
+   - Source quality (0-20 points) - referrals score highest
+
+3. Intent signal detection:
+   - Multiple site visits
+   - Extensive page browsing
+   - Long session times
+   - Form abandonment (high intent with friction)
+   - Pricing/insurance/scheduling page views
+
+4. Auto-assignment algorithm:
+   - Considers current lead count (lower = better)
+   - Considers conversion rate (higher = better)
+   - High-value leads go to high performers
+
+5. Added audit actions to `app/src/lib/audit.ts`:
+   - AI_GROWTH_LEAD_CAPTURED, AI_GROWTH_LEAD_SCORED, AI_GROWTH_LEAD_ASSIGNED
+   - AI_GROWTH_LEAD_STATUS_UPDATED, AI_GROWTH_LEAD_CONVERTED
+   - AI_GROWTH_NURTURE_STARTED, AI_GROWTH_BULK_SCORE
+
+6. Registered router in `app/src/server/routers/index.ts`
+
+**Acceptance Criteria Met:**
+- ✅ aiGrowth.scoreLead - Calculate lead quality score
+- ✅ Auto-capture leads from website, calls, referrals
+- ✅ Lead source tracking
+- ✅ Conversion probability prediction
+- ✅ Priority ranking for follow-up
+- ✅ Auto-assign to appropriate staff
+- ✅ Lead nurturing sequence trigger
+- ✅ Conversion tracking
+
+--- Iteration 2 completed at 2026-01-22 ---
+Story: US-356 - Intelligent lead management
+

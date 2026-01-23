@@ -105,6 +105,8 @@ import { aiCareRouter } from './aiCare';
 import { aiRevenueRouter } from './aiRevenue';
 // AI Quality Assurance Agent (Epic 36)
 import { aiQARouter } from './aiQA';
+// AI Practice Growth Agent (Epic 37)
+import { aiGrowthRouter } from './aiGrowth';
 
 export const appRouter = router({
   auth: authRouter,
@@ -214,6 +216,8 @@ export const appRouter = router({
   aiRevenue: aiRevenueRouter,
   // AI Quality Assurance Agent (Epic 36)
   aiQA: aiQARouter,
+  // AI Practice Growth Agent (Epic 37)
+  aiGrowth: aiGrowthRouter,
 });
 
 
