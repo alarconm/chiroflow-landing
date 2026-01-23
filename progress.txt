@@ -709,3 +709,78 @@ Date: 2026-01-22
 --- Iteration 7 completed at 2026-01-22 ---
 Story: US-385 - Trend detection and alerts
 
+--- Iteration 7 completed at 2026-01-22 21:58:01 ---
+Story: US-385 - Trend detection and alerts
+
+## US-386: Predictive analytics dashboard - COMPLETED
+
+Date: 2026-01-22
+
+### What was done:
+1. Created `app/src/components/predictive-analytics/` directory with 10 components:
+   - `PredictiveAnalyticsDashboard.tsx` - Main dashboard with 8 tabs (overview, churn, demand, revenue, no-shows, trends, accuracy, scenarios)
+   - `DashboardSummaryCards.tsx` - Top-level summary cards showing at-risk patients, forecast, revenue projection, practice health score
+   - `ChurnRiskPatientList.tsx` - Lists at-risk patients with risk level filtering, risk factors, suggested actions, contact buttons
+   - `DemandForecastVisualization.tsx` - Daily/weekly/monthly forecast views with staffing recommendations and capacity insights
+   - `RevenueProjectionCharts.tsx` - Monthly revenue forecast with confidence intervals, AR recovery insights, goal attainment probability
+   - `NoShowRiskCalendar.tsx` - 14-day calendar view with risk overlay, at-risk appointments list, overbooking recommendations
+   - `TrendIndicators.tsx` - Practice health score display, key metrics grid with trend arrows, anomaly detection, recommended actions
+   - `PredictionAccuracyMetrics.tsx` - Accuracy gauges for churn, no-show, demand, revenue predictions, confusion matrix, model info
+   - `ActionableInsightCards.tsx` - Priority-sorted insight cards (high/medium/low) from all prediction sources
+   - `ScenarioComparisonTool.tsx` - Goal setting with probability calculation, revenue scenarios, what-if analysis
+
+2. Created `app/src/components/predictive-analytics/index.ts` - Barrel export file
+
+3. Created `app/src/app/(dashboard)/predictive-analytics/page.tsx` - Route page for the dashboard
+
+4. UI Components and patterns used:
+   - shadcn/ui components (Card, Badge, Button, Tabs, Select, Progress, Skeleton)
+   - Brand colors (#053e67 primary, #c90000 accent)
+   - Lucide React icons
+   - date-fns for date formatting
+   - tRPC queries with useQuery hooks
+
+5. Integration with existing tRPC API:
+   - Churn: getChurnSummary, getAtRiskPatients, getPredictionAccuracy
+   - Demand: getDemandSummary, getDailyForecasts, getCapacityInsights, getForecastAccuracySummary
+   - No-Show: getNoShowSummary, getAtRiskAppointments, getOverbookingSuggestions, getConfirmationStrategies
+   - Revenue: getRevenueSummary, getMonthlyRevenueForecasts, getRevenueScenarios, getGoalAttainment
+   - Trends: getTrendSummary, getRevenueTrends, getPatientVolumeTrends, getAnomalies, getTrendRecommendations
+   - Outcomes: getOutcomeSummary, getOutcomePredictionAccuracy
+   - Accuracy: getPredictionAccuracy, getNoShowPredictionAccuracy, getForecastAccuracySummary, getRevenueForecastAccuracySummary
+
+### Files created:
+- app/src/components/predictive-analytics/PredictiveAnalyticsDashboard.tsx
+- app/src/components/predictive-analytics/DashboardSummaryCards.tsx
+- app/src/components/predictive-analytics/ChurnRiskPatientList.tsx
+- app/src/components/predictive-analytics/DemandForecastVisualization.tsx
+- app/src/components/predictive-analytics/RevenueProjectionCharts.tsx
+- app/src/components/predictive-analytics/NoShowRiskCalendar.tsx
+- app/src/components/predictive-analytics/TrendIndicators.tsx
+- app/src/components/predictive-analytics/PredictionAccuracyMetrics.tsx
+- app/src/components/predictive-analytics/ActionableInsightCards.tsx
+- app/src/components/predictive-analytics/ScenarioComparisonTool.tsx
+- app/src/components/predictive-analytics/index.ts
+- app/src/app/(dashboard)/predictive-analytics/page.tsx
+
+### Acceptance Criteria Met:
+- ✅ Churn risk patient list (shows at-risk patients with filters, risk factors, contact actions)
+- ✅ Demand forecast visualization (daily/weekly/monthly views with charts)
+- ✅ Revenue projection charts (monthly forecasts with confidence intervals)
+- ✅ No-show risk calendar overlay (14-day calendar with risk coloring)
+- ✅ Trend indicators (up/down/stable states with metrics grid)
+- ✅ Prediction accuracy metrics (accuracy gauges, confusion matrix, by risk level)
+- ✅ Actionable insight cards (priority-sorted recommendations)
+- ✅ Scenario comparison tool (what-if analysis for goals, scenarios, interventions)
+
+### Notes:
+- Uses all tRPC procedures created in US-379 through US-385
+- Dashboard accessible at /predictive-analytics route
+- Responsive design with mobile-friendly layouts
+- Tab-based navigation for different analytics views
+- Real-time data from tRPC queries with appropriate loading states
+- Fixed TrendDirection enum comparisons to use uppercase values (INCREASING, DECREASING, STABLE)
+- Simplified churn accuracy display to match actual API response structure
+--- Iteration 8 completed at 2026-01-22 ---
+Story: US-386 - Predictive analytics dashboard
+
