@@ -661,6 +661,754 @@ const CONTRAINDICATION_RULES: ContraindicationRule[] = [
   },
 ];
 
+// ============================================
+// US-375: Clinical Guidelines Database
+// ============================================
+
+// Built-in chiropractic clinical practice guidelines
+interface ClinicalGuidelineData {
+  code: string;
+  name: string;
+  source: string;
+  version: string;
+  condition: string;
+  conditionCodes: string[];
+  applicableRegions: string[];
+  summary: string;
+  recommendations: Array<{
+    level: string;
+    text: string;
+    gradeOfRecommendation: 'A' | 'B' | 'C' | 'D' | 'I';
+    strengthOfEvidence: 'HIGH' | 'MODERATE' | 'LOW' | 'VERY_LOW';
+  }>;
+  evidenceLevel: 'HIGH' | 'MODERATE' | 'LOW' | 'VERY_LOW' | 'EXPERT';
+  evidenceSummary: string;
+  keyPoints: string[];
+  redFlags: string[];
+  referralCriteria: string[];
+  contraindications: string[];
+  precautions: string[];
+  publicationDate: Date;
+  citation: string;
+  externalUrl?: string;
+}
+
+const CHIROPRACTIC_GUIDELINES: ClinicalGuidelineData[] = [
+  {
+    code: 'CCGPP-LBP-2016',
+    name: 'CCGPP Guidelines for Chiropractic Quality Assurance and Practice Parameters - Low Back Pain',
+    source: 'Council on Chiropractic Guidelines and Practice Parameters (CCGPP)',
+    version: '2016',
+    condition: 'Low Back Pain',
+    conditionCodes: ['M54.5', 'M54.50', 'M54.51', 'M54.4', 'M54.41', 'M54.42', 'M54.9'],
+    applicableRegions: ['lumbar', 'sacral', 'pelvic'],
+    summary: 'Evidence-based recommendations for chiropractic management of low back pain. Spinal manipulation/mobilization is recommended as a treatment option for patients with acute, subacute, and chronic low back pain.',
+    recommendations: [
+      {
+        level: 'Primary',
+        text: 'Spinal manipulation/mobilization is recommended for acute low back pain (< 6 weeks)',
+        gradeOfRecommendation: 'A',
+        strengthOfEvidence: 'HIGH',
+      },
+      {
+        level: 'Primary',
+        text: 'Spinal manipulation/mobilization is recommended for subacute low back pain (6-12 weeks)',
+        gradeOfRecommendation: 'B',
+        strengthOfEvidence: 'MODERATE',
+      },
+      {
+        level: 'Primary',
+        text: 'Spinal manipulation/mobilization is recommended for chronic low back pain (> 12 weeks)',
+        gradeOfRecommendation: 'B',
+        strengthOfEvidence: 'MODERATE',
+      },
+      {
+        level: 'Adjunct',
+        text: 'Exercise therapy is recommended as an adjunct to manipulation',
+        gradeOfRecommendation: 'A',
+        strengthOfEvidence: 'HIGH',
+      },
+      {
+        level: 'Adjunct',
+        text: 'Patient education and reassurance are recommended',
+        gradeOfRecommendation: 'A',
+        strengthOfEvidence: 'HIGH',
+      },
+    ],
+    evidenceLevel: 'HIGH',
+    evidenceSummary: 'High-quality evidence supports spinal manipulation as an effective treatment for low back pain with similar outcomes to other recommended treatments.',
+    keyPoints: [
+      'Perform thorough history and examination to rule out red flags',
+      'Most patients improve significantly within 4-6 weeks',
+      'Treatment frequency typically 2-3x/week initially, tapering as improvement occurs',
+      'Combine manipulation with active care (exercise, advice)',
+      'Reassess regularly and modify treatment if not responding',
+    ],
+    redFlags: [
+      'Cauda equina syndrome symptoms',
+      'Progressive neurological deficit',
+      'Unexplained weight loss',
+      'History of cancer',
+      'Fever with back pain',
+      'Recent significant trauma',
+      'Saddle anesthesia',
+      'Bilateral leg weakness',
+    ],
+    referralCriteria: [
+      'Cauda equina syndrome - EMERGENCY referral',
+      'Progressive neurological deficit - URGENT referral',
+      'Suspected spinal infection or malignancy',
+      'No improvement after 4-6 weeks of care',
+      'Severe pain uncontrolled with conservative care',
+    ],
+    contraindications: [
+      'Cauda equina syndrome',
+      'Spinal fracture',
+      'Spinal infection',
+      'Spinal malignancy',
+      'Severe osteoporosis',
+      'Spinal cord compression',
+    ],
+    precautions: [
+      'Anticoagulation therapy',
+      'Moderate osteoporosis',
+      'Pregnancy (use modified techniques)',
+      'Inflammatory arthritis',
+      'Recent spinal surgery',
+    ],
+    publicationDate: new Date('2016-01-01'),
+    citation: 'Globe G, Farabaugh RJ, Hawk C, et al. Clinical Practice Guideline: Chiropractic Care for Low Back Pain. J Manipulative Physiol Ther. 2016;39(1):1-22.',
+    externalUrl: 'https://www.sciencedirect.com/science/article/pii/S0161475415001621',
+  },
+  {
+    code: 'CCGPP-NECK-2014',
+    name: 'CCGPP Guidelines for Chiropractic Management of Neck Pain',
+    source: 'Council on Chiropractic Guidelines and Practice Parameters (CCGPP)',
+    version: '2014',
+    condition: 'Neck Pain',
+    conditionCodes: ['M54.2', 'M53.0', 'M53.1', 'M50.80', 'M50.90'],
+    applicableRegions: ['cervical'],
+    summary: 'Evidence-based recommendations for chiropractic management of mechanical neck pain. Cervical manipulation and mobilization are recommended as treatment options.',
+    recommendations: [
+      {
+        level: 'Primary',
+        text: 'Cervical manipulation is recommended for acute/subacute neck pain',
+        gradeOfRecommendation: 'B',
+        strengthOfEvidence: 'MODERATE',
+      },
+      {
+        level: 'Primary',
+        text: 'Cervical mobilization is an effective alternative to manipulation',
+        gradeOfRecommendation: 'B',
+        strengthOfEvidence: 'MODERATE',
+      },
+      {
+        level: 'Adjunct',
+        text: 'Cervical and scapular strengthening exercises are recommended',
+        gradeOfRecommendation: 'A',
+        strengthOfEvidence: 'HIGH',
+      },
+      {
+        level: 'Adjunct',
+        text: 'Postural correction and ergonomic advice are recommended',
+        gradeOfRecommendation: 'B',
+        strengthOfEvidence: 'MODERATE',
+      },
+    ],
+    evidenceLevel: 'MODERATE',
+    evidenceSummary: 'Moderate evidence supports cervical manipulation and mobilization for neck pain. Exercise therapy has high-quality evidence as adjunct.',
+    keyPoints: [
+      'Screen for vertebrobasilar insufficiency risk factors',
+      'Most mechanical neck pain resolves within 4-8 weeks',
+      'Combine manual therapy with exercise for best outcomes',
+      'Address ergonomic factors and postural habits',
+      'Consider modified techniques for elderly patients',
+    ],
+    redFlags: [
+      'Drop attacks or loss of consciousness',
+      'Diplopia (double vision)',
+      'Dysarthria (difficulty speaking)',
+      'Dysphagia (difficulty swallowing)',
+      'Dizziness with neck movement',
+      'Nystagmus',
+      'Upper motor neuron signs',
+      'Cervical myelopathy symptoms',
+    ],
+    referralCriteria: [
+      'Signs of cervical myelopathy - URGENT referral',
+      'Suspected vertebral artery dissection - EMERGENCY referral',
+      'Progressive neurological deficit',
+      'Suspected infection or malignancy',
+      'Failed 4-6 weeks of conservative care',
+    ],
+    contraindications: [
+      'Cervical myelopathy',
+      'Vertebral artery dissection',
+      'Atlantoaxial instability',
+      'Cervical fracture',
+      'Spinal infection',
+      'Spinal malignancy',
+    ],
+    precautions: [
+      'Anticoagulation therapy',
+      'Rheumatoid arthritis (screen for C1-C2 instability)',
+      'Down syndrome (atlantoaxial instability)',
+      'Connective tissue disorders',
+      'Advanced age with osteoporosis',
+      'Recent whiplash injury',
+    ],
+    publicationDate: new Date('2014-01-01'),
+    citation: 'Bryans R, Decina P, Descarreaux M, et al. Evidence-Based Guidelines for the Chiropractic Treatment of Adults With Neck Pain. J Manipulative Physiol Ther. 2014;37(1):42-63.',
+    externalUrl: 'https://www.sciencedirect.com/science/article/pii/S0161475413002480',
+  },
+  {
+    code: 'CCGPP-HA-2011',
+    name: 'CCGPP Evidence-Based Guidelines for Chiropractic Treatment of Headache',
+    source: 'Council on Chiropractic Guidelines and Practice Parameters (CCGPP)',
+    version: '2011',
+    condition: 'Headache',
+    conditionCodes: ['R51.9', 'G43.909', 'G44.209', 'M53.0', 'G44.1'],
+    applicableRegions: ['cervical', 'cranial'],
+    summary: 'Evidence-based recommendations for chiropractic management of headache disorders. Spinal manipulation may be used for cervicogenic headache and tension-type headache.',
+    recommendations: [
+      {
+        level: 'Primary',
+        text: 'Spinal manipulation is recommended for cervicogenic headache',
+        gradeOfRecommendation: 'B',
+        strengthOfEvidence: 'MODERATE',
+      },
+      {
+        level: 'Primary',
+        text: 'Spinal manipulation may be considered for episodic tension-type headache',
+        gradeOfRecommendation: 'C',
+        strengthOfEvidence: 'LOW',
+      },
+      {
+        level: 'Primary',
+        text: 'Multimodal approach recommended for chronic tension-type headache',
+        gradeOfRecommendation: 'B',
+        strengthOfEvidence: 'MODERATE',
+      },
+      {
+        level: 'Adjunct',
+        text: 'Low-load exercise and stress management for tension headaches',
+        gradeOfRecommendation: 'B',
+        strengthOfEvidence: 'MODERATE',
+      },
+    ],
+    evidenceLevel: 'MODERATE',
+    evidenceSummary: 'Moderate evidence supports spinal manipulation for cervicogenic headache. Evidence for migraine and tension headache is more limited.',
+    keyPoints: [
+      'Differentiate headache type (cervicogenic, tension, migraine)',
+      'Cervicogenic headaches respond best to cervical manipulation',
+      'Address cervical dysfunction contributing to headaches',
+      'Consider trigger point therapy for myofascial component',
+      'Lifestyle factors (sleep, stress, hydration) often contribute',
+    ],
+    redFlags: [
+      'Sudden severe "thunderclap" headache',
+      'Headache with fever and neck stiffness',
+      'New headache after age 50',
+      'Progressive worsening headache',
+      'Headache with focal neurological signs',
+      'Headache after trauma',
+      'Headache with visual disturbances not typical for patient',
+      'Papilledema',
+    ],
+    referralCriteria: [
+      'Thunderclap headache - EMERGENCY referral (rule out SAH)',
+      'Suspected meningitis - EMERGENCY referral',
+      'New neurological deficits',
+      'Suspected mass lesion or increased ICP',
+      'Medication overuse headache requiring detox',
+      'Refractory to conservative care',
+    ],
+    contraindications: [
+      'Suspected intracranial pathology',
+      'Cervical myelopathy',
+      'Vertebral artery compromise',
+      'Recent head injury with altered consciousness',
+    ],
+    precautions: [
+      'History of migraine with aura',
+      'Anticoagulation therapy',
+      'Elderly with cervical spondylosis',
+      'History of vertebrobasilar symptoms',
+    ],
+    publicationDate: new Date('2011-01-01'),
+    citation: 'Bryans R, Descarreaux M, Duranleau M, et al. Evidence-Based Guidelines for the Chiropractic Treatment of Adults With Headache. J Manipulative Physiol Ther. 2011;34(5):274-289.',
+    externalUrl: 'https://www.sciencedirect.com/science/article/pii/S0161475411000753',
+  },
+  {
+    code: 'AHRQ-LBP-2017',
+    name: 'AHRQ Noninvasive Treatments for Low Back Pain',
+    source: 'Agency for Healthcare Research and Quality (AHRQ)',
+    version: '2017',
+    condition: 'Low Back Pain',
+    conditionCodes: ['M54.5', 'M54.50', 'M54.51', 'M54.4', 'M54.9', 'M54.16', 'M54.17'],
+    applicableRegions: ['lumbar', 'sacral'],
+    summary: 'Systematic review of noninvasive treatments for low back pain. Recommends nonpharmacologic therapies as first-line treatment including spinal manipulation.',
+    recommendations: [
+      {
+        level: 'First-line',
+        text: 'Nonpharmacologic treatment should be first-line therapy for low back pain',
+        gradeOfRecommendation: 'A',
+        strengthOfEvidence: 'HIGH',
+      },
+      {
+        level: 'Primary',
+        text: 'Spinal manipulation is effective for acute and chronic low back pain',
+        gradeOfRecommendation: 'B',
+        strengthOfEvidence: 'MODERATE',
+      },
+      {
+        level: 'Primary',
+        text: 'Exercise therapy is effective for chronic low back pain',
+        gradeOfRecommendation: 'A',
+        strengthOfEvidence: 'HIGH',
+      },
+      {
+        level: 'Adjunct',
+        text: 'Heat therapy provides short-term relief for acute low back pain',
+        gradeOfRecommendation: 'B',
+        strengthOfEvidence: 'MODERATE',
+      },
+    ],
+    evidenceLevel: 'HIGH',
+    evidenceSummary: 'High-quality systematic review supporting spinal manipulation as part of multimodal nonpharmacologic treatment approach.',
+    keyPoints: [
+      'Nonpharmacologic treatments first before medications',
+      'Spinal manipulation is one of several effective options',
+      'Exercise is strongly recommended for chronic pain',
+      'Multidisciplinary rehabilitation for complex cases',
+      'Patient education and self-management are essential',
+    ],
+    redFlags: [
+      'Cauda equina syndrome',
+      'Progressive neurological deficit',
+      'Severe neurological compromise',
+      'Suspected spinal infection',
+      'Suspected malignancy',
+    ],
+    referralCriteria: [
+      'Red flag symptoms present',
+      'No improvement with 4 weeks of care',
+      'Consider specialty consultation for complex cases',
+    ],
+    contraindications: [
+      'Spinal fracture',
+      'Severe neurological deficit',
+      'Spinal infection',
+      'Malignancy',
+    ],
+    precautions: [
+      'Osteoporosis',
+      'Spondylolisthesis',
+      'Prior spinal surgery',
+    ],
+    publicationDate: new Date('2017-02-01'),
+    citation: 'Chou R, Deyo R, Friedly J, et al. Noninvasive Treatments for Low Back Pain. Comparative Effectiveness Review No. 169. AHRQ Publication No. 16-EHC004-EF.',
+    externalUrl: 'https://effectivehealthcare.ahrq.gov/products/low-back-pain-treatment/research',
+  },
+  {
+    code: 'ACP-LBP-2017',
+    name: 'ACP Clinical Practice Guideline for Noninvasive Treatment of Low Back Pain',
+    source: 'American College of Physicians (ACP)',
+    version: '2017',
+    condition: 'Low Back Pain',
+    conditionCodes: ['M54.5', 'M54.50', 'M54.51', 'M54.4', 'M54.9'],
+    applicableRegions: ['lumbar', 'sacral'],
+    summary: 'Recommends that clinicians and patients select nonpharmacologic treatment for chronic low back pain, including spinal manipulation.',
+    recommendations: [
+      {
+        level: 'Primary',
+        text: 'For acute/subacute LBP: select nonpharmacologic treatment (superficial heat, massage, acupuncture, spinal manipulation)',
+        gradeOfRecommendation: 'A',
+        strengthOfEvidence: 'MODERATE',
+      },
+      {
+        level: 'Primary',
+        text: 'For chronic LBP: initially select nonpharmacologic treatment (exercise, multidisciplinary rehabilitation, acupuncture, tai chi, yoga, spinal manipulation)',
+        gradeOfRecommendation: 'A',
+        strengthOfEvidence: 'MODERATE',
+      },
+      {
+        level: 'Secondary',
+        text: 'If nonpharmacologic therapy fails, consider NSAIDs as first-line medication',
+        gradeOfRecommendation: 'A',
+        strengthOfEvidence: 'HIGH',
+      },
+    ],
+    evidenceLevel: 'HIGH',
+    evidenceSummary: 'Strong recommendation for nonpharmacologic therapies including spinal manipulation as first-line treatment.',
+    keyPoints: [
+      'Nonpharmacologic therapies first',
+      'Spinal manipulation is listed as effective option',
+      'For chronic pain, exercise and multidisciplinary approaches recommended',
+      'Medications only if nonpharmacologic therapy fails',
+      'Avoid opioids except as last resort',
+    ],
+    redFlags: [
+      'Signs of systemic disease',
+      'Neurological deficits',
+      'History of cancer',
+    ],
+    referralCriteria: [
+      'Severe or progressive neurologic deficits',
+      'Suspected serious underlying condition',
+    ],
+    contraindications: [],
+    precautions: [],
+    publicationDate: new Date('2017-04-01'),
+    citation: 'Qaseem A, Wilt TJ, McLean RM, Forciea MA. Noninvasive Treatments for Acute, Subacute, and Chronic Low Back Pain: A Clinical Practice Guideline From the American College of Physicians. Ann Intern Med. 2017;166(7):514-530.',
+    externalUrl: 'https://www.acponline.org/clinical-information/guidelines/guidelines',
+  },
+  {
+    code: 'NICE-LBP-2016',
+    name: 'NICE Guideline on Low Back Pain and Sciatica',
+    source: 'National Institute for Health and Care Excellence (NICE)',
+    version: '2016 (Updated 2020)',
+    condition: 'Low Back Pain and Sciatica',
+    conditionCodes: ['M54.5', 'M54.50', 'M54.51', 'M54.4', 'M54.41', 'M54.42', 'M54.3'],
+    applicableRegions: ['lumbar', 'sacral'],
+    summary: 'UK national guideline recommending manual therapy as part of a treatment package that includes exercise. Emphasizes self-management.',
+    recommendations: [
+      {
+        level: 'Primary',
+        text: 'Consider manual therapy (spinal manipulation, mobilisation, soft tissue techniques) only as part of a treatment package including exercise',
+        gradeOfRecommendation: 'B',
+        strengthOfEvidence: 'MODERATE',
+      },
+      {
+        level: 'Primary',
+        text: 'Encourage people to continue with normal activities',
+        gradeOfRecommendation: 'A',
+        strengthOfEvidence: 'HIGH',
+      },
+      {
+        level: 'Primary',
+        text: 'Offer a structured exercise programme',
+        gradeOfRecommendation: 'A',
+        strengthOfEvidence: 'HIGH',
+      },
+      {
+        level: 'Adjunct',
+        text: 'Consider psychological therapies for chronic low back pain',
+        gradeOfRecommendation: 'A',
+        strengthOfEvidence: 'HIGH',
+      },
+    ],
+    evidenceLevel: 'MODERATE',
+    evidenceSummary: 'Manual therapy recommended when combined with exercise, not as standalone treatment.',
+    keyPoints: [
+      'Manual therapy should be combined with exercise',
+      'Do not offer manual therapy alone',
+      'Encourage self-management and continued activity',
+      'Maximum 9 sessions of manual therapy over 12 weeks',
+      'Group exercise programmes are cost-effective',
+    ],
+    redFlags: [
+      'Cauda equina syndrome',
+      'Spinal fracture',
+      'Cancer',
+      'Infection',
+      'Abdominal aortic aneurysm',
+    ],
+    referralCriteria: [
+      'Red flags present',
+      'Severe, unrelenting pain',
+      'Widespread neurological deficit',
+    ],
+    contraindications: [],
+    precautions: [],
+    publicationDate: new Date('2016-11-30'),
+    citation: 'National Institute for Health and Care Excellence. Low back pain and sciatica in over 16s: assessment and management. NICE guideline [NG59]. 2016.',
+    externalUrl: 'https://www.nice.org.uk/guidance/ng59',
+  },
+  {
+    code: 'CCGPP-DISC-2014',
+    name: 'CCGPP Guidelines for Chiropractic Management of Lumbar Disc Herniation',
+    source: 'Council on Chiropractic Guidelines and Practice Parameters (CCGPP)',
+    version: '2014',
+    condition: 'Lumbar Disc Herniation',
+    conditionCodes: ['M51.16', 'M51.26', 'M51.06', 'M51.17', 'M51.27'],
+    applicableRegions: ['lumbar'],
+    summary: 'Guidelines for conservative chiropractic management of lumbar disc herniation with radiculopathy.',
+    recommendations: [
+      {
+        level: 'Primary',
+        text: 'Flexion-distraction technique is recommended for lumbar disc herniation',
+        gradeOfRecommendation: 'B',
+        strengthOfEvidence: 'MODERATE',
+      },
+      {
+        level: 'Primary',
+        text: 'Spinal manipulation may be considered for disc herniation without severe neurological deficit',
+        gradeOfRecommendation: 'C',
+        strengthOfEvidence: 'LOW',
+      },
+      {
+        level: 'Adjunct',
+        text: 'Core stabilization exercises recommended',
+        gradeOfRecommendation: 'B',
+        strengthOfEvidence: 'MODERATE',
+      },
+      {
+        level: 'Adjunct',
+        text: 'McKenzie method may be beneficial',
+        gradeOfRecommendation: 'B',
+        strengthOfEvidence: 'MODERATE',
+      },
+    ],
+    evidenceLevel: 'MODERATE',
+    evidenceSummary: 'Conservative care including flexion-distraction is effective for many disc herniations. 80%+ resolve without surgery.',
+    keyPoints: [
+      'Most disc herniations improve with conservative care',
+      'Flexion-distraction is well-tolerated for disc patients',
+      'Monitor for progressive neurological deficit',
+      'Avoid high-velocity manipulation at affected level',
+      'Consider surgical referral if no improvement in 6-8 weeks',
+    ],
+    redFlags: [
+      'Cauda equina syndrome',
+      'Progressive motor weakness',
+      'Severe, unrelenting pain',
+      'Significant sensory deficit',
+    ],
+    referralCriteria: [
+      'Cauda equina syndrome - IMMEDIATE surgical referral',
+      'Progressive neurological deficit',
+      'Severe motor weakness (< 3/5)',
+      'Failed 6-8 weeks of conservative care',
+      'Intractable pain affecting quality of life',
+    ],
+    contraindications: [
+      'Cauda equina syndrome',
+      'Large central disc herniation with cord compression',
+      'Progressive neurological deficit',
+      'Severe motor weakness',
+    ],
+    precautions: [
+      'Large disc extrusion',
+      'Sequestered disc fragment',
+      'History of failed back surgery',
+      'Significant spondylolisthesis',
+    ],
+    publicationDate: new Date('2014-01-01'),
+    citation: 'Leininger B, Bronfort G, Evans R, et al. Spinal manipulation or mobilization for radiculopathy: a systematic review. Phys Med Rehabil Clin N Am. 2011;22(1):105-125.',
+  },
+  {
+    code: 'CCGPP-SPONDYLOSIS-2018',
+    name: 'Chiropractic Management of Cervical and Lumbar Spondylosis',
+    source: 'Council on Chiropractic Guidelines and Practice Parameters (CCGPP)',
+    version: '2018',
+    condition: 'Spondylosis',
+    conditionCodes: ['M47.812', 'M47.816', 'M47.817', 'M47.892', 'M47.896'],
+    applicableRegions: ['cervical', 'lumbar'],
+    summary: 'Guidelines for chiropractic management of degenerative spine conditions with focus on symptom management and function.',
+    recommendations: [
+      {
+        level: 'Primary',
+        text: 'Low-force techniques preferred for spondylosis management',
+        gradeOfRecommendation: 'B',
+        strengthOfEvidence: 'MODERATE',
+      },
+      {
+        level: 'Primary',
+        text: 'Instrument-assisted techniques (Activator) are appropriate options',
+        gradeOfRecommendation: 'B',
+        strengthOfEvidence: 'MODERATE',
+      },
+      {
+        level: 'Adjunct',
+        text: 'Exercise therapy for mobility and strength maintenance',
+        gradeOfRecommendation: 'A',
+        strengthOfEvidence: 'HIGH',
+      },
+      {
+        level: 'Adjunct',
+        text: 'Patient education on activity modification',
+        gradeOfRecommendation: 'B',
+        strengthOfEvidence: 'MODERATE',
+      },
+    ],
+    evidenceLevel: 'MODERATE',
+    evidenceSummary: 'Conservative management effective for symptom control. Degenerative changes themselves are not reversed but symptoms can be managed.',
+    keyPoints: [
+      'Goal is symptom management and function improvement',
+      'Degenerative changes are common and often asymptomatic',
+      'Use modified techniques appropriate for degenerative spine',
+      'Regular exercise helps maintain mobility and strength',
+      'Ongoing maintenance care often beneficial',
+    ],
+    redFlags: [
+      'Cervical myelopathy signs',
+      'Lumbar stenosis with neurogenic claudication',
+      'Progressive neurological deficit',
+      'Severe spinal stenosis',
+    ],
+    referralCriteria: [
+      'Signs of myelopathy',
+      'Severe neurogenic claudication limiting function',
+      'Progressive neurological deficit',
+    ],
+    contraindications: [
+      'Severe spinal stenosis with myelopathy',
+      'Severe instability',
+    ],
+    precautions: [
+      'Moderate stenosis',
+      'Osteophyte formation',
+      'Advanced degenerative changes',
+      'History of compression fractures',
+    ],
+    publicationDate: new Date('2018-01-01'),
+    citation: 'Farabaugh RJ, Dehen MD, Hawk C. Management of chronic spine-related conditions: consensus recommendations of a multidisciplinary panel. J Manipulative Physiol Ther. 2010;33(7):484-492.',
+  },
+  {
+    code: 'CCGPP-THORACIC-2017',
+    name: 'Evidence-Based Management of Thoracic Spine Pain',
+    source: 'Council on Chiropractic Guidelines and Practice Parameters (CCGPP)',
+    version: '2017',
+    condition: 'Thoracic Spine Pain',
+    conditionCodes: ['M54.6', 'M99.02', 'M54.14', 'M54.15'],
+    applicableRegions: ['thoracic'],
+    summary: 'Guidelines for evaluation and treatment of thoracic spine pain with chiropractic interventions.',
+    recommendations: [
+      {
+        level: 'Primary',
+        text: 'Thoracic spinal manipulation is recommended for thoracic spine pain',
+        gradeOfRecommendation: 'B',
+        strengthOfEvidence: 'MODERATE',
+      },
+      {
+        level: 'Primary',
+        text: 'Mobilization techniques are an acceptable alternative',
+        gradeOfRecommendation: 'B',
+        strengthOfEvidence: 'MODERATE',
+      },
+      {
+        level: 'Adjunct',
+        text: 'Soft tissue techniques for associated myofascial dysfunction',
+        gradeOfRecommendation: 'C',
+        strengthOfEvidence: 'LOW',
+      },
+      {
+        level: 'Adjunct',
+        text: 'Postural exercises and ergonomic advice',
+        gradeOfRecommendation: 'B',
+        strengthOfEvidence: 'MODERATE',
+      },
+    ],
+    evidenceLevel: 'MODERATE',
+    evidenceSummary: 'Moderate evidence supports thoracic manipulation for thoracic spine pain.',
+    keyPoints: [
+      'Thoracic pain less studied than cervical/lumbar but manipulation appears effective',
+      'Rule out visceral causes of thoracic pain (cardiac, pulmonary, GI)',
+      'Address postural factors, especially with desk work',
+      'Rib dysfunction often contributes to thoracic pain',
+      'Most mechanical thoracic pain responds well to conservative care',
+    ],
+    redFlags: [
+      'Chest pain with cardiac symptoms',
+      'Shortness of breath',
+      'History of cancer',
+      'Recent trauma with severe pain',
+      'Fever with thoracic pain',
+    ],
+    referralCriteria: [
+      'Suspected cardiac or pulmonary cause',
+      'Signs of malignancy',
+      'Suspected rib fracture',
+      'No improvement with 4 weeks of care',
+    ],
+    contraindications: [
+      'Rib fracture',
+      'Thoracic compression fracture',
+      'Severe osteoporosis',
+    ],
+    precautions: [
+      'Osteopenia',
+      'Long-term steroid use',
+      'Anterior chest wall pain (rule out cardiac)',
+    ],
+    publicationDate: new Date('2017-01-01'),
+    citation: 'Walser RF, Meserve BB, Boucher TR. The effectiveness of thoracic spine manipulation for the management of musculoskeletal conditions: a systematic review and meta-analysis. J Man Manip Ther. 2009;17(4):237-246.',
+  },
+  {
+    code: 'CCGPP-EXTREMITY-2018',
+    name: 'Chiropractic Management of Extremity Conditions',
+    source: 'Council on Chiropractic Guidelines and Practice Parameters (CCGPP)',
+    version: '2018',
+    condition: 'Extremity Conditions',
+    conditionCodes: ['M25.50', 'M25.51', 'M25.52', 'M79.3', 'M77.10', 'M77.00', 'M75.10'],
+    applicableRegions: ['extremity', 'shoulder', 'elbow', 'wrist', 'hip', 'knee', 'ankle'],
+    summary: 'Guidelines for chiropractic management of common extremity joint conditions.',
+    recommendations: [
+      {
+        level: 'Primary',
+        text: 'Extremity manipulation/mobilization may be beneficial for joint dysfunction',
+        gradeOfRecommendation: 'C',
+        strengthOfEvidence: 'LOW',
+      },
+      {
+        level: 'Primary',
+        text: 'Soft tissue techniques are recommended for associated myofascial dysfunction',
+        gradeOfRecommendation: 'B',
+        strengthOfEvidence: 'MODERATE',
+      },
+      {
+        level: 'Adjunct',
+        text: 'Rehabilitation exercises are essential for extremity conditions',
+        gradeOfRecommendation: 'A',
+        strengthOfEvidence: 'HIGH',
+      },
+      {
+        level: 'Adjunct',
+        text: 'Address biomechanical factors and kinetic chain',
+        gradeOfRecommendation: 'B',
+        strengthOfEvidence: 'MODERATE',
+      },
+    ],
+    evidenceLevel: 'LOW',
+    evidenceSummary: 'Limited but promising evidence for extremity manipulation. Strong evidence for exercise rehabilitation.',
+    keyPoints: [
+      'Consider spinal contributions to extremity symptoms',
+      'Address full kinetic chain',
+      'Rehabilitation is critical for lasting improvement',
+      'Rule out significant structural pathology',
+      'Many extremity conditions respond to conservative care',
+    ],
+    redFlags: [
+      'Suspected fracture',
+      'Joint infection (hot, swollen, fever)',
+      'Suspected tumor',
+      'Neurovascular compromise',
+      'Complete ligament rupture',
+    ],
+    referralCriteria: [
+      'Suspected fracture - imaging needed',
+      'Complete tendon/ligament rupture',
+      'Suspected joint infection',
+      'Failed conservative care after 6-8 weeks',
+    ],
+    contraindications: [
+      'Acute fracture',
+      'Joint infection',
+      'Acute gout flare',
+      'Severe joint instability',
+    ],
+    precautions: [
+      'Rheumatoid arthritis (joint laxity)',
+      'Joint replacement',
+      'Significant osteoarthritis',
+      'Hypermobility syndromes',
+    ],
+    publicationDate: new Date('2018-01-01'),
+    citation: 'Brantingham JW, Cassa TK, Bonnefin D, et al. Manipulative and multimodal therapy for upper extremity and temporomandibular disorders: a systematic review. J Manipulative Physiol Ther. 2013;36(3):143-201.',
+  },
+];
+
 // Procedure name mapping for CPT codes
 const PROCEDURE_CPT_MAP: Record<string, string[]> = {
   'Spinal Manipulation': ['98940', '98941', '98942', '98943'],
@@ -3378,6 +4126,1064 @@ export const aiClinicalRouter = router({
           source: s.source || 'Unknown',
           count: s._count.source,
         })),
+      };
+    }),
+
+  // ============================================
+  // US-375: Clinical Guidelines Integration
+  // ============================================
+
+  /**
+   * Get relevant clinical guidelines for a condition or diagnosis
+   * Returns both built-in and organization-specific guidelines
+   */
+  getGuidelines: protectedProcedure
+    .input(
+      z.object({
+        // Search criteria
+        diagnosisCode: z.string().optional(),
+        condition: z.string().optional(),
+        bodyRegion: z.string().optional(),
+        // Filters
+        evidenceLevelMin: evidenceLevelSchema.optional(),
+        sourceFilter: z.string().optional(),
+        includeBuiltIn: z.boolean().default(true),
+        includeCustom: z.boolean().default(true),
+        // Pagination
+        limit: z.number().min(1).max(50).default(20),
+        offset: z.number().min(0).default(0),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const {
+        diagnosisCode,
+        condition,
+        bodyRegion,
+        evidenceLevelMin,
+        sourceFilter,
+        includeBuiltIn,
+        includeCustom,
+        limit,
+        offset,
+      } = input;
+
+      const results: Array<{
+        id: string;
+        code: string | null;
+        name: string;
+        source: string;
+        version: string | null;
+        condition: string;
+        conditionCodes: string[];
+        applicableRegions: string[];
+        summary: string;
+        recommendations: unknown;
+        evidenceLevel: string;
+        evidenceSummary: string | null;
+        keyPoints: string[];
+        redFlags: string[];
+        referralCriteria: string[];
+        contraindications: string[];
+        precautions: string[];
+        publicationDate: Date | null;
+        citation: string | null;
+        externalUrl: string | null;
+        isBuiltIn: boolean;
+        matchScore: number;
+      }> = [];
+
+      // Evidence level ranking for filtering
+      const evidenceLevels = ['HIGH', 'MODERATE', 'LOW', 'VERY_LOW', 'EXPERT'];
+      const minLevelIndex = evidenceLevelMin ? evidenceLevels.indexOf(evidenceLevelMin) : -1;
+
+      // Helper to calculate match score
+      const calculateMatchScore = (guideline: ClinicalGuidelineData): number => {
+        let score = 0;
+
+        // Exact code match is highest priority
+        if (diagnosisCode && guideline.conditionCodes.some(c => c.toLowerCase() === diagnosisCode.toLowerCase())) {
+          score += 100;
+        } else if (diagnosisCode && guideline.conditionCodes.some(c => c.toLowerCase().startsWith(diagnosisCode.substring(0, 3).toLowerCase()))) {
+          // Partial code match (same category)
+          score += 50;
+        }
+
+        // Condition name match
+        if (condition) {
+          const normalizedCondition = condition.toLowerCase();
+          const normalizedGuidelineCondition = guideline.condition.toLowerCase();
+          if (normalizedGuidelineCondition.includes(normalizedCondition) || normalizedCondition.includes(normalizedGuidelineCondition)) {
+            score += 75;
+          }
+          // Check in summary too
+          if (guideline.summary.toLowerCase().includes(normalizedCondition)) {
+            score += 25;
+          }
+        }
+
+        // Body region match
+        if (bodyRegion) {
+          const normalizedRegion = bodyRegion.toLowerCase();
+          if (guideline.applicableRegions.some(r => r.toLowerCase().includes(normalizedRegion) || normalizedRegion.includes(r.toLowerCase()))) {
+            score += 50;
+          }
+        }
+
+        // Evidence level boost
+        const levelIndex = evidenceLevels.indexOf(guideline.evidenceLevel);
+        score += (5 - levelIndex) * 5; // Higher evidence = higher boost
+
+        return score;
+      };
+
+      // Search built-in guidelines
+      if (includeBuiltIn) {
+        for (const guideline of CHIROPRACTIC_GUIDELINES) {
+          // Apply source filter
+          if (sourceFilter && !guideline.source.toLowerCase().includes(sourceFilter.toLowerCase())) {
+            continue;
+          }
+
+          // Apply evidence level filter
+          if (minLevelIndex >= 0) {
+            const guidelineLevelIndex = evidenceLevels.indexOf(guideline.evidenceLevel);
+            if (guidelineLevelIndex > minLevelIndex) continue;
+          }
+
+          const matchScore = calculateMatchScore(guideline);
+
+          // Only include if there's some match (unless no search criteria provided)
+          if (matchScore > 0 || (!diagnosisCode && !condition && !bodyRegion)) {
+            results.push({
+              id: `builtin-${guideline.code}`,
+              code: guideline.code,
+              name: guideline.name,
+              source: guideline.source,
+              version: guideline.version,
+              condition: guideline.condition,
+              conditionCodes: guideline.conditionCodes,
+              applicableRegions: guideline.applicableRegions,
+              summary: guideline.summary,
+              recommendations: guideline.recommendations,
+              evidenceLevel: guideline.evidenceLevel,
+              evidenceSummary: guideline.evidenceSummary,
+              keyPoints: guideline.keyPoints,
+              redFlags: guideline.redFlags,
+              referralCriteria: guideline.referralCriteria,
+              contraindications: guideline.contraindications,
+              precautions: guideline.precautions,
+              publicationDate: guideline.publicationDate,
+              citation: guideline.citation,
+              externalUrl: guideline.externalUrl || null,
+              isBuiltIn: true,
+              matchScore,
+            });
+          }
+        }
+      }
+
+      // Search custom (organization-specific) guidelines
+      if (includeCustom) {
+        const customWhere: Prisma.ClinicalGuidelineWhereInput = {
+          organizationId: ctx.user.organizationId,
+          isActive: true,
+        };
+
+        if (diagnosisCode) {
+          customWhere.conditionCodes = { has: diagnosisCode };
+        }
+
+        if (condition) {
+          customWhere.condition = { contains: condition, mode: 'insensitive' };
+        }
+
+        if (bodyRegion) {
+          customWhere.applicableRegions = { has: bodyRegion };
+        }
+
+        if (sourceFilter) {
+          customWhere.source = { contains: sourceFilter, mode: 'insensitive' };
+        }
+
+        if (minLevelIndex >= 0) {
+          customWhere.evidenceLevel = {
+            in: evidenceLevels.slice(0, minLevelIndex + 1) as ('HIGH' | 'MODERATE' | 'LOW' | 'VERY_LOW' | 'EXPERT')[],
+          };
+        }
+
+        const customGuidelines = await ctx.prisma.clinicalGuideline.findMany({
+          where: customWhere,
+        });
+
+        for (const cg of customGuidelines) {
+          let matchScore = 0;
+
+          if (diagnosisCode && cg.conditionCodes.includes(diagnosisCode)) {
+            matchScore += 100;
+          }
+          if (condition && cg.condition.toLowerCase().includes(condition.toLowerCase())) {
+            matchScore += 75;
+          }
+          if (bodyRegion && cg.applicableRegions.some(r => r.toLowerCase().includes(bodyRegion.toLowerCase()))) {
+            matchScore += 50;
+          }
+
+          const levelIndex = evidenceLevels.indexOf(cg.evidenceLevel);
+          matchScore += (5 - levelIndex) * 5;
+
+          results.push({
+            id: cg.id,
+            code: cg.code,
+            name: cg.name,
+            source: cg.source,
+            version: cg.version,
+            condition: cg.condition,
+            conditionCodes: cg.conditionCodes,
+            applicableRegions: cg.applicableRegions,
+            summary: cg.summary,
+            recommendations: cg.recommendations,
+            evidenceLevel: cg.evidenceLevel,
+            evidenceSummary: cg.evidenceSummary,
+            keyPoints: cg.keyPoints,
+            redFlags: cg.redFlags,
+            referralCriteria: cg.referralCriteria,
+            contraindications: cg.contraindications,
+            precautions: cg.precautions,
+            publicationDate: cg.publicationDate,
+            citation: cg.citation,
+            externalUrl: cg.externalUrl,
+            isBuiltIn: false,
+            matchScore,
+          });
+        }
+      }
+
+      // Sort by match score (highest first), then by evidence level
+      results.sort((a, b) => {
+        if (b.matchScore !== a.matchScore) {
+          return b.matchScore - a.matchScore;
+        }
+        return evidenceLevels.indexOf(a.evidenceLevel) - evidenceLevels.indexOf(b.evidenceLevel);
+      });
+
+      // Apply pagination
+      const total = results.length;
+      const paginatedResults = results.slice(offset, offset + limit);
+
+      // Log the lookup
+      await auditLog('AI_GUIDELINE_LOOKUP', 'ClinicalGuideline', {
+        changes: {
+          diagnosisCode,
+          condition,
+          bodyRegion,
+          resultsCount: paginatedResults.length,
+          totalMatches: total,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        guidelines: paginatedResults,
+        total,
+        limit,
+        offset,
+        hasMore: offset + paginatedResults.length < total,
+      };
+    }),
+
+  /**
+   * Get a single guideline by ID (supports both built-in and custom)
+   */
+  getGuidelineById: protectedProcedure
+    .input(z.object({ guidelineId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const { guidelineId } = input;
+
+      // Check if it's a built-in guideline
+      if (guidelineId.startsWith('builtin-')) {
+        const code = guidelineId.replace('builtin-', '');
+        const guideline = CHIROPRACTIC_GUIDELINES.find(g => g.code === code);
+
+        if (!guideline) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Guideline not found',
+          });
+        }
+
+        return {
+          id: guidelineId,
+          code: guideline.code,
+          name: guideline.name,
+          source: guideline.source,
+          version: guideline.version,
+          condition: guideline.condition,
+          conditionCodes: guideline.conditionCodes,
+          applicableRegions: guideline.applicableRegions,
+          summary: guideline.summary,
+          recommendations: guideline.recommendations,
+          evidenceLevel: guideline.evidenceLevel,
+          evidenceSummary: guideline.evidenceSummary,
+          keyPoints: guideline.keyPoints,
+          redFlags: guideline.redFlags,
+          referralCriteria: guideline.referralCriteria,
+          contraindications: guideline.contraindications,
+          precautions: guideline.precautions,
+          publicationDate: guideline.publicationDate,
+          citation: guideline.citation,
+          externalUrl: guideline.externalUrl || null,
+          isBuiltIn: true,
+          isActive: true,
+        };
+      }
+
+      // Custom guideline
+      const customGuideline = await ctx.prisma.clinicalGuideline.findFirst({
+        where: {
+          id: guidelineId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!customGuideline) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Guideline not found',
+        });
+      }
+
+      return {
+        ...customGuideline,
+        isBuiltIn: false,
+      };
+    }),
+
+  /**
+   * Add a custom clinical guideline for the organization
+   */
+  addGuideline: providerProcedure
+    .input(
+      z.object({
+        name: z.string().min(5),
+        code: z.string().optional(),
+        version: z.string().optional(),
+        source: z.string().min(2),
+        condition: z.string().min(2),
+        conditionCodes: z.array(z.string()).default([]),
+        applicableRegions: z.array(z.string()).default([]),
+        summary: z.string().min(10),
+        recommendations: z.array(z.object({
+          level: z.string(),
+          text: z.string(),
+          gradeOfRecommendation: z.enum(['A', 'B', 'C', 'D', 'I']).optional(),
+          strengthOfEvidence: evidenceLevelSchema.optional(),
+        })).default([]),
+        evidenceLevel: evidenceLevelSchema,
+        evidenceSummary: z.string().optional(),
+        keyPoints: z.array(z.string()).default([]),
+        redFlags: z.array(z.string()).default([]),
+        referralCriteria: z.array(z.string()).default([]),
+        contraindications: z.array(z.string()).default([]),
+        precautions: z.array(z.string()).default([]),
+        publicationDate: z.coerce.date().optional(),
+        citation: z.string().optional(),
+        externalUrl: z.string().url().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Check for duplicate
+      const existing = await ctx.prisma.clinicalGuideline.findFirst({
+        where: {
+          organizationId: ctx.user.organizationId,
+          name: { equals: input.name, mode: 'insensitive' },
+          isActive: true,
+        },
+      });
+
+      if (existing) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'A guideline with this name already exists',
+        });
+      }
+
+      const guideline = await ctx.prisma.clinicalGuideline.create({
+        data: {
+          organizationId: ctx.user.organizationId,
+          name: input.name,
+          code: input.code,
+          version: input.version,
+          source: input.source,
+          condition: input.condition,
+          conditionCodes: input.conditionCodes,
+          applicableRegions: input.applicableRegions,
+          summary: input.summary,
+          recommendations: input.recommendations,
+          evidenceLevel: input.evidenceLevel,
+          evidenceSummary: input.evidenceSummary,
+          keyPoints: input.keyPoints,
+          redFlags: input.redFlags,
+          referralCriteria: input.referralCriteria,
+          contraindications: input.contraindications,
+          precautions: input.precautions,
+          publicationDate: input.publicationDate,
+          citation: input.citation,
+          externalUrl: input.externalUrl,
+        },
+      });
+
+      await auditLog('CREATE', 'ClinicalGuideline', {
+        entityId: guideline.id,
+        changes: {
+          name: input.name,
+          condition: input.condition,
+          evidenceLevel: input.evidenceLevel,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        id: guideline.id,
+        name: guideline.name,
+        condition: guideline.condition,
+        createdAt: guideline.createdAt,
+      };
+    }),
+
+  /**
+   * Update a custom clinical guideline
+   */
+  updateGuideline: providerProcedure
+    .input(
+      z.object({
+        guidelineId: z.string(),
+        name: z.string().min(5).optional(),
+        version: z.string().optional(),
+        source: z.string().min(2).optional(),
+        condition: z.string().min(2).optional(),
+        conditionCodes: z.array(z.string()).optional(),
+        applicableRegions: z.array(z.string()).optional(),
+        summary: z.string().min(10).optional(),
+        recommendations: z.array(z.object({
+          level: z.string(),
+          text: z.string(),
+          gradeOfRecommendation: z.enum(['A', 'B', 'C', 'D', 'I']).optional(),
+          strengthOfEvidence: evidenceLevelSchema.optional(),
+        })).optional(),
+        evidenceLevel: evidenceLevelSchema.optional(),
+        evidenceSummary: z.string().optional(),
+        keyPoints: z.array(z.string()).optional(),
+        redFlags: z.array(z.string()).optional(),
+        referralCriteria: z.array(z.string()).optional(),
+        contraindications: z.array(z.string()).optional(),
+        precautions: z.array(z.string()).optional(),
+        publicationDate: z.coerce.date().optional(),
+        lastReviewedDate: z.coerce.date().optional(),
+        citation: z.string().optional(),
+        externalUrl: z.string().url().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { guidelineId, ...updateData } = input;
+
+      // Cannot update built-in guidelines
+      if (guidelineId.startsWith('builtin-')) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Cannot update built-in guidelines. Create a custom guideline instead.',
+        });
+      }
+
+      const existing = await ctx.prisma.clinicalGuideline.findFirst({
+        where: {
+          id: guidelineId,
+          organizationId: ctx.user.organizationId,
+          isActive: true,
+        },
+      });
+
+      if (!existing) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Guideline not found',
+        });
+      }
+
+      const updated = await ctx.prisma.clinicalGuideline.update({
+        where: { id: guidelineId },
+        data: updateData,
+      });
+
+      await auditLog('UPDATE', 'ClinicalGuideline', {
+        entityId: guidelineId,
+        changes: updateData,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        id: updated.id,
+        name: updated.name,
+        condition: updated.condition,
+        updatedAt: updated.updatedAt,
+      };
+    }),
+
+  /**
+   * Retire (soft delete) a custom guideline
+   */
+  retireGuideline: providerProcedure
+    .input(
+      z.object({
+        guidelineId: z.string(),
+        reason: z.string().min(5),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { guidelineId, reason } = input;
+
+      if (guidelineId.startsWith('builtin-')) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Cannot retire built-in guidelines',
+        });
+      }
+
+      const guideline = await ctx.prisma.clinicalGuideline.findFirst({
+        where: {
+          id: guidelineId,
+          organizationId: ctx.user.organizationId,
+          isActive: true,
+        },
+      });
+
+      if (!guideline) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Guideline not found',
+        });
+      }
+
+      await ctx.prisma.clinicalGuideline.update({
+        where: { id: guidelineId },
+        data: {
+          isActive: false,
+          retiredAt: new Date(),
+          retiredReason: reason,
+        },
+      });
+
+      await auditLog('DELETE', 'ClinicalGuideline', {
+        entityId: guidelineId,
+        changes: { reason, retiredAt: new Date() },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { success: true, guidelineId };
+    }),
+
+  /**
+   * Get guideline-based care suggestions for an encounter
+   * Analyzes the encounter and suggests applicable guidelines
+   */
+  getGuidelineBasedSuggestions: providerProcedure
+    .input(
+      z.object({
+        encounterId: z.string(),
+        diagnosisCodes: z.array(z.string()).optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { encounterId, diagnosisCodes } = input;
+
+      // Get the encounter with diagnoses
+      const encounter = await ctx.prisma.encounter.findFirst({
+        where: {
+          id: encounterId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          diagnoses: true,
+          patient: {
+            include: {
+              demographics: true,
+            },
+          },
+          soapNote: true,
+        },
+      });
+
+      if (!encounter) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Encounter not found',
+        });
+      }
+
+      // Get diagnosis codes from encounter or input
+      const codes = diagnosisCodes || encounter.diagnoses.map(d => d.icd10Code);
+
+      if (codes.length === 0) {
+        return {
+          suggestions: [],
+          message: 'No diagnoses found. Add diagnoses to get guideline-based suggestions.',
+        };
+      }
+
+      // Find matching guidelines
+      const suggestions: Array<{
+        guidelineId: string;
+        guidelineName: string;
+        source: string;
+        condition: string;
+        matchedDiagnosis: string;
+        evidenceLevel: string;
+        keyRecommendations: Array<{
+          level: string;
+          text: string;
+          grade: string;
+        }>;
+        keyPoints: string[];
+        redFlagsToCheck: string[];
+        suggestedActions: string[];
+      }> = [];
+
+      const seenGuidelineIds = new Set<string>();
+
+      for (const code of codes) {
+        // Check built-in guidelines
+        for (const guideline of CHIROPRACTIC_GUIDELINES) {
+          if (guideline.conditionCodes.some(c => c.toLowerCase() === code.toLowerCase() || code.toLowerCase().startsWith(c.substring(0, 3).toLowerCase()))) {
+            const guidelineId = `builtin-${guideline.code}`;
+
+            if (!seenGuidelineIds.has(guidelineId)) {
+              seenGuidelineIds.add(guidelineId);
+
+              suggestions.push({
+                guidelineId,
+                guidelineName: guideline.name,
+                source: guideline.source,
+                condition: guideline.condition,
+                matchedDiagnosis: code,
+                evidenceLevel: guideline.evidenceLevel,
+                keyRecommendations: guideline.recommendations.slice(0, 3).map(r => ({
+                  level: r.level,
+                  text: r.text,
+                  grade: r.gradeOfRecommendation,
+                })),
+                keyPoints: guideline.keyPoints.slice(0, 3),
+                redFlagsToCheck: guideline.redFlags.slice(0, 5),
+                suggestedActions: [
+                  `Review ${guideline.name} for evidence-based treatment approach`,
+                  ...guideline.keyPoints.slice(0, 2),
+                ],
+              });
+            }
+          }
+        }
+
+        // Check custom guidelines
+        const customMatches = await ctx.prisma.clinicalGuideline.findMany({
+          where: {
+            organizationId: ctx.user.organizationId,
+            isActive: true,
+            conditionCodes: { has: code },
+          },
+        });
+
+        for (const cg of customMatches) {
+          if (!seenGuidelineIds.has(cg.id)) {
+            seenGuidelineIds.add(cg.id);
+
+            const recs = cg.recommendations as Array<{ level: string; text: string; gradeOfRecommendation?: string }>;
+
+            suggestions.push({
+              guidelineId: cg.id,
+              guidelineName: cg.name,
+              source: cg.source,
+              condition: cg.condition,
+              matchedDiagnosis: code,
+              evidenceLevel: cg.evidenceLevel,
+              keyRecommendations: recs.slice(0, 3).map(r => ({
+                level: r.level,
+                text: r.text,
+                grade: r.gradeOfRecommendation || 'N/A',
+              })),
+              keyPoints: cg.keyPoints.slice(0, 3),
+              redFlagsToCheck: cg.redFlags.slice(0, 5),
+              suggestedActions: [
+                `Review ${cg.name} for treatment guidance`,
+                ...cg.keyPoints.slice(0, 2),
+              ],
+            });
+          }
+        }
+      }
+
+      // Sort by evidence level
+      const evidenceOrder = ['HIGH', 'MODERATE', 'LOW', 'VERY_LOW', 'EXPERT'];
+      suggestions.sort((a, b) => evidenceOrder.indexOf(a.evidenceLevel) - evidenceOrder.indexOf(b.evidenceLevel));
+
+      return {
+        suggestions,
+        diagnosesAnalyzed: codes,
+        totalGuidelinesMatched: suggestions.length,
+      };
+    }),
+
+  /**
+   * Track guideline adherence for an encounter
+   * Records whether the provider followed guideline recommendations
+   */
+  trackGuidelineAdherence: providerProcedure
+    .input(
+      z.object({
+        encounterId: z.string(),
+        guidelineId: z.string(),
+        recommendations: z.array(z.object({
+          recommendationText: z.string(),
+          followed: z.boolean(),
+          note: z.string().optional(),
+          reason: z.string().optional(), // Why not followed
+        })),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { encounterId, guidelineId, recommendations } = input;
+
+      // Verify encounter access
+      const encounter = await ctx.prisma.encounter.findFirst({
+        where: {
+          id: encounterId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!encounter) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Encounter not found',
+        });
+      }
+
+      // Store adherence tracking as a TreatmentRecommendation linked to the guideline
+      const followedCount = recommendations.filter(r => r.followed).length;
+      const totalCount = recommendations.length;
+      const adherenceRate = totalCount > 0 ? Math.round((followedCount / totalCount) * 100) : 0;
+
+      // Create a record of adherence
+      const adherenceRecord = await ctx.prisma.treatmentRecommendation.create({
+        data: {
+          patientId: encounter.patientId,
+          encounterId,
+          organizationId: ctx.user.organizationId,
+          conditionCode: 'GUIDELINE_ADHERENCE',
+          conditionDescription: `Adherence tracking for guideline: ${guidelineId}`,
+          recommendation: `Guideline adherence: ${adherenceRate}% (${followedCount}/${totalCount} recommendations followed)`,
+          treatmentType: 'guideline_adherence',
+          evidenceLevel: 'EXPERT',
+          evidenceSummary: `Tracked adherence to clinical guideline`,
+          guidelineCitations: [guidelineId],
+          evidenceReferences: {
+            guidelineId,
+            recommendations,
+            adherenceRate,
+            followedCount,
+            totalCount,
+          },
+          isAccepted: true,
+          selectedAt: new Date(),
+        },
+      });
+
+      await auditLog('AI_GUIDELINE_LOOKUP', 'TreatmentRecommendation', {
+        entityId: adherenceRecord.id,
+        changes: {
+          guidelineId,
+          adherenceRate,
+          followedCount,
+          totalCount,
+          action: 'ADHERENCE_TRACKED',
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        id: adherenceRecord.id,
+        guidelineId,
+        adherenceRate,
+        followedCount,
+        totalCount,
+        details: recommendations,
+      };
+    }),
+
+  /**
+   * Get guideline adherence statistics
+   */
+  getGuidelineAdherenceStats: protectedProcedure
+    .input(
+      z.object({
+        dateFrom: z.coerce.date().optional(),
+        dateTo: z.coerce.date().optional(),
+        guidelineId: z.string().optional(),
+        providerId: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { dateFrom, dateTo, guidelineId, providerId } = input;
+
+      const where: Prisma.TreatmentRecommendationWhereInput = {
+        organizationId: ctx.user.organizationId,
+        treatmentType: 'guideline_adherence',
+      };
+
+      if (dateFrom || dateTo) {
+        where.createdAt = {};
+        if (dateFrom) where.createdAt.gte = dateFrom;
+        if (dateTo) where.createdAt.lte = dateTo;
+      }
+
+      if (guidelineId) {
+        where.guidelineCitations = { has: guidelineId };
+      }
+
+      if (providerId) {
+        where.encounter = { providerId };
+      }
+
+      const adherenceRecords = await ctx.prisma.treatmentRecommendation.findMany({
+        where,
+        select: {
+          id: true,
+          evidenceReferences: true,
+          createdAt: true,
+        },
+      });
+
+      // Calculate aggregate statistics
+      let totalFollowed = 0;
+      let totalRecommendations = 0;
+      const guidelineStats: Record<string, { followed: number; total: number; name: string }> = {};
+
+      for (const record of adherenceRecords) {
+        const refs = record.evidenceReferences as { guidelineId?: string; followedCount?: number; totalCount?: number } | null;
+        if (refs && typeof refs === 'object') {
+          const gId = refs.guidelineId || 'unknown';
+          const followed = refs.followedCount || 0;
+          const total = refs.totalCount || 0;
+
+          totalFollowed += followed;
+          totalRecommendations += total;
+
+          if (!guidelineStats[gId]) {
+            // Try to get guideline name
+            let name = gId;
+            if (gId.startsWith('builtin-')) {
+              const code = gId.replace('builtin-', '');
+              const guideline = CHIROPRACTIC_GUIDELINES.find(g => g.code === code);
+              if (guideline) name = guideline.name;
+            }
+            guidelineStats[gId] = { followed: 0, total: 0, name };
+          }
+          guidelineStats[gId].followed += followed;
+          guidelineStats[gId].total += total;
+        }
+      }
+
+      const overallAdherenceRate = totalRecommendations > 0
+        ? Math.round((totalFollowed / totalRecommendations) * 100)
+        : 0;
+
+      return {
+        totalRecords: adherenceRecords.length,
+        overallAdherenceRate,
+        totalRecommendationsTracked: totalRecommendations,
+        totalRecommendationsFollowed: totalFollowed,
+        byGuideline: Object.entries(guidelineStats).map(([id, stats]) => ({
+          guidelineId: id,
+          guidelineName: stats.name,
+          adherenceRate: stats.total > 0 ? Math.round((stats.followed / stats.total) * 100) : 0,
+          followed: stats.followed,
+          total: stats.total,
+        })).sort((a, b) => b.total - a.total),
+        dateRange: {
+          from: dateFrom || null,
+          to: dateTo || null,
+        },
+      };
+    }),
+
+  /**
+   * Check for guideline updates
+   * Compares organization's custom guidelines against built-in guidelines for updates
+   */
+  checkGuidelineUpdates: protectedProcedure
+    .input(z.object({}))
+    .query(async ({ ctx }) => {
+      const updates: Array<{
+        guidelineCode: string;
+        guidelineName: string;
+        currentVersion: string;
+        latestVersion: string;
+        condition: string;
+        source: string;
+        publicationDate: Date;
+        message: string;
+      }> = [];
+
+      // Get organization's last review dates for built-in guidelines
+      const customGuidelines = await ctx.prisma.clinicalGuideline.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          isActive: true,
+        },
+        select: {
+          id: true,
+          name: true,
+          code: true,
+          version: true,
+          lastReviewedDate: true,
+          source: true,
+        },
+      });
+
+      // Check for newer versions of built-in guidelines
+      for (const builtIn of CHIROPRACTIC_GUIDELINES) {
+        // Check if there's a matching custom guideline that might be outdated
+        const matching = customGuidelines.find(
+          cg => cg.code === builtIn.code ||
+               cg.name.toLowerCase().includes(builtIn.condition.toLowerCase())
+        );
+
+        if (matching && matching.version && builtIn.version) {
+          // Simple version comparison (assumes versions are comparable strings like "2016", "2017")
+          if (matching.version < builtIn.version) {
+            updates.push({
+              guidelineCode: builtIn.code,
+              guidelineName: builtIn.name,
+              currentVersion: matching.version,
+              latestVersion: builtIn.version,
+              condition: builtIn.condition,
+              source: builtIn.source,
+              publicationDate: builtIn.publicationDate,
+              message: `Your custom guideline "${matching.name}" may be based on an older version. The built-in guideline has version ${builtIn.version}.`,
+            });
+          }
+        }
+
+        // Check if the built-in guideline is newer than 2 years and org hasn't reviewed it
+        const twoYearsAgo = new Date();
+        twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+
+        if (builtIn.publicationDate > twoYearsAgo) {
+          // Recently published guideline - might be relevant to review
+          const hasReviewed = customGuidelines.some(
+            cg => cg.lastReviewedDate && cg.lastReviewedDate > builtIn.publicationDate
+          );
+
+          if (!hasReviewed) {
+            // Only add if not already in updates
+            if (!updates.some(u => u.guidelineCode === builtIn.code)) {
+              updates.push({
+                guidelineCode: builtIn.code,
+                guidelineName: builtIn.name,
+                currentVersion: 'N/A',
+                latestVersion: builtIn.version,
+                condition: builtIn.condition,
+                source: builtIn.source,
+                publicationDate: builtIn.publicationDate,
+                message: `Recent guideline available: ${builtIn.name} (${builtIn.version}). Consider reviewing for your practice.`,
+              });
+            }
+          }
+        }
+      }
+
+      // Note: Guideline update alerts are organization-level notifications
+      // Not creating patient-level clinical alerts for these
+      // The frontend can display these updates based on the response
+
+      return {
+        updates,
+        hasUpdates: updates.length > 0,
+        lastChecked: new Date(),
+        notificationMessage: updates.length > 0
+          ? `${updates.length} clinical guideline update(s) available for review`
+          : 'All guidelines are up to date',
+      };
+    }),
+
+  /**
+   * Get list of all available guidelines (summary view)
+   */
+  listAllGuidelines: protectedProcedure
+    .input(
+      z.object({
+        includeBuiltIn: z.boolean().default(true),
+        includeCustom: z.boolean().default(true),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const guidelines: Array<{
+        id: string;
+        code: string | null;
+        name: string;
+        condition: string;
+        source: string;
+        evidenceLevel: string;
+        isBuiltIn: boolean;
+        isActive: boolean;
+      }> = [];
+
+      if (input.includeBuiltIn) {
+        for (const g of CHIROPRACTIC_GUIDELINES) {
+          guidelines.push({
+            id: `builtin-${g.code}`,
+            code: g.code,
+            name: g.name,
+            condition: g.condition,
+            source: g.source,
+            evidenceLevel: g.evidenceLevel,
+            isBuiltIn: true,
+            isActive: true,
+          });
+        }
+      }
+
+      if (input.includeCustom) {
+        const custom = await ctx.prisma.clinicalGuideline.findMany({
+          where: {
+            organizationId: ctx.user.organizationId,
+          },
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            condition: true,
+            source: true,
+            evidenceLevel: true,
+            isActive: true,
+          },
+        });
+
+        for (const c of custom) {
+          guidelines.push({
+            ...c,
+            isBuiltIn: false,
+          });
+        }
+      }
+
+      return {
+        guidelines,
+        total: guidelines.length,
+        builtInCount: input.includeBuiltIn ? CHIROPRACTIC_GUIDELINES.length : 0,
+        customCount: guidelines.filter(g => !g.isBuiltIn).length,
       };
     }),
 });

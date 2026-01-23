@@ -85,7 +85,7 @@
         "Update alerts for new guidelines"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-376",

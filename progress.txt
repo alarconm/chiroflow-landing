@@ -310,3 +310,106 @@ Story: US-373 - Treatment recommendations
 --- Iteration 4 completed at 2026-01-22 ---
 Story: US-374 - Contraindication alerts
 
+--- Iteration 4 completed at 2026-01-22 19:47:52 ---
+Story: US-374 - Contraindication alerts
+
+## 2026-01-22 - US-375: Clinical guidelines integration
+
+### Completed
+- Added comprehensive clinical guidelines integration to aiClinical.ts router:
+
+**Clinical Guidelines Database (10 Built-in Guidelines):**
+- CCGPP Guidelines for Low Back Pain (2016)
+- CCGPP Guidelines for Neck Pain (2014)
+- CCGPP Guidelines for Headache (2011)
+- AHRQ Noninvasive Treatments for Low Back Pain (2017)
+- ACP Clinical Practice Guideline for Low Back Pain (2017)
+- NICE Guideline on Low Back Pain and Sciatica (2016/2020)
+- CCGPP Guidelines for Lumbar Disc Herniation (2014)
+- CCGPP Guidelines for Spondylosis Management (2018)
+- CCGPP Guidelines for Thoracic Spine Pain (2017)
+- CCGPP Guidelines for Extremity Conditions (2018)
+
+Each guideline includes:
+- Condition codes (ICD-10 mapping)
+- Applicable body regions
+- Detailed recommendations with grade (A/B/C/D/I)
+- Evidence levels (HIGH/MODERATE/LOW/VERY_LOW)
+- Key implementation points
+- Red flags to watch for
+- Referral criteria
+- Contraindications and precautions
+- Publication citations with external URLs
+
+**Main Endpoints:**
+1. `aiClinical.getGuidelines` - Search and retrieve relevant guidelines
+   - Supports diagnosis code, condition name, and body region search
+   - Filters by evidence level and source
+   - Match scoring for relevance ranking
+   - Includes both built-in and custom organization guidelines
+   - Pagination support
+
+2. `aiClinical.getGuidelineById` - Get single guideline details
+   - Supports both built-in (builtin-CODE) and custom IDs
+   - Returns full guideline content
+
+3. `aiClinical.addGuideline` - Create custom organization guideline
+   - Full guideline data structure support
+   - Duplicate detection
+   - Audit logging
+
+4. `aiClinical.updateGuideline` - Update custom guidelines
+   - Cannot update built-in guidelines
+   - Partial updates supported
+   - Audit logging
+
+5. `aiClinical.retireGuideline` - Soft delete custom guidelines
+   - Records retirement reason
+   - Audit logging
+
+6. `aiClinical.getGuidelineBasedSuggestions` - Get suggestions for encounter
+   - Analyzes encounter diagnoses
+   - Finds matching guidelines
+   - Returns key recommendations, red flags, and suggested actions
+   - Works with both built-in and custom guidelines
+
+7. `aiClinical.trackGuidelineAdherence` - Track adherence to recommendations
+   - Records followed/not-followed recommendations
+   - Calculates adherence rate
+   - Links to encounter
+   - Full audit trail
+
+8. `aiClinical.getGuidelineAdherenceStats` - Adherence analytics
+   - Overall adherence rate
+   - Breakdown by guideline
+   - Date range filtering
+   - Provider filtering
+
+9. `aiClinical.checkGuidelineUpdates` - Check for guideline updates
+   - Compares custom vs built-in versions
+   - Identifies recently published guidelines
+   - Returns notification message
+
+10. `aiClinical.listAllGuidelines` - List all available guidelines
+    - Summary view of all guidelines
+    - Filters for built-in/custom
+    - Returns counts
+
+### Files Modified
+- app/src/server/routers/aiClinical.ts - Added ~1100 lines:
+  - ClinicalGuidelineData interface
+  - CHIROPRACTIC_GUIDELINES constant (10 comprehensive guidelines)
+  - 10 new tRPC endpoints for guideline management
+- prd.json - Marked US-375 as passes: true
+
+### Technical Notes
+- Follows existing aiClinical patterns from US-372, US-373, US-374
+- Uses protectedProcedure for read operations
+- Uses providerProcedure for write operations
+- Full Prisma type safety with ClinicalGuideline model
+- Utilizes TreatmentRecommendation model for adherence tracking
+- Pre-existing errors in mobile app and aiCare.ts are unrelated
+
+--- Iteration 5 completed at 2026-01-22 ---
+Story: US-375 - Clinical guidelines integration
+
