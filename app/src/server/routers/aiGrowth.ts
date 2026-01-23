@@ -12,6 +12,11 @@
  * - SMS follow-up campaigns
  * - Content delivery based on interest
  * - Response handling and hot lead escalation
+ * - Reputation management (US-358)
+ * - Smart review requests after positive experiences
+ * - Multi-platform review monitoring (Google, Yelp, Facebook)
+ * - Negative review alerts and response suggestions
+ * - Reputation score tracking and trending
  */
 
 import { z } from 'zod';
@@ -136,6 +141,79 @@ interface OptimalTiming {
   timezone: string;
   nextOptimalSendTime: Date;
   reasoning: string;
+}
+
+// ============================================
+// US-358: Reputation Management Types
+// ============================================
+
+type ReviewPlatformType = 'GOOGLE' | 'YELP' | 'FACEBOOK' | 'HEALTHGRADES' | 'ZOCDOC' | 'OTHER';
+
+interface ReviewCandidate {
+  patientId: string;
+  patientName: string;
+  satisfactionScore: number;
+  lastVisitDate: Date;
+  totalVisits: number;
+  hasReviewedBefore: boolean;
+  recommendedPlatform: ReviewPlatformType;
+  optimalRequestTime: Date;
+  reasoning: string[];
+}
+
+interface ReviewRequestResult {
+  requestId: string;
+  patientId: string;
+  platform: ReviewPlatformType;
+  sentVia: 'email' | 'sms';
+  scheduledAt: Date;
+  reviewUrl: string;
+}
+
+interface PlatformMetrics {
+  platform: string;
+  averageRating: number;
+  totalReviews: number;
+  newReviewsCount: number;
+  responseRate: number;
+  sentimentScore: number;
+  ratingBreakdown: {
+    fiveStar: number;
+    fourStar: number;
+    threeStar: number;
+    twoStar: number;
+    oneStar: number;
+  };
+  trend: 'improving' | 'stable' | 'declining';
+  competitorComparison: number | null;
+}
+
+interface ReputationScore {
+  overallScore: number; // 0-100
+  platformScores: Record<string, number>;
+  trend: 'improving' | 'stable' | 'declining';
+  riskLevel: 'low' | 'medium' | 'high';
+  keyStrengths: string[];
+  areasForImprovement: string[];
+  recommendedActions: string[];
+}
+
+interface NegativeReviewAlert {
+  id: string;
+  platform: string;
+  rating: number;
+  reviewDate: Date;
+  severity: 'critical' | 'warning' | 'notice';
+  requiresResponse: boolean;
+  suggestedResponses: string[];
+  escalatedTo: string | null;
+}
+
+interface ReviewResponseSuggestion {
+  tone: 'professional' | 'empathetic' | 'apologetic' | 'grateful';
+  response: string;
+  keyPoints: string[];
+  avoidTopics: string[];
 }
 
 // ============================================
@@ -988,6 +1066,432 @@ const getNurtureAnalyticsInputSchema = z.object({
   startDate: z.date().optional(),
   endDate: z.date().optional(),
 });
+
+// ============================================
+// US-358: Reputation Management Input Schemas
+// ============================================
+
+const requestReviewInputSchema = z.object({
+  patientId: z.string(),
+  platform: z.enum(['GOOGLE', 'YELP', 'FACEBOOK', 'HEALTHGRADES', 'ZOCDOC', 'OTHER']).default('GOOGLE'),
+  channel: z.enum(['email', 'sms']).default('email'),
+  customMessage: z.string().optional(),
+  scheduleFor: z.date().optional(), // Optional: schedule for specific time
+  triggeredByAppointmentId: z.string().optional(),
+});
+
+const identifySatisfiedPatientsInputSchema = z.object({
+  minVisits: z.number().min(1).default(2),
+  minDaysSinceLastVisit: z.number().min(0).default(1),
+  maxDaysSinceLastVisit: z.number().min(1).default(14),
+  excludeRecentlyRequested: z.boolean().default(true),
+  recentRequestDays: z.number().min(1).default(90),
+  limit: z.number().min(1).max(100).default(20),
+});
+
+const getReviewRequestsInputSchema = z.object({
+  status: z.enum(['PENDING', 'SENT', 'CLICKED', 'REVIEWED', 'DECLINED', 'FAILED']).optional(),
+  platform: z.enum(['GOOGLE', 'YELP', 'FACEBOOK', 'HEALTHGRADES', 'ZOCDOC', 'OTHER']).optional(),
+  startDate: z.date().optional(),
+  endDate: z.date().optional(),
+  limit: z.number().min(1).max(100).default(50),
+  offset: z.number().min(0).default(0),
+});
+
+const updatePlatformMetricsInputSchema = z.object({
+  platform: z.enum(['google', 'yelp', 'facebook', 'healthgrades']),
+  averageRating: z.number().min(0).max(5),
+  totalReviews: z.number().min(0),
+  newReviewsCount: z.number().min(0).optional(),
+  responseRate: z.number().min(0).max(1).optional(),
+  ratingBreakdown: z.object({
+    fiveStar: z.number().min(0).default(0),
+    fourStar: z.number().min(0).default(0),
+    threeStar: z.number().min(0).default(0),
+    twoStar: z.number().min(0).default(0),
+    oneStar: z.number().min(0).default(0),
+  }).optional(),
+  sentimentScore: z.number().min(-1).max(1).optional(),
+  platformUrl: z.string().url().optional(),
+});
+
+const getPlatformMetricsInputSchema = z.object({
+  platform: z.enum(['google', 'yelp', 'facebook', 'healthgrades']).optional(),
+  includeHistory: z.boolean().default(false),
+  historyDays: z.number().min(1).max(365).default(30),
+});
+
+const alertNegativeReviewInputSchema = z.object({
+  platform: z.string(),
+  rating: z.number().min(1).max(5),
+  reviewContent: z.string().optional(),
+  reviewerName: z.string().optional(),
+  reviewDate: z.date().optional(),
+  reviewUrl: z.string().url().optional(),
+});
+
+const getReviewResponseSuggestionInputSchema = z.object({
+  platform: z.string(),
+  rating: z.number().min(1).max(5),
+  reviewContent: z.string(),
+  reviewerName: z.string().optional(),
+  tone: z.enum(['professional', 'empathetic', 'apologetic', 'grateful']).optional(),
+});
+
+const getReputationScoreInputSchema = z.object({
+  includeRecommendations: z.boolean().default(true),
+  includeTrends: z.boolean().default(true),
+});
+
+const getReputationTrendsInputSchema = z.object({
+  days: z.number().min(7).max(365).default(30),
+  platform: z.enum(['google', 'yelp', 'facebook', 'healthgrades']).optional(),
+});
+
+const bulkRequestReviewsInputSchema = z.object({
+  patientIds: z.array(z.string()),
+  platform: z.enum(['GOOGLE', 'YELP', 'FACEBOOK', 'HEALTHGRADES', 'ZOCDOC', 'OTHER']).default('GOOGLE'),
+  channel: z.enum(['email', 'sms']).default('email'),
+  spreadOverDays: z.number().min(1).max(14).default(1), // Spread requests over N days
+});
+
+const acknowledgeNegativeReviewInputSchema = z.object({
+  alertId: z.string(),
+  action: z.enum(['acknowledged', 'responded', 'escalated', 'dismissed']),
+  responseContent: z.string().optional(),
+  escalateTo: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+// ============================================
+// US-358: Reputation Management Helper Functions
+// ============================================
+
+/**
+ * Calculate patient satisfaction score based on visit history
+ */
+function calculatePatientSatisfactionScore(
+  totalVisits: number,
+  appointmentHistory: Array<{ status: string; rating?: number | null }>,
+  hasComplaintsOrCancellations: boolean,
+): number {
+  let score = 50; // Base score
+
+  // Visit frequency bonus (up to 25 points)
+  if (totalVisits >= 10) score += 25;
+  else if (totalVisits >= 5) score += 20;
+  else if (totalVisits >= 3) score += 15;
+  else if (totalVisits >= 2) score += 10;
+
+  // Completion rate (up to 15 points)
+  const completedAppointments = appointmentHistory.filter(a => a.status === 'COMPLETED').length;
+  const completionRate = appointmentHistory.length > 0 ? completedAppointments / appointmentHistory.length : 0;
+  score += Math.floor(completionRate * 15);
+
+  // Rating bonus if available (up to 10 points)
+  const ratings = appointmentHistory
+    .filter(a => a.rating !== null && a.rating !== undefined)
+    .map(a => a.rating as number);
+  if (ratings.length > 0) {
+    const avgRating = ratings.reduce((sum, r) => sum + r, 0) / ratings.length;
+    score += Math.floor((avgRating / 5) * 10);
+  }
+
+  // Penalty for complaints/cancellations
+  if (hasComplaintsOrCancellations) {
+    score -= 20;
+  }
+
+  return Math.max(0, Math.min(100, score));
+}
+
+/**
+ * Calculate optimal time to request a review
+ */
+function calculateOptimalReviewRequestTime(
+  lastAppointmentDate: Date,
+  preferredContactTime: string | null,
+): Date {
+  // Best to request 1-3 days after appointment
+  const optimalTime = new Date(lastAppointmentDate);
+  optimalTime.setDate(optimalTime.getDate() + 2); // 2 days later
+
+  // Set to preferred time or default to 10 AM
+  if (preferredContactTime) {
+    const [hours, minutes] = preferredContactTime.split(':').map(Number);
+    optimalTime.setHours(hours || 10, minutes || 0, 0, 0);
+  } else {
+    optimalTime.setHours(10, 0, 0, 0); // 10 AM default
+  }
+
+  // Don't schedule in the past
+  const now = new Date();
+  if (optimalTime < now) {
+    optimalTime.setDate(now.getDate() + 1);
+    optimalTime.setHours(10, 0, 0, 0);
+  }
+
+  return optimalTime;
+}
+
+/**
+ * Generate review request message
+ */
+function generateReviewRequestMessage(
+  patientFirstName: string,
+  practiceName: string,
+  platform: string,
+  reviewUrl: string,
+  channel: 'email' | 'sms',
+): { subject?: string; body: string } {
+  const platformNames: Record<string, string> = {
+    GOOGLE: 'Google',
+    YELP: 'Yelp',
+    FACEBOOK: 'Facebook',
+    HEALTHGRADES: 'Healthgrades',
+    ZOCDOC: 'ZocDoc',
+    OTHER: 'online',
+  };
+  const platformName = platformNames[platform] || platform;
+
+  if (channel === 'sms') {
+    return {
+      body: `Hi ${patientFirstName}! Thank you for choosing ${practiceName}. We'd love to hear about your experience! Please leave us a review: ${reviewUrl} - ${practiceName} Team`,
+    };
+  }
+
+  return {
+    subject: `How was your visit to ${practiceName}?`,
+    body: `Hi ${patientFirstName},
+
+Thank you for your recent visit to ${practiceName}! We hope you're feeling great.
+
+Your feedback helps us improve and helps others find quality chiropractic care. Would you take a moment to share your experience on ${platformName}?
+
+Leave a Review: ${reviewUrl}
+
+It only takes a minute, and we truly appreciate it!
+
+Thank you for being part of the ${practiceName} family.
+
+Best regards,
+The ${practiceName} Team
+
+P.S. If you have any concerns about your care, please reach out to us directly. We want to make things right!`,
+  };
+}
+
+/**
+ * Generate response suggestion for a review
+ */
+function generateReviewResponseSuggestions(
+  rating: number,
+  reviewContent: string,
+  reviewerName: string | null,
+  practiceName: string,
+  tone: 'professional' | 'empathetic' | 'apologetic' | 'grateful',
+): ReviewResponseSuggestion {
+  const name = reviewerName || 'there';
+  const isPositive = rating >= 4;
+  const isNeutral = rating === 3;
+  const isNegative = rating <= 2;
+
+  // Analyze review content for key themes
+  const contentLower = reviewContent.toLowerCase();
+  const themes = {
+    waitTime: contentLower.includes('wait') || contentLower.includes('waiting'),
+    staff: contentLower.includes('staff') || contentLower.includes('team') || contentLower.includes('reception'),
+    treatment: contentLower.includes('treatment') || contentLower.includes('adjustment') || contentLower.includes('care'),
+    communication: contentLower.includes('explain') || contentLower.includes('communicate') || contentLower.includes('listen'),
+    billing: contentLower.includes('billing') || contentLower.includes('cost') || contentLower.includes('insurance'),
+    results: contentLower.includes('feel better') || contentLower.includes('pain') || contentLower.includes('relief'),
+  };
+
+  const keyPoints: string[] = [];
+  const avoidTopics: string[] = ['specific medical details', 'other patients', 'HIPAA-protected information'];
+
+  let response = '';
+
+  if (isPositive) {
+    keyPoints.push('Express gratitude', 'Acknowledge specific praise', 'Reinforce positive experience');
+
+    if (tone === 'grateful') {
+      response = `Dear ${name},\n\nThank you so much for your wonderful review! We're thrilled to hear about your positive experience at ${practiceName}.\n\n`;
+      if (themes.results) response += `It's incredibly rewarding to know that you're feeling better. Your health and well-being are our top priorities.\n\n`;
+      if (themes.staff) response += `We'll be sure to share your kind words with our team - they'll be delighted!\n\n`;
+      response += `We look forward to continuing to support your health journey. Thank you for choosing ${practiceName}!\n\nWarm regards,\nThe ${practiceName} Team`;
+    } else {
+      response = `Hello ${name},\n\nThank you for taking the time to share your feedback. We're pleased that you had a positive experience at ${practiceName}.\n\n`;
+      response += `Your satisfaction is important to us, and we're committed to maintaining the high standard of care you experienced.\n\n`;
+      response += `We look forward to your next visit!\n\nBest regards,\nThe ${practiceName} Team`;
+    }
+  } else if (isNeutral) {
+    keyPoints.push('Thank for feedback', 'Acknowledge both positive and concerns', 'Invite further discussion');
+    avoidTopics.push('dismissing concerns');
+
+    response = `Hello ${name},\n\nThank you for your honest feedback. We appreciate you taking the time to share your experience.\n\n`;
+    response += `We're always looking for ways to improve, and your input helps us do that. `;
+    if (themes.waitTime) response += `We understand that wait times can be frustrating, and we're working to improve our scheduling efficiency. `;
+    response += `\n\nWe'd love the opportunity to discuss your experience further. Please don't hesitate to reach out to us directly.\n\n`;
+    response += `Thank you for choosing ${practiceName}.\n\nSincerely,\nThe ${practiceName} Team`;
+  } else { // Negative
+    keyPoints.push('Apologize sincerely', 'Take responsibility', 'Offer to make it right', 'Move conversation offline');
+    avoidTopics.push('being defensive', 'making excuses', 'blaming the patient');
+
+    if (tone === 'apologetic') {
+      response = `Dear ${name},\n\nWe sincerely apologize that your experience at ${practiceName} did not meet your expectations. This is not the standard of care we strive to provide.\n\n`;
+    } else {
+      response = `Hello ${name},\n\nThank you for bringing this to our attention. We're sorry to hear that your experience was not what you hoped for.\n\n`;
+    }
+
+    response += `Your feedback is valuable and helps us improve. We take all concerns seriously and would like the opportunity to address this directly.\n\n`;
+    response += `Please contact our office at your earliest convenience so we can discuss how to make this right. Your satisfaction matters to us.\n\n`;
+    response += `Sincerely,\nThe ${practiceName} Team`;
+  }
+
+  return {
+    tone,
+    response,
+    keyPoints,
+    avoidTopics,
+  };
+}
+
+/**
+ * Calculate overall reputation score
+ */
+function calculateReputationScore(
+  platformMetrics: Array<{
+    platform: string;
+    averageRating: number;
+    totalReviews: number;
+    responseRate: number | null;
+    sentimentScore: number | null;
+  }>,
+): ReputationScore {
+  if (platformMetrics.length === 0) {
+    return {
+      overallScore: 0,
+      platformScores: {},
+      trend: 'stable',
+      riskLevel: 'high',
+      keyStrengths: [],
+      areasForImprovement: ['No reputation data available'],
+      recommendedActions: ['Set up profiles on Google and Yelp', 'Start requesting reviews from satisfied patients'],
+    };
+  }
+
+  const platformScores: Record<string, number> = {};
+  let totalWeightedScore = 0;
+  let totalWeight = 0;
+
+  // Platform weights (Google is most important)
+  const weights: Record<string, number> = {
+    google: 0.4,
+    yelp: 0.25,
+    facebook: 0.2,
+    healthgrades: 0.15,
+  };
+
+  for (const metric of platformMetrics) {
+    const platformKey = metric.platform.toLowerCase();
+    const weight = weights[platformKey] || 0.1;
+
+    // Calculate platform score (0-100)
+    let platformScore = (metric.averageRating / 5) * 60; // Rating: 60%
+    platformScore += Math.min(20, Math.log10(metric.totalReviews + 1) * 10); // Volume: 20%
+    platformScore += (metric.responseRate || 0) * 10; // Response rate: 10%
+    platformScore += ((metric.sentimentScore || 0) + 1) / 2 * 10; // Sentiment: 10%
+
+    platformScores[platformKey] = Math.round(platformScore);
+    totalWeightedScore += platformScore * weight;
+    totalWeight += weight;
+  }
+
+  const overallScore = totalWeight > 0 ? Math.round(totalWeightedScore / totalWeight) : 0;
+
+  // Determine risk level
+  let riskLevel: 'low' | 'medium' | 'high' = 'low';
+  if (overallScore < 50) riskLevel = 'high';
+  else if (overallScore < 70) riskLevel = 'medium';
+
+  // Identify strengths and areas for improvement
+  const keyStrengths: string[] = [];
+  const areasForImprovement: string[] = [];
+  const recommendedActions: string[] = [];
+
+  for (const metric of platformMetrics) {
+    if (metric.averageRating >= 4.5) {
+      keyStrengths.push(`Excellent ${metric.platform} rating (${metric.averageRating.toFixed(1)} stars)`);
+    } else if (metric.averageRating < 4) {
+      areasForImprovement.push(`${metric.platform} rating could improve (${metric.averageRating.toFixed(1)} stars)`);
+      recommendedActions.push(`Focus on improving ${metric.platform} rating through better patient experiences`);
+    }
+
+    if (metric.totalReviews < 20) {
+      recommendedActions.push(`Increase review volume on ${metric.platform}`);
+    }
+
+    if ((metric.responseRate || 0) < 0.5) {
+      areasForImprovement.push(`Low response rate on ${metric.platform}`);
+      recommendedActions.push(`Respond to more reviews on ${metric.platform}`);
+    }
+  }
+
+  if (keyStrengths.length === 0 && overallScore >= 70) {
+    keyStrengths.push('Consistent positive presence across platforms');
+  }
+
+  return {
+    overallScore,
+    platformScores,
+    trend: 'stable', // Would need historical data to calculate
+    riskLevel,
+    keyStrengths,
+    areasForImprovement,
+    recommendedActions: recommendedActions.slice(0, 5), // Top 5 actions
+  };
+}
+
+/**
+ * Get platform-specific response guidelines
+ */
+function getPlatformGuidelines(platform: string): string[] {
+  const guidelines: Record<string, string[]> = {
+    google: [
+      'Respond within 24-48 hours',
+      'Keep responses professional and helpful',
+      'Thank reviewers for their feedback',
+      'Address concerns without being defensive',
+      'Avoid disclosing personal health information',
+    ],
+    yelp: [
+      'Yelp allows public and private responses',
+      'Consider reaching out privately for negative reviews',
+      'Focus on the specific experience mentioned',
+      'Invite them back to resolve issues',
+    ],
+    facebook: [
+      'Responses are highly visible to friends and followers',
+      'Keep it brief and friendly',
+      'Use the reviewer\'s name for personalization',
+      'Consider private messaging for sensitive issues',
+    ],
+    healthgrades: [
+      'Medical professionals often respond on this platform',
+      'Maintain HIPAA compliance at all times',
+      'Focus on practice policies rather than individual cases',
+      'Emphasize quality of care and patient safety',
+    ],
+  };
+
+  return guidelines[platform.toLowerCase()] || [
+    'Respond promptly and professionally',
+    'Thank the reviewer for their feedback',
+    'Address any concerns raised',
+    'Maintain patient confidentiality',
+  ];
+}
 
 // ============================================
 // Router
@@ -3173,6 +3677,850 @@ export const aiGrowthRouter = router({
         totalLeadsNurtured: leads.length,
         overallConversionRate: leads.filter(l => l.status === 'CONVERTED').length / (leads.length || 1),
         dateRange: { startDate, endDate },
+      };
+    }),
+
+  // ============================================
+  // US-358: Reputation Management
+  // ============================================
+
+  /**
+   * Request a review from a patient - smart review request
+   */
+  requestReview: protectedProcedure
+    .input(requestReviewInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { patientId, platform, channel, customMessage, scheduleFor, triggeredByAppointmentId } = input;
+
+      // Get patient with organization details and demographics
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          organization: true,
+          demographics: true,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      // Check for recent review requests to avoid spamming
+      const recentRequest = await ctx.prisma.reviewRequest.findFirst({
+        where: {
+          patientId,
+          createdAt: { gte: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) }, // Last 90 days
+          status: { notIn: ['DECLINED', 'FAILED'] },
+        },
+      });
+
+      if (recentRequest) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'A review request was already sent to this patient recently',
+        });
+      }
+
+      // Generate review URL (would integrate with actual platform URLs in production)
+      const platformUrls: Record<string, string> = {
+        GOOGLE: `https://g.page/review/${ctx.user.organizationId}`,
+        YELP: `https://www.yelp.com/writeareview/biz/${ctx.user.organizationId}`,
+        FACEBOOK: `https://www.facebook.com/${ctx.user.organizationId}/reviews`,
+        HEALTHGRADES: `https://www.healthgrades.com/review/${ctx.user.organizationId}`,
+        ZOCDOC: `https://www.zocdoc.com/review/${ctx.user.organizationId}`,
+        OTHER: `/review`, // Would be configured in organization settings
+      };
+
+      const reviewUrl = platformUrls[platform] || platformUrls.OTHER;
+
+      // Generate message using patient demographics
+      const patientFirstName = patient.demographics?.firstName || 'Valued Patient';
+      const message = customMessage
+        ? { body: customMessage }
+        : generateReviewRequestMessage(
+            patientFirstName,
+            patient.organization.name,
+            platform,
+            reviewUrl,
+            channel,
+          );
+
+      // Create review request
+      const scheduledTime = scheduleFor || calculateOptimalReviewRequestTime(new Date(), null);
+
+      const reviewRequest = await ctx.prisma.reviewRequest.create({
+        data: {
+          patientId,
+          organizationId: ctx.user.organizationId,
+          platform: platform as any,
+          status: scheduleFor && scheduleFor > new Date() ? 'PENDING' : 'SENT',
+          sentVia: channel,
+          scheduledFor: scheduledTime,
+          sentAt: scheduleFor && scheduleFor > new Date() ? null : new Date(),
+          reviewUrl,
+          triggeredByAppointmentId,
+        },
+      });
+
+      // Log activity
+      await auditLog('AI_GROWTH_REVIEW_REQUESTED', 'ReviewRequest', {
+        entityId: reviewRequest.id,
+        changes: { patientId, platform, channel, scheduledFor: scheduledTime },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        requestId: reviewRequest.id,
+        patientId,
+        platform,
+        sentVia: channel,
+        scheduledAt: scheduledTime,
+        reviewUrl,
+        message,
+        status: reviewRequest.status,
+      } as ReviewRequestResult & { message: { subject?: string; body: string }; status: string };
+    }),
+
+  /**
+   * Identify satisfied patients who are good candidates for review requests
+   */
+  identifySatisfiedPatients: protectedProcedure
+    .input(identifySatisfiedPatientsInputSchema)
+    .query(async ({ ctx, input }) => {
+      const {
+        minVisits,
+        minDaysSinceLastVisit,
+        maxDaysSinceLastVisit,
+        excludeRecentlyRequested,
+        recentRequestDays,
+        limit,
+      } = input;
+
+      const now = new Date();
+      const minDate = new Date(now.getTime() - maxDaysSinceLastVisit * 24 * 60 * 60 * 1000);
+      const maxDate = new Date(now.getTime() - minDaysSinceLastVisit * 24 * 60 * 60 * 1000);
+
+      // Get patients with recent completed appointments
+      const patients = await ctx.prisma.patient.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: 'ACTIVE',
+          appointments: {
+            some: {
+              status: 'COMPLETED',
+              endTime: {
+                gte: minDate,
+                lte: maxDate,
+              },
+            },
+          },
+        },
+        include: {
+          demographics: true,
+          appointments: {
+            where: { status: 'COMPLETED' },
+            orderBy: { endTime: 'desc' },
+            take: 20,
+          },
+        },
+        take: limit * 3, // Get extra to filter
+      });
+
+      const candidates: ReviewCandidate[] = [];
+
+      for (const patient of patients) {
+        // Check for recent review requests if needed
+        if (excludeRecentlyRequested) {
+          const recentRequest = await ctx.prisma.reviewRequest.findFirst({
+            where: {
+              patientId: patient.id,
+              createdAt: { gte: new Date(now.getTime() - recentRequestDays * 24 * 60 * 60 * 1000) },
+            },
+          });
+          if (recentRequest) continue;
+        }
+
+        // Check min visits
+        if (patient.appointments.length < minVisits) {
+          continue;
+        }
+
+        const lastVisit = patient.appointments[0];
+        if (!lastVisit) continue;
+
+        // Calculate satisfaction score
+        const satisfactionScore = calculatePatientSatisfactionScore(
+          patient.appointments.length,
+          patient.appointments.map(a => ({ status: a.status, rating: null })),
+          false, // Would need to check for complaints
+        );
+
+        // Only include patients with high satisfaction
+        if (satisfactionScore < 60) continue;
+
+        // Check if already reviewed
+        const hasReviewed = await ctx.prisma.reviewRequest.findFirst({
+          where: {
+            patientId: patient.id,
+            status: 'REVIEWED',
+          },
+        });
+
+        const optimalTime = calculateOptimalReviewRequestTime(lastVisit.endTime || new Date(), null);
+
+        const reasoning: string[] = [];
+        if (patient.appointments.length >= 5) reasoning.push('Loyal patient with multiple visits');
+        if (satisfactionScore >= 80) reasoning.push('High satisfaction score');
+        if (!hasReviewed) reasoning.push('Has not left a review yet');
+
+        const patientName = patient.demographics
+          ? `${patient.demographics.firstName} ${patient.demographics.lastName}`
+          : `Patient ${patient.mrn}`;
+
+        candidates.push({
+          patientId: patient.id,
+          patientName,
+          satisfactionScore,
+          lastVisitDate: lastVisit.endTime || lastVisit.startTime,
+          totalVisits: patient.appointments.length,
+          hasReviewedBefore: !!hasReviewed,
+          recommendedPlatform: 'GOOGLE', // Default to Google as primary
+          optimalRequestTime: optimalTime,
+          reasoning,
+        });
+      }
+
+      // Sort by satisfaction score and return top candidates
+      candidates.sort((a, b) => b.satisfactionScore - a.satisfactionScore);
+
+      return {
+        candidates: candidates.slice(0, limit),
+        totalEligible: candidates.length,
+        criteria: {
+          minVisits,
+          minDaysSinceLastVisit,
+          maxDaysSinceLastVisit,
+          excludeRecentlyRequested,
+        },
+      };
+    }),
+
+  /**
+   * Get review requests with filtering
+   */
+  getReviewRequests: protectedProcedure
+    .input(getReviewRequestsInputSchema)
+    .query(async ({ ctx, input }) => {
+      const { status, platform, startDate, endDate, limit, offset } = input;
+
+      const where: Prisma.ReviewRequestWhereInput = {
+        patient: {
+          organizationId: ctx.user.organizationId,
+        },
+        ...(status && { status }),
+        ...(platform && { platform }),
+        ...(startDate && { createdAt: { gte: startDate } }),
+        ...(endDate && { createdAt: { lte: endDate } }),
+      };
+
+      const [requests, total] = await Promise.all([
+        ctx.prisma.reviewRequest.findMany({
+          where,
+          include: {
+            patient: {
+              select: {
+                id: true,
+                mrn: true,
+                demographics: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                  },
+                },
+                contacts: {
+                  where: { isPrimary: true },
+                  select: {
+                    email: true,
+                    mobilePhone: true,
+                    homePhone: true,
+                  },
+                  take: 1,
+                },
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: limit,
+          skip: offset,
+        }),
+        ctx.prisma.reviewRequest.count({ where }),
+      ]);
+
+      // Calculate stats
+      const stats = await ctx.prisma.reviewRequest.groupBy({
+        by: ['status'],
+        where: {
+          patient: { organizationId: ctx.user.organizationId },
+          createdAt: startDate ? { gte: startDate } : undefined,
+        },
+        _count: true,
+      });
+
+      const statsByStatus: Record<string, number> = {};
+      for (const stat of stats) {
+        statsByStatus[stat.status] = stat._count;
+      }
+
+      const sent = statsByStatus['SENT'] || 0;
+      const clicked = statsByStatus['CLICKED'] || 0;
+      const reviewed = statsByStatus['REVIEWED'] || 0;
+
+      return {
+        requests,
+        total,
+        limit,
+        offset,
+        hasMore: offset + requests.length < total,
+        stats: {
+          ...statsByStatus,
+          clickRate: sent > 0 ? clicked / sent : 0,
+          conversionRate: sent > 0 ? reviewed / sent : 0,
+        },
+      };
+    }),
+
+  /**
+   * Update platform metrics (from monitoring)
+   */
+  updatePlatformMetrics: adminProcedure
+    .input(updatePlatformMetricsInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const {
+        platform,
+        averageRating,
+        totalReviews,
+        newReviewsCount,
+        responseRate,
+        ratingBreakdown,
+        sentimentScore,
+        platformUrl,
+      } = input;
+
+      // Get existing metrics for comparison
+      const existingMetric = await ctx.prisma.reputationMetric.findFirst({
+        where: {
+          organizationId: ctx.user.organizationId,
+          platform,
+        },
+        orderBy: { snapshotDate: 'desc' },
+      });
+
+      // Calculate new reviews count if not provided
+      const calculatedNewReviews = newReviewsCount ?? (existingMetric
+        ? totalReviews - existingMetric.totalReviews
+        : 0);
+
+      // Check for negative reviews (decrease in rating or new low ratings)
+      const hasNewNegative = ratingBreakdown
+        ? (ratingBreakdown.oneStar + ratingBreakdown.twoStar) >
+          (existingMetric
+            ? (existingMetric.oneStarCount + existingMetric.twoStarCount)
+            : 0)
+        : false;
+
+      // Create new metric snapshot
+      const metric = await ctx.prisma.reputationMetric.create({
+        data: {
+          organizationId: ctx.user.organizationId,
+          platform,
+          platformUrl,
+          averageRating,
+          totalReviews,
+          newReviewsCount: Math.max(0, calculatedNewReviews),
+          responseRate,
+          fiveStarCount: ratingBreakdown?.fiveStar || 0,
+          fourStarCount: ratingBreakdown?.fourStar || 0,
+          threeStarCount: ratingBreakdown?.threeStar || 0,
+          twoStarCount: ratingBreakdown?.twoStar || 0,
+          oneStarCount: ratingBreakdown?.oneStar || 0,
+          sentimentScore,
+          hasNewNegative,
+          snapshotDate: new Date(),
+        },
+      });
+
+      await auditLog('AI_GROWTH_METRICS_UPDATED', 'ReputationMetric', {
+        entityId: metric.id,
+        changes: { platform, averageRating, totalReviews, hasNewNegative },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        metric,
+        changes: existingMetric
+          ? {
+              ratingChange: Number(averageRating) - Number(existingMetric.averageRating),
+              newReviews: calculatedNewReviews,
+              hasNewNegative,
+            }
+          : null,
+      };
+    }),
+
+  /**
+   * Get platform metrics (current and historical)
+   */
+  getPlatformMetrics: protectedProcedure
+    .input(getPlatformMetricsInputSchema)
+    .query(async ({ ctx, input }) => {
+      const { platform, includeHistory, historyDays } = input;
+
+      const where: Prisma.ReputationMetricWhereInput = {
+        organizationId: ctx.user.organizationId,
+        ...(platform && { platform }),
+      };
+
+      // Get latest metrics for each platform
+      const latestMetrics = await ctx.prisma.reputationMetric.findMany({
+        where,
+        orderBy: { snapshotDate: 'desc' },
+        distinct: ['platform'],
+      });
+
+      // Get historical data if requested
+      let history: any[] = [];
+      if (includeHistory) {
+        const historyStartDate = new Date(Date.now() - historyDays * 24 * 60 * 60 * 1000);
+        history = await ctx.prisma.reputationMetric.findMany({
+          where: {
+            ...where,
+            snapshotDate: { gte: historyStartDate },
+          },
+          orderBy: { snapshotDate: 'asc' },
+        });
+      }
+
+      // Transform to PlatformMetrics format
+      const metrics: PlatformMetrics[] = latestMetrics.map(m => {
+        // Calculate trend from history
+        const platformHistory = history.filter(h => h.platform === m.platform);
+        let trend: 'improving' | 'stable' | 'declining' = 'stable';
+
+        if (platformHistory.length >= 2) {
+          const oldest = platformHistory[0];
+          const ratingChange = Number(m.averageRating) - Number(oldest.averageRating);
+          if (ratingChange > 0.1) trend = 'improving';
+          else if (ratingChange < -0.1) trend = 'declining';
+        }
+
+        return {
+          platform: m.platform,
+          averageRating: Number(m.averageRating),
+          totalReviews: m.totalReviews,
+          newReviewsCount: m.newReviewsCount,
+          responseRate: Number(m.responseRate) || 0,
+          sentimentScore: Number(m.sentimentScore) || 0,
+          ratingBreakdown: {
+            fiveStar: m.fiveStarCount,
+            fourStar: m.fourStarCount,
+            threeStar: m.threeStarCount,
+            twoStar: m.twoStarCount,
+            oneStar: m.oneStarCount,
+          },
+          trend,
+          competitorComparison: m.competitorAverage ? Number(m.competitorAverage) : null,
+        };
+      });
+
+      return {
+        metrics,
+        history: includeHistory ? history : undefined,
+        lastUpdated: latestMetrics[0]?.snapshotDate || null,
+      };
+    }),
+
+  /**
+   * Alert on negative review
+   */
+  alertNegativeReview: protectedProcedure
+    .input(alertNegativeReviewInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { platform, rating, reviewContent, reviewerName, reviewDate, reviewUrl } = input;
+
+      // Determine severity
+      let severity: 'critical' | 'warning' | 'notice' = 'notice';
+      if (rating === 1) severity = 'critical';
+      else if (rating === 2) severity = 'warning';
+
+      // Generate response suggestions
+      const suggestions = generateReviewResponseSuggestions(
+        rating,
+        reviewContent || '',
+        reviewerName || null,
+        'Your Practice', // Would get actual name from org
+        rating <= 2 ? 'apologetic' : 'empathetic',
+      );
+
+      // Get organization settings for notification preferences
+      const org = await ctx.prisma.organization.findUnique({
+        where: { id: ctx.user.organizationId },
+      });
+
+      // Update reputation metrics to flag negative review
+      await ctx.prisma.reputationMetric.updateMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          platform: platform.toLowerCase(),
+        },
+        data: {
+          hasNewNegative: true,
+          unrepliedCount: { increment: 1 },
+        },
+      });
+
+      await auditLog('AI_GROWTH_NEGATIVE_REVIEW_ALERT', 'ReputationMetric', {
+        changes: { platform, rating, severity, reviewContent },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      const alert: NegativeReviewAlert = {
+        id: `alert_${Date.now()}`,
+        platform,
+        rating,
+        reviewDate: reviewDate || new Date(),
+        severity,
+        requiresResponse: rating <= 3,
+        suggestedResponses: [suggestions.response],
+        escalatedTo: severity === 'critical' ? 'admin' : null,
+      };
+
+      return {
+        alert,
+        suggestions,
+        organizationName: org?.name || 'Unknown',
+        reviewUrl,
+      };
+    }),
+
+  /**
+   * Get review response suggestions
+   */
+  getReviewResponseSuggestion: protectedProcedure
+    .input(getReviewResponseSuggestionInputSchema)
+    .query(async ({ ctx, input }) => {
+      const { platform, rating, reviewContent, reviewerName, tone } = input;
+
+      const org = await ctx.prisma.organization.findUnique({
+        where: { id: ctx.user.organizationId },
+      });
+
+      const practiceName = org?.name || 'Our Practice';
+
+      // Generate suggestions for multiple tones
+      const tones: Array<'professional' | 'empathetic' | 'apologetic' | 'grateful'> =
+        rating >= 4
+          ? ['grateful', 'professional']
+          : rating === 3
+            ? ['empathetic', 'professional']
+            : ['apologetic', 'empathetic'];
+
+      const suggestions = tones.map(t =>
+        generateReviewResponseSuggestions(rating, reviewContent, reviewerName || null, practiceName, t),
+      );
+
+      // If a specific tone was requested, put it first
+      if (tone) {
+        const requested = suggestions.find(s => s.tone === tone);
+        if (requested) {
+          const others = suggestions.filter(s => s.tone !== tone);
+          return {
+            primary: requested,
+            alternatives: others,
+            guidelines: {
+              dos: requested.keyPoints,
+              donts: requested.avoidTopics,
+              platformSpecific: getPlatformGuidelines(platform),
+            },
+          };
+        }
+      }
+
+      return {
+        primary: suggestions[0],
+        alternatives: suggestions.slice(1),
+        guidelines: {
+          dos: suggestions[0].keyPoints,
+          donts: suggestions[0].avoidTopics,
+          platformSpecific: getPlatformGuidelines(platform),
+        },
+      };
+    }),
+
+  /**
+   * Get overall reputation score and analysis
+   */
+  getReputationScore: protectedProcedure
+    .input(getReputationScoreInputSchema)
+    .query(async ({ ctx, input }) => {
+      const { includeRecommendations, includeTrends } = input;
+
+      // Get latest metrics for all platforms
+      const latestMetrics = await ctx.prisma.reputationMetric.findMany({
+        where: { organizationId: ctx.user.organizationId },
+        orderBy: { snapshotDate: 'desc' },
+        distinct: ['platform'],
+      });
+
+      const score = calculateReputationScore(
+        latestMetrics.map(m => ({
+          platform: m.platform,
+          averageRating: Number(m.averageRating),
+          totalReviews: m.totalReviews,
+          responseRate: m.responseRate ? Number(m.responseRate) : null,
+          sentimentScore: m.sentimentScore ? Number(m.sentimentScore) : null,
+        })),
+      );
+
+      // Get trend data if requested
+      let trends = null;
+      if (includeTrends) {
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        const oldestMetrics = await ctx.prisma.reputationMetric.findMany({
+          where: {
+            organizationId: ctx.user.organizationId,
+            snapshotDate: { lte: thirtyDaysAgo },
+          },
+          orderBy: { snapshotDate: 'asc' },
+          distinct: ['platform'],
+        });
+
+        if (oldestMetrics.length > 0) {
+          const oldScore = calculateReputationScore(
+            oldestMetrics.map(m => ({
+              platform: m.platform,
+              averageRating: Number(m.averageRating),
+              totalReviews: m.totalReviews,
+              responseRate: m.responseRate ? Number(m.responseRate) : null,
+              sentimentScore: m.sentimentScore ? Number(m.sentimentScore) : null,
+            })),
+          );
+
+          const scoreDiff = score.overallScore - oldScore.overallScore;
+          score.trend = scoreDiff > 5 ? 'improving' : scoreDiff < -5 ? 'declining' : 'stable';
+
+          trends = {
+            scoreChange: scoreDiff,
+            reviewsGained: latestMetrics.reduce((sum, m) => sum + m.totalReviews, 0) -
+              oldestMetrics.reduce((sum, m) => sum + m.totalReviews, 0),
+            ratingChange: latestMetrics.reduce((sum, m) => sum + Number(m.averageRating), 0) / (latestMetrics.length || 1) -
+              oldestMetrics.reduce((sum, m) => sum + Number(m.averageRating), 0) / (oldestMetrics.length || 1),
+          };
+        }
+      }
+
+      return {
+        score,
+        platforms: latestMetrics.map(m => ({
+          platform: m.platform,
+          score: score.platformScores[m.platform.toLowerCase()] || 0,
+          rating: Number(m.averageRating),
+          reviews: m.totalReviews,
+          hasUnrepliedReviews: m.unrepliedCount > 0,
+          needsAttention: m.hasNewNegative || Number(m.averageRating) < 4,
+        })),
+        trends,
+        lastUpdated: latestMetrics[0]?.snapshotDate || null,
+      };
+    }),
+
+  /**
+   * Get reputation trends over time
+   */
+  getReputationTrends: protectedProcedure
+    .input(getReputationTrendsInputSchema)
+    .query(async ({ ctx, input }) => {
+      const { days, platform } = input;
+
+      const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+      const metrics = await ctx.prisma.reputationMetric.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          snapshotDate: { gte: startDate },
+          ...(platform && { platform }),
+        },
+        orderBy: { snapshotDate: 'asc' },
+      });
+
+      // Group by date and platform
+      const groupedData: Record<string, Record<string, { rating: number; reviews: number }>> = {};
+
+      for (const metric of metrics) {
+        const dateKey = metric.snapshotDate.toISOString().split('T')[0];
+        if (!groupedData[dateKey]) {
+          groupedData[dateKey] = {};
+        }
+        groupedData[dateKey][metric.platform] = {
+          rating: Number(metric.averageRating),
+          reviews: metric.totalReviews,
+        };
+      }
+
+      // Calculate overall trend
+      const sortedDates = Object.keys(groupedData).sort();
+      const firstDate = sortedDates[0];
+      const lastDate = sortedDates[sortedDates.length - 1];
+
+      let overallTrend: 'improving' | 'stable' | 'declining' = 'stable';
+      if (firstDate && lastDate && firstDate !== lastDate) {
+        const firstMetrics = groupedData[firstDate];
+        const lastMetrics = groupedData[lastDate];
+
+        const firstAvg = Object.values(firstMetrics).reduce((sum, m) => sum + m.rating, 0) /
+          Object.values(firstMetrics).length;
+        const lastAvg = Object.values(lastMetrics).reduce((sum, m) => sum + m.rating, 0) /
+          Object.values(lastMetrics).length;
+
+        if (lastAvg - firstAvg > 0.1) overallTrend = 'improving';
+        else if (lastAvg - firstAvg < -0.1) overallTrend = 'declining';
+      }
+
+      return {
+        data: groupedData,
+        dateRange: { start: startDate, end: new Date() },
+        overallTrend,
+        dataPoints: metrics.length,
+      };
+    }),
+
+  /**
+   * Bulk request reviews from multiple patients
+   */
+  bulkRequestReviews: adminProcedure
+    .input(bulkRequestReviewsInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { patientIds, platform, channel, spreadOverDays } = input;
+
+      const results = {
+        total: patientIds.length,
+        scheduled: 0,
+        skipped: 0,
+        errors: 0,
+        requests: [] as Array<{ patientId: string; scheduledAt: Date; status: string }>,
+      };
+
+      // Calculate time slots
+      const now = new Date();
+      const hoursPerRequest = (spreadOverDays * 24) / patientIds.length;
+
+      for (let i = 0; i < patientIds.length; i++) {
+        const patientId = patientIds[i];
+
+        try {
+          // Check for recent requests
+          const recentRequest = await ctx.prisma.reviewRequest.findFirst({
+            where: {
+              patientId,
+              createdAt: { gte: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) },
+              status: { notIn: ['DECLINED', 'FAILED'] },
+            },
+          });
+
+          if (recentRequest) {
+            results.skipped++;
+            continue;
+          }
+
+          // Schedule the request
+          const scheduledAt = new Date(now.getTime() + i * hoursPerRequest * 60 * 60 * 1000);
+          // Set to 10 AM if scheduled for future day
+          if (scheduledAt.getDate() !== now.getDate()) {
+            scheduledAt.setHours(10, 0, 0, 0);
+          }
+
+          const reviewRequest = await ctx.prisma.reviewRequest.create({
+            data: {
+              patientId,
+              organizationId: ctx.user.organizationId,
+              platform: platform as any,
+              status: 'PENDING',
+              sentVia: channel,
+              scheduledFor: scheduledAt,
+            },
+          });
+
+          results.scheduled++;
+          results.requests.push({
+            patientId,
+            scheduledAt,
+            status: 'PENDING',
+          });
+        } catch (error) {
+          results.errors++;
+        }
+      }
+
+      await auditLog('AI_GROWTH_BULK_REVIEW_REQUEST', 'ReviewRequest', {
+        changes: { total: results.total, scheduled: results.scheduled, skipped: results.skipped },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return results;
+    }),
+
+  /**
+   * Acknowledge/respond to negative review alert
+   */
+  acknowledgeNegativeReview: protectedProcedure
+    .input(acknowledgeNegativeReviewInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { alertId, action, responseContent, escalateTo, notes } = input;
+
+      // In a real system, this would update an alerts table
+      // For now, we'll update the reputation metrics and log the action
+
+      // Clear the negative flag if responded
+      if (action === 'responded') {
+        await ctx.prisma.reputationMetric.updateMany({
+          where: {
+            organizationId: ctx.user.organizationId,
+            hasNewNegative: true,
+          },
+          data: {
+            hasNewNegative: false,
+            unrepliedCount: { decrement: 1 },
+          },
+        });
+      }
+
+      await auditLog('AI_GROWTH_REVIEW_ALERT_ACTION', 'ReputationMetric', {
+        entityId: alertId,
+        changes: { action, responseContent: responseContent?.substring(0, 100), escalateTo, notes },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        success: true,
+        action,
+        alertId,
+        message: action === 'responded'
+          ? 'Review response recorded'
+          : action === 'escalated'
+            ? `Escalated to ${escalateTo}`
+            : action === 'acknowledged'
+              ? 'Alert acknowledged'
+              : 'Alert dismissed',
       };
     }),
 });

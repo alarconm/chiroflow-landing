@@ -148,3 +148,74 @@ Story: US-356 - Intelligent lead management
 --- Iteration 3 completed at 2026-01-22 ---
 Story: US-357 - Automated lead nurturing
 
+--- Iteration 3 completed at 2026-01-22 17:00:04 ---
+Story: US-357 - Automated lead nurturing
+
+### US-358: Reputation management
+**Status:** COMPLETED
+**Date:** 2026-01-22
+
+**Changes made:**
+1. Extended `app/src/server/routers/aiGrowth.ts` with comprehensive reputation management functionality:
+   - **aiGrowth.requestReview** - Smart review request with personalized messaging
+   - **aiGrowth.identifySatisfiedPatients** - Find best review candidates based on visit history and satisfaction
+   - **aiGrowth.getReviewRequests** - List and filter review requests with stats
+   - **aiGrowth.updatePlatformMetrics** - Update reputation metrics from monitoring
+   - **aiGrowth.getPlatformMetrics** - Get current and historical platform metrics
+   - **aiGrowth.alertNegativeReview** - Create alerts for negative reviews
+   - **aiGrowth.getReviewResponseSuggestion** - Generate AI response suggestions
+   - **aiGrowth.getReputationScore** - Calculate overall reputation score with analysis
+   - **aiGrowth.getReputationTrends** - Track reputation trends over time
+   - **aiGrowth.bulkRequestReviews** - Bulk request reviews with spread scheduling
+   - **aiGrowth.acknowledgeNegativeReview** - Handle negative review alerts
+
+2. Added 14 new types for reputation management:
+   - ReviewCandidate, ReviewRequestResult, PlatformMetrics
+   - ReputationScore, NegativeReviewAlert, ReviewResponseSuggestion
+
+3. Added 10 new input schemas for validation:
+   - requestReviewInputSchema, identifySatisfiedPatientsInputSchema
+   - getReviewRequestsInputSchema, updatePlatformMetricsInputSchema
+   - getPlatformMetricsInputSchema, alertNegativeReviewInputSchema
+   - getReviewResponseSuggestionInputSchema, getReputationScoreInputSchema
+   - getReputationTrendsInputSchema, bulkRequestReviewsInputSchema
+   - acknowledgeNegativeReviewInputSchema
+
+4. Added 7 helper functions:
+   - calculatePatientSatisfactionScore - Score based on visit history
+   - calculateOptimalReviewRequestTime - Best time to request reviews
+   - generateReviewRequestMessage - Personalized email/SMS messages
+   - generateReviewResponseSuggestions - AI-powered response drafts
+   - calculateReputationScore - Overall score with platform weights
+   - getPlatformGuidelines - Platform-specific response guidelines
+
+5. Added new audit actions to `app/src/lib/audit.ts`:
+   - AI_GROWTH_REVIEW_REQUESTED, AI_GROWTH_BULK_REVIEW_REQUEST
+   - AI_GROWTH_METRICS_UPDATED, AI_GROWTH_NEGATIVE_REVIEW_ALERT
+   - AI_GROWTH_REVIEW_ALERT_ACTION
+
+**Features implemented:**
+- Smart review request timing (2 days after positive appointment)
+- Patient satisfaction scoring algorithm (0-100 based on visits, completion rate)
+- Multi-platform support (Google, Yelp, Facebook, Healthgrades, ZocDoc)
+- Personalized email and SMS templates with dynamic variables
+- Negative review detection and severity classification
+- AI-generated response suggestions with multiple tones
+- Platform-specific response guidelines
+- Reputation score calculation with trend analysis
+- Review request tracking and conversion metrics
+- Bulk review requests with spread scheduling
+
+**Acceptance Criteria Met:**
+- ✅ aiGrowth.requestReview - Smart review requests
+- ✅ Identify satisfied patients for review ask (satisfaction scoring)
+- ✅ Multi-platform review requests (Google, Yelp, Facebook)
+- ✅ Optimal timing after positive experiences
+- ✅ Monitor review platforms (updatePlatformMetrics, getPlatformMetrics)
+- ✅ Alert on negative reviews (alertNegativeReview)
+- ✅ Generate review response suggestions
+- ✅ Track reputation scores (getReputationScore, getReputationTrends)
+
+--- Iteration 4 completed at 2026-01-22 ---
+Story: US-358 - Reputation management
+
