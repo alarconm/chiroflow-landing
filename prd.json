@@ -104,7 +104,7 @@
         "Auto-assign required training"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-369",

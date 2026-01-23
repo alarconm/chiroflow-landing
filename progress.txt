@@ -543,3 +543,124 @@ Added comprehensive script training and practice system to `app/src/server/route
 --- Iteration 5 completed at 2026-01-22 ---
 Story: US-367 - Script training and practice
 
+--- Iteration 5 completed at 2026-01-22 18:43:19 ---
+Story: US-367 - Script training and practice
+
+### US-368: Compliance training ✅ COMPLETED
+
+**Date:** 2026-01-22
+**Status:** PASSED
+
+**Implementation:**
+
+Added comprehensive compliance training system to `app/src/server/routers/aiTraining.ts`.
+
+**New tRPC Procedures:**
+
+1. **getComplianceModules** - List all compliance training modules
+   - Filter by certification type
+   - Include user's progress and certification status
+   - Show expiration status and renewal info
+
+2. **startComplianceModule** - Begin a compliance training module
+   - Check prerequisites
+   - Enforce max attempts limit
+   - Create or reset progress record
+   - Return module content with sections and quizzes
+
+3. **submitComplianceQuiz** - Submit answers for module section quiz
+   - Grade answers against correct answers
+   - Calculate section score
+   - Store detailed quiz results
+   - Provide explanations for wrong answers
+
+4. **advanceComplianceModule** - Move to next section or complete module
+   - Track time spent
+   - Calculate final score on completion
+   - Create/update StaffCertification on passing
+   - Handle annual renewal expiration dates
+
+5. **getCertifications** - Get user's certifications
+   - Filter by active/expired status
+   - Include expiration alerts
+   - Summary statistics
+
+6. **getExpirationAlerts** - Get expiring certifications for organization
+   - Configurable look-ahead period (default 30 days)
+   - Urgency levels (CRITICAL, HIGH, MEDIUM, LOW, EXPIRED)
+   - Include user details for manager follow-up
+
+7. **sendRenewalReminder** - Send renewal reminder (admin)
+   - Mark reminder as sent
+   - Audit log tracking
+
+8. **getComplianceReport** - Organization-wide compliance report (admin)
+   - User compliance rates
+   - Module completion statistics
+   - Per-user module status details
+   - Expiring and expired certification counts
+
+9. **autoAssignComplianceTraining** - Auto-assign required training (admin)
+   - Assign to all users or specific user
+   - Check role requirements
+   - Skip already certified users
+   - Detailed assignment tracking
+
+10. **createComplianceModule** - Create new compliance module (admin)
+    - Full content structure with sections and quizzes
+    - Renewal period configuration
+    - Role requirements
+
+11. **updateComplianceModule** - Update existing module (admin)
+
+**Certification Types Supported:**
+- HIPAA_PRIVACY - HIPAA Privacy Rule training
+- HIPAA_SECURITY - HIPAA Security Rule training
+- BILLING_COMPLIANCE - Billing compliance training
+- WORKPLACE_SAFETY - Workplace safety training
+- BLOOD_BORNE_PATHOGENS - Blood-borne pathogen safety
+- CUSTOMER_SERVICE - Customer service training
+- PHONE_ETIQUETTE - Phone etiquette training
+- EHR_PROFICIENCY - EHR system proficiency
+- FRONT_DESK_OPERATIONS - Front desk operations
+
+**Key Features:**
+- Quiz-based assessments with explanations
+- Multiple attempts with configurable limits
+- Annual renewal tracking with expiration alerts
+- Certificate number generation
+- Manager visibility into team compliance
+- Auto-assignment based on role requirements
+- Comprehensive compliance reports
+
+**Audit Actions Added:**
+- TRAINING_START
+- TRAINING_COMPLETE
+- TRAINING_FAIL
+- TRAINING_AUTO_ASSIGN
+- CERTIFICATION_EARNED
+- CERTIFICATION_RENEWAL_REMINDER
+
+**Acceptance Criteria Fulfilled:**
+- ✅ HIPAA training module with quiz
+- ✅ Billing compliance training
+- ✅ Safety training modules
+- ✅ Annual renewal requirements
+- ✅ Certification tracking
+- ✅ Expiration alerts
+- ✅ Compliance training reports
+- ✅ Auto-assign required training
+
+**Files Modified:**
+- app/src/server/routers/aiTraining.ts (added ~1100 lines)
+- app/src/lib/audit.ts (added training audit actions)
+
+---
+
+## Stories Remaining: 2
+
+- US-369: Performance coaching
+- US-370: Training dashboard
+--- Iteration 6 completed at 2026-01-22 ---
+Story: US-368 - Compliance training
+

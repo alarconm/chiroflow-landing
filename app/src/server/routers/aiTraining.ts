@@ -5541,4 +5541,1335 @@ export const aiTrainingRouter = router({
       },
     };
   }),
+
+  // ============================================
+  // US-368: Compliance Training
+  // ============================================
+
+  /**
+   * Get all compliance training modules
+   */
+  getComplianceModules: protectedProcedure
+    .input(
+      z.object({
+        includeInactive: z.boolean().default(false),
+        certType: z.enum([
+          'HIPAA_PRIVACY',
+          'HIPAA_SECURITY',
+          'BILLING_COMPLIANCE',
+          'WORKPLACE_SAFETY',
+          'BLOOD_BORNE_PATHOGENS',
+          'CUSTOMER_SERVICE',
+          'PHONE_ETIQUETTE',
+          'EHR_PROFICIENCY',
+          'FRONT_DESK_OPERATIONS',
+        ]).optional(),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const modules = await ctx.prisma.trainingModule.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          type: 'COMPLIANCE',
+          isActive: input?.includeInactive ? undefined : true,
+        },
+        orderBy: { order: 'asc' },
+        include: {
+          progress: {
+            where: { userId: ctx.user.id },
+          },
+          certifications: {
+            where: {
+              userId: ctx.user.id,
+              isActive: true,
+            },
+          },
+        },
+      });
+
+      // Get renewal info for each module
+      return modules.map((module) => {
+        const progress = module.progress[0];
+        const certification = module.certifications[0];
+        const isExpired = certification?.expirationDate
+          ? new Date(certification.expirationDate) < new Date()
+          : false;
+        const isExpiringSoon = certification?.expirationDate
+          ? new Date(certification.expirationDate) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+          : false;
+
+        return {
+          id: module.id,
+          name: module.name,
+          description: module.description,
+          duration: module.duration,
+          passingScore: module.passingScore,
+          maxAttempts: module.maxAttempts,
+          renewalDays: module.renewalDays,
+          isActive: module.isActive,
+          version: module.version,
+          requiredFor: module.requiredFor,
+          progress: progress
+            ? {
+                status: progress.status,
+                score: progress.score,
+                attemptNumber: progress.attemptNumber,
+                startedAt: progress.startedAt,
+                completedAt: progress.completedAt,
+                dueDate: progress.dueDate,
+              }
+            : null,
+          certification: certification
+            ? {
+                id: certification.id,
+                certType: certification.certType,
+                earnedDate: certification.earnedDate,
+                expirationDate: certification.expirationDate,
+                score: certification.score,
+                certificateNumber: certification.certificateNumber,
+                isExpired,
+                isExpiringSoon,
+              }
+            : null,
+        };
+      });
+    }),
+
+  /**
+   * Start a compliance training module
+   */
+  startComplianceModule: protectedProcedure
+    .input(
+      z.object({
+        moduleId: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const module = await ctx.prisma.trainingModule.findFirst({
+        where: {
+          id: input.moduleId,
+          organizationId: ctx.user.organizationId,
+          type: 'COMPLIANCE',
+          isActive: true,
+        },
+      });
+
+      if (!module) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Compliance training module not found',
+        });
+      }
+
+      // Check prerequisites
+      if (module.prerequisiteIds.length > 0) {
+        const completedPrereqs = await ctx.prisma.trainingProgress.findMany({
+          where: {
+            userId: ctx.user.id,
+            moduleId: { in: module.prerequisiteIds },
+            status: 'COMPLETED',
+          },
+        });
+
+        if (completedPrereqs.length < module.prerequisiteIds.length) {
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: 'Prerequisites not completed',
+          });
+        }
+      }
+
+      // Check existing progress
+      const existingProgress = await ctx.prisma.trainingProgress.findUnique({
+        where: {
+          userId_moduleId: {
+            userId: ctx.user.id,
+            moduleId: input.moduleId,
+          },
+        },
+      });
+
+      // Check if max attempts reached
+      if (existingProgress && existingProgress.attemptNumber >= module.maxAttempts) {
+        if (existingProgress.status !== 'COMPLETED') {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `Maximum attempts (${module.maxAttempts}) reached for this module`,
+          });
+        }
+      }
+
+      // Create or update progress
+      const dueDate = module.dueWithinDays
+        ? new Date(Date.now() + module.dueWithinDays * 24 * 60 * 60 * 1000)
+        : null;
+
+      const content = module.content as {
+        sections?: Array<{
+          id: string;
+          title: string;
+          content: string;
+          quiz?: {
+            questions: Array<{
+              id: string;
+              question: string;
+              type: 'multiple_choice' | 'true_false';
+              options?: string[];
+              correctAnswer: string | number;
+              explanation: string;
+            }>;
+          };
+        }>;
+        totalSteps?: number;
+      } | null;
+
+      const totalSteps = content?.sections?.length || content?.totalSteps || 1;
+
+      const progress = existingProgress
+        ? await ctx.prisma.trainingProgress.update({
+            where: { id: existingProgress.id },
+            data: {
+              status: 'IN_PROGRESS',
+              startedAt: new Date(),
+              lastAccessAt: new Date(),
+              currentStep: 0,
+              totalSteps,
+              progressData: Prisma.JsonNull,
+              quizResults: Prisma.JsonNull,
+              attemptNumber: existingProgress.status === 'COMPLETED'
+                ? 1
+                : existingProgress.attemptNumber + 1,
+              dueDate,
+            },
+          })
+        : await ctx.prisma.trainingProgress.create({
+            data: {
+              userId: ctx.user.id,
+              moduleId: input.moduleId,
+              organizationId: ctx.user.organizationId,
+              status: 'IN_PROGRESS',
+              startedAt: new Date(),
+              lastAccessAt: new Date(),
+              totalSteps,
+              dueDate,
+            },
+          });
+
+      await auditLog('TRAINING_START', 'ComplianceTraining', {
+        entityId: input.moduleId,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: { moduleName: module.name, attemptNumber: progress.attemptNumber },
+      });
+
+      return {
+        progressId: progress.id,
+        moduleId: module.id,
+        moduleName: module.name,
+        description: module.description,
+        duration: module.duration,
+        passingScore: module.passingScore,
+        attemptNumber: progress.attemptNumber,
+        maxAttempts: module.maxAttempts,
+        content: module.content,
+        currentStep: 0,
+        totalSteps,
+        dueDate: progress.dueDate,
+      };
+    }),
+
+  /**
+   * Submit quiz answers for a compliance module section
+   */
+  submitComplianceQuiz: protectedProcedure
+    .input(
+      z.object({
+        moduleId: z.string(),
+        sectionIndex: z.number().int().min(0),
+        answers: z.array(
+          z.object({
+            questionId: z.string(),
+            answer: z.union([z.string(), z.number()]),
+          })
+        ),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const module = await ctx.prisma.trainingModule.findFirst({
+        where: {
+          id: input.moduleId,
+          organizationId: ctx.user.organizationId,
+          type: 'COMPLIANCE',
+        },
+      });
+
+      if (!module) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Module not found',
+        });
+      }
+
+      const progress = await ctx.prisma.trainingProgress.findUnique({
+        where: {
+          userId_moduleId: {
+            userId: ctx.user.id,
+            moduleId: input.moduleId,
+          },
+        },
+      });
+
+      if (!progress || progress.status !== 'IN_PROGRESS') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'No active training session found',
+        });
+      }
+
+      // Get section quiz from module content
+      const content = module.content as {
+        sections?: Array<{
+          id: string;
+          title: string;
+          quiz?: {
+            questions: Array<{
+              id: string;
+              question: string;
+              correctAnswer: string | number;
+              explanation: string;
+            }>;
+          };
+        }>;
+      } | null;
+
+      const section = content?.sections?.[input.sectionIndex];
+      if (!section?.quiz) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Section does not have a quiz',
+        });
+      }
+
+      // Grade the quiz
+      const questions = section.quiz.questions;
+      let correctCount = 0;
+      const results: Array<{
+        questionId: string;
+        correct: boolean;
+        userAnswer: string | number;
+        correctAnswer: string | number;
+        explanation: string;
+      }> = [];
+
+      input.answers.forEach((answer) => {
+        const question = questions.find((q) => q.id === answer.questionId);
+        if (question) {
+          const isCorrect = String(question.correctAnswer) === String(answer.answer);
+          if (isCorrect) correctCount++;
+          results.push({
+            questionId: answer.questionId,
+            correct: isCorrect,
+            userAnswer: answer.answer,
+            correctAnswer: question.correctAnswer,
+            explanation: question.explanation,
+          });
+        }
+      });
+
+      const sectionScore = Math.round((correctCount / questions.length) * 100);
+      const passed = sectionScore >= module.passingScore;
+
+      // Update quiz results
+      const existingQuizResults = (progress.quizResults as Record<string, unknown>) || {};
+      const updatedQuizResults = {
+        ...existingQuizResults,
+        [`section_${input.sectionIndex}`]: {
+          score: sectionScore,
+          passed,
+          results,
+          completedAt: new Date().toISOString(),
+        },
+      };
+
+      await ctx.prisma.trainingProgress.update({
+        where: { id: progress.id },
+        data: {
+          quizResults: updatedQuizResults as Prisma.InputJsonValue,
+          lastAccessAt: new Date(),
+        },
+      });
+
+      return {
+        sectionIndex: input.sectionIndex,
+        score: sectionScore,
+        passed,
+        passingScore: module.passingScore,
+        correctCount,
+        totalQuestions: questions.length,
+        results,
+        canProceed: passed,
+      };
+    }),
+
+  /**
+   * Advance to next section or complete compliance module
+   */
+  advanceComplianceModule: protectedProcedure
+    .input(
+      z.object({
+        moduleId: z.string(),
+        timeSpentMinutes: z.number().int().min(0).default(0),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const module = await ctx.prisma.trainingModule.findFirst({
+        where: {
+          id: input.moduleId,
+          organizationId: ctx.user.organizationId,
+          type: 'COMPLIANCE',
+        },
+      });
+
+      if (!module) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Module not found',
+        });
+      }
+
+      const progress = await ctx.prisma.trainingProgress.findUnique({
+        where: {
+          userId_moduleId: {
+            userId: ctx.user.id,
+            moduleId: input.moduleId,
+          },
+        },
+      });
+
+      if (!progress || progress.status !== 'IN_PROGRESS') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'No active training session found',
+        });
+      }
+
+      const newStep = progress.currentStep + 1;
+      const isComplete = newStep >= progress.totalSteps;
+
+      if (isComplete) {
+        // Calculate final score from all quiz results
+        const quizResults = (progress.quizResults as Record<string, { score: number; passed: boolean }>) || {};
+        const scores = Object.values(quizResults).map((r) => r.score);
+        const finalScore = scores.length > 0
+          ? Math.round(scores.reduce((sum, s) => sum + s, 0) / scores.length)
+          : 100;
+        const passed = finalScore >= module.passingScore;
+
+        // Update progress
+        await ctx.prisma.trainingProgress.update({
+          where: { id: progress.id },
+          data: {
+            status: passed ? 'COMPLETED' : 'FAILED',
+            currentStep: newStep,
+            completedAt: new Date(),
+            score: finalScore,
+            timeSpentMinutes: progress.timeSpentMinutes + input.timeSpentMinutes,
+            lastAccessAt: new Date(),
+          },
+        });
+
+        // If passed, create or update certification
+        if (passed) {
+          const content = module.content as { certType?: string } | null;
+          const certType = (content?.certType || 'HIPAA_PRIVACY') as 'HIPAA_PRIVACY' | 'HIPAA_SECURITY' | 'BILLING_COMPLIANCE' | 'WORKPLACE_SAFETY' | 'BLOOD_BORNE_PATHOGENS' | 'CUSTOMER_SERVICE' | 'PHONE_ETIQUETTE' | 'EHR_PROFICIENCY' | 'FRONT_DESK_OPERATIONS';
+
+          // Calculate expiration date based on renewal days
+          const expirationDate = module.renewalDays
+            ? new Date(Date.now() + module.renewalDays * 24 * 60 * 60 * 1000)
+            : null;
+
+          // Check for existing certification
+          const existingCert = await ctx.prisma.staffCertification.findFirst({
+            where: {
+              userId: ctx.user.id,
+              moduleId: module.id,
+              isActive: true,
+            },
+          });
+
+          if (existingCert) {
+            // Update existing certification
+            await ctx.prisma.staffCertification.update({
+              where: { id: existingCert.id },
+              data: {
+                earnedDate: new Date(),
+                expirationDate,
+                score: finalScore,
+                attemptNumber: progress.attemptNumber,
+                renewalReminderSent: false,
+                renewalReminderDate: null,
+              },
+            });
+          } else {
+            // Create new certification
+            await ctx.prisma.staffCertification.create({
+              data: {
+                userId: ctx.user.id,
+                moduleId: module.id,
+                organizationId: ctx.user.organizationId,
+                certType,
+                earnedDate: new Date(),
+                expirationDate,
+                score: finalScore,
+                attemptNumber: progress.attemptNumber,
+                certificateNumber: `CERT-${module.id.substring(0, 4).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`,
+              },
+            });
+          }
+
+          await auditLog('TRAINING_COMPLETE', 'ComplianceTraining', {
+            entityId: input.moduleId,
+            userId: ctx.user.id,
+            organizationId: ctx.user.organizationId,
+            changes: {
+              moduleName: module.name,
+              score: finalScore,
+              passed: true,
+              certType,
+              expirationDate,
+            },
+          });
+        } else {
+          await auditLog('TRAINING_FAIL', 'ComplianceTraining', {
+            entityId: input.moduleId,
+            userId: ctx.user.id,
+            organizationId: ctx.user.organizationId,
+            changes: {
+              moduleName: module.name,
+              score: finalScore,
+              passed: false,
+              attemptNumber: progress.attemptNumber,
+              maxAttempts: module.maxAttempts,
+            },
+          });
+        }
+
+        return {
+          completed: true,
+          passed,
+          finalScore,
+          passingScore: module.passingScore,
+          attemptsRemaining: module.maxAttempts - progress.attemptNumber,
+          canRetry: !passed && progress.attemptNumber < module.maxAttempts,
+        };
+      } else {
+        // Just advance to next section
+        await ctx.prisma.trainingProgress.update({
+          where: { id: progress.id },
+          data: {
+            currentStep: newStep,
+            timeSpentMinutes: progress.timeSpentMinutes + input.timeSpentMinutes,
+            lastAccessAt: new Date(),
+          },
+        });
+
+        return {
+          completed: false,
+          currentStep: newStep,
+          totalSteps: progress.totalSteps,
+        };
+      }
+    }),
+
+  /**
+   * Get user's certifications
+   */
+  getCertifications: protectedProcedure
+    .input(
+      z.object({
+        userId: z.string().optional(),
+        includeExpired: z.boolean().default(false),
+        includeInactive: z.boolean().default(false),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const targetUserId = input?.userId || ctx.user.id;
+
+      const certifications = await ctx.prisma.staffCertification.findMany({
+        where: {
+          userId: targetUserId,
+          organizationId: ctx.user.organizationId,
+          isActive: input?.includeInactive ? undefined : true,
+          ...(input?.includeExpired
+            ? {}
+            : {
+                OR: [
+                  { expirationDate: null },
+                  { expirationDate: { gte: new Date() } },
+                ],
+              }),
+        },
+        include: {
+          module: {
+            select: {
+              id: true,
+              name: true,
+              description: true,
+              renewalDays: true,
+            },
+          },
+        },
+        orderBy: { earnedDate: 'desc' },
+      });
+
+      const user = await ctx.prisma.user.findUnique({
+        where: { id: targetUserId },
+        select: { firstName: true, lastName: true, role: true },
+      });
+
+      return {
+        userId: targetUserId,
+        userName: user ? `${user.firstName} ${user.lastName}` : 'Unknown',
+        role: user?.role,
+        certifications: certifications.map((cert) => {
+          const isExpired = cert.expirationDate
+            ? new Date(cert.expirationDate) < new Date()
+            : false;
+          const isExpiringSoon = cert.expirationDate
+            ? new Date(cert.expirationDate) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) &&
+              !isExpired
+            : false;
+          const daysUntilExpiration = cert.expirationDate
+            ? Math.ceil(
+                (new Date(cert.expirationDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+              )
+            : null;
+
+          return {
+            id: cert.id,
+            certType: cert.certType,
+            moduleName: cert.module?.name,
+            moduleId: cert.moduleId,
+            earnedDate: cert.earnedDate,
+            expirationDate: cert.expirationDate,
+            score: cert.score,
+            certificateNumber: cert.certificateNumber,
+            issuingAuthority: cert.issuingAuthority,
+            isExpired,
+            isExpiringSoon,
+            daysUntilExpiration,
+            renewalDays: cert.module?.renewalDays,
+          };
+        }),
+        summary: {
+          total: certifications.length,
+          active: certifications.filter(
+            (c) => !c.expirationDate || new Date(c.expirationDate) >= new Date()
+          ).length,
+          expiringSoon: certifications.filter(
+            (c) =>
+              c.expirationDate &&
+              new Date(c.expirationDate) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) &&
+              new Date(c.expirationDate) >= new Date()
+          ).length,
+          expired: certifications.filter(
+            (c) => c.expirationDate && new Date(c.expirationDate) < new Date()
+          ).length,
+        },
+      };
+    }),
+
+  /**
+   * Get expiration alerts for staff certifications
+   */
+  getExpirationAlerts: protectedProcedure
+    .input(
+      z.object({
+        daysAhead: z.number().int().min(1).max(365).default(30),
+        includeExpired: z.boolean().default(true),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const daysAhead = input?.daysAhead || 30;
+      const futureDate = new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000);
+
+      const alerts = await ctx.prisma.staffCertification.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          isActive: true,
+          expirationDate: {
+            lte: futureDate,
+            ...(input?.includeExpired ? {} : { gte: new Date() }),
+          },
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              role: true,
+            },
+          },
+          module: {
+            select: {
+              id: true,
+              name: true,
+              renewalDays: true,
+            },
+          },
+        },
+        orderBy: { expirationDate: 'asc' },
+      });
+
+      return {
+        alerts: alerts.map((cert) => {
+          const isExpired = new Date(cert.expirationDate!) < new Date();
+          const daysUntilExpiration = Math.ceil(
+            (new Date(cert.expirationDate!).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+          );
+
+          return {
+            certificationId: cert.id,
+            certType: cert.certType,
+            moduleName: cert.module?.name,
+            moduleId: cert.moduleId,
+            userId: cert.user.id,
+            userName: `${cert.user.firstName} ${cert.user.lastName}`,
+            userEmail: cert.user.email,
+            userRole: cert.user.role,
+            expirationDate: cert.expirationDate,
+            isExpired,
+            daysUntilExpiration,
+            urgency: isExpired
+              ? 'EXPIRED'
+              : daysUntilExpiration <= 7
+              ? 'CRITICAL'
+              : daysUntilExpiration <= 14
+              ? 'HIGH'
+              : daysUntilExpiration <= 30
+              ? 'MEDIUM'
+              : 'LOW',
+            renewalReminderSent: cert.renewalReminderSent,
+          };
+        }),
+        summary: {
+          total: alerts.length,
+          expired: alerts.filter((a) => new Date(a.expirationDate!) < new Date()).length,
+          criticallyExpiring: alerts.filter((a) => {
+            const days = Math.ceil(
+              (new Date(a.expirationDate!).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+            );
+            return days > 0 && days <= 7;
+          }).length,
+          expiringSoon: alerts.filter((a) => {
+            const days = Math.ceil(
+              (new Date(a.expirationDate!).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+            );
+            return days > 7 && days <= 30;
+          }).length,
+        },
+      };
+    }),
+
+  /**
+   * Send renewal reminder for a certification
+   */
+  sendRenewalReminder: adminProcedure
+    .input(
+      z.object({
+        certificationId: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const certification = await ctx.prisma.staffCertification.findFirst({
+        where: {
+          id: input.certificationId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+          module: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      });
+
+      if (!certification) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Certification not found',
+        });
+      }
+
+      // Mark reminder as sent
+      await ctx.prisma.staffCertification.update({
+        where: { id: input.certificationId },
+        data: {
+          renewalReminderSent: true,
+          renewalReminderDate: new Date(),
+        },
+      });
+
+      await auditLog('CERTIFICATION_RENEWAL_REMINDER', 'StaffCertification', {
+        entityId: input.certificationId,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          targetUser: `${certification.user.firstName} ${certification.user.lastName}`,
+          certType: certification.certType,
+          moduleName: certification.module?.name,
+          expirationDate: certification.expirationDate,
+        },
+      });
+
+      return {
+        success: true,
+        recipient: {
+          name: `${certification.user.firstName} ${certification.user.lastName}`,
+          email: certification.user.email,
+        },
+        certification: {
+          type: certification.certType,
+          moduleName: certification.module?.name,
+          expirationDate: certification.expirationDate,
+        },
+      };
+    }),
+
+  /**
+   * Get compliance training report for organization
+   */
+  getComplianceReport: adminProcedure
+    .input(
+      z.object({
+        includeInactive: z.boolean().default(false),
+        roleFilter: z.enum(['OWNER', 'ADMIN', 'PROVIDER', 'STAFF', 'BILLER']).optional(),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      // Get all users
+      const users = await ctx.prisma.user.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          isActive: input?.includeInactive ? undefined : true,
+          ...(input?.roleFilter ? { role: input.roleFilter } : {}),
+        },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          role: true,
+        },
+      });
+
+      // Get all compliance modules
+      const modules = await ctx.prisma.trainingModule.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          type: 'COMPLIANCE',
+          isActive: true,
+        },
+        orderBy: { order: 'asc' },
+      });
+
+      // Get all progress records
+      const progress = await ctx.prisma.trainingProgress.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          moduleId: { in: modules.map((m) => m.id) },
+        },
+      });
+
+      // Get all certifications
+      const certifications = await ctx.prisma.staffCertification.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          moduleId: { in: modules.map((m) => m.id) },
+          isActive: true,
+        },
+      });
+
+      // Build report for each user
+      const userReports = users.map((user) => {
+        const userProgress = progress.filter((p) => p.userId === user.id);
+        const userCerts = certifications.filter((c) => c.userId === user.id);
+
+        // Check which modules are required for this user's role
+        const requiredModules = modules.filter((m) => m.requiredFor.includes(user.role));
+        const completedModules = requiredModules.filter((m) =>
+          userCerts.some(
+            (c) =>
+              c.moduleId === m.id &&
+              (!c.expirationDate || new Date(c.expirationDate) >= new Date())
+          )
+        );
+
+        const expiredCerts = userCerts.filter(
+          (c) => c.expirationDate && new Date(c.expirationDate) < new Date()
+        );
+        const expiringSoonCerts = userCerts.filter(
+          (c) =>
+            c.expirationDate &&
+            new Date(c.expirationDate) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) &&
+            new Date(c.expirationDate) >= new Date()
+        );
+
+        const complianceRate =
+          requiredModules.length > 0
+            ? Math.round((completedModules.length / requiredModules.length) * 100)
+            : 100;
+
+        return {
+          userId: user.id,
+          userName: `${user.firstName} ${user.lastName}`,
+          email: user.email,
+          role: user.role,
+          requiredModules: requiredModules.length,
+          completedModules: completedModules.length,
+          complianceRate,
+          isFullyCompliant: complianceRate === 100,
+          expiredCertifications: expiredCerts.length,
+          expiringSoon: expiringSoonCerts.length,
+          inProgressModules: userProgress.filter((p) => p.status === 'IN_PROGRESS').length,
+          moduleDetails: requiredModules.map((m) => {
+            const prog = userProgress.find((p) => p.moduleId === m.id);
+            const cert = userCerts.find((c) => c.moduleId === m.id);
+            const isExpired = cert?.expirationDate
+              ? new Date(cert.expirationDate) < new Date()
+              : false;
+
+            return {
+              moduleId: m.id,
+              moduleName: m.name,
+              status: cert && !isExpired
+                ? 'CERTIFIED'
+                : prog?.status === 'IN_PROGRESS'
+                ? 'IN_PROGRESS'
+                : isExpired
+                ? 'EXPIRED'
+                : 'NOT_STARTED',
+              score: cert?.score || prog?.score,
+              completedAt: prog?.completedAt,
+              expirationDate: cert?.expirationDate,
+            };
+          }),
+        };
+      });
+
+      // Calculate organization-wide metrics
+      const totalRequired = userReports.reduce((sum, u) => sum + u.requiredModules, 0);
+      const totalCompleted = userReports.reduce((sum, u) => sum + u.completedModules, 0);
+      const fullyCompliantUsers = userReports.filter((u) => u.isFullyCompliant).length;
+
+      return {
+        generatedAt: new Date(),
+        organizationId: ctx.user.organizationId,
+        summary: {
+          totalUsers: users.length,
+          fullyCompliantUsers,
+          complianceRate: totalRequired > 0 ? Math.round((totalCompleted / totalRequired) * 100) : 100,
+          totalRequiredTrainings: totalRequired,
+          totalCompletedTrainings: totalCompleted,
+          usersWithExpiredCerts: userReports.filter((u) => u.expiredCertifications > 0).length,
+          usersWithExpiringSoon: userReports.filter((u) => u.expiringSoon > 0).length,
+        },
+        modules: modules.map((m) => {
+          const moduleProgress = progress.filter((p) => p.moduleId === m.id);
+          const moduleCerts = certifications.filter((c) => c.moduleId === m.id);
+          const validCerts = moduleCerts.filter(
+            (c) => !c.expirationDate || new Date(c.expirationDate) >= new Date()
+          );
+          const usersRequired = users.filter((u) => m.requiredFor.includes(u.role)).length;
+
+          return {
+            moduleId: m.id,
+            moduleName: m.name,
+            requiredFor: m.requiredFor,
+            usersRequired,
+            usersCertified: validCerts.length,
+            certificationRate: usersRequired > 0 ? Math.round((validCerts.length / usersRequired) * 100) : 100,
+            inProgress: moduleProgress.filter((p) => p.status === 'IN_PROGRESS').length,
+            averageScore: moduleCerts.length > 0
+              ? Math.round(moduleCerts.reduce((sum, c) => sum + (c.score || 0), 0) / moduleCerts.length)
+              : null,
+          };
+        }),
+        users: userReports,
+      };
+    }),
+
+  /**
+   * Auto-assign required compliance training to users
+   */
+  autoAssignComplianceTraining: adminProcedure
+    .input(
+      z.object({
+        userId: z.string().optional(), // If not provided, assigns to all users
+        moduleIds: z.array(z.string()).optional(), // If not provided, assigns all required modules
+        forceReassign: z.boolean().default(false), // Reassign even if already assigned
+      }).optional()
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Get target users
+      const users = input?.userId
+        ? await ctx.prisma.user.findMany({
+            where: {
+              id: input.userId,
+              organizationId: ctx.user.organizationId,
+              isActive: true,
+            },
+          })
+        : await ctx.prisma.user.findMany({
+            where: {
+              organizationId: ctx.user.organizationId,
+              isActive: true,
+            },
+          });
+
+      if (users.length === 0) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'No users found',
+        });
+      }
+
+      // Get compliance modules
+      const modules = await ctx.prisma.trainingModule.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          type: 'COMPLIANCE',
+          isActive: true,
+          ...(input?.moduleIds ? { id: { in: input.moduleIds } } : {}),
+        },
+      });
+
+      if (modules.length === 0) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'No compliance modules found',
+        });
+      }
+
+      // Get existing progress and certifications
+      const existingProgress = await ctx.prisma.trainingProgress.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          moduleId: { in: modules.map((m) => m.id) },
+          userId: { in: users.map((u) => u.id) },
+        },
+      });
+
+      const existingCerts = await ctx.prisma.staffCertification.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          moduleId: { in: modules.map((m) => m.id) },
+          userId: { in: users.map((u) => u.id) },
+          isActive: true,
+        },
+      });
+
+      // Track assignments
+      const assignments: Array<{
+        userId: string;
+        userName: string;
+        moduleId: string;
+        moduleName: string;
+        action: 'CREATED' | 'SKIPPED_EXISTING' | 'SKIPPED_CERTIFIED' | 'SKIPPED_NOT_REQUIRED';
+      }> = [];
+
+      // Assign modules to users
+      for (const user of users) {
+        for (const module of modules) {
+          // Check if module is required for user's role
+          if (!module.requiredFor.includes(user.role)) {
+            assignments.push({
+              userId: user.id,
+              userName: `${user.firstName} ${user.lastName}`,
+              moduleId: module.id,
+              moduleName: module.name,
+              action: 'SKIPPED_NOT_REQUIRED',
+            });
+            continue;
+          }
+
+          // Check for existing valid certification
+          const hasCert = existingCerts.some(
+            (c) =>
+              c.userId === user.id &&
+              c.moduleId === module.id &&
+              (!c.expirationDate || new Date(c.expirationDate) >= new Date())
+          );
+
+          if (hasCert && !input?.forceReassign) {
+            assignments.push({
+              userId: user.id,
+              userName: `${user.firstName} ${user.lastName}`,
+              moduleId: module.id,
+              moduleName: module.name,
+              action: 'SKIPPED_CERTIFIED',
+            });
+            continue;
+          }
+
+          // Check for existing progress
+          const hasProgress = existingProgress.some(
+            (p) => p.userId === user.id && p.moduleId === module.id
+          );
+
+          if (hasProgress && !input?.forceReassign) {
+            assignments.push({
+              userId: user.id,
+              userName: `${user.firstName} ${user.lastName}`,
+              moduleId: module.id,
+              moduleName: module.name,
+              action: 'SKIPPED_EXISTING',
+            });
+            continue;
+          }
+
+          // Calculate due date
+          const dueDate = module.dueWithinDays
+            ? new Date(Date.now() + module.dueWithinDays * 24 * 60 * 60 * 1000)
+            : null;
+
+          const content = module.content as { sections?: unknown[] } | null;
+          const totalSteps = content?.sections?.length || 1;
+
+          // Create or reset progress
+          if (hasProgress) {
+            await ctx.prisma.trainingProgress.updateMany({
+              where: {
+                userId: user.id,
+                moduleId: module.id,
+              },
+              data: {
+                status: 'NOT_STARTED',
+                startedAt: null,
+                completedAt: null,
+                score: null,
+                currentStep: 0,
+                totalSteps,
+                progressData: Prisma.JsonNull,
+                quizResults: Prisma.JsonNull,
+                dueDate,
+              },
+            });
+          } else {
+            await ctx.prisma.trainingProgress.create({
+              data: {
+                userId: user.id,
+                moduleId: module.id,
+                organizationId: ctx.user.organizationId,
+                status: 'NOT_STARTED',
+                totalSteps,
+                dueDate,
+              },
+            });
+          }
+
+          assignments.push({
+            userId: user.id,
+            userName: `${user.firstName} ${user.lastName}`,
+            moduleId: module.id,
+            moduleName: module.name,
+            action: 'CREATED',
+          });
+        }
+      }
+
+      await auditLog('TRAINING_AUTO_ASSIGN', 'ComplianceTraining', {
+        entityId: 'bulk',
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          usersProcessed: users.length,
+          modulesProcessed: modules.length,
+          assignmentsCreated: assignments.filter((a) => a.action === 'CREATED').length,
+        },
+      });
+
+      const created = assignments.filter((a) => a.action === 'CREATED');
+      const skippedCertified = assignments.filter((a) => a.action === 'SKIPPED_CERTIFIED');
+      const skippedExisting = assignments.filter((a) => a.action === 'SKIPPED_EXISTING');
+      const skippedNotRequired = assignments.filter((a) => a.action === 'SKIPPED_NOT_REQUIRED');
+
+      return {
+        success: true,
+        summary: {
+          usersProcessed: users.length,
+          modulesProcessed: modules.length,
+          assignmentsCreated: created.length,
+          skippedAlreadyCertified: skippedCertified.length,
+          skippedAlreadyAssigned: skippedExisting.length,
+          skippedNotRequired: skippedNotRequired.length,
+        },
+        assignments,
+      };
+    }),
+
+  /**
+   * Create a new compliance training module
+   */
+  createComplianceModule: adminProcedure
+    .input(
+      z.object({
+        name: z.string().min(1).max(200),
+        description: z.string().optional(),
+        certType: z.enum([
+          'HIPAA_PRIVACY',
+          'HIPAA_SECURITY',
+          'BILLING_COMPLIANCE',
+          'WORKPLACE_SAFETY',
+          'BLOOD_BORNE_PATHOGENS',
+          'CUSTOMER_SERVICE',
+          'PHONE_ETIQUETTE',
+          'EHR_PROFICIENCY',
+          'FRONT_DESK_OPERATIONS',
+        ]),
+        duration: z.number().int().min(5).max(480), // 5 minutes to 8 hours
+        passingScore: z.number().int().min(50).max(100).default(80),
+        maxAttempts: z.number().int().min(1).max(10).default(3),
+        renewalDays: z.number().int().min(30).max(365).optional(), // Annual renewal
+        dueWithinDays: z.number().int().min(1).max(90).optional(),
+        requiredFor: z.array(z.enum(['OWNER', 'ADMIN', 'PROVIDER', 'STAFF', 'BILLER'])),
+        prerequisiteIds: z.array(z.string()).default([]),
+        content: z.object({
+          certType: z.string(),
+          sections: z.array(
+            z.object({
+              id: z.string(),
+              title: z.string(),
+              content: z.string(),
+              videoUrl: z.string().optional(),
+              quiz: z.object({
+                questions: z.array(
+                  z.object({
+                    id: z.string(),
+                    question: z.string(),
+                    type: z.enum(['multiple_choice', 'true_false']),
+                    options: z.array(z.string()).optional(),
+                    correctAnswer: z.union([z.string(), z.number()]),
+                    explanation: z.string(),
+                  })
+                ),
+              }).optional(),
+            })
+          ),
+        }),
+        order: z.number().int().min(0).default(0),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const module = await ctx.prisma.trainingModule.create({
+        data: {
+          name: input.name,
+          description: input.description,
+          type: 'COMPLIANCE',
+          duration: input.duration,
+          passingScore: input.passingScore,
+          maxAttempts: input.maxAttempts,
+          renewalDays: input.renewalDays,
+          dueWithinDays: input.dueWithinDays,
+          requiredFor: input.requiredFor,
+          prerequisiteIds: input.prerequisiteIds,
+          content: input.content as Prisma.InputJsonValue,
+          order: input.order,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      await auditLog('CREATE', 'ComplianceModule', {
+        entityId: module.id,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: {
+          name: input.name,
+          certType: input.certType,
+          requiredFor: input.requiredFor,
+          renewalDays: input.renewalDays,
+        },
+      });
+
+      return module;
+    }),
+
+  /**
+   * Update a compliance training module
+   */
+  updateComplianceModule: adminProcedure
+    .input(
+      z.object({
+        moduleId: z.string(),
+        name: z.string().min(1).max(200).optional(),
+        description: z.string().optional(),
+        duration: z.number().int().min(5).max(480).optional(),
+        passingScore: z.number().int().min(50).max(100).optional(),
+        maxAttempts: z.number().int().min(1).max(10).optional(),
+        renewalDays: z.number().int().min(30).max(365).nullable().optional(),
+        dueWithinDays: z.number().int().min(1).max(90).nullable().optional(),
+        requiredFor: z.array(z.enum(['OWNER', 'ADMIN', 'PROVIDER', 'STAFF', 'BILLER'])).optional(),
+        prerequisiteIds: z.array(z.string()).optional(),
+        content: jsonSchema.optional(),
+        order: z.number().int().min(0).optional(),
+        isActive: z.boolean().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { moduleId, ...data } = input;
+
+      const existing = await ctx.prisma.trainingModule.findFirst({
+        where: {
+          id: moduleId,
+          organizationId: ctx.user.organizationId,
+          type: 'COMPLIANCE',
+        },
+      });
+
+      if (!existing) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Compliance module not found',
+        });
+      }
+
+      const updateData: Prisma.TrainingModuleUpdateInput = {};
+      if (data.name !== undefined) updateData.name = data.name;
+      if (data.description !== undefined) updateData.description = data.description;
+      if (data.duration !== undefined) updateData.duration = data.duration;
+      if (data.passingScore !== undefined) updateData.passingScore = data.passingScore;
+      if (data.maxAttempts !== undefined) updateData.maxAttempts = data.maxAttempts;
+      if (data.renewalDays !== undefined) updateData.renewalDays = data.renewalDays;
+      if (data.dueWithinDays !== undefined) updateData.dueWithinDays = data.dueWithinDays;
+      if (data.requiredFor !== undefined) updateData.requiredFor = data.requiredFor;
+      if (data.prerequisiteIds !== undefined) updateData.prerequisiteIds = data.prerequisiteIds;
+      if (data.content !== undefined) updateData.content = data.content;
+      if (data.order !== undefined) updateData.order = data.order;
+      if (data.isActive !== undefined) updateData.isActive = data.isActive;
+
+      const updated = await ctx.prisma.trainingModule.update({
+        where: { id: moduleId },
+        data: updateData,
+      });
+
+      await auditLog('UPDATE', 'ComplianceModule', {
+        entityId: moduleId,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: updateData as Record<string, unknown>,
+      });
+
+      return updated;
+    }),
 });
