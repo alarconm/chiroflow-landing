@@ -294,6 +294,13 @@ model Organization {
   staffCertifications  StaffCertification[]
   performanceFeedback  PerformanceFeedback[]
 
+  // AI Clinical Decision Support Agent relations (Epic 39)
+  clinicalAlerts            ClinicalAlert[]
+  diagnosisSuggestions      DiagnosisSuggestion[]
+  treatmentRecommendations  TreatmentRecommendation[]
+  contraindications         Contraindication[]
+  clinicalGuidelines        ClinicalGuideline[]
+
   @@index([subdomain])
 }
 
@@ -620,6 +627,11 @@ model Patient {
   // AI Practice Growth Agent relations (Epic 37)
   referralOpportunities     ReferralOpportunity[]
   reactivationOpportunities ReactivationOpportunity[]
+
+  // AI Clinical Decision Support Agent relations (Epic 39)
+  clinicalAlerts           ClinicalAlert[]
+  treatmentRecommendations TreatmentRecommendation[]
+  contraindications        Contraindication[]
 
   @@unique([mrn, organizationId])
   @@index([organizationId])
@@ -1479,6 +1491,11 @@ model Encounter {
   aiCodeSuggestions     AICodeSuggestion[]
   aiComplianceChecks    AIComplianceCheck[]
   aiTemplateSuggestions AITemplateSuggestion[]
+
+  // AI Clinical Decision Support Agent relations (Epic 39)
+  clinicalAlerts           ClinicalAlert[]
+  diagnosisSuggestions     DiagnosisSuggestion[]
+  treatmentRecommendations TreatmentRecommendation[]
 
   @@index([organizationId])
   @@index([patientId])
@@ -13812,4 +13829,309 @@ model PerformanceFeedback {
   @@index([organizationId])
   @@index([sessionId])
   @@index([category])
+}
+
+// =============================================================================
+// AI Clinical Decision Support Agent (Epic 39)
+// =============================================================================
+
+// Alert type enum for clinical alerts
+enum ClinicalAlertType {
+  RED_FLAG           // Serious symptoms requiring immediate attention
+  CONTRAINDICATION   // Treatment contraindication
+  DRUG_INTERACTION   // Medication interaction
+  PRECAUTION         // Age/condition-specific precaution
+  GUIDELINE          // Guideline-based recommendation
+  OUTCOME_ALERT      // Patient not responding as expected
+  REFERRAL_NEEDED    // Patient may need referral
+}
+
+// Severity levels for clinical alerts
+enum ClinicalAlertSeverity {
+  LOW       // Informational
+  MODERATE  // Should be considered
+  HIGH      // Important to address
+  CRITICAL  // Requires immediate action
+}
+
+// Status of clinical alerts
+enum ClinicalAlertStatus {
+  ACTIVE       // Alert is active and unresolved
+  ACKNOWLEDGED // Provider has seen the alert
+  RESOLVED     // Issue has been addressed
+  DISMISSED    // Provider dismissed as not applicable
+  EXPIRED      // Alert no longer relevant
+}
+
+// Evidence level for recommendations
+enum EvidenceLevel {
+  HIGH         // Strong evidence (multiple RCTs)
+  MODERATE     // Moderate evidence (some RCTs)
+  LOW          // Limited evidence (observational)
+  VERY_LOW     // Very limited evidence
+  EXPERT       // Expert opinion/consensus
+}
+
+// Clinical alert - AI-generated patient safety alerts
+model ClinicalAlert {
+  id        String                @id @default(cuid())
+  alertType ClinicalAlertType
+  severity  ClinicalAlertSeverity
+  status    ClinicalAlertStatus   @default(ACTIVE)
+
+  // Alert content
+  message     String   @db.Text  // Alert message
+  description String?  @db.Text  // Detailed explanation
+  source      String?            // Source of the alert (guideline, rule, etc.)
+
+  // Context
+  triggeredBy    String?         // What triggered this alert
+  relatedData    Json?           // Relevant patient data
+  recommendation String? @db.Text // Recommended action
+
+  // Provider response
+  acknowledgedAt    DateTime?
+  acknowledgedBy    String?       // User ID who acknowledged
+  resolutionNote    String? @db.Text
+  resolvedAt        DateTime?
+  resolvedBy        String?       // User ID who resolved
+  dismissalReason   String?       // Why it was dismissed
+
+  // Timestamps
+  expiresAt DateTime?             // When alert should expire
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  encounterId String?
+  encounter   Encounter? @relation(fields: [encounterId], references: [id], onDelete: SetNull)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([encounterId])
+  @@index([status])
+  @@index([severity])
+  @@index([alertType])
+  @@index([createdAt])
+}
+
+// Diagnosis suggestion - AI-suggested diagnoses based on findings
+model DiagnosisSuggestion {
+  id String @id @default(cuid())
+
+  // Suggested diagnosis
+  suggestedCode        String           // ICD-10 code
+  suggestedDescription String           // Diagnosis description
+  confidence           Decimal          @db.Decimal(5, 2) // 0-100 confidence score
+
+  // Reasoning
+  reasoning         String    @db.Text  // Why this diagnosis is suggested
+  supportingFindings Json?              // Findings that support this
+  differentialNotes String?   @db.Text  // Notes on differential diagnosis
+
+  // Red flags
+  hasRedFlags     Boolean   @default(false)
+  redFlagDetails  String?   @db.Text    // Details of any red flags
+
+  // Evidence
+  evidenceLevel   EvidenceLevel?
+  guidelines      String[]              // Relevant guideline references
+
+  // Provider action
+  isAccepted      Boolean   @default(false)
+  isRejected      Boolean   @default(false)
+  rejectionReason String?
+  selectedAt      DateTime?
+  selectedBy      String?               // User ID who selected
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  encounterId String
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([encounterId])
+  @@index([suggestedCode])
+  @@index([confidence])
+  @@index([isAccepted])
+}
+
+// Treatment recommendation - AI-suggested treatments
+model TreatmentRecommendation {
+  id String @id @default(cuid())
+
+  // Condition being treated
+  conditionCode        String?          // ICD-10 code
+  conditionDescription String           // Condition description
+
+  // Recommendation
+  recommendation        String   @db.Text // Treatment recommendation
+  treatmentType         String?          // Type: adjustment, therapy, exercise, etc.
+  techniquesSuggested   String[]         // Specific techniques
+  frequencyRecommended  String?          // Recommended visit frequency
+  durationRecommended   String?          // Expected treatment duration
+
+  // Expected outcomes
+  expectedOutcome       String?  @db.Text
+  expectedTimeline      String?          // Timeline for improvement
+  prognosis            String?          // Prognosis assessment
+
+  // Alternatives
+  alternativeOptions    Json?            // Alternative treatment options
+  patientPreferences    Json?            // Considered patient preferences
+
+  // Evidence
+  evidenceLevel        EvidenceLevel?
+  evidenceSummary      String?  @db.Text
+  guidelineCitations   String[]         // Guideline references
+  evidenceReferences   Json?            // Full references
+
+  // Provider action
+  isAccepted           Boolean  @default(false)
+  isModified           Boolean  @default(false)
+  modificationNotes    String?  @db.Text
+  selectedAt           DateTime?
+  selectedBy           String?          // User ID who selected
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  encounterId String?
+  encounter   Encounter? @relation(fields: [encounterId], references: [id], onDelete: SetNull)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([encounterId])
+  @@index([conditionCode])
+  @@index([isAccepted])
+}
+
+// Contraindication type enum
+enum ContraindicationType {
+  ABSOLUTE     // Never perform this treatment
+  RELATIVE     // Use caution, may be okay with modifications
+  PRECAUTION   // Extra care needed
+}
+
+// Contraindication - treatment contraindications for a patient
+model Contraindication {
+  id String @id @default(cuid())
+
+  // What's contraindicated
+  procedure            String           // Procedure/treatment name
+  procedureCode        String?          // CPT code if applicable
+  contraindicationType ContraindicationType @default(RELATIVE)
+
+  // Why
+  reason               String   @db.Text // Reason for contraindication
+  source               String?          // Source of info (condition, medication, etc.)
+  sourceDetails        Json?            // Additional source details
+
+  // When discovered
+  identifiedAt         DateTime @default(now())
+  identifiedBy         String?          // User or system that identified
+
+  // Duration
+  isPermanent          Boolean  @default(false)
+  expiresAt            DateTime?        // When contraindication expires
+  reviewDate           DateTime?        // When to review
+
+  // Provider override
+  isOverridden         Boolean  @default(false)
+  overrideReason       String?  @db.Text
+  overriddenAt         DateTime?
+  overriddenBy         String?          // User ID who overrode
+
+  // Status
+  isActive             Boolean  @default(true)
+  deactivatedAt        DateTime?
+  deactivationReason   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([procedure])
+  @@index([isActive])
+  @@index([contraindicationType])
+}
+
+// Clinical guideline - evidence-based practice guidelines
+model ClinicalGuideline {
+  id String @id @default(cuid())
+
+  // Guideline identification
+  name          String           // Guideline name
+  code          String?          // Guideline code/identifier
+  version       String?          // Version number
+  source        String           // Issuing organization
+
+  // What it applies to
+  condition          String           // Condition(s) it addresses
+  conditionCodes     String[]         // ICD-10 codes
+  applicableRegions  String[]         // Body regions (for chiropractic)
+
+  // Content
+  summary            String   @db.Text // Summary of recommendations
+  recommendations    Json              // Structured recommendations
+  evidenceLevel      EvidenceLevel
+  evidenceSummary    String?  @db.Text
+
+  // Implementation
+  keyPoints          String[]         // Key implementation points
+  redFlags           String[]         // Red flags to watch for
+  referralCriteria   String[]         // When to refer
+
+  // Contraindications
+  contraindications  String[]         // Listed contraindications
+  precautions        String[]         // Precautions
+
+  // Reference
+  publicationDate    DateTime?
+  lastReviewedDate   DateTime?
+  externalUrl        String?          // Link to full guideline
+  citation           String?  @db.Text
+
+  // Status
+  isActive           Boolean  @default(true)
+  retiredAt          DateTime?
+  retiredReason      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([condition])
+  @@index([isActive])
+  @@index([evidenceLevel])
 }
