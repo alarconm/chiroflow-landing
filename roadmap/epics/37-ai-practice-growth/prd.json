@@ -18,7 +18,7 @@
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-356",
@@ -35,7 +35,7 @@
         "Conversion tracking"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-357",
@@ -52,7 +52,7 @@
         "Track engagement and adjust"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-358",
@@ -69,7 +69,7 @@
         "Track reputation scores"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-359",
@@ -85,7 +85,7 @@
         "Provider referral relationship nurturing"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-360",
@@ -101,7 +101,7 @@
         "Reason for lapse analysis"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-361",
@@ -117,7 +117,7 @@
         "ROI tracking and reporting"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-362",
@@ -134,7 +134,7 @@
         "Patient acquisition cost"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }
