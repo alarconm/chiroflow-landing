@@ -19,7 +19,7 @@
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-364",
@@ -36,7 +36,7 @@
         "Realistic patient personas and emotions"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-365",
@@ -53,7 +53,7 @@
         "Highlight strengths and areas for improvement"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-366",
@@ -70,7 +70,7 @@
         "Time-to-competency tracking"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-367",
@@ -87,7 +87,7 @@
         "Track script mastery levels"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-368",
@@ -104,7 +104,7 @@
         "Auto-assign required training"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-369",
@@ -120,7 +120,7 @@
         "Goal setting and tracking"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-370",
@@ -137,7 +137,7 @@
         "Training completion reports"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }
