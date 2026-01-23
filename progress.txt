@@ -57,3 +57,115 @@ Added 6 new Prisma models to support AI-powered staff training:
 - US-368: Compliance training
 - US-369: Performance coaching
 - US-370: Training dashboard
+--- Iteration 1 completed at 2026-01-22 18:08:18 ---
+Story: US-363 - AI training agent schema
+
+### US-364: Video practice sessions ✅ COMPLETED
+
+**Date:** 2026-01-22
+**Status:** PASSED
+
+**Implementation:**
+
+Created comprehensive tRPC router for AI-powered video practice sessions at `app/src/server/routers/aiTraining.ts`.
+
+**Core Procedures Implemented:**
+
+1. **startPractice** - Begin video practice session
+   - Creates PracticeSession record in database
+   - Generates AI persona based on scenario and difficulty
+   - Returns opening line, persona details, and scenario context
+   - Supports difficulty override for progressive training
+
+2. **sendMessage** - Real-time conversation with AI
+   - Processes user responses during practice
+   - Generates contextual AI replies based on scenario type
+   - Tracks conversation history in transcript field
+   - Returns hints for beginner/intermediate difficulties
+
+3. **endSession** - Complete practice session with scoring
+   - Calculates scores for tone, empathy, script adherence, timing
+   - Determines if outcome was achieved
+   - Generates strengths and areas for improvement
+   - Creates PerformanceFeedback entries for each category
+
+4. **saveRecording** - Store session recording URL
+   - Supports video/audio recording URLs
+   - Optional transcript URL storage
+
+5. **abandonSession** - Handle incomplete sessions
+   - Marks session as FAILED
+   - Logs abandonment for analytics
+
+**Scenario Management (Admin):**
+
+6. **getScenarios** - List available practice scenarios
+   - Filter by type, difficulty, tags
+   - Includes user's practice history and scores
+   - Pagination support
+
+7. **getScenario** - Get scenario details
+
+8. **createScenario** - Create new training scenario
+   - Full AI persona configuration
+   - Script, expected outcomes, key phrases
+   - Scoring rubric and ideal responses
+   - Time expectations
+
+9. **updateScenario** - Modify existing scenario
+
+10. **deleteScenario** - Soft delete (sets isActive=false)
+
+**Statistics:**
+
+11. **getStats** - User practice statistics
+    - Total sessions, average score
+    - Score breakdown by category
+    - Outcome achievement rate
+    - Stats by scenario type and difficulty
+
+12. **getSessionHistory** - Past practice sessions
+    - Filter by scenario, type, status
+    - Pagination support
+
+13. **getSession** - Detailed session with feedback
+
+**Scenario Types Supported:**
+- SCHEDULING_CALL - Booking appointments
+- BILLING_INQUIRY - Insurance, payments questions
+- COMPLAINT_HANDLING - Upset patients
+- NEW_PATIENT_INTAKE - First-time callers
+- CANCELLATION - Handling cancellations
+- INSURANCE_QUESTIONS - Coverage, benefits
+- FOLLOW_UP_CALL - Post-visit calls
+- EMERGENCY_TRIAGE - Urgent situations
+
+**Difficulty Levels:**
+- BEGINNER - Calm/friendly personas, hints provided
+- INTERMEDIATE - Mixed emotions, some hints
+- ADVANCED - Frustrated/demanding personas, no hints
+- EXPERT - Complex scenarios, no assistance
+
+**AI Persona Features:**
+- Dynamic emotional states based on difficulty
+- Variable speaking styles (formal, casual, curt, verbose)
+- Scenario-specific opening lines
+- Context-aware responses
+
+**Files Modified:**
+- app/src/server/routers/aiTraining.ts (NEW - 1400+ lines)
+- app/src/server/routers/index.ts (added router registration)
+
+---
+
+## Stories Remaining: 6
+
+- US-365: Real-time practice feedback
+- US-366: Onboarding workflows
+- US-367: Script training and practice
+- US-368: Compliance training
+- US-369: Performance coaching
+- US-370: Training dashboard
+--- Iteration 2 completed at 2026-01-22 ---
+Story: US-364 - Video practice sessions
+

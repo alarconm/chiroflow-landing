@@ -36,7 +36,7 @@
         "Realistic patient personas and emotions"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-365",
