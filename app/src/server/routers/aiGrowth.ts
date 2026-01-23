@@ -324,6 +324,132 @@ interface ProviderReferralRelationship {
 }
 
 // ============================================
+// US-360: Patient Reactivation Types
+// ============================================
+
+type ReactivationStatus = 'IDENTIFIED' | 'CONTACTED' | 'ENGAGED' | 'REACTIVATED' | 'DECLINED' | 'LOST';
+
+type LapseReason =
+  | 'no_perceived_need'
+  | 'financial'
+  | 'scheduling'
+  | 'moved_away'
+  | 'dissatisfied'
+  | 'switched_provider'
+  | 'insurance_change'
+  | 'health_improved'
+  | 'forgot'
+  | 'life_event'
+  | 'unknown';
+
+interface ReactivationCandidate {
+  patientId: string;
+  patientName: string;
+  email: string | null;
+  phone: string | null;
+  lastVisitDate: Date;
+  daysSinceLastVisit: number;
+  daysOverdue: number | null;
+  lifetimeValue: number;
+  averageVisitValue: number;
+  potentialRecovery: number;
+  reactivationScore: number; // 0-100 likelihood of reactivation
+  likelyReason: LapseReason;
+  reasonConfidence: number;
+  reasonFactors: Array<{
+    factor: string;
+    weight: number;
+    evidence: string;
+  }>;
+  recommendedApproach: 'special_offer' | 'wellness_check' | 'personal_outreach' | 'reminder' | 'win_back';
+  recommendedOffer: string | null;
+  recommendedChannel: 'email' | 'sms' | 'phone';
+  recommendedTiming: Date;
+  priorityRank: number;
+}
+
+interface ReactivationOutreach {
+  opportunityId: string;
+  patientId: string;
+  patientName: string;
+  channel: 'email' | 'sms' | 'phone';
+  message: {
+    subject?: string;
+    body: string;
+  };
+  offer: {
+    type: string;
+    value: string;
+    expiresAt: Date;
+    code: string;
+  } | null;
+  scheduledAt: Date;
+  status: 'scheduled' | 'sent' | 'delivered' | 'failed';
+}
+
+interface ReactivationOffer {
+  offerId: string;
+  name: string;
+  type: 'percentage_discount' | 'dollar_discount' | 'free_service' | 'complimentary_exam' | 'package_deal';
+  value: string;
+  description: string;
+  validDays: number;
+  targetReason: LapseReason[];
+  minDaysLapsed: number;
+  maxDaysLapsed: number | null;
+  isActive: boolean;
+}
+
+interface ReactivationAnalysis {
+  patientId: string;
+  likelyReason: LapseReason;
+  confidence: number;
+  factors: Array<{
+    factor: string;
+    weight: number;
+    evidence: string;
+  }>;
+  recommendations: string[];
+  suggestedApproach: 'special_offer' | 'wellness_check' | 'personal_outreach' | 'reminder' | 'win_back';
+  suggestedOffer: ReactivationOffer | null;
+  suggestedChannel: 'email' | 'sms' | 'phone';
+  optimalTiming: {
+    bestDayOfWeek: string;
+    bestTimeOfDay: string;
+    nextOptimalDate: Date;
+    reasoning: string;
+  };
+}
+
+interface ReactivationMetrics {
+  totalCandidates: number;
+  totalOutreaches: number;
+  totalResponses: number;
+  totalReactivated: number;
+  reactivationRate: number;
+  averageTimeToReactivate: number; // days
+  valueRecovered: number;
+  byReason: Record<LapseReason, {
+    count: number;
+    reactivated: number;
+    rate: number;
+  }>;
+  byChannel: Record<string, {
+    outreaches: number;
+    responses: number;
+    reactivated: number;
+    rate: number;
+  }>;
+  byOffer: Array<{
+    offerType: string;
+    sent: number;
+    redeemed: number;
+    redemptionRate: number;
+    valueRecovered: number;
+  }>;
+}
+
+// ============================================
 // Helper Functions
 // ============================================
 
@@ -1360,6 +1486,99 @@ const createProviderRelationshipInputSchema = z.object({
 });
 
 // ============================================
+// US-360: Patient Reactivation Input Schemas
+// ============================================
+
+const identifyReactivationCandidatesInputSchema = z.object({
+  minDaysSinceVisit: z.number().int().min(30).default(90),
+  maxDaysSinceVisit: z.number().int().optional(),
+  minLifetimeValue: z.number().optional(),
+  minReactivationScore: z.number().int().min(0).max(100).default(30),
+  limit: z.number().int().min(1).max(100).default(50),
+  excludeDeclined: z.boolean().default(true),
+  excludeRecentOutreach: z.boolean().default(true),
+  recentOutreachDays: z.number().int().default(14),
+});
+
+const analyzePatientLapseInputSchema = z.object({
+  patientId: z.string(),
+  forceReanalysis: z.boolean().default(false),
+});
+
+const reactivatePatientInputSchema = z.object({
+  patientId: z.string(),
+  approach: z.enum(['special_offer', 'wellness_check', 'personal_outreach', 'reminder', 'win_back']).optional(),
+  channel: z.enum(['email', 'sms', 'phone']).optional(),
+  offerId: z.string().optional(),
+  customMessage: z.string().optional(),
+  scheduledAt: z.date().optional(),
+});
+
+const sendReactivationOfferInputSchema = z.object({
+  patientId: z.string(),
+  offerId: z.string(),
+  channel: z.enum(['email', 'sms']),
+  customMessage: z.string().optional(),
+  scheduledAt: z.date().optional(),
+});
+
+const getReactivationOffersInputSchema = z.object({
+  patientId: z.string().optional(),
+  lapseReason: z.enum([
+    'no_perceived_need',
+    'financial',
+    'scheduling',
+    'moved_away',
+    'dissatisfied',
+    'switched_provider',
+    'insurance_change',
+    'health_improved',
+    'forgot',
+    'life_event',
+    'unknown',
+  ]).optional(),
+  isActive: z.boolean().default(true),
+});
+
+const trackReactivationResponseInputSchema = z.object({
+  opportunityId: z.string(),
+  responseType: z.enum(['replied', 'booked', 'declined', 'unsubscribed', 'no_response']),
+  responseContent: z.string().optional(),
+  bookedAppointmentId: z.string().optional(),
+});
+
+const recordReactivationSuccessInputSchema = z.object({
+  opportunityId: z.string(),
+  appointmentId: z.string(),
+  notes: z.string().optional(),
+});
+
+const getReactivationMetricsInputSchema = z.object({
+  startDate: z.date().optional(),
+  endDate: z.date().optional(),
+});
+
+const bulkReactivationOutreachInputSchema = z.object({
+  patientIds: z.array(z.string()).min(1).max(100),
+  approach: z.enum(['special_offer', 'wellness_check', 'personal_outreach', 'reminder', 'win_back']),
+  channel: z.enum(['email', 'sms']),
+  offerId: z.string().optional(),
+  spreadOverDays: z.number().int().min(1).max(14).default(1),
+});
+
+const getOptimalReactivationTimingInputSchema = z.object({
+  patientId: z.string(),
+});
+
+const getReactivationOpportunitiesInputSchema = z.object({
+  status: z.enum(['IDENTIFIED', 'CONTACTED', 'ENGAGED', 'REACTIVATED', 'DECLINED', 'LOST']).optional(),
+  limit: z.number().int().min(1).max(100).default(50),
+  offset: z.number().int().min(0).default(0),
+  sortBy: z.enum(['reactivationScore', 'daysSinceLastVisit', 'lifetimeValue', 'createdAt']).default('reactivationScore'),
+  sortOrder: z.enum(['asc', 'desc']).default('desc'),
+});
+
+// ============================================
 // US-358: Reputation Management Helper Functions
 // ============================================
 
@@ -1986,6 +2205,563 @@ function generateProviderNurturingActions(
   }
 
   return actions;
+}
+
+// ============================================
+// US-360: Patient Reactivation Helper Functions
+// ============================================
+
+/**
+ * Analyze lapse reason based on patient history and behavior
+ */
+function analyzeLapseReason(
+  daysSinceLastVisit: number,
+  appointmentHistory: Array<{ status: string; cancelReason?: string | null }>,
+  treatmentPlanStatus: string | null,
+  insuranceStatus: string | null,
+  hasAddressChanged: boolean,
+  lastVisitNotes: string | null,
+): {
+  likelyReason: LapseReason;
+  confidence: number;
+  factors: Array<{ factor: string; weight: number; evidence: string }>;
+} {
+  const factors: Array<{ factor: string; weight: number; evidence: string }> = [];
+  const reasonScores: Record<LapseReason, number> = {
+    no_perceived_need: 0,
+    financial: 0,
+    scheduling: 0,
+    moved_away: 0,
+    dissatisfied: 0,
+    switched_provider: 0,
+    insurance_change: 0,
+    health_improved: 0,
+    forgot: 0,
+    life_event: 0,
+    unknown: 10, // Base score for unknown
+  };
+
+  // Check for address change (moved away)
+  if (hasAddressChanged) {
+    reasonScores.moved_away += 40;
+    factors.push({ factor: 'address_changed', weight: 40, evidence: 'Patient address has changed' });
+  }
+
+  // Check for insurance changes
+  if (insuranceStatus === 'expired' || insuranceStatus === 'changed') {
+    reasonScores.insurance_change += 35;
+    factors.push({ factor: 'insurance_status', weight: 35, evidence: `Insurance status: ${insuranceStatus}` });
+  }
+
+  // Check cancellation history for financial reasons
+  const financialCancellations = appointmentHistory.filter(
+    (a) => a.status === 'CANCELLED' && a.cancelReason?.toLowerCase().includes('financial')
+  ).length;
+  if (financialCancellations > 0) {
+    reasonScores.financial += financialCancellations * 20;
+    factors.push({
+      factor: 'financial_cancellations',
+      weight: financialCancellations * 20,
+      evidence: `${financialCancellations} cancellation(s) citing financial reasons`,
+    });
+  }
+
+  // Check for scheduling-related cancellations
+  const schedulingCancellations = appointmentHistory.filter(
+    (a) =>
+      a.status === 'CANCELLED' &&
+      (a.cancelReason?.toLowerCase().includes('schedule') ||
+        a.cancelReason?.toLowerCase().includes('time') ||
+        a.cancelReason?.toLowerCase().includes('busy'))
+  ).length;
+  if (schedulingCancellations > 1) {
+    reasonScores.scheduling += schedulingCancellations * 15;
+    factors.push({
+      factor: 'scheduling_issues',
+      weight: schedulingCancellations * 15,
+      evidence: `${schedulingCancellations} scheduling-related cancellations`,
+    });
+  }
+
+  // Check for completed treatment plan (health improved)
+  if (treatmentPlanStatus === 'completed') {
+    reasonScores.health_improved += 30;
+    reasonScores.no_perceived_need += 20;
+    factors.push({
+      factor: 'treatment_complete',
+      weight: 30,
+      evidence: 'Treatment plan was completed',
+    });
+  }
+
+  // Check no-show pattern (forgot or life event)
+  const noShows = appointmentHistory.filter((a) => a.status === 'NO_SHOW').length;
+  if (noShows > 1) {
+    reasonScores.forgot += noShows * 10;
+    reasonScores.life_event += noShows * 8;
+    factors.push({
+      factor: 'no_show_pattern',
+      weight: noShows * 10,
+      evidence: `${noShows} no-show appointment(s)`,
+    });
+  }
+
+  // Check for time-based patterns
+  if (daysSinceLastVisit > 365) {
+    reasonScores.forgot += 15;
+    reasonScores.switched_provider += 10;
+    factors.push({
+      factor: 'long_absence',
+      weight: 15,
+      evidence: `Over 1 year since last visit (${daysSinceLastVisit} days)`,
+    });
+  } else if (daysSinceLastVisit > 180) {
+    reasonScores.forgot += 10;
+    factors.push({
+      factor: 'moderate_absence',
+      weight: 10,
+      evidence: `Over 6 months since last visit (${daysSinceLastVisit} days)`,
+    });
+  }
+
+  // Check last visit notes for clues
+  if (lastVisitNotes) {
+    const notesLower = lastVisitNotes.toLowerCase();
+    if (notesLower.includes('moving') || notesLower.includes('relocat')) {
+      reasonScores.moved_away += 25;
+      factors.push({ factor: 'notes_moving', weight: 25, evidence: 'Notes mention moving/relocation' });
+    }
+    if (notesLower.includes('complaint') || notesLower.includes('unhappy') || notesLower.includes('dissatisfied')) {
+      reasonScores.dissatisfied += 30;
+      factors.push({ factor: 'notes_complaint', weight: 30, evidence: 'Notes indicate patient dissatisfaction' });
+    }
+    if (notesLower.includes('feeling better') || notesLower.includes('resolved') || notesLower.includes('improved')) {
+      reasonScores.health_improved += 25;
+      factors.push({ factor: 'notes_improved', weight: 25, evidence: 'Notes indicate health improvement' });
+    }
+  }
+
+  // Find the most likely reason
+  const sortedReasons = Object.entries(reasonScores)
+    .sort(([, a], [, b]) => b - a)
+    .filter(([, score]) => score > 0);
+
+  const topReason = sortedReasons[0];
+  const totalScore = sortedReasons.reduce((sum, [, score]) => sum + score, 0);
+
+  return {
+    likelyReason: (topReason?.[0] as LapseReason) || 'unknown',
+    confidence: totalScore > 0 ? Math.min(topReason[1] / totalScore, 0.95) : 0.1,
+    factors: factors.sort((a, b) => b.weight - a.weight),
+  };
+}
+
+/**
+ * Calculate reactivation score based on patient value and likelihood
+ */
+function calculateReactivationScore(
+  lifetimeValue: number,
+  daysSinceLastVisit: number,
+  totalVisits: number,
+  lapseReason: LapseReason,
+  engagementHistory: { emailOpens: number; linkClicks: number; websiteVisits: number },
+): number {
+  let score = 50; // Base score
+
+  // Lifetime value factor (0-25 points)
+  if (lifetimeValue >= 5000) score += 25;
+  else if (lifetimeValue >= 2000) score += 20;
+  else if (lifetimeValue >= 1000) score += 15;
+  else if (lifetimeValue >= 500) score += 10;
+  else if (lifetimeValue >= 100) score += 5;
+
+  // Visit frequency factor (0-15 points)
+  if (totalVisits >= 20) score += 15;
+  else if (totalVisits >= 10) score += 10;
+  else if (totalVisits >= 5) score += 5;
+
+  // Recency penalty (-10 to 0 points)
+  if (daysSinceLastVisit > 730) score -= 10; // Over 2 years
+  else if (daysSinceLastVisit > 365) score -= 5; // Over 1 year
+
+  // Lapse reason factor (-10 to +5 points)
+  const reasonModifiers: Record<LapseReason, number> = {
+    forgot: 5, // Easy to reactivate
+    no_perceived_need: 0,
+    health_improved: 0,
+    scheduling: 0,
+    life_event: -2,
+    financial: -5, // May need incentive
+    insurance_change: -5,
+    dissatisfied: -8, // Harder to win back
+    switched_provider: -10, // Very hard
+    moved_away: -10, // Not possible
+    unknown: 0,
+  };
+  score += reasonModifiers[lapseReason] || 0;
+
+  // Engagement factor (0-10 points)
+  if (engagementHistory.emailOpens > 0) score += 3;
+  if (engagementHistory.linkClicks > 0) score += 4;
+  if (engagementHistory.websiteVisits > 0) score += 3;
+
+  return Math.max(0, Math.min(100, score));
+}
+
+/**
+ * Determine the best reactivation approach based on lapse reason
+ */
+function determineReactivationApproach(
+  lapseReason: LapseReason,
+  daysSinceLastVisit: number,
+  lifetimeValue: number,
+): 'special_offer' | 'wellness_check' | 'personal_outreach' | 'reminder' | 'win_back' {
+  // High-value patients get personal outreach
+  if (lifetimeValue >= 2000) {
+    return 'personal_outreach';
+  }
+
+  // Based on lapse reason
+  switch (lapseReason) {
+    case 'forgot':
+    case 'life_event':
+      return daysSinceLastVisit < 180 ? 'reminder' : 'wellness_check';
+    case 'financial':
+      return 'special_offer';
+    case 'no_perceived_need':
+    case 'health_improved':
+      return 'wellness_check';
+    case 'dissatisfied':
+    case 'switched_provider':
+      return 'win_back';
+    case 'scheduling':
+      return 'reminder';
+    case 'insurance_change':
+      return 'special_offer';
+    default:
+      return daysSinceLastVisit > 365 ? 'win_back' : 'reminder';
+  }
+}
+
+/**
+ * Generate personalized reactivation message
+ */
+function generateReactivationMessage(
+  patientFirstName: string,
+  practiceName: string,
+  approach: 'special_offer' | 'wellness_check' | 'personal_outreach' | 'reminder' | 'win_back',
+  channel: 'email' | 'sms',
+  offer: { type: string; value: string; code: string; expiresAt: Date } | null,
+  daysSinceLastVisit: number,
+): { subject?: string; body: string } {
+  const monthsSinceVisit = Math.floor(daysSinceLastVisit / 30);
+
+  if (channel === 'sms') {
+    switch (approach) {
+      case 'special_offer':
+        return {
+          body: `Hi ${patientFirstName}! We miss you at ${practiceName}! Here's a special offer just for you: ${offer?.value || '20% off'} your next visit. Use code: ${offer?.code || 'WELCOME'}. Book now: [link] - ${practiceName}`,
+        };
+      case 'wellness_check':
+        return {
+          body: `Hi ${patientFirstName}! It's been a while since your last visit to ${practiceName}. Time for a wellness check-up? We'd love to see how you're doing. Schedule here: [link]`,
+        };
+      case 'reminder':
+        return {
+          body: `Hi ${patientFirstName}! Just a friendly reminder from ${practiceName} - it's been ${monthsSinceVisit} months since your last visit. Ready to schedule? [link]`,
+        };
+      case 'win_back':
+        return {
+          body: `Hi ${patientFirstName}! We'd love another chance to serve you at ${practiceName}. ${offer ? `Special offer: ${offer.value}. ` : ''}Let us know how we can help: [link]`,
+        };
+      default:
+        return {
+          body: `Hi ${patientFirstName}! The team at ${practiceName} would love to see you again. Schedule your visit: [link]`,
+        };
+    }
+  }
+
+  // Email messages
+  switch (approach) {
+    case 'special_offer':
+      return {
+        subject: `${patientFirstName}, a Special Offer Just for You!`,
+        body: `Dear ${patientFirstName},
+
+We've missed seeing you at ${practiceName}! It's been ${monthsSinceVisit} months since your last visit, and we wanted to reach out with a special offer.
+
+${offer ? `As a valued patient, enjoy ${offer.value} on your next visit. Use code: ${offer.code} (valid until ${offer.expiresAt.toLocaleDateString()})` : 'As a valued patient, we\'d like to offer you 20% off your next visit.'}
+
+Your health is our priority, and we'd love to help you stay on track with your wellness goals.
+
+Click here to schedule: [Schedule Now]
+
+We look forward to seeing you soon!
+
+Warm regards,
+The ${practiceName} Team`,
+      };
+
+    case 'wellness_check':
+      return {
+        subject: `${patientFirstName}, Time for Your Wellness Check-Up?`,
+        body: `Dear ${patientFirstName},
+
+We hope this message finds you well! It's been ${monthsSinceVisit} months since your last visit to ${practiceName}, and we wanted to check in.
+
+Regular wellness check-ups help ensure your spine and nervous system are functioning at their best. Even if you're feeling great, preventive care can help you stay that way!
+
+Would you like to schedule a wellness evaluation? We'd love to see how you're doing and discuss any health goals you may have.
+
+Click here to schedule: [Schedule Now]
+
+Take care,
+The ${practiceName} Team`,
+      };
+
+    case 'personal_outreach':
+      return {
+        subject: `${patientFirstName}, We've Been Thinking of You`,
+        body: `Dear ${patientFirstName},
+
+I wanted to personally reach out because we've truly missed seeing you at ${practiceName}. You've been such a valued member of our patient family, and it's been ${monthsSinceVisit} months since your last visit.
+
+I understand that life gets busy, and circumstances change. If there's anything we can do to better serve you, or if you have any questions about your care, please don't hesitate to reach out directly.
+
+We're here for you whenever you're ready to come back.
+
+${offer ? `P.S. We'd like to offer you ${offer.value} on your next visit. Just mention code ${offer.code} when you book.` : ''}
+
+Warmly,
+The ${practiceName} Team`,
+      };
+
+    case 'reminder':
+      return {
+        subject: `${patientFirstName}, It's Been a While!`,
+        body: `Hi ${patientFirstName},
+
+Just a friendly reminder from your friends at ${practiceName} - it's been ${monthsSinceVisit} months since your last visit!
+
+Maintaining regular chiropractic care helps keep your body functioning at its best. Ready to get back on schedule?
+
+Click here to schedule: [Schedule Now]
+
+See you soon!
+The ${practiceName} Team`,
+      };
+
+    case 'win_back':
+      return {
+        subject: `${patientFirstName}, We'd Love Another Chance`,
+        body: `Dear ${patientFirstName},
+
+It's been ${monthsSinceVisit} months since we last saw you at ${practiceName}, and we wanted to reach out personally.
+
+We truly value every patient who walks through our doors, and if your last experience wasn't everything you hoped for, we'd love the opportunity to make it right.
+
+${offer ? `As a gesture of goodwill, we'd like to offer you ${offer.value}. Use code: ${offer.code}` : 'We\'d like to offer you a complimentary consultation to discuss your health goals.'}
+
+Your health matters to us, and we're committed to providing you with the best possible care.
+
+Would you give us another chance? Click here to schedule: [Schedule Now]
+
+Sincerely,
+The ${practiceName} Team`,
+      };
+
+    default:
+      return {
+        subject: `${patientFirstName}, We Miss You at ${practiceName}!`,
+        body: `Hi ${patientFirstName},
+
+We noticed it's been a while since your last visit to ${practiceName}. We'd love to see you again!
+
+Click here to schedule: [Schedule Now]
+
+Best,
+The ${practiceName} Team`,
+      };
+  }
+}
+
+/**
+ * Calculate optimal timing for reactivation outreach
+ */
+function calculateOptimalReactivationTiming(
+  dayOfWeekEngagement: Record<string, number>,
+  timeOfDayEngagement: Record<string, number>,
+  lapseReason: LapseReason,
+): {
+  bestDayOfWeek: string;
+  bestTimeOfDay: string;
+  nextOptimalDate: Date;
+  reasoning: string;
+} {
+  // Default engagement patterns if no data
+  const defaultDayEngagement: Record<string, number> = {
+    Monday: 15,
+    Tuesday: 20,
+    Wednesday: 18,
+    Thursday: 17,
+    Friday: 12,
+    Saturday: 10,
+    Sunday: 8,
+  };
+
+  const defaultTimeEngagement: Record<string, number> = {
+    morning: 25, // 8am-12pm
+    afternoon: 20, // 12pm-5pm
+    evening: 15, // 5pm-8pm
+  };
+
+  const dayEngagement =
+    Object.keys(dayOfWeekEngagement).length > 0 ? dayOfWeekEngagement : defaultDayEngagement;
+  const timeEngagement =
+    Object.keys(timeOfDayEngagement).length > 0 ? timeOfDayEngagement : defaultTimeEngagement;
+
+  // Find best day
+  const bestDay = Object.entries(dayEngagement).sort(([, a], [, b]) => b - a)[0][0];
+
+  // Find best time
+  const bestTime = Object.entries(timeEngagement).sort(([, a], [, b]) => b - a)[0][0];
+
+  // Calculate next optimal date
+  const now = new Date();
+  const dayMap: Record<string, number> = {
+    Sunday: 0,
+    Monday: 1,
+    Tuesday: 2,
+    Wednesday: 3,
+    Thursday: 4,
+    Friday: 5,
+    Saturday: 6,
+  };
+  const targetDayNum = dayMap[bestDay] ?? 2; // Default to Tuesday
+  const currentDayNum = now.getDay();
+  let daysUntilTarget = targetDayNum - currentDayNum;
+  if (daysUntilTarget <= 0) daysUntilTarget += 7;
+
+  const nextOptimalDate = new Date(now);
+  nextOptimalDate.setDate(now.getDate() + daysUntilTarget);
+
+  // Set time based on best time period
+  if (bestTime === 'morning') {
+    nextOptimalDate.setHours(10, 0, 0, 0);
+  } else if (bestTime === 'afternoon') {
+    nextOptimalDate.setHours(14, 0, 0, 0);
+  } else {
+    nextOptimalDate.setHours(18, 0, 0, 0);
+  }
+
+  // Adjust based on lapse reason
+  let reasoning = `Based on engagement patterns, ${bestDay} ${bestTime} shows the highest open/response rates.`;
+
+  if (lapseReason === 'scheduling') {
+    reasoning += ' For scheduling-related lapses, evening times may work better for busy patients.';
+  } else if (lapseReason === 'financial') {
+    reasoning +=
+      ' For financial concerns, early-month timing (after paychecks) may improve response rates.';
+  }
+
+  return {
+    bestDayOfWeek: bestDay,
+    bestTimeOfDay: bestTime,
+    nextOptimalDate,
+    reasoning,
+  };
+}
+
+/**
+ * Get predefined reactivation offers based on lapse reason and patient value
+ */
+function getReactivationOffers(
+  lapseReason: LapseReason,
+  lifetimeValue: number,
+  daysSinceLastVisit: number,
+): ReactivationOffer[] {
+  const offers: ReactivationOffer[] = [];
+  const now = new Date();
+
+  // Base offers available to all
+  offers.push({
+    offerId: 'COMEBACK-20',
+    name: 'Welcome Back Discount',
+    type: 'percentage_discount',
+    value: '20% off',
+    description: '20% off your next visit',
+    validDays: 30,
+    targetReason: ['forgot', 'no_perceived_need', 'scheduling', 'life_event', 'unknown'],
+    minDaysLapsed: 90,
+    maxDaysLapsed: null,
+    isActive: true,
+  });
+
+  // Financial-focused offers
+  if (lapseReason === 'financial' || lifetimeValue < 500) {
+    offers.push({
+      offerId: 'BUDGET-FRIENDLY',
+      name: 'Budget-Friendly Package',
+      type: 'package_deal',
+      value: '3 visits for the price of 2',
+      description: 'Save on a 3-visit package',
+      validDays: 45,
+      targetReason: ['financial', 'insurance_change'],
+      minDaysLapsed: 60,
+      maxDaysLapsed: null,
+      isActive: true,
+    });
+  }
+
+  // High-value patient offers
+  if (lifetimeValue >= 2000) {
+    offers.push({
+      offerId: 'VIP-RETURN',
+      name: 'VIP Patient Return',
+      type: 'complimentary_exam',
+      value: 'Complimentary wellness exam',
+      description: 'Free comprehensive wellness evaluation',
+      validDays: 60,
+      targetReason: ['no_perceived_need', 'health_improved', 'forgot', 'life_event'],
+      minDaysLapsed: 180,
+      maxDaysLapsed: null,
+      isActive: true,
+    });
+  }
+
+  // Win-back offers for dissatisfied patients
+  if (lapseReason === 'dissatisfied' || lapseReason === 'switched_provider') {
+    offers.push({
+      offerId: 'SECOND-CHANCE',
+      name: 'Second Chance Special',
+      type: 'free_service',
+      value: 'Free consultation + 50% off first adjustment',
+      description: 'Let us show you the care you deserve',
+      validDays: 45,
+      targetReason: ['dissatisfied', 'switched_provider'],
+      minDaysLapsed: 60,
+      maxDaysLapsed: null,
+      isActive: true,
+    });
+  }
+
+  // Long-term lapsed offers
+  if (daysSinceLastVisit > 365) {
+    offers.push({
+      offerId: 'REUNION',
+      name: 'Patient Reunion Special',
+      type: 'dollar_discount',
+      value: '$50 off',
+      description: '$50 off your return visit',
+      validDays: 30,
+      targetReason: ['forgot', 'no_perceived_need', 'life_event', 'unknown'],
+      minDaysLapsed: 365,
+      maxDaysLapsed: null,
+      isActive: true,
+    });
+  }
+
+  return offers;
 }
 
 // ============================================
@@ -6102,6 +6878,1271 @@ export const aiGrowthRouter = router({
         relationshipStrength: 'new' as const,
         nurturingActions: generateProviderNurturingActions('new', 999, 999),
         createdAt: new Date(),
+      };
+    }),
+
+  // ============================================
+  // US-360: Patient Reactivation Procedures
+  // ============================================
+
+  /**
+   * Identify reactivation candidates - Find lapsed patients who could be reactivated
+   */
+  identifyReactivationCandidates: protectedProcedure
+    .input(identifyReactivationCandidatesInputSchema)
+    .query(async ({ ctx, input }) => {
+      const {
+        minDaysSinceVisit,
+        maxDaysSinceVisit,
+        minLifetimeValue,
+        minReactivationScore,
+        limit,
+        excludeDeclined,
+        excludeRecentOutreach,
+        recentOutreachDays,
+      } = input;
+
+      const now = new Date();
+      const minDate = new Date(now.getTime() - minDaysSinceVisit * 24 * 60 * 60 * 1000);
+      const maxDate = maxDaysSinceVisit
+        ? new Date(now.getTime() - maxDaysSinceVisit * 24 * 60 * 60 * 1000)
+        : new Date('1900-01-01');
+      const recentOutreachCutoff = new Date(now.getTime() - recentOutreachDays * 24 * 60 * 60 * 1000);
+
+      // Find patients with no recent appointments
+      const lapsedPatients = await ctx.prisma.patient.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: 'ACTIVE',
+          appointments: {
+            some: {
+              status: 'COMPLETED',
+              endTime: {
+                lte: minDate,
+                gte: maxDate,
+              },
+            },
+          },
+          // Exclude patients with recent appointments
+          NOT: {
+            appointments: {
+              some: {
+                endTime: {
+                  gte: minDate,
+                },
+              },
+            },
+          },
+        },
+        include: {
+          demographics: true,
+          appointments: {
+            where: { status: 'COMPLETED' },
+            orderBy: { endTime: 'desc' },
+            take: 20,
+          },
+          contacts: {
+            where: { isPrimary: true },
+            take: 1,
+          },
+          insurances: {
+            where: { isActive: true },
+            take: 1,
+          },
+          reactivationOpportunities: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
+        },
+      });
+
+      const candidates: ReactivationCandidate[] = [];
+
+      for (const patient of lapsedPatients) {
+        // Skip if already has a recent outreach
+        if (excludeRecentOutreach) {
+          const recentOpportunity = patient.reactivationOpportunities[0];
+          if (
+            recentOpportunity &&
+            recentOpportunity.lastOutreachDate &&
+            recentOpportunity.lastOutreachDate >= recentOutreachCutoff
+          ) {
+            continue;
+          }
+        }
+
+        // Skip declined patients
+        if (excludeDeclined) {
+          const recentOpportunity = patient.reactivationOpportunities[0];
+          if (recentOpportunity && recentOpportunity.status === 'DECLINED') {
+            continue;
+          }
+        }
+
+        const lastVisit = patient.appointments[0];
+        if (!lastVisit?.endTime) continue;
+
+        const daysSinceLastVisit = Math.floor(
+          (now.getTime() - lastVisit.endTime.getTime()) / (24 * 60 * 60 * 1000)
+        );
+
+        // Calculate lifetime value
+        const lifetimeValue = patient.appointments.reduce((sum, apt) => {
+          return sum + 150; // Estimated average visit value
+        }, 0);
+
+        if (minLifetimeValue && lifetimeValue < minLifetimeValue) continue;
+
+        // Analyze lapse reason
+        const appointmentHistory = patient.appointments.map((a) => ({
+          status: a.status,
+          cancelReason: null as string | null,
+        }));
+
+        const insuranceStatus = patient.insurances[0]?.isActive ? 'active' : 'expired';
+
+        const lapseAnalysis = analyzeLapseReason(
+          daysSinceLastVisit,
+          appointmentHistory,
+          null, // Treatment plan status
+          insuranceStatus,
+          false, // Address changed - would need to compare
+          null // Last visit notes
+        );
+
+        // Calculate reactivation score
+        const reactivationScore = calculateReactivationScore(
+          lifetimeValue,
+          daysSinceLastVisit,
+          patient.appointments.length,
+          lapseAnalysis.likelyReason,
+          { emailOpens: 0, linkClicks: 0, websiteVisits: 0 }
+        );
+
+        if (reactivationScore < minReactivationScore) continue;
+
+        // Determine best approach
+        const approach = determineReactivationApproach(
+          lapseAnalysis.likelyReason,
+          daysSinceLastVisit,
+          lifetimeValue
+        );
+
+        // Get primary contact
+        const contact = patient.contacts[0];
+
+        candidates.push({
+          patientId: patient.id,
+          patientName: patient.demographics
+            ? `${patient.demographics.firstName} ${patient.demographics.lastName}`
+            : patient.mrn,
+          email: contact?.email || null,
+          phone: contact?.mobilePhone || contact?.homePhone || null,
+          lastVisitDate: lastVisit.endTime,
+          daysSinceLastVisit,
+          daysOverdue: null,
+          lifetimeValue,
+          averageVisitValue: lifetimeValue / patient.appointments.length,
+          potentialRecovery: lifetimeValue * 0.5,
+          reactivationScore,
+          likelyReason: lapseAnalysis.likelyReason,
+          reasonConfidence: lapseAnalysis.confidence,
+          reasonFactors: lapseAnalysis.factors,
+          recommendedApproach: approach,
+          recommendedOffer: null,
+          recommendedChannel: contact?.email ? 'email' : contact?.mobilePhone ? 'sms' : 'phone',
+          recommendedTiming: new Date(now.getTime() + 24 * 60 * 60 * 1000), // Tomorrow
+          priorityRank: 0, // Will be set below
+        });
+      }
+
+      // Sort by reactivation score and assign priority ranks
+      candidates.sort((a, b) => b.reactivationScore - a.reactivationScore);
+      candidates.forEach((c, i) => {
+        c.priorityRank = i + 1;
+      });
+
+      await auditLog('AI_GROWTH_REACTIVATION_IDENTIFIED', 'ReactivationOpportunity', {
+        changes: { candidatesFound: candidates.length, criteria: input },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        candidates: candidates.slice(0, limit),
+        totalFound: candidates.length,
+        criteria: {
+          minDaysSinceVisit,
+          maxDaysSinceVisit,
+          minLifetimeValue,
+          minReactivationScore,
+        },
+      };
+    }),
+
+  /**
+   * Analyze patient lapse - Deep analysis of why a patient stopped coming
+   */
+  analyzePatientLapse: protectedProcedure
+    .input(analyzePatientLapseInputSchema)
+    .query(async ({ ctx, input }) => {
+      const { patientId, forceReanalysis } = input;
+
+      // Check for existing analysis
+      const existingOpportunity = await ctx.prisma.reactivationOpportunity.findFirst({
+        where: {
+          patientId,
+          organizationId: ctx.user.organizationId,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (existingOpportunity && !forceReanalysis && existingOpportunity.likelyReason) {
+        // Return cached analysis
+        return {
+          patientId,
+          likelyReason: existingOpportunity.likelyReason as LapseReason,
+          confidence: Number(existingOpportunity.reasonConfidence || 0),
+          factors: (existingOpportunity.reasonFactors as Array<{
+            factor: string;
+            weight: number;
+            evidence: string;
+          }>) || [],
+          recommendations: [],
+          suggestedApproach: existingOpportunity.recommendedApproach as 'special_offer' | 'wellness_check' | 'personal_outreach' | 'reminder' | 'win_back',
+          suggestedOffer: null,
+          suggestedChannel: existingOpportunity.recommendedChannel as 'email' | 'sms' | 'phone',
+          optimalTiming: calculateOptimalReactivationTiming({}, {}, existingOpportunity.likelyReason as LapseReason),
+          fromCache: true,
+        };
+      }
+
+      // Get patient with full history
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          demographics: true,
+          appointments: {
+            orderBy: { startTime: 'desc' },
+            take: 50,
+          },
+          insurances: {
+            orderBy: { createdAt: 'desc' },
+            take: 5,
+          },
+          contacts: {
+            where: { isPrimary: true },
+            take: 1,
+          },
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      const lastVisit = patient.appointments.find((a) => a.status === 'COMPLETED');
+      if (!lastVisit?.endTime) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Patient has no completed visits',
+        });
+      }
+
+      const now = new Date();
+      const daysSinceLastVisit = Math.floor(
+        (now.getTime() - lastVisit.endTime.getTime()) / (24 * 60 * 60 * 1000)
+      );
+
+      // Calculate lifetime value
+      const lifetimeValue = patient.appointments
+        .filter((a) => a.status === 'COMPLETED')
+        .reduce((sum) => sum + 150, 0);
+
+      // Build appointment history
+      const appointmentHistory = patient.appointments.map((a) => ({
+        status: a.status,
+        cancelReason: null as string | null,
+      }));
+
+      // Check insurance status
+      const currentInsurance = patient.insurances[0];
+      const insuranceStatus = currentInsurance?.isActive ? 'active' : 'expired';
+
+      // Analyze lapse
+      const lapseAnalysis = analyzeLapseReason(
+        daysSinceLastVisit,
+        appointmentHistory,
+        null,
+        insuranceStatus,
+        false,
+        null
+      );
+
+      // Get recommended approach
+      const approach = determineReactivationApproach(
+        lapseAnalysis.likelyReason,
+        daysSinceLastVisit,
+        lifetimeValue
+      );
+
+      // Get recommended offers
+      const offers = getReactivationOffers(lapseAnalysis.likelyReason, lifetimeValue, daysSinceLastVisit);
+      const bestOffer = offers[0] || null;
+
+      // Get contact info
+      const contact = patient.contacts[0];
+      const channel: 'email' | 'sms' | 'phone' = contact?.email
+        ? 'email'
+        : contact?.mobilePhone
+        ? 'sms'
+        : 'phone';
+
+      // Calculate optimal timing
+      const timing = calculateOptimalReactivationTiming({}, {}, lapseAnalysis.likelyReason);
+
+      // Generate recommendations
+      const recommendations: string[] = [];
+      if (lapseAnalysis.likelyReason === 'financial') {
+        recommendations.push('Offer a discounted package or payment plan');
+        recommendations.push('Highlight any insurance benefits they may not be using');
+      } else if (lapseAnalysis.likelyReason === 'scheduling') {
+        recommendations.push('Offer extended hours or online booking');
+        recommendations.push('Emphasize flexible scheduling options');
+      } else if (lapseAnalysis.likelyReason === 'dissatisfied') {
+        recommendations.push('Personal outreach from provider recommended');
+        recommendations.push('Address specific concerns if known');
+      } else if (lapseAnalysis.likelyReason === 'forgot') {
+        recommendations.push('Simple reminder with easy booking link');
+        recommendations.push('Consider automated reminder system enrollment');
+      }
+
+      // Save or update opportunity
+      const opportunityData = {
+        status: 'IDENTIFIED',
+        lastVisitDate: lastVisit.endTime,
+        daysSinceLastVisit,
+        lifetimeValue,
+        averageVisitValue: lifetimeValue / patient.appointments.filter((a) => a.status === 'COMPLETED').length,
+        potentialRecovery: lifetimeValue * 0.5,
+        likelyReason: lapseAnalysis.likelyReason,
+        reasonConfidence: lapseAnalysis.confidence,
+        reasonFactors: lapseAnalysis.factors,
+        recommendedApproach: approach,
+        recommendedOffer: bestOffer?.offerId || null,
+        recommendedChannel: channel,
+        recommendedTiming: timing.nextOptimalDate,
+        reactivationScore: calculateReactivationScore(
+          lifetimeValue,
+          daysSinceLastVisit,
+          patient.appointments.length,
+          lapseAnalysis.likelyReason,
+          { emailOpens: 0, linkClicks: 0, websiteVisits: 0 }
+        ),
+      };
+
+      if (existingOpportunity) {
+        await ctx.prisma.reactivationOpportunity.update({
+          where: { id: existingOpportunity.id },
+          data: opportunityData,
+        });
+      } else {
+        await ctx.prisma.reactivationOpportunity.create({
+          data: {
+            ...opportunityData,
+            patientId,
+            organizationId: ctx.user.organizationId,
+          },
+        });
+      }
+
+      await auditLog('AI_GROWTH_REACTIVATION_ANALYSIS', 'ReactivationOpportunity', {
+        entityId: patientId,
+        changes: { likelyReason: lapseAnalysis.likelyReason, confidence: lapseAnalysis.confidence },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        patientId,
+        likelyReason: lapseAnalysis.likelyReason,
+        confidence: lapseAnalysis.confidence,
+        factors: lapseAnalysis.factors,
+        recommendations,
+        suggestedApproach: approach,
+        suggestedOffer: bestOffer,
+        suggestedChannel: channel,
+        optimalTiming: timing,
+        fromCache: false,
+      } as ReactivationAnalysis & { fromCache: boolean };
+    }),
+
+  /**
+   * Reactivate patient - Send reactivation outreach
+   */
+  reactivate: protectedProcedure
+    .input(reactivatePatientInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { patientId, approach, channel, offerId, customMessage, scheduledAt } = input;
+
+      // Get patient
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          demographics: true,
+          contacts: { where: { isPrimary: true }, take: 1 },
+          appointments: {
+            where: { status: 'COMPLETED' },
+            orderBy: { endTime: 'desc' },
+            take: 1,
+          },
+          reactivationOpportunities: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      // Get or create reactivation opportunity
+      let opportunity = patient.reactivationOpportunities[0];
+      const lastVisit = patient.appointments[0];
+      const now = new Date();
+      const daysSinceLastVisit = lastVisit?.endTime
+        ? Math.floor((now.getTime() - lastVisit.endTime.getTime()) / (24 * 60 * 60 * 1000))
+        : 365;
+
+      if (!opportunity) {
+        // Create opportunity
+        opportunity = await ctx.prisma.reactivationOpportunity.create({
+          data: {
+            patientId,
+            organizationId: ctx.user.organizationId,
+            status: 'IDENTIFIED',
+            lastVisitDate: lastVisit?.endTime || new Date(),
+            daysSinceLastVisit,
+            likelyReason: 'unknown',
+          },
+        });
+      }
+
+      // Get organization
+      const org = await ctx.prisma.organization.findUnique({
+        where: { id: ctx.user.organizationId },
+        select: { name: true },
+      });
+
+      // Determine approach and channel
+      const lifetimeValue = patient.appointments.length * 150;
+      const lapseReason = (opportunity.likelyReason as LapseReason) || 'unknown';
+      const finalApproach = approach || determineReactivationApproach(lapseReason, daysSinceLastVisit, lifetimeValue);
+      const contact = patient.contacts[0];
+      const finalChannel = channel || (contact?.email ? 'email' : contact?.mobilePhone ? 'sms' : 'phone');
+
+      // Get offer details
+      let offer: { type: string; value: string; code: string; expiresAt: Date } | null = null;
+      if (offerId) {
+        const offers = getReactivationOffers(lapseReason, lifetimeValue, daysSinceLastVisit);
+        const matchedOffer = offers.find((o) => o.offerId === offerId);
+        if (matchedOffer) {
+          offer = {
+            type: matchedOffer.type,
+            value: matchedOffer.value,
+            code: offerId,
+            expiresAt: new Date(now.getTime() + matchedOffer.validDays * 24 * 60 * 60 * 1000),
+          };
+        }
+      } else if (finalApproach === 'special_offer' || finalApproach === 'win_back') {
+        // Auto-select best offer
+        const offers = getReactivationOffers(lapseReason, lifetimeValue, daysSinceLastVisit);
+        if (offers[0]) {
+          offer = {
+            type: offers[0].type,
+            value: offers[0].value,
+            code: offers[0].offerId,
+            expiresAt: new Date(now.getTime() + offers[0].validDays * 24 * 60 * 60 * 1000),
+          };
+        }
+      }
+
+      // Generate message
+      const patientFirstName = patient.demographics?.firstName || 'Patient';
+      const practiceName = org?.name || 'Our Practice';
+      let message: { subject?: string; body: string };
+      if (customMessage) {
+        message = { body: customMessage };
+      } else if (finalChannel === 'phone') {
+        // Phone calls don't use generated messages - provide call script
+        message = {
+          subject: 'Phone Reactivation Call Script',
+          body: `Call Script for ${patientFirstName}:\n\n1. Introduce yourself from ${practiceName}\n2. Mention it's been a while since their last visit\n3. Ask how they've been feeling\n4. ${offer ? `Offer: ${offer.value}` : 'Offer a wellness check-up'}\n5. Attempt to schedule an appointment`,
+        };
+      } else {
+        message = generateReactivationMessage(
+          patientFirstName,
+          practiceName,
+          finalApproach,
+          finalChannel,
+          offer,
+          daysSinceLastVisit
+        );
+      }
+
+      // Update opportunity
+      await ctx.prisma.reactivationOpportunity.update({
+        where: { id: opportunity.id },
+        data: {
+          status: 'CONTACTED',
+          outreachAttempts: { increment: 1 },
+          lastOutreachDate: scheduledAt || new Date(),
+          lastOutreachMethod: finalChannel,
+          recommendedOffer: offer?.code || null,
+        },
+      });
+
+      await auditLog('AI_GROWTH_REACTIVATION_OUTREACH', 'ReactivationOpportunity', {
+        entityId: opportunity.id,
+        changes: { patientId, approach: finalApproach, channel: finalChannel, hasOffer: !!offer },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        opportunityId: opportunity.id,
+        patientId,
+        patientName: `${patientFirstName} ${patient.demographics?.lastName || ''}`.trim(),
+        channel: finalChannel,
+        message,
+        offer,
+        scheduledAt: scheduledAt || new Date(),
+        status: 'scheduled',
+      } as ReactivationOutreach;
+    }),
+
+  /**
+   * Send reactivation offer - Send a specific offer to a lapsed patient
+   */
+  sendReactivationOffer: protectedProcedure
+    .input(sendReactivationOfferInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { patientId, offerId, channel, customMessage, scheduledAt } = input;
+
+      // Get patient
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          demographics: true,
+          contacts: { where: { isPrimary: true }, take: 1 },
+          appointments: {
+            where: { status: 'COMPLETED' },
+            orderBy: { endTime: 'desc' },
+            take: 1,
+          },
+          reactivationOpportunities: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      // Get organization
+      const org = await ctx.prisma.organization.findUnique({
+        where: { id: ctx.user.organizationId },
+        select: { name: true },
+      });
+
+      const now = new Date();
+      const lastVisit = patient.appointments[0];
+      const daysSinceLastVisit = lastVisit?.endTime
+        ? Math.floor((now.getTime() - lastVisit.endTime.getTime()) / (24 * 60 * 60 * 1000))
+        : 365;
+      const lifetimeValue = patient.appointments.length * 150;
+      const lapseReason =
+        (patient.reactivationOpportunities[0]?.likelyReason as LapseReason) || 'unknown';
+
+      // Get offer
+      const offers = getReactivationOffers(lapseReason, lifetimeValue, daysSinceLastVisit);
+      const matchedOffer = offers.find((o) => o.offerId === offerId);
+
+      if (!matchedOffer) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Offer not found or not applicable',
+        });
+      }
+
+      const offer = {
+        type: matchedOffer.type,
+        value: matchedOffer.value,
+        code: offerId,
+        expiresAt: new Date(now.getTime() + matchedOffer.validDays * 24 * 60 * 60 * 1000),
+      };
+
+      // Generate message
+      const patientFirstName = patient.demographics?.firstName || 'Patient';
+      const practiceName = org?.name || 'Our Practice';
+      const message = customMessage
+        ? { body: customMessage }
+        : generateReactivationMessage(
+            patientFirstName,
+            practiceName,
+            'special_offer',
+            channel,
+            offer,
+            daysSinceLastVisit
+          );
+
+      // Update or create opportunity
+      let opportunity = patient.reactivationOpportunities[0];
+      if (opportunity) {
+        await ctx.prisma.reactivationOpportunity.update({
+          where: { id: opportunity.id },
+          data: {
+            status: 'CONTACTED',
+            outreachAttempts: { increment: 1 },
+            lastOutreachDate: scheduledAt || new Date(),
+            lastOutreachMethod: channel,
+            recommendedOffer: offerId,
+          },
+        });
+      } else {
+        opportunity = await ctx.prisma.reactivationOpportunity.create({
+          data: {
+            patientId,
+            organizationId: ctx.user.organizationId,
+            status: 'CONTACTED',
+            lastVisitDate: lastVisit?.endTime || new Date(),
+            daysSinceLastVisit,
+            outreachAttempts: 1,
+            lastOutreachDate: scheduledAt || new Date(),
+            lastOutreachMethod: channel,
+            recommendedOffer: offerId,
+          },
+        });
+      }
+
+      await auditLog('AI_GROWTH_REACTIVATION_OFFER_SENT', 'ReactivationOpportunity', {
+        entityId: opportunity.id,
+        changes: { patientId, offerId, channel },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        opportunityId: opportunity.id,
+        patientId,
+        patientName: `${patientFirstName} ${patient.demographics?.lastName || ''}`.trim(),
+        channel,
+        message,
+        offer,
+        scheduledAt: scheduledAt || new Date(),
+        status: 'scheduled',
+      } as ReactivationOutreach;
+    }),
+
+  /**
+   * Get reactivation offers - List available offers for a patient
+   */
+  getReactivationOffers: protectedProcedure
+    .input(getReactivationOffersInputSchema)
+    .query(async ({ ctx, input }) => {
+      const { patientId, lapseReason, isActive } = input;
+
+      let reason: LapseReason = lapseReason || 'unknown';
+      let lifetimeValue = 500;
+      let daysSinceLastVisit = 180;
+
+      if (patientId) {
+        const patient = await ctx.prisma.patient.findFirst({
+          where: {
+            id: patientId,
+            organizationId: ctx.user.organizationId,
+          },
+          include: {
+            appointments: {
+              where: { status: 'COMPLETED' },
+              orderBy: { endTime: 'desc' },
+              take: 1,
+            },
+            reactivationOpportunities: {
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+            },
+          },
+        });
+
+        if (patient) {
+          lifetimeValue = patient.appointments.length * 150;
+          const lastVisit = patient.appointments[0];
+          if (lastVisit?.endTime) {
+            daysSinceLastVisit = Math.floor(
+              (new Date().getTime() - lastVisit.endTime.getTime()) / (24 * 60 * 60 * 1000)
+            );
+          }
+          reason = (patient.reactivationOpportunities[0]?.likelyReason as LapseReason) || reason;
+        }
+      }
+
+      const offers = getReactivationOffers(reason, lifetimeValue, daysSinceLastVisit);
+      return offers.filter((o) => o.isActive === isActive);
+    }),
+
+  /**
+   * Track reactivation response - Record patient response to outreach
+   */
+  trackReactivationResponse: protectedProcedure
+    .input(trackReactivationResponseInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { opportunityId, responseType, responseContent, bookedAppointmentId } = input;
+
+      const opportunity = await ctx.prisma.reactivationOpportunity.findFirst({
+        where: {
+          id: opportunityId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          patient: {
+            include: {
+              demographics: true,
+            },
+          },
+        },
+      });
+
+      if (!opportunity) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Reactivation opportunity not found',
+        });
+      }
+
+      // Determine new status based on response
+      let newStatus: ReactivationStatus = 'ENGAGED';
+      if (responseType === 'booked') {
+        newStatus = 'REACTIVATED';
+      } else if (responseType === 'declined' || responseType === 'unsubscribed') {
+        newStatus = 'DECLINED';
+      } else if (responseType === 'no_response') {
+        newStatus = opportunity.outreachAttempts >= 3 ? 'LOST' : 'CONTACTED';
+      }
+
+      // Update opportunity
+      await ctx.prisma.reactivationOpportunity.update({
+        where: { id: opportunityId },
+        data: {
+          status: newStatus,
+          responseReceived: responseType !== 'no_response',
+          responseDate: responseType !== 'no_response' ? new Date() : undefined,
+          responseContent,
+          reactivated: responseType === 'booked',
+          reactivationDate: responseType === 'booked' ? new Date() : undefined,
+          reactivationVisitId: bookedAppointmentId,
+        },
+      });
+
+      await auditLog('AI_GROWTH_REACTIVATION_RESPONSE', 'ReactivationOpportunity', {
+        entityId: opportunityId,
+        changes: { responseType, newStatus, bookedAppointmentId },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        opportunityId,
+        patientId: opportunity.patientId,
+        patientName: opportunity.patient.demographics
+          ? `${opportunity.patient.demographics.firstName} ${opportunity.patient.demographics.lastName}`
+          : opportunity.patientId,
+        responseType,
+        newStatus,
+        reactivated: responseType === 'booked',
+      };
+    }),
+
+  /**
+   * Record reactivation success - Mark successful reactivation
+   */
+  recordReactivationSuccess: protectedProcedure
+    .input(recordReactivationSuccessInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { opportunityId, appointmentId, notes } = input;
+
+      const opportunity = await ctx.prisma.reactivationOpportunity.findFirst({
+        where: {
+          id: opportunityId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          patient: {
+            include: { demographics: true },
+          },
+        },
+      });
+
+      if (!opportunity) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Reactivation opportunity not found',
+        });
+      }
+
+      // Verify appointment exists
+      const appointment = await ctx.prisma.appointment.findFirst({
+        where: {
+          id: appointmentId,
+          patientId: opportunity.patientId,
+        },
+      });
+
+      if (!appointment) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Appointment not found or does not belong to this patient',
+        });
+      }
+
+      // Update opportunity
+      await ctx.prisma.reactivationOpportunity.update({
+        where: { id: opportunityId },
+        data: {
+          status: 'REACTIVATED',
+          reactivated: true,
+          reactivationDate: new Date(),
+          reactivationVisitId: appointmentId,
+        },
+      });
+
+      // Calculate value recovered
+      const lifetimeValue = Number(opportunity.lifetimeValue || 0);
+      const potentialRecovery = lifetimeValue * 0.5;
+
+      await auditLog('AI_GROWTH_REACTIVATION_SUCCESS', 'ReactivationOpportunity', {
+        entityId: opportunityId,
+        changes: { appointmentId, notes, valueRecovered: potentialRecovery },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        opportunityId,
+        patientId: opportunity.patientId,
+        patientName: opportunity.patient.demographics
+          ? `${opportunity.patient.demographics.firstName} ${opportunity.patient.demographics.lastName}`
+          : opportunity.patientId,
+        appointmentId,
+        reactivationDate: new Date(),
+        daysSinceLastVisit: opportunity.daysSinceLastVisit,
+        valueRecovered: potentialRecovery,
+        lapseReason: opportunity.likelyReason,
+      };
+    }),
+
+  /**
+   * Get reactivation metrics - Analytics on reactivation efforts
+   */
+  getReactivationMetrics: protectedProcedure
+    .input(getReactivationMetricsInputSchema)
+    .query(async ({ ctx, input }) => {
+      const { startDate, endDate } = input;
+
+      const dateFilter: Prisma.ReactivationOpportunityWhereInput = {
+        organizationId: ctx.user.organizationId,
+      };
+
+      if (startDate || endDate) {
+        dateFilter.createdAt = {};
+        if (startDate) dateFilter.createdAt.gte = startDate;
+        if (endDate) dateFilter.createdAt.lte = endDate;
+      }
+
+      const opportunities = await ctx.prisma.reactivationOpportunity.findMany({
+        where: dateFilter,
+      });
+
+      // Calculate metrics
+      const totalCandidates = opportunities.length;
+      const totalOutreaches = opportunities.reduce((sum, o) => sum + o.outreachAttempts, 0);
+      const totalResponses = opportunities.filter((o) => o.responseReceived).length;
+      const totalReactivated = opportunities.filter((o) => o.reactivated).length;
+      const reactivationRate = totalCandidates > 0 ? (totalReactivated / totalCandidates) * 100 : 0;
+
+      // Calculate average time to reactivate
+      const reactivatedOpportunities = opportunities.filter((o) => o.reactivated && o.reactivationDate);
+      const avgTimeToReactivate =
+        reactivatedOpportunities.length > 0
+          ? reactivatedOpportunities.reduce((sum, o) => {
+              const days = Math.floor(
+                (o.reactivationDate!.getTime() - o.createdAt.getTime()) / (24 * 60 * 60 * 1000)
+              );
+              return sum + days;
+            }, 0) / reactivatedOpportunities.length
+          : 0;
+
+      // Calculate value recovered
+      const valueRecovered = opportunities
+        .filter((o) => o.reactivated)
+        .reduce((sum, o) => sum + Number(o.potentialRecovery || 0), 0);
+
+      // Group by reason
+      const byReason: Record<LapseReason, { count: number; reactivated: number; rate: number }> = {
+        no_perceived_need: { count: 0, reactivated: 0, rate: 0 },
+        financial: { count: 0, reactivated: 0, rate: 0 },
+        scheduling: { count: 0, reactivated: 0, rate: 0 },
+        moved_away: { count: 0, reactivated: 0, rate: 0 },
+        dissatisfied: { count: 0, reactivated: 0, rate: 0 },
+        switched_provider: { count: 0, reactivated: 0, rate: 0 },
+        insurance_change: { count: 0, reactivated: 0, rate: 0 },
+        health_improved: { count: 0, reactivated: 0, rate: 0 },
+        forgot: { count: 0, reactivated: 0, rate: 0 },
+        life_event: { count: 0, reactivated: 0, rate: 0 },
+        unknown: { count: 0, reactivated: 0, rate: 0 },
+      };
+
+      for (const opp of opportunities) {
+        const reason = (opp.likelyReason as LapseReason) || 'unknown';
+        if (byReason[reason]) {
+          byReason[reason].count++;
+          if (opp.reactivated) byReason[reason].reactivated++;
+        }
+      }
+
+      for (const reason of Object.keys(byReason) as LapseReason[]) {
+        byReason[reason].rate =
+          byReason[reason].count > 0
+            ? (byReason[reason].reactivated / byReason[reason].count) * 100
+            : 0;
+      }
+
+      // Group by channel
+      const byChannel: Record<string, { outreaches: number; responses: number; reactivated: number; rate: number }> = {};
+      for (const opp of opportunities) {
+        const channel = opp.lastOutreachMethod || 'none';
+        if (!byChannel[channel]) {
+          byChannel[channel] = { outreaches: 0, responses: 0, reactivated: 0, rate: 0 };
+        }
+        byChannel[channel].outreaches += opp.outreachAttempts;
+        if (opp.responseReceived) byChannel[channel].responses++;
+        if (opp.reactivated) byChannel[channel].reactivated++;
+      }
+
+      for (const channel of Object.keys(byChannel)) {
+        byChannel[channel].rate =
+          byChannel[channel].outreaches > 0
+            ? (byChannel[channel].reactivated / byChannel[channel].outreaches) * 100
+            : 0;
+      }
+
+      // Group by offer
+      const offerStats = new Map<string, { sent: number; redeemed: number; valueRecovered: number }>();
+      for (const opp of opportunities) {
+        if (opp.recommendedOffer) {
+          const stats = offerStats.get(opp.recommendedOffer) || { sent: 0, redeemed: 0, valueRecovered: 0 };
+          stats.sent++;
+          if (opp.reactivated) {
+            stats.redeemed++;
+            stats.valueRecovered += Number(opp.potentialRecovery || 0);
+          }
+          offerStats.set(opp.recommendedOffer, stats);
+        }
+      }
+
+      const byOffer = Array.from(offerStats.entries()).map(([offerType, stats]) => ({
+        offerType,
+        sent: stats.sent,
+        redeemed: stats.redeemed,
+        redemptionRate: stats.sent > 0 ? (stats.redeemed / stats.sent) * 100 : 0,
+        valueRecovered: stats.valueRecovered,
+      }));
+
+      return {
+        totalCandidates,
+        totalOutreaches,
+        totalResponses,
+        totalReactivated,
+        reactivationRate,
+        averageTimeToReactivate: avgTimeToReactivate,
+        valueRecovered,
+        byReason,
+        byChannel,
+        byOffer,
+      } as ReactivationMetrics;
+    }),
+
+  /**
+   * Bulk reactivation outreach - Send outreach to multiple patients
+   */
+  bulkReactivationOutreach: protectedProcedure
+    .input(bulkReactivationOutreachInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { patientIds, approach, channel, offerId, spreadOverDays } = input;
+
+      const now = new Date();
+      const results: Array<{
+        patientId: string;
+        success: boolean;
+        opportunityId?: string;
+        error?: string;
+        scheduledAt?: Date;
+      }> = [];
+
+      // Get organization
+      const org = await ctx.prisma.organization.findUnique({
+        where: { id: ctx.user.organizationId },
+        select: { name: true },
+      });
+
+      // Process each patient
+      for (let i = 0; i < patientIds.length; i++) {
+        const patientId = patientIds[i];
+
+        try {
+          const patient = await ctx.prisma.patient.findFirst({
+            where: {
+              id: patientId,
+              organizationId: ctx.user.organizationId,
+            },
+            include: {
+              demographics: true,
+              contacts: { where: { isPrimary: true }, take: 1 },
+              appointments: {
+                where: { status: 'COMPLETED' },
+                orderBy: { endTime: 'desc' },
+                take: 1,
+              },
+              reactivationOpportunities: {
+                orderBy: { createdAt: 'desc' },
+                take: 1,
+              },
+            },
+          });
+
+          if (!patient) {
+            results.push({ patientId, success: false, error: 'Patient not found' });
+            continue;
+          }
+
+          // Calculate scheduled time with spread
+          const scheduledAt = new Date(
+            now.getTime() + Math.floor(i / Math.ceil(patientIds.length / spreadOverDays)) * 24 * 60 * 60 * 1000
+          );
+
+          const lastVisit = patient.appointments[0];
+          const daysSinceLastVisit = lastVisit?.endTime
+            ? Math.floor((now.getTime() - lastVisit.endTime.getTime()) / (24 * 60 * 60 * 1000))
+            : 365;
+          const lifetimeValue = patient.appointments.length * 150;
+          const lapseReason =
+            (patient.reactivationOpportunities[0]?.likelyReason as LapseReason) || 'unknown';
+
+          // Get offer
+          let offer: { type: string; value: string; code: string; expiresAt: Date } | null = null;
+          if (offerId || approach === 'special_offer' || approach === 'win_back') {
+            const offers = getReactivationOffers(lapseReason, lifetimeValue, daysSinceLastVisit);
+            const matchedOffer = offerId ? offers.find((o) => o.offerId === offerId) : offers[0];
+            if (matchedOffer) {
+              offer = {
+                type: matchedOffer.type,
+                value: matchedOffer.value,
+                code: matchedOffer.offerId,
+                expiresAt: new Date(now.getTime() + matchedOffer.validDays * 24 * 60 * 60 * 1000),
+              };
+            }
+          }
+
+          // Update or create opportunity
+          let opportunity = patient.reactivationOpportunities[0];
+          if (opportunity) {
+            await ctx.prisma.reactivationOpportunity.update({
+              where: { id: opportunity.id },
+              data: {
+                status: 'CONTACTED',
+                outreachAttempts: { increment: 1 },
+                lastOutreachDate: scheduledAt,
+                lastOutreachMethod: channel,
+                recommendedOffer: offer?.code || null,
+              },
+            });
+          } else {
+            opportunity = await ctx.prisma.reactivationOpportunity.create({
+              data: {
+                patientId,
+                organizationId: ctx.user.organizationId,
+                status: 'CONTACTED',
+                lastVisitDate: lastVisit?.endTime || new Date(),
+                daysSinceLastVisit,
+                outreachAttempts: 1,
+                lastOutreachDate: scheduledAt,
+                lastOutreachMethod: channel,
+                recommendedOffer: offer?.code || null,
+              },
+            });
+          }
+
+          results.push({
+            patientId,
+            success: true,
+            opportunityId: opportunity.id,
+            scheduledAt,
+          });
+        } catch (error) {
+          results.push({
+            patientId,
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+        }
+      }
+
+      await auditLog('AI_GROWTH_REACTIVATION_BULK_OUTREACH', 'ReactivationOpportunity', {
+        changes: {
+          totalPatients: patientIds.length,
+          successful: results.filter((r) => r.success).length,
+          approach,
+          channel,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        totalProcessed: patientIds.length,
+        successful: results.filter((r) => r.success).length,
+        failed: results.filter((r) => !r.success).length,
+        results,
+        spreadOverDays,
+      };
+    }),
+
+  /**
+   * Get optimal reactivation timing - Calculate best time to reach out
+   */
+  getOptimalReactivationTiming: protectedProcedure
+    .input(getOptimalReactivationTimingInputSchema)
+    .query(async ({ ctx, input }) => {
+      const { patientId } = input;
+
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          reactivationOpportunities: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      const lapseReason =
+        (patient.reactivationOpportunities[0]?.likelyReason as LapseReason) || 'unknown';
+
+      // Calculate timing based on available data
+      // In production, this would use actual engagement data
+      const timing = calculateOptimalReactivationTiming({}, {}, lapseReason);
+
+      return {
+        patientId,
+        ...timing,
+      };
+    }),
+
+  /**
+   * Get reactivation opportunities - List all opportunities with filtering
+   */
+  getReactivationOpportunities: protectedProcedure
+    .input(getReactivationOpportunitiesInputSchema)
+    .query(async ({ ctx, input }) => {
+      const { status, limit, offset, sortBy, sortOrder } = input;
+
+      const where: Prisma.ReactivationOpportunityWhereInput = {
+        organizationId: ctx.user.organizationId,
+      };
+
+      if (status) {
+        where.status = status;
+      }
+
+      const orderBy: Prisma.ReactivationOpportunityOrderByWithRelationInput = {};
+      orderBy[sortBy] = sortOrder;
+
+      const [opportunities, total] = await Promise.all([
+        ctx.prisma.reactivationOpportunity.findMany({
+          where,
+          orderBy,
+          take: limit,
+          skip: offset,
+          include: {
+            patient: {
+              include: {
+                demographics: true,
+                contacts: { where: { isPrimary: true }, take: 1 },
+              },
+            },
+          },
+        }),
+        ctx.prisma.reactivationOpportunity.count({ where }),
+      ]);
+
+      return {
+        opportunities: opportunities.map((opp) => ({
+          id: opp.id,
+          patientId: opp.patientId,
+          patientName: opp.patient.demographics
+            ? `${opp.patient.demographics.firstName} ${opp.patient.demographics.lastName}`
+            : opp.patientId,
+          email: opp.patient.contacts[0]?.email || null,
+          phone: opp.patient.contacts[0]?.mobilePhone || opp.patient.contacts[0]?.homePhone || null,
+          status: opp.status,
+          lastVisitDate: opp.lastVisitDate,
+          daysSinceLastVisit: opp.daysSinceLastVisit,
+          lifetimeValue: Number(opp.lifetimeValue || 0),
+          reactivationScore: opp.reactivationScore,
+          likelyReason: opp.likelyReason,
+          recommendedApproach: opp.recommendedApproach,
+          outreachAttempts: opp.outreachAttempts,
+          lastOutreachDate: opp.lastOutreachDate,
+          responseReceived: opp.responseReceived,
+          reactivated: opp.reactivated,
+          reactivationDate: opp.reactivationDate,
+          createdAt: opp.createdAt,
+        })),
+        total,
+        limit,
+        offset,
+        hasMore: offset + opportunities.length < total,
       };
     }),
 });

@@ -291,3 +291,75 @@ Story: US-358 - Reputation management
 --- Iteration 5 completed at 2026-01-22 ---
 Story: US-359 - Referral optimization
 
+--- Iteration 5 completed at 2026-01-22 17:27:23 ---
+Story: US-359 - Referral optimization
+
+### US-360: Patient reactivation
+**Status:** COMPLETED
+**Date:** 2026-01-22
+
+**Changes made:**
+1. Extended `app/src/server/routers/aiGrowth.ts` with comprehensive patient reactivation functionality:
+   - **aiGrowth.reactivate** - Win back lapsed patients with personalized outreach
+   - **aiGrowth.identifyReactivationCandidates** - Find lapsed patients with reactivation scoring
+   - **aiGrowth.analyzePatientLapse** - Deep analysis of why a patient stopped coming
+   - **aiGrowth.sendReactivationOffer** - Send specific offers to lapsed patients
+   - **aiGrowth.getReactivationOffers** - List available offers based on lapse reason
+   - **aiGrowth.trackReactivationResponse** - Record patient response to outreach
+   - **aiGrowth.recordReactivationSuccess** - Mark successful reactivations
+   - **aiGrowth.getReactivationMetrics** - Analytics on reactivation efforts
+   - **aiGrowth.bulkReactivationOutreach** - Send outreach to multiple patients
+   - **aiGrowth.getOptimalReactivationTiming** - Calculate best time to reach out
+   - **aiGrowth.getReactivationOpportunities** - List all opportunities with filtering
+
+2. Added 6 new types for patient reactivation:
+   - LapseReason (11 reason types including financial, scheduling, dissatisfied, etc.)
+   - ReactivationCandidate, ReactivationOutreach, ReactivationOffer
+   - ReactivationAnalysis, ReactivationMetrics
+
+3. Added 10 new input schemas for validation:
+   - identifyReactivationCandidatesInputSchema, analyzePatientLapseInputSchema
+   - reactivatePatientInputSchema, sendReactivationOfferInputSchema
+   - getReactivationOffersInputSchema, trackReactivationResponseInputSchema
+   - recordReactivationSuccessInputSchema, getReactivationMetricsInputSchema
+   - bulkReactivationOutreachInputSchema, getOptimalReactivationTimingInputSchema
+   - getReactivationOpportunitiesInputSchema
+
+4. Added 6 helper functions:
+   - analyzeLapseReason - AI analysis of why patient lapsed (financial, scheduling, etc.)
+   - calculateReactivationScore - Score likelihood of reactivation (0-100)
+   - determineReactivationApproach - Select best approach based on lapse reason
+   - generateReactivationMessage - Personalized email/SMS messages with offers
+   - calculateOptimalReactivationTiming - Best day/time for outreach
+   - getReactivationOffers - Predefined offers based on reason and patient value
+
+5. Added 7 new audit actions to `app/src/lib/audit.ts`:
+   - AI_GROWTH_REACTIVATION_IDENTIFIED, AI_GROWTH_REACTIVATION_OUTREACH
+   - AI_GROWTH_REACTIVATION_RESPONSE, AI_GROWTH_REACTIVATION_SUCCESS
+   - AI_GROWTH_REACTIVATION_OFFER_SENT, AI_GROWTH_REACTIVATION_ANALYSIS
+   - AI_GROWTH_REACTIVATION_BULK_OUTREACH
+
+**Features implemented:**
+- Lapse reason analysis (11 possible reasons with confidence scoring)
+- Reactivation scoring algorithm (0-100 based on lifetime value, recency, engagement)
+- Multiple reactivation approaches (special_offer, wellness_check, personal_outreach, reminder, win_back)
+- Predefined offers (percentage discount, dollar discount, free service, complimentary exam, package deal)
+- Personalized messaging templates for email, SMS, and phone scripts
+- Optimal timing calculation based on engagement patterns
+- Multi-channel outreach support (email, SMS, phone)
+- Bulk outreach with spread scheduling
+- Comprehensive metrics tracking by reason, channel, and offer type
+- Full audit trail for all reactivation activities
+
+**Acceptance Criteria Met:**
+- ✅ aiGrowth.reactivate - Win back lapsed patients
+- ✅ Identify reactivation candidates (identifyReactivationCandidates with scoring)
+- ✅ Personalized reactivation messaging (generateReactivationMessage)
+- ✅ Special offers for returning patients (getReactivationOffers, sendReactivationOffer)
+- ✅ Track reactivation success (trackReactivationResponse, recordReactivationSuccess, getReactivationMetrics)
+- ✅ Optimal timing for outreach (getOptimalReactivationTiming, calculateOptimalReactivationTiming)
+- ✅ Reason for lapse analysis (analyzePatientLapse, analyzeLapseReason)
+
+--- Iteration 6 completed at 2026-01-22 ---
+Story: US-360 - Patient reactivation
+
