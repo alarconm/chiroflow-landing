@@ -31,11 +31,20 @@ import {
   saveOutcomePrediction,
   trackOutcomePredictionAccuracy,
   getOutcomePredictionAccuracy,
+  detectTrends,
+  batchDetectTrends,
+  saveTrendAnalysis,
+  getAlertSummary,
+  trackTrendAccuracy,
+  getTrendAccuracySummary,
+  compareTrends,
   type ChurnPredictionConfig,
   type DemandForecastConfig,
   type NoShowPredictionConfig,
   type RevenueForecastConfig,
   type TreatmentOutcomePredictionConfig,
+  type TrendDetectionConfig,
+  type TrendMetricType,
 } from '@/lib/ai-predict';
 
 // Zod schemas for input validation
@@ -1847,4 +1856,590 @@ export const aiPredictRouter = router({
         expectedTimelineWeeks: prediction.expectedTimelineWeeks,
       };
     }),
+
+  // ============================================
+  // TREND DETECTION AND ALERTS
+  // ============================================
+
+  // Detect trends for a specific metric
+  detectTrends: protectedProcedure
+    .input(
+      z.object({
+        metricType: z.enum([
+          'revenue',
+          'patient_volume',
+          'new_patients',
+          'no_shows',
+          'cancellations',
+          'collections',
+          'ar_balance',
+          'payer_mix',
+          'visit_frequency',
+          'treatment_completion',
+          'patient_satisfaction',
+          'custom',
+        ]),
+        config: z.object({
+          lookbackDays: z.number().min(7).max(365).optional(),
+          minDataPoints: z.number().min(5).max(100).optional(),
+          trendSensitivity: z.number().min(0).max(1).optional(),
+          significanceThreshold: z.number().min(0.01).max(0.2).optional(),
+          anomalyThreshold: z.number().min(1.5).max(4).optional(),
+          anomalySensitivity: z.number().min(0).max(1).optional(),
+          enableAlerts: z.boolean().optional(),
+          alertCooldownHours: z.number().min(1).max(168).optional(),
+        }).optional(),
+        entityType: z.string().optional(),
+        entityId: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const analysis = await detectTrends(
+        ctx.user.organizationId,
+        input.metricType as TrendMetricType,
+        input.config as Partial<TrendDetectionConfig> | undefined,
+        { entityType: input.entityType, entityId: input.entityId }
+      );
+
+      if (!analysis) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Insufficient data for trend analysis',
+        });
+      }
+
+      return analysis;
+    }),
+
+  // Batch detect trends for multiple metrics
+  batchDetectTrends: adminProcedure
+    .input(
+      z.object({
+        metricTypes: z.array(z.enum([
+          'revenue',
+          'patient_volume',
+          'new_patients',
+          'no_shows',
+          'cancellations',
+          'collections',
+          'ar_balance',
+          'payer_mix',
+          'visit_frequency',
+          'treatment_completion',
+          'patient_satisfaction',
+          'custom',
+        ])).optional(),
+        lookbackDays: z.number().min(7).max(365).optional(),
+        includeForecasts: z.boolean().optional(),
+        includeAlerts: z.boolean().optional(),
+        saveResults: z.boolean().optional(),
+        entityType: z.string().optional(),
+        entityId: z.string().optional(),
+      }).optional()
+    )
+    .mutation(async ({ ctx, input }) => {
+      const result = await batchDetectTrends({
+        organizationId: ctx.user.organizationId,
+        metricTypes: input?.metricTypes as TrendMetricType[] | undefined,
+        lookbackDays: input?.lookbackDays,
+        includeForecasts: input?.includeForecasts,
+        includeAlerts: input?.includeAlerts,
+        saveResults: input?.saveResults,
+        entityType: input?.entityType,
+        entityId: input?.entityId,
+      });
+
+      await auditLog('AI_TREND_DETECTION_BATCH', 'TrendAnalysis', {
+        changes: {
+          metricsAnalyzed: result.metricsAnalyzed,
+          alertsGenerated: result.alertsGenerated,
+          anomaliesDetected: result.anomaliesDetected,
+          practiceHealthScore: result.practiceHealthScore,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return result;
+    }),
+
+  // Get revenue trend analysis
+  getRevenueTrends: protectedProcedure
+    .input(
+      z.object({
+        lookbackDays: z.number().min(7).max(365).default(90),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const analysis = await detectTrends(
+        ctx.user.organizationId,
+        'revenue',
+        { lookbackDays: input?.lookbackDays || 90 }
+      );
+
+      return analysis;
+    }),
+
+  // Get patient volume trends
+  getPatientVolumeTrends: protectedProcedure
+    .input(
+      z.object({
+        lookbackDays: z.number().min(7).max(365).default(90),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const analysis = await detectTrends(
+        ctx.user.organizationId,
+        'patient_volume',
+        { lookbackDays: input?.lookbackDays || 90 }
+      );
+
+      return analysis;
+    }),
+
+  // Get payer mix trends
+  getPayerMixTrends: protectedProcedure
+    .input(
+      z.object({
+        lookbackDays: z.number().min(30).max(365).default(90),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const analysis = await detectTrends(
+        ctx.user.organizationId,
+        'payer_mix',
+        { lookbackDays: input?.lookbackDays || 90 }
+      );
+
+      return analysis;
+    }),
+
+  // Get all detected anomalies
+  getAnomalies: protectedProcedure
+    .input(
+      z.object({
+        metricType: z.enum([
+          'revenue',
+          'patient_volume',
+          'new_patients',
+          'no_shows',
+          'cancellations',
+          'collections',
+          'ar_balance',
+          'payer_mix',
+        ]).optional(),
+        severity: z.enum(['critical', 'high', 'medium', 'low', 'info']).optional(),
+        lookbackDays: z.number().min(7).max(90).default(30),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const metrics = input?.metricType
+        ? [input.metricType as TrendMetricType]
+        : ['revenue', 'patient_volume', 'no_shows', 'collections'] as TrendMetricType[];
+
+      const allAnomalies: { metricType: string; anomalies: unknown[] }[] = [];
+
+      for (const metric of metrics) {
+        const analysis = await detectTrends(
+          ctx.user.organizationId,
+          metric,
+          { lookbackDays: input?.lookbackDays || 30 }
+        );
+
+        if (analysis) {
+          let anomalies = analysis.anomalies;
+          if (input?.severity) {
+            anomalies = anomalies.filter(a => a.severity === input.severity);
+          }
+          if (anomalies.length > 0) {
+            allAnomalies.push({
+              metricType: metric,
+              anomalies,
+            });
+          }
+        }
+      }
+
+      return {
+        totalAnomalies: allAnomalies.reduce((sum, m) => sum + m.anomalies.length, 0),
+        byMetric: allAnomalies,
+      };
+    }),
+
+  // Get alert summary
+  getAlertSummary: protectedProcedure.query(async ({ ctx }) => {
+    return getAlertSummary(ctx.user.organizationId);
+  }),
+
+  // Get active alerts
+  getActiveAlerts: protectedProcedure
+    .input(
+      z.object({
+        metricType: z.enum([
+          'revenue',
+          'patient_volume',
+          'new_patients',
+          'no_shows',
+          'cancellations',
+          'collections',
+          'ar_balance',
+          'payer_mix',
+        ]).optional(),
+        severity: z.enum(['critical', 'high', 'medium', 'low', 'info']).optional(),
+        limit: z.number().min(1).max(100).default(50),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const summary = await getAlertSummary(ctx.user.organizationId);
+
+      let alerts = summary.unresolvedAlerts;
+
+      if (input?.metricType) {
+        alerts = alerts.filter(a => a.metricType === input.metricType);
+      }
+      if (input?.severity) {
+        alerts = alerts.filter(a => a.severity === input.severity);
+      }
+
+      return {
+        alerts: alerts.slice(0, input?.limit || 50),
+        total: alerts.length,
+        bySeverity: summary.bySeverity,
+      };
+    }),
+
+  // Acknowledge an alert
+  acknowledgeAlert: protectedProcedure
+    .input(
+      z.object({
+        alertId: z.string(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Update the trend analysis record
+      await ctx.prisma.trendAnalysis.update({
+        where: { id: input.alertId },
+        data: {
+          // Mark as acknowledged (using recommendations field for notes)
+          recommendations: {
+            acknowledged: true,
+            acknowledgedAt: new Date().toISOString(),
+            acknowledgedBy: ctx.user.id,
+            notes: input.notes,
+          },
+        },
+      });
+
+      await auditLog('AI_TREND_ALERT_ACKNOWLEDGED', 'TrendAnalysis', {
+        entityId: input.alertId,
+        changes: {
+          acknowledgedBy: ctx.user.id,
+          notes: input.notes,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { success: true };
+    }),
+
+  // Resolve an alert
+  resolveAlert: protectedProcedure
+    .input(
+      z.object({
+        alertId: z.string(),
+        resolutionNotes: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      await ctx.prisma.trendAnalysis.update({
+        where: { id: input.alertId },
+        data: {
+          alertTriggered: false,
+          recommendations: {
+            resolved: true,
+            resolvedAt: new Date().toISOString(),
+            resolvedBy: ctx.user.id,
+            resolutionNotes: input.resolutionNotes,
+          },
+        },
+      });
+
+      await auditLog('AI_TREND_ALERT_RESOLVED', 'TrendAnalysis', {
+        entityId: input.alertId,
+        changes: {
+          resolvedBy: ctx.user.id,
+          resolutionNotes: input.resolutionNotes,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { success: true };
+    }),
+
+  // Get trend explanation
+  getTrendExplanation: protectedProcedure
+    .input(
+      z.object({
+        metricType: z.enum([
+          'revenue',
+          'patient_volume',
+          'new_patients',
+          'no_shows',
+          'cancellations',
+          'collections',
+          'ar_balance',
+          'payer_mix',
+        ]),
+        lookbackDays: z.number().min(7).max(365).default(90),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const analysis = await detectTrends(
+        ctx.user.organizationId,
+        input.metricType as TrendMetricType,
+        { lookbackDays: input.lookbackDays }
+      );
+
+      if (!analysis) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Insufficient data for trend analysis',
+        });
+      }
+
+      return {
+        explanation: analysis.explanation,
+        trend: analysis.trend,
+        recommendedActions: analysis.recommendedActions,
+      };
+    }),
+
+  // Get recommended actions based on trends
+  getTrendRecommendations: protectedProcedure
+    .input(
+      z.object({
+        category: z.enum(['operational', 'marketing', 'financial', 'clinical', 'administrative']).optional(),
+        priority: z.enum(['immediate', 'soon', 'scheduled']).optional(),
+        limit: z.number().min(1).max(50).default(10),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const result = await batchDetectTrends({
+        organizationId: ctx.user.organizationId,
+        lookbackDays: 90,
+      });
+
+      let recommendations = result.topRecommendations;
+
+      if (input?.category) {
+        recommendations = recommendations.filter(r => r.category === input.category);
+      }
+      if (input?.priority) {
+        recommendations = recommendations.filter(r => r.priority === input.priority);
+      }
+
+      return {
+        recommendations: recommendations.slice(0, input?.limit || 10),
+        total: recommendations.length,
+        practiceHealthScore: result.practiceHealthScore,
+        practiceHealthTrend: result.practiceHealthTrend,
+      };
+    }),
+
+  // Save trend analysis to database
+  saveTrendAnalysis: adminProcedure
+    .input(
+      z.object({
+        metricType: z.enum([
+          'revenue',
+          'patient_volume',
+          'new_patients',
+          'no_shows',
+          'cancellations',
+          'collections',
+          'ar_balance',
+          'payer_mix',
+        ]),
+        lookbackDays: z.number().min(7).max(365).default(90),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const analysis = await detectTrends(
+        ctx.user.organizationId,
+        input.metricType as TrendMetricType,
+        { lookbackDays: input.lookbackDays }
+      );
+
+      if (!analysis) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Insufficient data for trend analysis',
+        });
+      }
+
+      await saveTrendAnalysis(ctx.user.organizationId, analysis);
+
+      await auditLog('AI_TREND_ANALYSIS_SAVED', 'TrendAnalysis', {
+        changes: {
+          metricType: input.metricType,
+          trend: analysis.trend.direction,
+          changePercent: analysis.changePercent,
+          anomaliesDetected: analysis.anomalies.length,
+          alertsGenerated: analysis.alerts.length,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        success: true,
+        trend: analysis.trend,
+        anomalies: analysis.anomalies.length,
+        alerts: analysis.alerts.length,
+      };
+    }),
+
+  // Track trend prediction accuracy
+  trackTrendAccuracy: adminProcedure
+    .input(
+      z.object({
+        metricType: z.enum([
+          'revenue',
+          'patient_volume',
+          'new_patients',
+          'no_shows',
+          'collections',
+          'ar_balance',
+        ]),
+        forecastDate: z.date(),
+        actualValue: z.number(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const accuracy = await trackTrendAccuracy(
+        ctx.user.organizationId,
+        input.metricType as TrendMetricType,
+        input.forecastDate,
+        input.actualValue
+      );
+
+      if (!accuracy) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'No trend forecast found for this date and metric',
+        });
+      }
+
+      await auditLog('AI_TREND_ACCURACY_TRACKED', 'TrendAnalysis', {
+        changes: {
+          metricType: input.metricType,
+          forecastDate: input.forecastDate,
+          actualValue: input.actualValue,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return accuracy;
+    }),
+
+  // Get trend accuracy summary
+  getTrendAccuracySummary: protectedProcedure
+    .input(
+      z.object({
+        lookbackDays: z.number().min(30).max(365).default(90),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      return getTrendAccuracySummary(
+        ctx.user.organizationId,
+        input?.lookbackDays || 90
+      );
+    }),
+
+  // Compare trends between two periods
+  compareTrends: protectedProcedure
+    .input(
+      z.object({
+        metricType: z.enum([
+          'revenue',
+          'patient_volume',
+          'new_patients',
+          'no_shows',
+          'cancellations',
+          'collections',
+          'ar_balance',
+          'payer_mix',
+        ]),
+        period1: z.object({
+          start: z.date(),
+          end: z.date(),
+          label: z.string(),
+        }),
+        period2: z.object({
+          start: z.date(),
+          end: z.date(),
+          label: z.string(),
+        }),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const comparison = await compareTrends(
+        ctx.user.organizationId,
+        input.metricType as TrendMetricType,
+        input.period1,
+        input.period2
+      );
+
+      return comparison;
+    }),
+
+  // Get trend dashboard summary
+  getTrendSummary: protectedProcedure.query(async ({ ctx }) => {
+    const result = await batchDetectTrends({
+      organizationId: ctx.user.organizationId,
+      lookbackDays: 90,
+    });
+
+    const alertSummary = await getAlertSummary(ctx.user.organizationId);
+
+    return {
+      // Overall health
+      practiceHealthScore: result.practiceHealthScore,
+      practiceHealthTrend: result.practiceHealthTrend,
+
+      // Trend summary
+      metricsAnalyzed: result.metricsAnalyzed,
+      positiveMetrics: result.summaryInsights.positiveMetrics,
+      negativeMetrics: result.summaryInsights.negativeMetrics,
+      stableMetrics: result.summaryInsights.stableMetrics,
+
+      // Alerts
+      totalAlerts: alertSummary.totalActiveAlerts,
+      criticalAlerts: alertSummary.bySeverity.critical,
+      highAlerts: alertSummary.bySeverity.high,
+      alertTrend: alertSummary.alertTrend,
+
+      // Anomalies
+      totalAnomalies: result.anomaliesDetected,
+
+      // Top recommendations
+      topRecommendations: result.topRecommendations.slice(0, 3),
+
+      // Key metrics snapshot
+      keyMetrics: result.analyses.slice(0, 6).map(a => ({
+        metricType: a.metricType,
+        metricLabel: a.metricLabel,
+        currentValue: a.currentValue,
+        changePercent: a.changePercent,
+        trend: a.trend.direction,
+        alertCount: a.alerts.length,
+      })),
+
+      lastUpdated: result.analysisDate,
+    };
+  }),
 });

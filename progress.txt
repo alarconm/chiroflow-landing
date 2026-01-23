@@ -593,3 +593,119 @@ Date: 2026-01-22
 --- Iteration 6 completed at 2026-01-22 ---
 Story: US-384 - Treatment outcome prediction
 
+--- Iteration 6 completed at 2026-01-22 21:42:39 ---
+Story: US-384 - Treatment outcome prediction
+
+## US-385: Trend detection and alerts - COMPLETED
+
+Date: 2026-01-22
+
+### What was done:
+1. Created comprehensive types in `types.ts`:
+   - TrendMetricType (revenue, patient_volume, no_shows, collections, ar_balance, payer_mix, etc.)
+   - AnomalyType (spike, drop, pattern_break, shift, outlier)
+   - AlertSeverity and AlertStatus
+   - TrendDetectionConfig (lookback, sensitivity, thresholds)
+   - DetectedTrend (direction, strength, confidence, slope, changePercent)
+   - DetectedAnomaly (type, severity, deviation, possibleCauses)
+   - EarlyWarningAlert (alertType, severity, urgency, recommendedActions)
+   - TrendExplanation (summary, details, contributingFactors)
+   - TrendAction (action recommendations with priority and impact)
+   - TrendForecast (predictions with confidence intervals)
+   - TrendAnalysisResult (complete analysis output)
+   - BatchTrendAnalysisResult (multi-metric analysis)
+   - TrendAlertSummary, TrendComparisonResult, TrendAccuracyMetrics
+
+2. Created `app/src/lib/ai-predict/trend-detection.ts` library with:
+   - `detectTrends()` - Detect trends for a single metric
+   - `batchDetectTrends()` - Batch analyze multiple metrics
+   - `saveTrendAnalysis()` - Persist to TrendAnalysis model
+   - `getAlertSummary()` - Get alert summary and statistics
+   - `trackTrendAccuracy()` - Track prediction accuracy
+   - `getTrendAccuracySummary()` - Get accuracy metrics by metric type
+   - `compareTrends()` - Compare two time periods
+
+3. Implemented statistical analysis:
+   - calculateStatistics() - mean, median, stdDev, variance, percentiles
+   - linearRegression() - slope, intercept, r-squared calculation
+   - detectTrend() - direction detection with confidence scoring
+   - detectAnomalies() - z-score based anomaly detection
+   - detectSeasonality() - day-of-week pattern detection
+
+4. Alert generation system:
+   - Trend-based alerts (significant changes)
+   - Anomaly-based alerts (spikes and drops)
+   - Severity assignment (critical, high, medium, low, info)
+   - Urgency classification (immediate, soon, monitor)
+   - Recommended actions generation
+
+5. Metric-specific implementations:
+   - Revenue and Collections (from Payment table)
+   - Patient Volume (from Appointment table)
+   - No-Shows (from Appointment status tracking)
+   - New Patients (from Patient creation dates)
+   - AR Balance (running balance calculation)
+   - Comprehensive cause analysis for each metric
+
+6. Practice Health Score:
+   - Weighted scoring across all metrics
+   - Anomaly and alert penalties
+   - Directional health assessment
+
+7. Added tRPC procedures in `aiPredict.ts`:
+   - `detectTrends` - Single metric trend detection
+   - `batchDetectTrends` - Multi-metric batch analysis
+   - `getRevenueTrends` - Revenue-specific trends
+   - `getPatientVolumeTrends` - Volume-specific trends
+   - `getPayerMixTrends` - Payer mix analysis
+   - `getAnomalies` - Get detected anomalies
+   - `getAlertSummary` - Alert dashboard data
+   - `getActiveAlerts` - List active alerts
+   - `acknowledgeAlert` - Acknowledge an alert
+   - `resolveAlert` - Resolve an alert
+   - `getTrendExplanation` - Get trend explanation
+   - `getTrendRecommendations` - Get recommended actions
+   - `saveTrendAnalysis` - Persist analysis
+   - `trackTrendAccuracy` - Track accuracy
+   - `compareTrends` - Period comparison
+   - `getTrendSummary` - Dashboard summary
+
+8. Added audit actions in `audit.ts`:
+   - AI_TREND_DETECTION_BATCH
+   - AI_TREND_ANALYSIS_SAVED
+   - AI_TREND_ALERT_ACKNOWLEDGED
+   - AI_TREND_ALERT_RESOLVED
+   - AI_TREND_ACCURACY_TRACKED
+
+9. Updated `index.ts` exports for trend detection module
+
+### Files created:
+- app/src/lib/ai-predict/trend-detection.ts
+
+### Files modified:
+- app/src/lib/ai-predict/types.ts (added trend detection types)
+- app/src/lib/ai-predict/index.ts (exported trend detection functions)
+- app/src/server/routers/aiPredict.ts (added trend detection procedures)
+- app/src/lib/audit.ts (added new audit actions)
+
+### Acceptance Criteria Met:
+- ✅ aiPredict.detectTrends - Find patterns
+- ✅ Revenue trend analysis
+- ✅ Patient volume trends
+- ✅ Payer mix shifts
+- ✅ Anomaly detection (z-score based with configurable thresholds)
+- ✅ Early warning alerts (severity, urgency, recommended actions)
+- ✅ Trend explanation (summary, factors, comparisons)
+- ✅ Recommended actions (prioritized with impact assessment)
+
+### Notes:
+- Uses existing TrendAnalysis model from Epic 40 schema
+- Linear regression for trend direction and strength
+- Z-score anomaly detection with configurable sensitivity
+- Day-of-week seasonality detection
+- Comprehensive metric support (revenue, volume, no-shows, collections, AR, payer mix)
+- Practice health score with weighted metrics
+- Alert cooldown to prevent alert fatigue
+--- Iteration 7 completed at 2026-01-22 ---
+Story: US-385 - Trend detection and alerts
+

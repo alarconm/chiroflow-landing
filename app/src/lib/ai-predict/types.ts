@@ -1225,3 +1225,440 @@ export interface OutcomePredictionAccuracyMetrics {
   last90Days: { predictions: number; accuracy: number };
   overall: { predictions: number; accuracy: number };
 }
+
+// ============================================
+// TREND DETECTION AND ALERTS TYPES
+// ============================================
+
+export type TrendMetricType =
+  | 'revenue'
+  | 'patient_volume'
+  | 'new_patients'
+  | 'no_shows'
+  | 'cancellations'
+  | 'collections'
+  | 'ar_balance'
+  | 'payer_mix'
+  | 'visit_frequency'
+  | 'treatment_completion'
+  | 'patient_satisfaction'
+  | 'custom';
+
+export type AnomalyType = 'spike' | 'drop' | 'pattern_break' | 'shift' | 'outlier';
+export type AlertSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
+export type AlertStatus = 'active' | 'acknowledged' | 'resolved' | 'dismissed';
+
+export interface TrendDetectionConfig {
+  // Analysis parameters
+  lookbackDays: number;            // How far back to analyze (default: 90)
+  minDataPoints: number;           // Minimum data points required (default: 30)
+
+  // Trend detection
+  trendSensitivity: number;        // 0-1, how sensitive to trend changes (default: 0.7)
+  significanceThreshold: number;   // Statistical significance threshold (default: 0.05)
+
+  // Anomaly detection
+  anomalyThreshold: number;        // Standard deviations for anomaly (default: 2.5)
+  anomalySensitivity: number;      // 0-1, how sensitive to anomalies (default: 0.8)
+
+  // Alert configuration
+  enableAlerts: boolean;           // Whether to generate alerts
+  alertCooldownHours: number;      // Hours between repeat alerts (default: 24)
+
+  // Metric-specific thresholds
+  metricThresholds?: {
+    [key in TrendMetricType]?: {
+      criticalChangePercent: number;   // % change for critical alert
+      highChangePercent: number;       // % change for high alert
+      mediumChangePercent: number;     // % change for medium alert
+      anomalyThreshold: number;        // Custom anomaly threshold
+    };
+  };
+}
+
+export interface TrendDataPoint {
+  date: Date;
+  value: number;
+  isProjected: boolean;
+  label?: string;
+}
+
+export interface DetectedTrend {
+  direction: TrendDirection;
+  strength: number;                // 0-1 how strong the trend is
+  confidence: number;              // 0-1 statistical confidence
+  slope: number;                   // Rate of change per day
+  changePercent: number;           // Total percent change over period
+  startDate: Date;
+  endDate: Date;
+  description: string;
+  interpretation: string;
+  isStatisticallySignificant: boolean;
+}
+
+export interface RevenueTrendAnalysis {
+  metricType: 'revenue';
+  currentPeriodTotal: number;
+  previousPeriodTotal: number;
+  changePercent: number;
+  changeAbsolute: number;
+  trend: DetectedTrend;
+
+  // Breakdown
+  bySource: {
+    source: 'patient_payments' | 'insurance_payments' | 'other';
+    current: number;
+    previous: number;
+    changePercent: number;
+    trend: TrendDirection;
+  }[];
+
+  // Daily pattern
+  dailyAverage: number;
+  peakDay: { day: string; amount: number };
+  lowestDay: { day: string; amount: number };
+
+  // Seasonality
+  seasonalAdjustment: number;
+  adjustedChangePercent: number;
+}
+
+export interface PatientVolumeTrendAnalysis {
+  metricType: 'patient_volume';
+  currentPeriodTotal: number;
+  previousPeriodTotal: number;
+  changePercent: number;
+  trend: DetectedTrend;
+
+  // Types of patients
+  newPatients: { current: number; previous: number; changePercent: number };
+  returningPatients: { current: number; previous: number; changePercent: number };
+  reactivatedPatients: { current: number; previous: number; changePercent: number };
+
+  // Visit patterns
+  averageVisitsPerPatient: number;
+  visitFrequencyTrend: TrendDirection;
+
+  // Comparison
+  projectedNextPeriod: number;
+  yearOverYearChange: number | null;
+}
+
+export interface PayerMixTrendAnalysis {
+  metricType: 'payer_mix';
+  analysisDate: Date;
+
+  // Current mix
+  currentMix: {
+    payerType: string;          // 'self_pay', 'commercial', 'medicare', 'medicaid', 'workers_comp', etc.
+    payerName: string | null;
+    patientCount: number;
+    patientPercent: number;
+    revenueAmount: number;
+    revenuePercent: number;
+  }[];
+
+  // Changes
+  mixShifts: {
+    payerType: string;
+    previousPercent: number;
+    currentPercent: number;
+    shift: number;              // Positive = gaining share
+    trend: TrendDirection;
+    significance: 'significant' | 'minor' | 'none';
+    impact: string;             // Interpretation of impact
+  }[];
+
+  // Alerts for concerning shifts
+  concerningShifts: string[];
+  opportunities: string[];
+}
+
+export interface DetectedAnomaly {
+  id: string;
+  metricType: TrendMetricType;
+  anomalyType: AnomalyType;
+  severity: AlertSeverity;
+
+  // When and what
+  detectedAt: Date;
+  dateRange: { start: Date; end: Date };
+
+  // Values
+  observedValue: number;
+  expectedValue: number;
+  deviation: number;             // Standard deviations from expected
+  deviationPercent: number;
+
+  // Context
+  description: string;
+  possibleCauses: string[];
+  historicalContext: string;     // Has this happened before?
+
+  // Statistical
+  confidence: number;
+  anomalyScore: number;          // 0-1 how anomalous
+}
+
+export interface EarlyWarningAlert {
+  id: string;
+  alertType: 'trend_reversal' | 'approaching_threshold' | 'anomaly' | 'pattern_change' | 'forecast_miss';
+  severity: AlertSeverity;
+  status: AlertStatus;
+
+  // What triggered it
+  metricType: TrendMetricType;
+  metricSubtype?: string;
+  triggerValue: number;
+  thresholdValue: number;
+
+  // Details
+  title: string;
+  description: string;
+  detailedExplanation: string;
+
+  // Impact assessment
+  potentialImpact: string;
+  urgency: 'immediate' | 'soon' | 'monitor';
+
+  // Historical
+  previousOccurrences: number;
+  lastOccurred?: Date;
+
+  // Actions
+  recommendedActions: TrendAction[];
+
+  // Timestamps
+  createdAt: Date;
+  acknowledgedAt?: Date;
+  resolvedAt?: Date;
+  acknowledgedBy?: string;
+  resolvedBy?: string;
+  resolutionNotes?: string;
+}
+
+export interface TrendExplanation {
+  summary: string;               // One-sentence summary
+  details: string[];             // Bullet points of detail
+  contributingFactors: {
+    factor: string;
+    impact: 'positive' | 'negative' | 'neutral';
+    magnitude: 'high' | 'medium' | 'low';
+    description: string;
+  }[];
+  comparisons: {
+    comparison: string;          // e.g., "vs. same period last year"
+    difference: number;
+    differencePercent: number;
+    interpretation: string;
+  }[];
+  visualizations?: {
+    type: 'chart' | 'sparkline' | 'comparison';
+    data: unknown;
+  }[];
+}
+
+export interface TrendAction {
+  action: string;
+  description: string;
+  priority: 'immediate' | 'soon' | 'scheduled';
+  expectedImpact: 'high' | 'medium' | 'low';
+  effort: 'easy' | 'moderate' | 'complex';
+  category: 'operational' | 'marketing' | 'financial' | 'clinical' | 'administrative';
+  automatable: boolean;
+  suggestedDeadline?: Date;
+}
+
+export interface TrendForecast {
+  metricType: TrendMetricType;
+  forecastDate: Date;
+  predictedValue: number;
+  confidenceInterval: { min: number; max: number };
+  confidence: number;
+
+  // Assumptions
+  assumptions: string[];
+  riskFactors: string[];
+
+  // Comparison to goal if available
+  goalValue?: number;
+  onTrackForGoal: boolean;
+  gapToGoal?: number;
+}
+
+export interface TrendAnalysisResult {
+  organizationId: string;
+  analysisDate: Date;
+
+  // Time period analyzed
+  startDate: Date;
+  endDate: Date;
+  dataPointCount: number;
+
+  // Requested metric analysis
+  metricType: TrendMetricType;
+  metricLabel: string;
+
+  // Current values
+  currentValue: number;
+  previousValue: number;
+  changePercent: number;
+  changeAbsolute: number;
+
+  // Trend detection
+  trend: DetectedTrend;
+  trendDataPoints: TrendDataPoint[];
+
+  // Statistical analysis
+  statistics: {
+    mean: number;
+    median: number;
+    stdDev: number;
+    min: number;
+    max: number;
+    variance: number;
+    percentile25: number;
+    percentile75: number;
+  };
+
+  // Seasonality
+  seasonality: {
+    detected: boolean;
+    pattern: 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'none';
+    strength: number;
+    adjustedTrend: TrendDirection;
+    adjustedChangePercent: number;
+  };
+
+  // Anomalies detected
+  anomalies: DetectedAnomaly[];
+
+  // Alerts generated
+  alerts: EarlyWarningAlert[];
+
+  // Explanation and actions
+  explanation: TrendExplanation;
+  recommendedActions: TrendAction[];
+
+  // Forecast
+  forecast: TrendForecast[];
+
+  // Model info
+  modelVersion: string;
+  confidence: number;
+  validUntil: Date;
+}
+
+export interface BatchTrendAnalysisOptions {
+  organizationId: string;
+  metricTypes?: TrendMetricType[];    // Which metrics to analyze (default: all)
+  lookbackDays?: number;              // Analysis period
+  includeForecasts?: boolean;         // Generate forecasts
+  includeAlerts?: boolean;            // Generate alerts
+  saveResults?: boolean;              // Persist to database
+  entityType?: string;                // 'provider', 'location', etc.
+  entityId?: string;                  // Specific entity to analyze
+}
+
+export interface BatchTrendAnalysisResult {
+  organizationId: string;
+  analysisDate: Date;
+
+  // Processing summary
+  metricsAnalyzed: number;
+  alertsGenerated: number;
+  anomaliesDetected: number;
+  processingTimeMs: number;
+
+  // Individual analyses
+  analyses: TrendAnalysisResult[];
+
+  // Aggregated insights
+  summaryInsights: {
+    positiveMetrics: string[];     // Metrics showing improvement
+    negativeMetrics: string[];     // Metrics showing decline
+    stableMetrics: string[];       // Metrics relatively stable
+    criticalAlerts: number;
+    highAlerts: number;
+  };
+
+  // Top recommendations
+  topRecommendations: TrendAction[];
+
+  // Overall health score
+  practiceHealthScore: number;        // 0-100 overall practice health
+  practiceHealthTrend: TrendDirection;
+}
+
+export interface TrendAlertSummary {
+  totalActiveAlerts: number;
+  byMetric: {
+    metricType: TrendMetricType;
+    count: number;
+    highestSeverity: AlertSeverity;
+  }[];
+  bySeverity: {
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+    info: number;
+  };
+  recentAlerts: EarlyWarningAlert[];
+  unresolvedAlerts: EarlyWarningAlert[];
+  alertTrend: TrendDirection;         // Are alerts increasing or decreasing?
+}
+
+export interface TrendComparisonResult {
+  metricType: TrendMetricType;
+
+  // Periods being compared
+  period1: { start: Date; end: Date; label: string };
+  period2: { start: Date; end: Date; label: string };
+
+  // Values
+  period1Value: number;
+  period2Value: number;
+  absoluteChange: number;
+  percentChange: number;
+
+  // Context
+  interpretation: string;
+  isSignificant: boolean;
+  significance: number;              // Statistical significance
+
+  // Historical context
+  historicalAverage: number;
+  vsHistoricalPercent: number;
+
+  // Visualization data
+  period1Data: TrendDataPoint[];
+  period2Data: TrendDataPoint[];
+}
+
+export interface TrendAccuracyMetrics {
+  metricType: TrendMetricType;
+  totalForecasts: number;
+  evaluatedForecasts: number;
+
+  // Accuracy metrics
+  mape: number;                      // Mean Absolute Percentage Error
+  rmse: number;                      // Root Mean Square Error
+  directionalAccuracy: number;       // % times direction was correct
+
+  // By time horizon
+  byHorizon: {
+    horizon: string;                 // '7d', '30d', '90d'
+    forecasts: number;
+    accuracy: number;
+    avgError: number;
+  }[];
+
+  // Alert accuracy
+  alertAccuracy: {
+    totalAlerts: number;
+    truePositives: number;
+    falsePositives: number;
+    precision: number;
+  };
+}

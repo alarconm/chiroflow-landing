@@ -46,3 +46,14 @@ export {
   trackOutcomePredictionAccuracy,
   getOutcomePredictionAccuracy,
 } from './treatment-outcome';
+
+// Trend Detection and Alerts
+export {
+  detectTrends,
+  batchDetectTrends,
+  saveTrendAnalysis,
+  getAlertSummary,
+  trackTrendAccuracy,
+  getTrendAccuracySummary,
+  compareTrends,
+} from './trend-detection';
