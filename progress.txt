@@ -287,3 +287,92 @@ Date: 2026-01-22
 --- Iteration 6 completed at 2026-01-22 ---
 Story: US-352 - Risk identification
 
+--- Iteration 6 completed at 2026-01-22 16:05:02 ---
+Story: US-352 - Risk identification
+
+## US-353: Audit preparation - COMPLETED
+
+### What was implemented:
+- Created comprehensive audit preparation functionality for the AI QA agent
+- Implemented 8 new tRPC procedures for audit readiness and response
+
+**Main Procedures:**
+1. **aiQA.prepareForAudit** - Comprehensive audit readiness report
+   - Documentation gap identification
+   - Sample chart review with stratified sampling
+   - Compliance checklist generation
+   - Readiness score calculation (READY/NEEDS_IMPROVEMENT/NOT_READY)
+   - Generates findings for critical and high-severity issues
+
+2. **aiQA.getDocumentationGaps** - Query documentation-related findings
+
+3. **aiQA.sampleChartReview** - Manual sample chart review
+   - Configurable review criteria (completeness, medical necessity, codes, etc.)
+   - Summary statistics with pass rate
+
+4. **aiQA.generateComplianceChecklist** - Generate audit-type-specific checklists
+   - Supports PAYER, CMS, RAC, MAC, INTERNAL, STATE audit types
+   - Focus areas: DOCUMENTATION, CODING, BILLING, COMPLIANCE, MEDICAL_NECESSITY, MODIFIER_USAGE
+   - Critical vs non-critical items flagged
+
+5. **aiQA.gatherSupportingDocumentation** - Collect supporting docs for audit response
+   - SOAP notes, treatment plans, consent forms, outcome assessments
+   - Identifies missing/incomplete documentation
+   - Completeness scoring
+
+6. **aiQA.generateResponseTemplate** - Generate audit response templates
+   - Issue-specific templates (medical necessity, documentation deficiency, coding errors)
+   - Supporting points and documentation checklists
+   - Appeal potential assessment (HIGH/MEDIUM/LOW)
+
+7. **aiQA.runMockAudit** - Mock audit simulation
+   - Configurable audit focus (high-value claims, specific codes, modifier usage, random)
+   - Simulates auditor review with findings
+   - Calculates error rate and extrapolated overpayment
+   - Risk prediction (LOW_RISK, MODERATE_RISK, HIGH_RISK, CRITICAL_RISK)
+   - Generates remediation recommendations
+
+8. **aiQA.getAuditPreparationHistory** - Query past audit preparations and mock audits
+
+**Helper Functions:**
+- `selectAuditSample` - Stratified sampling for audit preparation
+- `reviewChartForAudit` - Comprehensive chart review with documentation, coding, compliance, and medical necessity checks
+- `generateAuditChecklist` - Dynamic checklist generation by audit type
+- `generateAuditRecommendations` - Context-aware recommendations
+- `calculateSoapCompleteness` - SOAP note completeness scoring
+- `generateResponseTemplateForIssue` - Issue-specific response templates
+- `getAuditResponseGuidance` - Audit-type-specific guidance
+- `selectClaimsForMockAudit` - Claim selection for mock audits
+- `simulateAuditReview` - Simulates auditor review process
+- `generateMockAuditRecommendations` - Mock audit recommendations
+- `getMockAuditRiskDescription` / `getMockAuditActions` - Risk assessment helpers
+
+**Schema Updates:**
+- Added 2 new QAAuditType enum values:
+  - AUDIT_PREPARATION
+  - MOCK_AUDIT
+
+**Audit Action Types Added:**
+- AI_QA_AUDIT_PREPARATION
+- AI_QA_MOCK_AUDIT
+- AI_QA_RESPONSE_GENERATED
+
+### Acceptance Criteria Met:
+- [x] aiQA.prepareForAudit - Audit readiness report
+- [x] Documentation gap identification
+- [x] Sample chart review
+- [x] Compliance checklist generation
+- [x] Supporting documentation gathering
+- [x] Response template generation
+- [x] Mock audit simulation
+
+### Files modified:
+- app/src/server/routers/aiQA.ts (~1500 lines added for audit preparation)
+- app/src/lib/audit.ts (added 3 new audit action types)
+- app/prisma/schema.prisma (added 2 new QAAuditType enum values)
+
+### Status: COMPLETE
+Date: 2026-01-22
+--- Iteration 7 completed at 2026-01-22 ---
+Story: US-353 - Audit preparation
+

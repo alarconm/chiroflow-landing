@@ -12568,12 +12568,14 @@ model CareCoordinatorAction {
 
 // Audit type categories
 enum QAAuditType {
-  DOCUMENTATION // Clinical documentation quality
-  CODING        // Coding accuracy and appropriateness
-  COMPLIANCE    // Regulatory and billing compliance
-  CLINICAL      // Clinical quality measures
-  WORKFLOW      // Workflow efficiency
-  FINANCIAL     // Financial accuracy
+  DOCUMENTATION       // Clinical documentation quality
+  CODING              // Coding accuracy and appropriateness
+  COMPLIANCE          // Regulatory and billing compliance
+  CLINICAL            // Clinical quality measures
+  WORKFLOW            // Workflow efficiency
+  FINANCIAL           // Financial accuracy
+  AUDIT_PREPARATION   // Audit readiness preparation (US-353)
+  MOCK_AUDIT          // Mock audit simulation (US-353)
 }
 
 // Finding severity levels

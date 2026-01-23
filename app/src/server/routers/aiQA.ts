@@ -2958,6 +2958,1041 @@ export const aiQARouter = router({
         education,
       };
     }),
+
+  // ============================================
+  // US-353: Audit preparation
+  // ============================================
+
+  /**
+   * Prepare for audit - Generate comprehensive audit readiness report
+   * Identifies documentation gaps, compliance issues, and generates checklists
+   */
+  prepareForAudit: providerProcedure
+    .input(
+      z.object({
+        auditType: z.enum(['PAYER', 'CMS', 'RAC', 'MAC', 'INTERNAL', 'STATE']),
+        payerId: z.string().optional(),
+        dateFrom: z.date(),
+        dateTo: z.date(),
+        providerId: z.string().optional(),
+        sampleSize: z.number().min(1).max(100).default(20),
+        focusAreas: z.array(z.enum([
+          'DOCUMENTATION',
+          'CODING',
+          'BILLING',
+          'COMPLIANCE',
+          'MEDICAL_NECESSITY',
+          'MODIFIER_USAGE',
+        ])).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { auditType, payerId, dateFrom, dateTo, providerId, sampleSize, focusAreas } = input;
+
+      // Create audit preparation record
+      const audit = await ctx.prisma.qAAudit.create({
+        data: {
+          organizationId: ctx.user.organizationId,
+          auditType: 'AUDIT_PREPARATION',
+          targetType: `${auditType}_AUDIT`,
+          targetId: payerId || null,
+          providerId: providerId || null,
+          dateFrom,
+          dateTo,
+          sampleSize,
+          populationSize: 0, // Will be updated
+          methodology: `${auditType} audit preparation with focus on: ${focusAreas?.join(', ') || 'all areas'}`,
+          status: 'IN_PROGRESS',
+        },
+      });
+
+      // Get claims in the audit period
+      const claims = await ctx.prisma.claim.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          encounter: {
+            encounterDate: {
+              gte: dateFrom,
+              lte: dateTo,
+            },
+            ...(providerId && { providerId }),
+          },
+          ...(payerId && { insurancePolicyId: payerId }),
+        },
+        include: {
+          encounter: {
+            include: {
+              soapNote: true,
+              diagnoses: true,
+              procedures: true,
+              treatmentPlan: true,
+              patient: {
+                include: {
+                  demographics: true,
+                  telehealthConsents: true,
+                },
+              },
+              provider: {
+                include: {
+                  user: true,
+                },
+              },
+            },
+          },
+          claimLines: true,
+        },
+        orderBy: [
+          { totalCharges: 'desc' }, // High value claims first
+        ],
+      });
+
+      // Update population size
+      await ctx.prisma.qAAudit.update({
+        where: { id: audit.id },
+        data: { populationSize: claims.length },
+      });
+
+      // Select sample for review (stratified sampling)
+      const sampleClaims = selectAuditSample(
+        claims.map(c => ({ id: c.id, totalCharges: c.totalCharges ? Number(c.totalCharges) : null })),
+        sampleSize
+      );
+
+      // Get full claim data for selected samples
+      const sampleClaimIds = sampleClaims.map(c => c.id);
+      const fullSampleClaims = claims.filter(c => sampleClaimIds.includes(c.id));
+
+      // Analyze each sample claim for documentation gaps
+      const documentationGaps: AuditGap[] = [];
+      const codingIssues: AuditGap[] = [];
+      const complianceIssues: AuditGap[] = [];
+      const medicalNecessityGaps: AuditGap[] = [];
+      const chartReviewResults: ChartReviewResult[] = [];
+
+      for (const claim of fullSampleClaims) {
+        const encounter = claim.encounter;
+        if (!encounter) continue;
+
+        const reviewResult = await reviewChartForAudit(
+          ctx.prisma,
+          {
+            id: claim.id,
+            dateOfService: encounter.encounterDate,
+            totalCharges: claim.totalCharges ? Number(claim.totalCharges) : null,
+            claimLines: claim.claimLines.map(l => ({
+              cptCode: l.cptCode,
+              modifier1: l.modifiers?.[0] || null,
+              modifier2: l.modifiers?.[1] || null,
+            })),
+          },
+          {
+            id: encounter.id,
+            encounterDate: encounter.encounterDate,
+            soapNote: encounter.soapNote,
+            diagnoses: encounter.diagnoses.map(d => ({ code: d.icd10Code, isPrimary: d.isPrimary })),
+            procedures: encounter.procedures.map(p => ({ code: p.cptCode })),
+            treatmentPlan: encounter.treatmentPlan,
+            patient: {
+              id: encounter.patient.id,
+              firstName: encounter.patient.demographics?.firstName,
+              lastName: encounter.patient.demographics?.lastName,
+              demographics: encounter.patient.demographics,
+              consents: encounter.patient.telehealthConsents?.map(c => ({
+                status: c.status,
+                expiresAt: c.expirationDate,
+              })),
+            },
+            provider: {
+              id: encounter.provider.id,
+              user: encounter.provider.user,
+            },
+          },
+          focusAreas || ['DOCUMENTATION', 'CODING', 'BILLING', 'COMPLIANCE', 'MEDICAL_NECESSITY', 'MODIFIER_USAGE']
+        );
+
+        chartReviewResults.push(reviewResult);
+        documentationGaps.push(...reviewResult.documentationGaps);
+        codingIssues.push(...reviewResult.codingIssues);
+        complianceIssues.push(...reviewResult.complianceIssues);
+        medicalNecessityGaps.push(...reviewResult.medicalNecessityGaps);
+      }
+
+      // Generate compliance checklist
+      const checklist = generateAuditChecklist(auditType, focusAreas || []);
+
+      // Calculate readiness score
+      const totalIssues = documentationGaps.length + codingIssues.length + complianceIssues.length + medicalNecessityGaps.length;
+      const maxPossibleIssues = sampleClaims.length * 10; // Assume max 10 issues per claim
+      const readinessScore = Math.max(0, Math.round(100 - (totalIssues / maxPossibleIssues * 100)));
+
+      // Categorize issues by severity
+      const allIssues = [...documentationGaps, ...codingIssues, ...complianceIssues, ...medicalNecessityGaps];
+      const criticalIssues = allIssues.filter(i => i.severity === 'CRITICAL');
+      const highIssues = allIssues.filter(i => i.severity === 'HIGH');
+      const mediumIssues = allIssues.filter(i => i.severity === 'MEDIUM');
+      const lowIssues = allIssues.filter(i => i.severity === 'LOW');
+
+      // Create findings for critical and high issues
+      const findings: Prisma.QAFindingCreateManyInput[] = [];
+      for (const issue of [...criticalIssues, ...highIssues]) {
+        findings.push({
+          organizationId: ctx.user.organizationId,
+          auditId: audit.id,
+          findingType: issue.gapType,
+          severity: issue.severity,
+          title: issue.title,
+          description: issue.description,
+          recommendation: issue.remediation,
+          entityType: issue.entityType,
+          entityId: issue.entityId,
+          providerId: issue.providerId,
+          patientId: issue.patientId,
+          status: 'OPEN',
+          riskScore: issue.riskScore,
+          complianceImpact: issue.severity === 'CRITICAL' || issue.severity === 'HIGH',
+        });
+      }
+
+      if (findings.length > 0) {
+        await ctx.prisma.qAFinding.createMany({ data: findings });
+      }
+
+      // Generate recommendations
+      const recommendations = generateAuditRecommendations(
+        auditType,
+        documentationGaps,
+        codingIssues,
+        complianceIssues,
+        medicalNecessityGaps,
+        readinessScore
+      );
+
+      // Update audit record with results
+      await ctx.prisma.qAAudit.update({
+        where: { id: audit.id },
+        data: {
+          status: 'COMPLETED',
+          score: readinessScore,
+          completedAt: new Date(),
+          summary: JSON.stringify({
+            readinessScore,
+            totalIssuesFound: totalIssues,
+            criticalCount: criticalIssues.length,
+            highCount: highIssues.length,
+            mediumCount: mediumIssues.length,
+            lowCount: lowIssues.length,
+            sampleReviewed: sampleClaims.length,
+            focusAreas,
+          }),
+          recommendations: recommendations.join('\n'),
+        },
+      });
+
+      await auditLog('AI_QA_AUDIT_PREPARATION', 'QAAudit', {
+        entityId: audit.id,
+        changes: {
+          auditType,
+          dateRange: { from: dateFrom, to: dateTo },
+          sampleSize: sampleClaims.length,
+          readinessScore,
+          issuesFound: totalIssues,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        auditId: audit.id,
+        readinessScore,
+        summary: {
+          totalClaimsInPeriod: claims.length,
+          sampleReviewed: sampleClaims.length,
+          totalIssuesFound: totalIssues,
+          criticalCount: criticalIssues.length,
+          highCount: highIssues.length,
+          mediumCount: mediumIssues.length,
+          lowCount: lowIssues.length,
+        },
+        documentationGaps,
+        codingIssues,
+        complianceIssues,
+        medicalNecessityGaps,
+        checklist,
+        recommendations,
+        chartReviewResults,
+        auditReadiness: readinessScore >= 85 ? 'READY' : readinessScore >= 70 ? 'NEEDS_IMPROVEMENT' : 'NOT_READY',
+      };
+    }),
+
+  /**
+   * Get documentation gaps for a specific claim/encounter
+   */
+  getDocumentationGaps: providerProcedure
+    .input(
+      z.object({
+        encounterId: z.string().optional(),
+        claimId: z.string().optional(),
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+        providerId: z.string().optional(),
+        limit: z.number().min(1).max(100).default(20),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { encounterId, claimId, dateFrom, dateTo, providerId, limit } = input;
+
+      // Get findings related to documentation
+      const findings = await ctx.prisma.qAFinding.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          findingType: {
+            in: [
+              'DOCUMENTATION_GAP',
+              'DOCUMENTATION_COMPLETENESS',
+              'DOCUMENTATION_MEDICALNECESSITY',
+              'DOCUMENTATION_DIAGNOSISLINKAGE',
+              'DOCUMENTATION_PROGRESSNOTEADEQUACY',
+              'DOCUMENTATION_TREATMENTPLANDOCUMENTATION',
+              'MISSING_SIGNATURE',
+              'INCOMPLETE_SOAP',
+              'MISSING_CONSENT',
+            ],
+          },
+          ...(encounterId && { entityId: encounterId }),
+          ...(providerId && { providerId }),
+          audit: {
+            ...(dateFrom && { dateFrom: { gte: dateFrom } }),
+            ...(dateTo && { dateTo: { lte: dateTo } }),
+          },
+        },
+        include: {
+          audit: true,
+        },
+        orderBy: [
+          { severity: 'asc' }, // CRITICAL first
+          { createdAt: 'desc' },
+        ],
+        take: limit,
+      });
+
+      // Group by encounter/claim
+      const groupedGaps = new Map<string, typeof findings>();
+      for (const finding of findings) {
+        const key = finding.entityId || 'unknown';
+        if (!groupedGaps.has(key)) {
+          groupedGaps.set(key, []);
+        }
+        groupedGaps.get(key)!.push(finding);
+      }
+
+      return {
+        totalGaps: findings.length,
+        gapsByEncounter: Object.fromEntries(groupedGaps),
+        findings,
+      };
+    }),
+
+  /**
+   * Perform sample chart review for audit preparation
+   */
+  sampleChartReview: providerProcedure
+    .input(
+      z.object({
+        claimIds: z.array(z.string()).min(1).max(50),
+        reviewCriteria: z.array(z.enum([
+          'DOCUMENTATION_COMPLETENESS',
+          'MEDICAL_NECESSITY',
+          'CODE_ACCURACY',
+          'MODIFIER_USAGE',
+          'DIAGNOSIS_LINKAGE',
+          'SIGNATURE_PRESENT',
+          'DATE_CONSISTENCY',
+          'CONSENT_DOCUMENTATION',
+        ])).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { claimIds, reviewCriteria } = input;
+
+      const claims = await ctx.prisma.claim.findMany({
+        where: {
+          id: { in: claimIds },
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          encounter: {
+            include: {
+              soapNote: true,
+              diagnoses: true,
+              procedures: true,
+              treatmentPlan: true,
+              patient: {
+                include: {
+                  demographics: true,
+                  telehealthConsents: true,
+                },
+              },
+              provider: {
+                include: {
+                  user: true,
+                },
+              },
+            },
+          },
+          claimLines: true,
+        },
+      });
+
+      const reviewResults: ChartReviewResult[] = [];
+      const criteria = reviewCriteria || [
+        'DOCUMENTATION_COMPLETENESS',
+        'MEDICAL_NECESSITY',
+        'CODE_ACCURACY',
+        'MODIFIER_USAGE',
+        'DIAGNOSIS_LINKAGE',
+        'SIGNATURE_PRESENT',
+        'DATE_CONSISTENCY',
+        'CONSENT_DOCUMENTATION',
+      ];
+
+      for (const claim of claims) {
+        const encounter = claim.encounter;
+        if (!encounter) continue;
+
+        const result = await reviewChartForAudit(
+          ctx.prisma,
+          {
+            id: claim.id,
+            dateOfService: encounter.encounterDate,
+            totalCharges: claim.totalCharges ? Number(claim.totalCharges) : null,
+            claimLines: claim.claimLines.map(l => ({
+              cptCode: l.cptCode,
+              modifier1: l.modifiers?.[0] || null,
+              modifier2: l.modifiers?.[1] || null,
+            })),
+          },
+          {
+            id: encounter.id,
+            encounterDate: encounter.encounterDate,
+            soapNote: encounter.soapNote,
+            diagnoses: encounter.diagnoses.map(d => ({ code: d.icd10Code, isPrimary: d.isPrimary })),
+            procedures: encounter.procedures.map(p => ({ code: p.cptCode })),
+            treatmentPlan: encounter.treatmentPlan,
+            patient: {
+              id: encounter.patient.id,
+              firstName: encounter.patient.demographics?.firstName,
+              lastName: encounter.patient.demographics?.lastName,
+              demographics: encounter.patient.demographics,
+              consents: encounter.patient.telehealthConsents?.map(c => ({
+                status: c.status,
+                expiresAt: c.expirationDate,
+              })),
+            },
+            provider: {
+              id: encounter.provider.id,
+              user: encounter.provider.user,
+            },
+          },
+          criteria.map(c => {
+            if (c === 'DOCUMENTATION_COMPLETENESS' || c === 'SIGNATURE_PRESENT' || c === 'CONSENT_DOCUMENTATION') return 'DOCUMENTATION';
+            if (c === 'CODE_ACCURACY' || c === 'MODIFIER_USAGE') return 'CODING';
+            if (c === 'MEDICAL_NECESSITY' || c === 'DIAGNOSIS_LINKAGE') return 'MEDICAL_NECESSITY';
+            return 'COMPLIANCE';
+          })
+        );
+
+        reviewResults.push(result);
+      }
+
+      // Calculate overall review statistics
+      const totalIssues = reviewResults.reduce(
+        (sum, r) => sum + r.documentationGaps.length + r.codingIssues.length + r.complianceIssues.length + r.medicalNecessityGaps.length,
+        0
+      );
+      const avgScore = reviewResults.reduce((sum, r) => sum + r.score, 0) / reviewResults.length;
+
+      return {
+        reviewedClaims: claims.length,
+        reviewResults,
+        summary: {
+          totalIssues,
+          averageScore: Math.round(avgScore),
+          passRate: Math.round((reviewResults.filter(r => r.score >= 85).length / reviewResults.length) * 100),
+          issuesByType: {
+            documentation: reviewResults.reduce((sum, r) => sum + r.documentationGaps.length, 0),
+            coding: reviewResults.reduce((sum, r) => sum + r.codingIssues.length, 0),
+            compliance: reviewResults.reduce((sum, r) => sum + r.complianceIssues.length, 0),
+            medicalNecessity: reviewResults.reduce((sum, r) => sum + r.medicalNecessityGaps.length, 0),
+          },
+        },
+      };
+    }),
+
+  /**
+   * Generate compliance checklist for audit type
+   */
+  generateComplianceChecklist: providerProcedure
+    .input(
+      z.object({
+        auditType: z.enum(['PAYER', 'CMS', 'RAC', 'MAC', 'INTERNAL', 'STATE']),
+        focusAreas: z.array(z.string()).optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { auditType, focusAreas } = input;
+
+      const checklist = generateAuditChecklist(
+        auditType,
+        (focusAreas || []) as ('DOCUMENTATION' | 'CODING' | 'BILLING' | 'COMPLIANCE' | 'MEDICAL_NECESSITY' | 'MODIFIER_USAGE')[]
+      );
+
+      return {
+        auditType,
+        checklist,
+        totalItems: checklist.reduce((sum, section) => sum + section.items.length, 0),
+        criticalItems: checklist.flatMap(s => s.items).filter(i => i.critical).length,
+      };
+    }),
+
+  /**
+   * Gather supporting documentation for audit response
+   */
+  gatherSupportingDocumentation: providerProcedure
+    .input(
+      z.object({
+        claimIds: z.array(z.string()).min(1).max(50),
+        documentTypes: z.array(z.enum([
+          'SOAP_NOTE',
+          'TREATMENT_PLAN',
+          'CONSENT_FORMS',
+          'REFERRALS',
+          'IMAGING_REPORTS',
+          'LAB_RESULTS',
+          'OUTCOME_ASSESSMENTS',
+          'PRIOR_AUTHORIZATIONS',
+          'CORRESPONDENCE',
+        ])).optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { claimIds, documentTypes } = input;
+
+      const claimsWithEncounters = await ctx.prisma.claim.findMany({
+        where: {
+          id: { in: claimIds },
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          encounter: {
+            include: {
+              soapNote: true,
+              treatmentPlan: true,
+              diagnoses: true,
+              procedures: true,
+              patient: {
+                include: {
+                  telehealthConsents: true,
+                  outcomeAssessments: true,
+                },
+              },
+              provider: {
+                include: {
+                  user: true,
+                },
+              },
+            },
+          },
+          claimLines: true,
+          payments: true,
+        },
+      });
+
+      const supportingDocs: SupportingDocument[] = [];
+      const missingDocs: MissingDocument[] = [];
+
+      for (const claim of claimsWithEncounters) {
+        const encounter = claim.encounter;
+        if (!encounter) continue;
+
+        // SOAP Note
+        if (!documentTypes || documentTypes.includes('SOAP_NOTE')) {
+          if (encounter.soapNote) {
+            supportingDocs.push({
+              claimId: claim.id,
+              encounterId: encounter.id,
+              documentType: 'SOAP_NOTE',
+              documentId: encounter.soapNote.id,
+              status: 'AVAILABLE',
+              summary: `SOAP note for DOS ${encounter.encounterDate.toISOString().split('T')[0]}`,
+              completeness: calculateSoapCompleteness(encounter.soapNote),
+            });
+          } else {
+            missingDocs.push({
+              claimId: claim.id,
+              encounterId: encounter.id,
+              documentType: 'SOAP_NOTE',
+              impact: 'CRITICAL',
+              recommendation: 'Create SOAP note documentation for this encounter',
+            });
+          }
+        }
+
+        // Treatment Plan
+        if (!documentTypes || documentTypes.includes('TREATMENT_PLAN')) {
+          if (encounter.treatmentPlan) {
+            supportingDocs.push({
+              claimId: claim.id,
+              encounterId: encounter.id,
+              documentType: 'TREATMENT_PLAN',
+              documentId: encounter.treatmentPlan.id,
+              status: 'AVAILABLE',
+              summary: `Treatment plan with ${encounter.treatmentPlan.plannedVisits || 0} planned visits`,
+              completeness: (encounter.treatmentPlan.shortTermGoals || encounter.treatmentPlan.longTermGoals) ? 100 : 50,
+            });
+          } else {
+            missingDocs.push({
+              claimId: claim.id,
+              encounterId: encounter.id,
+              documentType: 'TREATMENT_PLAN',
+              impact: 'HIGH',
+              recommendation: 'Document treatment plan with goals and visit frequency',
+            });
+          }
+        }
+
+        // Consent Forms
+        if (!documentTypes || documentTypes.includes('CONSENT_FORMS')) {
+          const consents = encounter.patient.telehealthConsents || [];
+          const validConsent = consents.find(c =>
+            c.status === 'SIGNED' &&
+            (!c.expirationDate || c.expirationDate > new Date())
+          );
+          if (validConsent) {
+            supportingDocs.push({
+              claimId: claim.id,
+              encounterId: encounter.id,
+              documentType: 'CONSENT_FORMS',
+              documentId: validConsent.id,
+              status: 'AVAILABLE',
+              summary: `${validConsent.consentType} consent signed ${validConsent.signedAt?.toISOString().split('T')[0] || 'unknown'}`,
+              completeness: 100,
+            });
+          } else {
+            missingDocs.push({
+              claimId: claim.id,
+              encounterId: encounter.id,
+              documentType: 'CONSENT_FORMS',
+              impact: 'HIGH',
+              recommendation: 'Obtain signed consent form from patient',
+            });
+          }
+        }
+
+        // Outcome Assessments
+        if (!documentTypes || documentTypes.includes('OUTCOME_ASSESSMENTS')) {
+          const outcomes = encounter.patient.outcomeAssessments || [];
+          const relevantOutcome = outcomes.find(o =>
+            o.administeredAt &&
+            Math.abs(o.administeredAt.getTime() - encounter.encounterDate.getTime()) < 30 * 24 * 60 * 60 * 1000
+          );
+          if (relevantOutcome) {
+            supportingDocs.push({
+              claimId: claim.id,
+              encounterId: encounter.id,
+              documentType: 'OUTCOME_ASSESSMENTS',
+              documentId: relevantOutcome.id,
+              status: 'AVAILABLE',
+              summary: `${relevantOutcome.assessmentType || 'Outcome'} assessment score: ${relevantOutcome.percentScore || relevantOutcome.rawScore || 'N/A'}`,
+              completeness: 100,
+            });
+          }
+        }
+      }
+
+      return {
+        claimsReviewed: claimsWithEncounters.length,
+        supportingDocuments: supportingDocs,
+        missingDocuments: missingDocs,
+        summary: {
+          totalAvailable: supportingDocs.length,
+          totalMissing: missingDocs.length,
+          criticalMissing: missingDocs.filter(d => d.impact === 'CRITICAL').length,
+          completenessRate: supportingDocs.length > 0
+            ? Math.round(supportingDocs.reduce((sum, d) => sum + d.completeness, 0) / supportingDocs.length)
+            : 0,
+        },
+      };
+    }),
+
+  /**
+   * Generate audit response template
+   */
+  generateResponseTemplate: providerProcedure
+    .input(
+      z.object({
+        auditType: z.enum(['PAYER', 'CMS', 'RAC', 'MAC', 'INTERNAL', 'STATE']),
+        claimIds: z.array(z.string()).min(1),
+        issueTypes: z.array(z.enum([
+          'MEDICAL_NECESSITY',
+          'DOCUMENTATION_DEFICIENCY',
+          'CODING_ERROR',
+          'UNBUNDLING',
+          'UPCODING',
+          'DUPLICATE_BILLING',
+          'MISSING_MODIFIER',
+          'OTHER',
+        ])).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { auditType, claimIds, issueTypes } = input;
+
+      const claims = await ctx.prisma.claim.findMany({
+        where: {
+          id: { in: claimIds },
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          encounter: {
+            include: {
+              soapNote: true,
+              diagnoses: true,
+              procedures: true,
+              treatmentPlan: true,
+              patient: {
+                include: {
+                  demographics: true,
+                },
+              },
+              provider: {
+                include: {
+                  user: true,
+                },
+              },
+            },
+          },
+          claimLines: true,
+        },
+      });
+
+      const templates: AuditResponseTemplate[] = [];
+
+      for (const claim of claims) {
+        const encounter = claim.encounter;
+        if (!encounter) continue;
+
+        const issues = issueTypes || ['DOCUMENTATION_DEFICIENCY'];
+
+        for (const issueType of issues) {
+          const template = generateResponseTemplateForIssue(
+            auditType,
+            issueType,
+            {
+              id: claim.id,
+              dateOfService: encounter.encounterDate,
+              totalCharges: claim.totalCharges ? Number(claim.totalCharges) : null,
+            },
+            {
+              id: encounter.id,
+              soapNote: encounter.soapNote,
+              diagnoses: encounter.diagnoses.map(d => ({ code: d.icd10Code, isPrimary: d.isPrimary })),
+              procedures: encounter.procedures.map(p => ({ code: p.cptCode })),
+              provider: encounter.provider,
+              patient: encounter.patient,
+            }
+          );
+          templates.push(template);
+        }
+      }
+
+      await auditLog('AI_QA_RESPONSE_GENERATED', 'Claim', {
+        entityId: claimIds.join(','),
+        changes: {
+          auditType,
+          claimCount: claimIds.length,
+          issueTypes,
+          templatesGenerated: templates.length,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        templates,
+        generalGuidance: getAuditResponseGuidance(auditType),
+      };
+    }),
+
+  /**
+   * Run mock audit simulation
+   */
+  runMockAudit: providerProcedure
+    .input(
+      z.object({
+        auditType: z.enum(['PAYER', 'CMS', 'RAC', 'MAC', 'INTERNAL', 'STATE']),
+        dateFrom: z.date(),
+        dateTo: z.date(),
+        providerId: z.string().optional(),
+        sampleSize: z.number().min(5).max(50).default(10),
+        auditFocus: z.array(z.enum([
+          'HIGH_VALUE_CLAIMS',
+          'SPECIFIC_CODES',
+          'MODIFIER_USAGE',
+          'SAME_DAY_SERVICES',
+          'RANDOM',
+        ])).default(['RANDOM']),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { auditType, dateFrom, dateTo, providerId, sampleSize, auditFocus } = input;
+
+      // Create mock audit record
+      const audit = await ctx.prisma.qAAudit.create({
+        data: {
+          organizationId: ctx.user.organizationId,
+          auditType: 'MOCK_AUDIT',
+          targetType: `${auditType}_SIMULATION`,
+          providerId: providerId || null,
+          dateFrom,
+          dateTo,
+          sampleSize,
+          populationSize: 0,
+          methodology: `Mock ${auditType} audit simulation - Focus: ${auditFocus.join(', ')}`,
+          status: 'IN_PROGRESS',
+        },
+      });
+
+      // Get claims based on audit focus
+      const claims = await selectClaimsForMockAudit(
+        ctx.prisma,
+        ctx.user.organizationId,
+        dateFrom,
+        dateTo,
+        providerId,
+        sampleSize,
+        auditFocus
+      );
+
+      await ctx.prisma.qAAudit.update({
+        where: { id: audit.id },
+        data: { populationSize: claims.length },
+      });
+
+      // Simulate audit review
+      const auditResults: MockAuditResult[] = [];
+      let totalOverpayment = 0;
+      let totalUnderpayment = 0;
+      let claimsWithIssues = 0;
+
+      for (const claim of claims) {
+        const encounter = claim.encounter;
+        if (!encounter) continue;
+
+        const result = await simulateAuditReview(
+          ctx.prisma,
+          {
+            id: claim.id,
+            dateOfService: encounter.encounterDate,
+            totalCharges: claim.totalCharges ? Number(claim.totalCharges) : null,
+            claimLines: claim.claimLines.map(l => ({
+              cptCode: l.cptCode,
+              modifier1: l.modifiers?.[0] || null,
+              modifier2: l.modifiers?.[1] || null,
+              units: l.units,
+              chargeAmount: l.chargedAmount ? Number(l.chargedAmount) : null,
+            })),
+          },
+          {
+            id: encounter.id,
+            soapNote: encounter.soapNote,
+            diagnoses: encounter.diagnoses.map(d => ({ code: d.icd10Code })),
+            procedures: encounter.procedures.map(p => ({ code: p.cptCode })),
+            treatmentPlan: encounter.treatmentPlan,
+            patient: {
+              id: encounter.patient.id,
+              demographics: encounter.patient.demographics,
+            },
+            provider: {
+              id: encounter.provider.id,
+              user: encounter.provider.user,
+            },
+          },
+          auditType
+        );
+
+        auditResults.push(result);
+
+        if (result.findingsCount > 0) {
+          claimsWithIssues++;
+        }
+        totalOverpayment += result.potentialOverpayment;
+        totalUnderpayment += result.potentialUnderpayment;
+      }
+
+      // Calculate overall statistics
+      const errorRate = claims.length > 0 ? (claimsWithIssues / claims.length) * 100 : 0;
+      const extrapolatedOverpayment = (totalOverpayment / sampleSize) * claims.length;
+
+      // Determine audit outcome prediction
+      const outcomePrediction =
+        errorRate < 5 ? 'LOW_RISK' :
+        errorRate < 15 ? 'MODERATE_RISK' :
+        errorRate < 30 ? 'HIGH_RISK' : 'CRITICAL_RISK';
+
+      // Create findings
+      const findings: Prisma.QAFindingCreateManyInput[] = [];
+      for (const result of auditResults) {
+        for (const finding of result.findings) {
+          findings.push({
+            organizationId: ctx.user.organizationId,
+            auditId: audit.id,
+            findingType: `MOCK_AUDIT_${finding.type}`,
+            severity: finding.severity,
+            title: finding.title,
+            description: finding.description,
+            recommendation: finding.recommendation,
+            entityType: 'Claim',
+            entityId: result.claimId,
+            providerId: result.providerId,
+            status: 'OPEN',
+            riskScore: finding.riskScore,
+            complianceImpact: finding.severity === 'CRITICAL' || finding.severity === 'HIGH',
+            financialImpact: finding.financialImpact,
+          });
+        }
+      }
+
+      if (findings.length > 0) {
+        await ctx.prisma.qAFinding.createMany({ data: findings });
+      }
+
+      // Generate recommendations based on results
+      const recommendations = generateMockAuditRecommendations(
+        auditType,
+        errorRate,
+        auditResults,
+        outcomePrediction
+      );
+
+      // Update audit record
+      await ctx.prisma.qAAudit.update({
+        where: { id: audit.id },
+        data: {
+          status: 'COMPLETED',
+          score: Math.round(100 - errorRate),
+          completedAt: new Date(),
+          summary: JSON.stringify({
+            errorRate,
+            claimsReviewed: claims.length,
+            claimsWithIssues,
+            totalOverpayment,
+            totalUnderpayment,
+            extrapolatedOverpayment,
+            outcomePrediction,
+          }),
+          recommendations: recommendations.join('\n'),
+        },
+      });
+
+      await auditLog('AI_QA_MOCK_AUDIT', 'QAAudit', {
+        entityId: audit.id,
+        changes: {
+          auditType,
+          dateRange: { from: dateFrom, to: dateTo },
+          sampleSize: claims.length,
+          errorRate,
+          outcomePrediction,
+          potentialExposure: extrapolatedOverpayment,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        auditId: audit.id,
+        summary: {
+          claimsReviewed: claims.length,
+          claimsWithIssues,
+          errorRate: Math.round(errorRate * 10) / 10,
+          totalOverpayment,
+          totalUnderpayment,
+          extrapolatedOverpayment: Math.round(extrapolatedOverpayment),
+          outcomePrediction,
+        },
+        results: auditResults,
+        recommendations,
+        riskAssessment: {
+          level: outcomePrediction,
+          description: getMockAuditRiskDescription(outcomePrediction),
+          actions: getMockAuditActions(outcomePrediction),
+        },
+      };
+    }),
+
+  /**
+   * Get audit preparation history
+   */
+  getAuditPreparationHistory: providerProcedure
+    .input(
+      z.object({
+        auditTypes: z.array(z.string()).optional(),
+        limit: z.number().min(1).max(50).default(20),
+        offset: z.number().min(0).default(0),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { auditTypes, limit, offset } = input;
+
+      const audits = await ctx.prisma.qAAudit.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          auditType: auditTypes?.length
+            ? { in: auditTypes as never[] }
+            : { in: ['AUDIT_PREPARATION', 'MOCK_AUDIT'] },
+        },
+        include: {
+          findings: {
+            select: {
+              id: true,
+              severity: true,
+              status: true,
+            },
+          },
+          _count: {
+            select: {
+              findings: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+      });
+
+      const total = await ctx.prisma.qAAudit.count({
+        where: {
+          organizationId: ctx.user.organizationId,
+          auditType: auditTypes?.length
+            ? { in: auditTypes as never[] }
+            : { in: ['AUDIT_PREPARATION', 'MOCK_AUDIT'] },
+        },
+      });
+
+      return {
+        audits: audits.map(a => ({
+          ...a,
+          findingsSummary: {
+            total: a._count.findings,
+            critical: a.findings.filter(f => f.severity === 'CRITICAL').length,
+            high: a.findings.filter(f => f.severity === 'HIGH').length,
+            open: a.findings.filter(f => f.status === 'OPEN').length,
+            resolved: a.findings.filter(f => f.status === 'RESOLVED').length,
+          },
+        })),
+        total,
+        hasMore: offset + limit < total,
+      };
+    }),
 });
 
 // ============================================
@@ -7211,6 +8246,1516 @@ function generateComplianceRecommendations(
   }
 
   return recommendations;
+}
+
+// ============================================
+// Helper functions for audit preparation (US-353)
+// ============================================
+
+// Audit gap interface
+interface AuditGap {
+  gapType: string;
+  title: string;
+  description: string;
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
+  riskScore: number;
+  entityType: string;
+  entityId: string;
+  providerId?: string;
+  patientId?: string;
+  remediation: string;
+  claimId?: string;
+  encounterId?: string;
+}
+
+// Chart review result interface
+interface ChartReviewResult {
+  claimId: string;
+  encounterId: string;
+  patientName: string;
+  dateOfService: Date;
+  providerId: string;
+  providerName: string;
+  score: number;
+  documentationGaps: AuditGap[];
+  codingIssues: AuditGap[];
+  complianceIssues: AuditGap[];
+  medicalNecessityGaps: AuditGap[];
+  overallAssessment: string;
+}
+
+// Supporting document interface
+interface SupportingDocument {
+  claimId: string;
+  encounterId: string;
+  documentType: string;
+  documentId: string;
+  status: 'AVAILABLE' | 'PARTIAL' | 'MISSING';
+  summary: string;
+  completeness: number;
+}
+
+// Missing document interface
+interface MissingDocument {
+  claimId: string;
+  encounterId: string;
+  documentType: string;
+  impact: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+  recommendation: string;
+}
+
+// Audit response template interface
+interface AuditResponseTemplate {
+  claimId: string;
+  issueType: string;
+  responseTemplate: string;
+  supportingPoints: string[];
+  documentationNeeded: string[];
+  appealPotential: 'HIGH' | 'MEDIUM' | 'LOW';
+}
+
+// Mock audit result interface
+interface MockAuditResult {
+  claimId: string;
+  encounterId: string;
+  providerId: string;
+  providerName: string;
+  dateOfService: Date;
+  totalCharges: number;
+  findingsCount: number;
+  potentialOverpayment: number;
+  potentialUnderpayment: number;
+  findings: {
+    type: string;
+    title: string;
+    description: string;
+    severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
+    recommendation: string;
+    riskScore: number;
+    financialImpact?: number;
+  }[];
+  overallAssessment: string;
+}
+
+// Checklist item interface
+interface ChecklistItem {
+  id: string;
+  category: string;
+  item: string;
+  description: string;
+  critical: boolean;
+  completed: boolean;
+}
+
+// Checklist section interface
+interface ChecklistSection {
+  section: string;
+  items: ChecklistItem[];
+}
+
+/**
+ * Select stratified sample of claims for audit
+ */
+function selectAuditSample(
+  claims: Array<{ id: string; totalCharges: number | null }>,
+  sampleSize: number
+): typeof claims {
+  if (claims.length <= sampleSize) return claims;
+
+  // Stratified sampling: include high-value claims and random selection
+  const sorted = [...claims].sort((a, b) =>
+    (Number(b.totalCharges) || 0) - (Number(a.totalCharges) || 0)
+  );
+
+  const sample: typeof claims = [];
+
+  // Top 20% by value
+  const highValueCount = Math.ceil(sampleSize * 0.2);
+  sample.push(...sorted.slice(0, highValueCount));
+
+  // Random selection from remaining
+  const remaining = sorted.slice(highValueCount);
+  const randomCount = sampleSize - highValueCount;
+
+  for (let i = 0; i < randomCount && remaining.length > 0; i++) {
+    const randomIndex = Math.floor(Math.random() * remaining.length);
+    sample.push(remaining.splice(randomIndex, 1)[0]);
+  }
+
+  return sample;
+}
+
+/**
+ * Review chart for audit preparation
+ */
+async function reviewChartForAudit(
+  prisma: import('@prisma/client').PrismaClient,
+  claim: {
+    id: string;
+    dateOfService: Date;
+    totalCharges: number | null;
+    claimLines: Array<{
+      cptCode: string | null;
+      modifier1?: string | null;
+      modifier2?: string | null;
+    }>;
+  },
+  encounter: {
+    id: string;
+    encounterDate: Date;
+    soapNote: { subjective?: string | null; objective?: string | null; assessment?: string | null; plan?: string | null; signedAt?: Date | null; signedById?: string | null } | null;
+    diagnoses: Array<{ code: string; isPrimary: boolean }>;
+    procedures: Array<{ code: string }>;
+    treatmentPlan: { goals?: string | null; frequency?: string | null; plannedVisits?: number | null } | null;
+    patient: {
+      id: string;
+      firstName?: string | null;
+      lastName?: string | null;
+      demographics?: { firstName?: string | null; lastName?: string | null } | null;
+      consents?: Array<{ status: string; expiresAt?: Date | null }> | null;
+    };
+    provider: {
+      id: string;
+      user: { firstName?: string | null; lastName?: string | null };
+    };
+  },
+  focusAreas: string[]
+): Promise<ChartReviewResult> {
+  const documentationGaps: AuditGap[] = [];
+  const codingIssues: AuditGap[] = [];
+  const complianceIssues: AuditGap[] = [];
+  const medicalNecessityGaps: AuditGap[] = [];
+
+  const patientName = encounter.patient.demographics
+    ? `${encounter.patient.demographics.firstName || ''} ${encounter.patient.demographics.lastName || ''}`.trim()
+    : `${encounter.patient.firstName || ''} ${encounter.patient.lastName || ''}`.trim() || 'Unknown';
+  const providerName = `${encounter.provider.user.firstName || ''} ${encounter.provider.user.lastName || ''}`.trim() || 'Unknown';
+
+  // Documentation checks
+  if (focusAreas.includes('DOCUMENTATION')) {
+    const soap = encounter.soapNote;
+
+    if (!soap) {
+      documentationGaps.push({
+        gapType: 'MISSING_SOAP',
+        title: 'Missing SOAP Note',
+        description: 'No SOAP note documentation exists for this encounter',
+        severity: 'CRITICAL',
+        riskScore: 100,
+        entityType: 'Encounter',
+        entityId: encounter.id,
+        providerId: encounter.provider.id,
+        patientId: encounter.patient.id,
+        remediation: 'Create complete SOAP note documentation for this encounter',
+        claimId: claim.id,
+        encounterId: encounter.id,
+      });
+    } else {
+      // Check each SOAP section
+      if (!soap.subjective || soap.subjective.length < 20) {
+        documentationGaps.push({
+          gapType: 'INCOMPLETE_SUBJECTIVE',
+          title: 'Incomplete Subjective Section',
+          description: 'Subjective section is missing or inadequate',
+          severity: 'HIGH',
+          riskScore: 70,
+          entityType: 'Encounter',
+          entityId: encounter.id,
+          providerId: encounter.provider.id,
+          patientId: encounter.patient.id,
+          remediation: 'Document patient complaints, symptoms, and relevant history',
+          claimId: claim.id,
+          encounterId: encounter.id,
+        });
+      }
+
+      if (!soap.objective || soap.objective.length < 30) {
+        documentationGaps.push({
+          gapType: 'INCOMPLETE_OBJECTIVE',
+          title: 'Incomplete Objective Section',
+          description: 'Objective findings are missing or inadequate',
+          severity: 'HIGH',
+          riskScore: 75,
+          entityType: 'Encounter',
+          entityId: encounter.id,
+          providerId: encounter.provider.id,
+          patientId: encounter.patient.id,
+          remediation: 'Document examination findings, measurements, and observations',
+          claimId: claim.id,
+          encounterId: encounter.id,
+        });
+      }
+
+      if (!soap.assessment || soap.assessment.length < 20) {
+        documentationGaps.push({
+          gapType: 'INCOMPLETE_ASSESSMENT',
+          title: 'Incomplete Assessment Section',
+          description: 'Assessment/diagnosis justification is missing',
+          severity: 'HIGH',
+          riskScore: 80,
+          entityType: 'Encounter',
+          entityId: encounter.id,
+          providerId: encounter.provider.id,
+          patientId: encounter.patient.id,
+          remediation: 'Document clinical assessment and diagnosis rationale',
+          claimId: claim.id,
+          encounterId: encounter.id,
+        });
+      }
+
+      if (!soap.plan || soap.plan.length < 20) {
+        documentationGaps.push({
+          gapType: 'INCOMPLETE_PLAN',
+          title: 'Incomplete Plan Section',
+          description: 'Treatment plan documentation is missing or inadequate',
+          severity: 'MEDIUM',
+          riskScore: 60,
+          entityType: 'Encounter',
+          entityId: encounter.id,
+          providerId: encounter.provider.id,
+          patientId: encounter.patient.id,
+          remediation: 'Document treatment plan with specific interventions',
+          claimId: claim.id,
+          encounterId: encounter.id,
+        });
+      }
+
+      // Signature check
+      if (!soap.signedAt || !soap.signedById) {
+        documentationGaps.push({
+          gapType: 'MISSING_SIGNATURE',
+          title: 'Unsigned Documentation',
+          description: 'SOAP note is not signed by provider',
+          severity: 'CRITICAL',
+          riskScore: 90,
+          entityType: 'Encounter',
+          entityId: encounter.id,
+          providerId: encounter.provider.id,
+          patientId: encounter.patient.id,
+          remediation: 'Provider must sign documentation before claim submission',
+          claimId: claim.id,
+          encounterId: encounter.id,
+        });
+      }
+    }
+
+    // Treatment plan check
+    if (!encounter.treatmentPlan) {
+      documentationGaps.push({
+        gapType: 'MISSING_TREATMENT_PLAN',
+        title: 'Missing Treatment Plan',
+        description: 'No treatment plan documented for this patient',
+        severity: 'HIGH',
+        riskScore: 70,
+        entityType: 'Encounter',
+        entityId: encounter.id,
+        providerId: encounter.provider.id,
+        patientId: encounter.patient.id,
+        remediation: 'Create treatment plan with goals, frequency, and duration',
+        claimId: claim.id,
+        encounterId: encounter.id,
+      });
+    }
+
+    // Consent check
+    const consents = encounter.patient.consents || [];
+    const validConsent = consents.find(c =>
+      c.status === 'ACTIVE' &&
+      (!c.expiresAt || c.expiresAt > new Date())
+    );
+    if (!validConsent) {
+      documentationGaps.push({
+        gapType: 'MISSING_CONSENT',
+        title: 'Missing or Expired Consent',
+        description: 'No valid consent on file for this patient',
+        severity: 'HIGH',
+        riskScore: 75,
+        entityType: 'Patient',
+        entityId: encounter.patient.id,
+        providerId: encounter.provider.id,
+        patientId: encounter.patient.id,
+        remediation: 'Obtain signed consent form from patient',
+        claimId: claim.id,
+        encounterId: encounter.id,
+      });
+    }
+  }
+
+  // Coding checks
+  if (focusAreas.includes('CODING')) {
+    const claimCodes = claim.claimLines.map(l => l.cptCode).filter(Boolean);
+    const encounterCodes = encounter.procedures.map(p => p.code);
+
+    // Check for codes on claim not in encounter
+    for (const code of claimCodes) {
+      if (code && !encounterCodes.includes(code)) {
+        codingIssues.push({
+          gapType: 'CODE_MISMATCH',
+          title: 'Claim Code Not in Encounter',
+          description: `CPT ${code} billed but not documented in encounter procedures`,
+          severity: 'CRITICAL',
+          riskScore: 95,
+          entityType: 'Claim',
+          entityId: claim.id,
+          providerId: encounter.provider.id,
+          patientId: encounter.patient.id,
+          remediation: 'Verify code accuracy or update documentation to support services',
+          claimId: claim.id,
+          encounterId: encounter.id,
+        });
+      }
+    }
+
+    // Check modifier usage
+    for (const line of claim.claimLines) {
+      if (line.modifier1 === '25' || line.modifier2 === '25') {
+        // Modifier 25 requires separate, identifiable E/M service
+        const hasEMCode = claimCodes.some(c => c?.startsWith('992'));
+        if (!hasEMCode) {
+          codingIssues.push({
+            gapType: 'IMPROPER_MODIFIER',
+            title: 'Modifier 25 Without E/M Code',
+            description: 'Modifier 25 used but no E/M code present on claim',
+            severity: 'HIGH',
+            riskScore: 80,
+            entityType: 'Claim',
+            entityId: claim.id,
+            providerId: encounter.provider.id,
+            patientId: encounter.patient.id,
+            remediation: 'Review modifier 25 usage - only valid with E/M codes',
+            claimId: claim.id,
+            encounterId: encounter.id,
+          });
+        }
+      }
+    }
+
+    // Check for missing AT modifier on Medicare CMT codes
+    for (const line of claim.claimLines) {
+      if (line.cptCode && ['98940', '98941', '98942', '98943'].includes(line.cptCode)) {
+        if (line.modifier1 !== 'AT' && line.modifier2 !== 'AT') {
+          codingIssues.push({
+            gapType: 'MISSING_AT_MODIFIER',
+            title: 'Missing AT Modifier',
+            description: `CMT code ${line.cptCode} may require AT modifier for Medicare claims`,
+            severity: 'MEDIUM',
+            riskScore: 50,
+            entityType: 'Claim',
+            entityId: claim.id,
+            providerId: encounter.provider.id,
+            patientId: encounter.patient.id,
+            remediation: 'Add AT modifier for active treatment on Medicare CMT claims',
+            claimId: claim.id,
+            encounterId: encounter.id,
+          });
+        }
+      }
+    }
+  }
+
+  // Medical necessity checks
+  if (focusAreas.includes('MEDICAL_NECESSITY')) {
+    const diagnoses = encounter.diagnoses;
+
+    if (diagnoses.length === 0) {
+      medicalNecessityGaps.push({
+        gapType: 'NO_DIAGNOSIS',
+        title: 'No Diagnosis Codes',
+        description: 'No diagnosis codes linked to this encounter',
+        severity: 'CRITICAL',
+        riskScore: 100,
+        entityType: 'Encounter',
+        entityId: encounter.id,
+        providerId: encounter.provider.id,
+        patientId: encounter.patient.id,
+        remediation: 'Add appropriate ICD-10 diagnosis codes',
+        claimId: claim.id,
+        encounterId: encounter.id,
+      });
+    }
+
+    // Check diagnosis-procedure linkage for CMT codes
+    const hasCMTCode = claim.claimLines.some(l =>
+      l.cptCode && ['98940', '98941', '98942', '98943'].includes(l.cptCode)
+    );
+    if (hasCMTCode) {
+      const hasSpinalDiagnosis = diagnoses.some(d =>
+        d.code.startsWith('M54') || // Back pain codes
+        d.code.startsWith('M99') || // Subluxation codes
+        d.code.startsWith('S13') || // Cervical injury
+        d.code.startsWith('S23') || // Thoracic injury
+        d.code.startsWith('S33')    // Lumbar injury
+      );
+
+      if (!hasSpinalDiagnosis) {
+        medicalNecessityGaps.push({
+          gapType: 'DIAGNOSIS_CODE_MISMATCH',
+          title: 'CMT Without Spinal Diagnosis',
+          description: 'Chiropractic manipulation billed without supporting spinal diagnosis',
+          severity: 'HIGH',
+          riskScore: 85,
+          entityType: 'Encounter',
+          entityId: encounter.id,
+          providerId: encounter.provider.id,
+          patientId: encounter.patient.id,
+          remediation: 'Document appropriate spinal subluxation or related diagnosis',
+          claimId: claim.id,
+          encounterId: encounter.id,
+        });
+      }
+    }
+  }
+
+  // Compliance checks
+  if (focusAreas.includes('COMPLIANCE')) {
+    // Check date consistency
+    const claimDOS = claim.dateOfService;
+    const encounterDate = encounter.encounterDate;
+
+    if (claimDOS.toDateString() !== encounterDate.toDateString()) {
+      complianceIssues.push({
+        gapType: 'DATE_MISMATCH',
+        title: 'Date Discrepancy',
+        description: `Claim DOS (${claimDOS.toDateString()}) differs from encounter date (${encounterDate.toDateString()})`,
+        severity: 'HIGH',
+        riskScore: 75,
+        entityType: 'Claim',
+        entityId: claim.id,
+        providerId: encounter.provider.id,
+        patientId: encounter.patient.id,
+        remediation: 'Verify and correct date of service on claim or encounter',
+        claimId: claim.id,
+        encounterId: encounter.id,
+      });
+    }
+  }
+
+  // Calculate overall score
+  const totalIssues = documentationGaps.length + codingIssues.length + complianceIssues.length + medicalNecessityGaps.length;
+  const criticalCount = [...documentationGaps, ...codingIssues, ...complianceIssues, ...medicalNecessityGaps]
+    .filter(i => i.severity === 'CRITICAL').length;
+  const highCount = [...documentationGaps, ...codingIssues, ...complianceIssues, ...medicalNecessityGaps]
+    .filter(i => i.severity === 'HIGH').length;
+
+  let score = 100;
+  score -= criticalCount * 15;
+  score -= highCount * 8;
+  score -= (totalIssues - criticalCount - highCount) * 3;
+  score = Math.max(0, Math.min(100, score));
+
+  const overallAssessment =
+    score >= 90 ? 'EXCELLENT - Ready for audit' :
+    score >= 75 ? 'GOOD - Minor issues to address' :
+    score >= 60 ? 'FAIR - Several issues need attention' :
+    score >= 40 ? 'POOR - Significant documentation gaps' :
+    'CRITICAL - Major audit risk';
+
+  return {
+    claimId: claim.id,
+    encounterId: encounter.id,
+    patientName,
+    dateOfService: claim.dateOfService,
+    providerId: encounter.provider.id,
+    providerName,
+    score,
+    documentationGaps,
+    codingIssues,
+    complianceIssues,
+    medicalNecessityGaps,
+    overallAssessment,
+  };
+}
+
+/**
+ * Generate audit checklist based on audit type
+ */
+function generateAuditChecklist(
+  auditType: string,
+  focusAreas: ('DOCUMENTATION' | 'CODING' | 'BILLING' | 'COMPLIANCE' | 'MEDICAL_NECESSITY' | 'MODIFIER_USAGE')[]
+): ChecklistSection[] {
+  const sections: ChecklistSection[] = [];
+
+  // Pre-Audit Preparation
+  sections.push({
+    section: 'Pre-Audit Preparation',
+    items: [
+      {
+        id: 'prep-1',
+        category: 'Preparation',
+        item: 'Designate audit response team',
+        description: 'Assign staff members responsible for audit coordination',
+        critical: true,
+        completed: false,
+      },
+      {
+        id: 'prep-2',
+        category: 'Preparation',
+        item: 'Review audit notification letter',
+        description: 'Understand scope, timeline, and specific requests',
+        critical: true,
+        completed: false,
+      },
+      {
+        id: 'prep-3',
+        category: 'Preparation',
+        item: 'Gather requested claims list',
+        description: 'Identify all claims included in audit sample',
+        critical: true,
+        completed: false,
+      },
+      {
+        id: 'prep-4',
+        category: 'Preparation',
+        item: 'Notify legal counsel if necessary',
+        description: 'For large audits or complex issues, involve legal',
+        critical: false,
+        completed: false,
+      },
+    ],
+  });
+
+  // Documentation checklist
+  if (!focusAreas.length || focusAreas.includes('DOCUMENTATION')) {
+    sections.push({
+      section: 'Documentation Review',
+      items: [
+        {
+          id: 'doc-1',
+          category: 'Documentation',
+          item: 'Verify SOAP notes are complete',
+          description: 'All sections present: Subjective, Objective, Assessment, Plan',
+          critical: true,
+          completed: false,
+        },
+        {
+          id: 'doc-2',
+          category: 'Documentation',
+          item: 'Confirm provider signatures',
+          description: 'All documentation signed and dated by treating provider',
+          critical: true,
+          completed: false,
+        },
+        {
+          id: 'doc-3',
+          category: 'Documentation',
+          item: 'Review treatment plans',
+          description: 'Treatment plans include goals, frequency, and duration',
+          critical: true,
+          completed: false,
+        },
+        {
+          id: 'doc-4',
+          category: 'Documentation',
+          item: 'Gather consent forms',
+          description: 'Valid signed consent on file for each patient',
+          critical: true,
+          completed: false,
+        },
+        {
+          id: 'doc-5',
+          category: 'Documentation',
+          item: 'Collect outcome assessments',
+          description: 'Pre/post treatment assessments document progress',
+          critical: false,
+          completed: false,
+        },
+      ],
+    });
+  }
+
+  // Coding checklist
+  if (!focusAreas.length || focusAreas.includes('CODING') || focusAreas.includes('MODIFIER_USAGE')) {
+    sections.push({
+      section: 'Coding Accuracy',
+      items: [
+        {
+          id: 'code-1',
+          category: 'Coding',
+          item: 'Verify CPT codes match documentation',
+          description: 'Each billed code supported by documented services',
+          critical: true,
+          completed: false,
+        },
+        {
+          id: 'code-2',
+          category: 'Coding',
+          item: 'Review modifier usage',
+          description: 'Modifiers correctly applied and documented',
+          critical: true,
+          completed: false,
+        },
+        {
+          id: 'code-3',
+          category: 'Coding',
+          item: 'Check for bundling issues',
+          description: 'Services properly unbundled per NCCI guidelines',
+          critical: true,
+          completed: false,
+        },
+        {
+          id: 'code-4',
+          category: 'Coding',
+          item: 'Verify diagnosis codes',
+          description: 'ICD-10 codes accurate and support medical necessity',
+          critical: true,
+          completed: false,
+        },
+        {
+          id: 'code-5',
+          category: 'Coding',
+          item: 'Review time-based codes',
+          description: 'Time documented for time-based services',
+          critical: false,
+          completed: false,
+        },
+      ],
+    });
+  }
+
+  // Billing checklist
+  if (!focusAreas.length || focusAreas.includes('BILLING')) {
+    sections.push({
+      section: 'Billing Verification',
+      items: [
+        {
+          id: 'bill-1',
+          category: 'Billing',
+          item: 'Verify patient demographics',
+          description: 'Name, DOB, insurance information accurate',
+          critical: true,
+          completed: false,
+        },
+        {
+          id: 'bill-2',
+          category: 'Billing',
+          item: 'Confirm dates of service',
+          description: 'Claim DOS matches encounter dates',
+          critical: true,
+          completed: false,
+        },
+        {
+          id: 'bill-3',
+          category: 'Billing',
+          item: 'Review charge amounts',
+          description: 'Charges consistent with fee schedule',
+          critical: false,
+          completed: false,
+        },
+        {
+          id: 'bill-4',
+          category: 'Billing',
+          item: 'Check for duplicate claims',
+          description: 'No duplicate submissions for same service',
+          critical: true,
+          completed: false,
+        },
+      ],
+    });
+  }
+
+  // Medical Necessity checklist
+  if (!focusAreas.length || focusAreas.includes('MEDICAL_NECESSITY')) {
+    sections.push({
+      section: 'Medical Necessity',
+      items: [
+        {
+          id: 'mn-1',
+          category: 'Medical Necessity',
+          item: 'Document chief complaint',
+          description: 'Clear reason for visit documented',
+          critical: true,
+          completed: false,
+        },
+        {
+          id: 'mn-2',
+          category: 'Medical Necessity',
+          item: 'Link diagnoses to procedures',
+          description: 'Each procedure tied to supporting diagnosis',
+          critical: true,
+          completed: false,
+        },
+        {
+          id: 'mn-3',
+          category: 'Medical Necessity',
+          item: 'Document functional limitations',
+          description: 'Impact on daily activities documented',
+          critical: true,
+          completed: false,
+        },
+        {
+          id: 'mn-4',
+          category: 'Medical Necessity',
+          item: 'Show treatment progress',
+          description: 'Documentation shows patient response to treatment',
+          critical: false,
+          completed: false,
+        },
+        {
+          id: 'mn-5',
+          category: 'Medical Necessity',
+          item: 'Review LCD/NCD requirements',
+          description: 'Services meet local/national coverage criteria',
+          critical: true,
+          completed: false,
+        },
+      ],
+    });
+  }
+
+  // Compliance checklist
+  if (!focusAreas.length || focusAreas.includes('COMPLIANCE')) {
+    sections.push({
+      section: 'Compliance Verification',
+      items: [
+        {
+          id: 'comp-1',
+          category: 'Compliance',
+          item: 'Review HIPAA compliance',
+          description: 'PHI properly protected and disclosed',
+          critical: true,
+          completed: false,
+        },
+        {
+          id: 'comp-2',
+          category: 'Compliance',
+          item: 'Verify credentialing',
+          description: 'Providers properly credentialed with payer',
+          critical: true,
+          completed: false,
+        },
+        {
+          id: 'comp-3',
+          category: 'Compliance',
+          item: 'Check supervision requirements',
+          description: 'Services properly supervised per regulations',
+          critical: false,
+          completed: false,
+        },
+        {
+          id: 'comp-4',
+          category: 'Compliance',
+          item: 'Review timely filing',
+          description: 'Claims submitted within filing deadlines',
+          critical: false,
+          completed: false,
+        },
+      ],
+    });
+  }
+
+  // Response Preparation
+  sections.push({
+    section: 'Response Preparation',
+    items: [
+      {
+        id: 'resp-1',
+        category: 'Response',
+        item: 'Organize supporting documentation',
+        description: 'Compile all records for each audited claim',
+        critical: true,
+        completed: false,
+      },
+      {
+        id: 'resp-2',
+        category: 'Response',
+        item: 'Prepare written response',
+        description: 'Draft responses addressing each audit finding',
+        critical: true,
+        completed: false,
+      },
+      {
+        id: 'resp-3',
+        category: 'Response',
+        item: 'Review appeal options',
+        description: 'Understand appeal process and deadlines',
+        critical: false,
+        completed: false,
+      },
+      {
+        id: 'resp-4',
+        category: 'Response',
+        item: 'Track submission deadline',
+        description: 'Ensure response submitted before due date',
+        critical: true,
+        completed: false,
+      },
+    ],
+  });
+
+  return sections;
+}
+
+/**
+ * Generate audit recommendations
+ */
+function generateAuditRecommendations(
+  auditType: string,
+  documentationGaps: AuditGap[],
+  codingIssues: AuditGap[],
+  complianceIssues: AuditGap[],
+  medicalNecessityGaps: AuditGap[],
+  readinessScore: number
+): string[] {
+  const recommendations: string[] = [];
+
+  // Critical issues first
+  const criticalCount = [...documentationGaps, ...codingIssues, ...complianceIssues, ...medicalNecessityGaps]
+    .filter(i => i.severity === 'CRITICAL').length;
+
+  if (criticalCount > 0) {
+    recommendations.push(`URGENT: Address ${criticalCount} critical issue(s) before audit response`);
+  }
+
+  // Documentation recommendations
+  if (documentationGaps.length > 0) {
+    const missingSignatures = documentationGaps.filter(g => g.gapType === 'MISSING_SIGNATURE').length;
+    const missingSOAP = documentationGaps.filter(g => g.gapType === 'MISSING_SOAP').length;
+    const incompleteSOAP = documentationGaps.filter(g => g.gapType.includes('INCOMPLETE')).length;
+
+    if (missingSignatures > 0) {
+      recommendations.push(`${missingSignatures} encounter(s) require provider signature - complete immediately`);
+    }
+    if (missingSOAP > 0) {
+      recommendations.push(`${missingSOAP} encounter(s) missing SOAP notes - recreate from available records`);
+    }
+    if (incompleteSOAP > 0) {
+      recommendations.push(`${incompleteSOAP} SOAP note(s) need additional documentation in missing sections`);
+    }
+  }
+
+  // Coding recommendations
+  if (codingIssues.length > 0) {
+    const codeMismatches = codingIssues.filter(i => i.gapType === 'CODE_MISMATCH').length;
+    const modifierIssues = codingIssues.filter(i => i.gapType.includes('MODIFIER')).length;
+
+    if (codeMismatches > 0) {
+      recommendations.push(`${codeMismatches} claim(s) have code-to-documentation mismatches - review and correct`);
+    }
+    if (modifierIssues > 0) {
+      recommendations.push(`${modifierIssues} modifier usage issue(s) - verify appropriate use per guidelines`);
+    }
+  }
+
+  // Medical necessity recommendations
+  if (medicalNecessityGaps.length > 0) {
+    const diagnosisIssues = medicalNecessityGaps.filter(g =>
+      g.gapType === 'NO_DIAGNOSIS' || g.gapType === 'DIAGNOSIS_CODE_MISMATCH'
+    ).length;
+
+    if (diagnosisIssues > 0) {
+      recommendations.push(`${diagnosisIssues} claim(s) have diagnosis linkage issues - review medical necessity documentation`);
+    }
+  }
+
+  // Overall readiness recommendations
+  if (readinessScore < 70) {
+    recommendations.push('Consider engaging coding/compliance consultant before audit response');
+    recommendations.push('Implement pre-submission documentation review process going forward');
+  } else if (readinessScore < 85) {
+    recommendations.push('Focus remediation efforts on high-priority findings to improve audit outcome');
+  }
+
+  // Audit-type specific recommendations
+  if (auditType === 'RAC' || auditType === 'MAC') {
+    recommendations.push('Prepare detailed medical necessity justification for each service');
+    recommendations.push('Gather outcome assessments showing patient improvement');
+  }
+
+  if (auditType === 'CMS') {
+    recommendations.push('Ensure Medicare LCD requirements are fully documented');
+    recommendations.push('Verify AT modifier used appropriately for active treatment');
+  }
+
+  return recommendations;
+}
+
+/**
+ * Calculate SOAP note completeness percentage
+ */
+function calculateSoapCompleteness(soap: {
+  subjective?: string | null;
+  objective?: string | null;
+  assessment?: string | null;
+  plan?: string | null;
+  signedAt?: Date | null;
+}): number {
+  let score = 0;
+  let maxScore = 5;
+
+  if (soap.subjective && soap.subjective.length >= 20) score++;
+  if (soap.objective && soap.objective.length >= 30) score++;
+  if (soap.assessment && soap.assessment.length >= 20) score++;
+  if (soap.plan && soap.plan.length >= 20) score++;
+  if (soap.signedAt) score++;
+
+  return Math.round((score / maxScore) * 100);
+}
+
+/**
+ * Generate response template for specific audit issue
+ */
+function generateResponseTemplateForIssue(
+  auditType: string,
+  issueType: string,
+  claim: {
+    id: string;
+    dateOfService: Date;
+    totalCharges: number | null;
+  },
+  encounter: {
+    id: string;
+    soapNote: { subjective?: string | null; objective?: string | null; assessment?: string | null } | null;
+    diagnoses: Array<{ code: string; isPrimary: boolean }>;
+    procedures: Array<{ code: string }>;
+    provider: { user: { firstName?: string | null; lastName?: string | null } };
+    patient: { demographics?: { firstName?: string | null; lastName?: string | null } | null };
+  }
+): AuditResponseTemplate {
+  const patientName = encounter.patient.demographics
+    ? `${encounter.patient.demographics.firstName || ''} ${encounter.patient.demographics.lastName || ''}`.trim()
+    : 'the patient';
+  const providerName = `${encounter.provider.user.firstName || ''} ${encounter.provider.user.lastName || ''}`.trim() || 'the provider';
+  const dos = claim.dateOfService.toISOString().split('T')[0];
+
+  let template = '';
+  let supportingPoints: string[] = [];
+  let documentationNeeded: string[] = [];
+  let appealPotential: 'HIGH' | 'MEDIUM' | 'LOW' = 'MEDIUM';
+
+  switch (issueType) {
+    case 'MEDICAL_NECESSITY':
+      template = `Re: Claim ID ${claim.id} - Date of Service ${dos}
+
+Dear ${auditType} Audit Team,
+
+We respectfully respond to the medical necessity review for services provided to ${patientName} on ${dos}.
+
+The services billed were medically necessary based on the following clinical findings documented by ${providerName}:
+
+${encounter.soapNote?.objective || '[Objective findings from examination]'}
+
+The patient presented with ${encounter.soapNote?.subjective || '[chief complaint and symptoms]'}, supporting the diagnosis of ${encounter.diagnoses.map(d => d.code).join(', ') || '[diagnosis codes]'}.
+
+The treatment provided was appropriate and consistent with accepted standards of care for the documented condition.
+
+Please find enclosed supporting documentation including:
+- Complete SOAP note for the date of service
+- Treatment plan with goals and expected outcomes
+- Outcome assessment showing patient progress
+
+We respectfully request reconsideration of this claim.`;
+      supportingPoints = [
+        'Documented chief complaint justifies evaluation',
+        'Objective findings support diagnosis',
+        'Treatment aligns with clinical guidelines',
+        'Patient showed functional improvement',
+      ];
+      documentationNeeded = [
+        'Complete SOAP note',
+        'Treatment plan',
+        'Outcome assessments (pre/post)',
+        'Relevant clinical guidelines',
+      ];
+      appealPotential = encounter.soapNote ? 'HIGH' : 'LOW';
+      break;
+
+    case 'DOCUMENTATION_DEFICIENCY':
+      template = `Re: Claim ID ${claim.id} - Documentation Review
+
+Dear ${auditType} Audit Team,
+
+We acknowledge the documentation deficiency identified for the ${dos} date of service.
+
+We have conducted an internal review and can provide the following clarification:
+
+${encounter.soapNote?.assessment || '[Clinical assessment details]'}
+
+We have implemented corrective measures to prevent similar documentation issues and have enhanced ${providerName}'s documentation templates.
+
+Please find enclosed the complete medical record demonstrating the services provided.`;
+      supportingPoints = [
+        'Services were provided as documented',
+        'Corrective action implemented',
+        'Additional documentation available',
+      ];
+      documentationNeeded = [
+        'Addendum to medical record (if applicable)',
+        'Complete encounter documentation',
+        'Corrective action plan',
+      ];
+      appealPotential = 'MEDIUM';
+      break;
+
+    case 'CODING_ERROR':
+      template = `Re: Claim ID ${claim.id} - Coding Review Response
+
+Dear ${auditType} Audit Team,
+
+We have reviewed the coding questioned for services on ${dos}.
+
+After careful analysis, we confirm that the codes billed (${encounter.procedures.map(p => p.code).join(', ')}) accurately reflect the services documented and provided.
+
+The documentation supports:
+- ${encounter.soapNote?.objective || '[Services performed]'}
+- Diagnosis: ${encounter.diagnoses.map(d => d.code).join(', ')}
+
+If a coding error was identified, we have corrected our records accordingly and implemented additional coding education for our team.`;
+      supportingPoints = [
+        'Codes match documented services',
+        'Diagnosis codes support procedures',
+        'Modifier usage appropriate',
+      ];
+      documentationNeeded = [
+        'Procedure documentation',
+        'Coding reference materials',
+        'Time documentation (if time-based)',
+      ];
+      appealPotential = 'MEDIUM';
+      break;
+
+    default:
+      template = `Re: Claim ID ${claim.id} - Audit Response
+
+Dear ${auditType} Audit Team,
+
+We are responding to the audit findings for services provided on ${dos}.
+
+Please find enclosed complete documentation supporting the services billed.
+
+We are available to provide any additional information needed to resolve this matter.`;
+      supportingPoints = ['Services documented and provided'];
+      documentationNeeded = ['Complete medical record'];
+      appealPotential = 'MEDIUM';
+  }
+
+  return {
+    claimId: claim.id,
+    issueType,
+    responseTemplate: template,
+    supportingPoints,
+    documentationNeeded,
+    appealPotential,
+  };
+}
+
+/**
+ * Get audit response guidance
+ */
+function getAuditResponseGuidance(auditType: string): string[] {
+  const guidance: string[] = [
+    'Respond within the deadline specified in the audit notice',
+    'Include all requested documentation with your response',
+    'Organize documents in the order requested by the auditor',
+    'Reference specific page numbers when citing documentation',
+    'Be factual and objective in your response',
+    'Do not include information not requested',
+    'Keep copies of everything submitted',
+  ];
+
+  switch (auditType) {
+    case 'RAC':
+      guidance.push('RAC audits focus on overpayments - emphasize medical necessity');
+      guidance.push('You have 60 days to appeal a RAC determination');
+      guidance.push('Consider engaging a RAC appeal specialist for large amounts');
+      break;
+    case 'MAC':
+      guidance.push('MAC audits may request refunds - verify amounts before paying');
+      guidance.push('Request a redetermination within 120 days if disagreeing');
+      break;
+    case 'CMS':
+      guidance.push('CMS audits may have compliance implications');
+      guidance.push('Consider legal counsel involvement');
+      break;
+    case 'PAYER':
+      guidance.push('Review your provider contract for audit requirements');
+      guidance.push('Note any contractual appeal rights');
+      break;
+  }
+
+  return guidance;
+}
+
+/**
+ * Select claims for mock audit based on focus areas
+ */
+async function selectClaimsForMockAudit(
+  prisma: import('@prisma/client').PrismaClient,
+  organizationId: string,
+  dateFrom: Date,
+  dateTo: Date,
+  providerId: string | undefined,
+  sampleSize: number,
+  auditFocus: string[]
+) {
+  let orderBy: object = { createdAt: 'desc' };
+  let additionalWhere: object = {};
+
+  // Determine sampling strategy based on audit focus
+  if (auditFocus.includes('HIGH_VALUE_CLAIMS')) {
+    orderBy = { totalCharges: 'desc' };
+  } else if (auditFocus.includes('MODIFIER_USAGE')) {
+    additionalWhere = {
+      claimLines: {
+        some: {
+          OR: [
+            { modifier1: { not: null } },
+            { modifier2: { not: null } },
+          ],
+        },
+      },
+    };
+  } else if (auditFocus.includes('SAME_DAY_SERVICES')) {
+    // Claims with multiple services on same day will be identified post-query
+  }
+
+  const claims = await prisma.claim.findMany({
+    where: {
+      organizationId,
+      encounter: {
+        encounterDate: {
+          gte: dateFrom,
+          lte: dateTo,
+        },
+        ...(providerId && { providerId }),
+      },
+      ...additionalWhere,
+    },
+    include: {
+      encounter: {
+        include: {
+          soapNote: true,
+          diagnoses: true,
+          procedures: true,
+          treatmentPlan: true,
+          patient: {
+            include: {
+              demographics: true,
+              telehealthConsents: true,
+            },
+          },
+          provider: {
+            include: {
+              user: true,
+            },
+          },
+        },
+      },
+      claimLines: true,
+    },
+    orderBy: orderBy as never,
+    take: sampleSize * 2, // Get more than needed for filtering
+  });
+
+  // Additional filtering based on focus
+  let filteredClaims = claims;
+
+  if (auditFocus.includes('SPECIFIC_CODES')) {
+    // Filter to CMT codes which are common audit targets
+    filteredClaims = claims.filter(c =>
+      c.claimLines.some(l =>
+        l.cptCode && ['98940', '98941', '98942', '98943'].includes(l.cptCode)
+      )
+    );
+  }
+
+  // Random sampling if needed
+  if (auditFocus.includes('RANDOM')) {
+    filteredClaims = filteredClaims.sort(() => Math.random() - 0.5);
+  }
+
+  return filteredClaims.slice(0, sampleSize);
+}
+
+/**
+ * Simulate audit review of a claim
+ */
+async function simulateAuditReview(
+  prisma: import('@prisma/client').PrismaClient,
+  claim: {
+    id: string;
+    dateOfService: Date;
+    totalCharges: number | null;
+    claimLines: Array<{ cptCode: string | null; modifier1?: string | null; modifier2?: string | null; units?: number | null; chargeAmount?: number | null }>;
+  },
+  encounter: {
+    id: string;
+    soapNote: { subjective?: string | null; objective?: string | null; assessment?: string | null; plan?: string | null; signedAt?: Date | null } | null;
+    diagnoses: Array<{ code: string }>;
+    procedures: Array<{ code: string }>;
+    treatmentPlan: object | null;
+    patient: { id: string; demographics?: { firstName?: string | null; lastName?: string | null } | null };
+    provider: { id: string; user: { firstName?: string | null; lastName?: string | null } };
+  },
+  auditType: string
+): Promise<MockAuditResult> {
+  const findings: MockAuditResult['findings'] = [];
+  let potentialOverpayment = 0;
+  let potentialUnderpayment = 0;
+
+  const providerName = `${encounter.provider.user.firstName || ''} ${encounter.provider.user.lastName || ''}`.trim() || 'Unknown';
+
+  // Documentation review
+  if (!encounter.soapNote) {
+    findings.push({
+      type: 'MISSING_DOCUMENTATION',
+      title: 'No SOAP Note',
+      description: 'No clinical documentation for encounter',
+      severity: 'CRITICAL',
+      recommendation: 'Cannot support services without documentation - potential full refund',
+      riskScore: 100,
+      financialImpact: Number(claim.totalCharges) || 0,
+    });
+    potentialOverpayment += Number(claim.totalCharges) || 0;
+  } else {
+    // Check for unsigned documentation
+    if (!encounter.soapNote.signedAt) {
+      findings.push({
+        type: 'UNSIGNED_DOCUMENTATION',
+        title: 'Unsigned Note',
+        description: 'Provider signature missing from documentation',
+        severity: 'HIGH',
+        recommendation: 'Obtain timely signature - risk of denial',
+        riskScore: 80,
+        financialImpact: 0,
+      });
+    }
+
+    // Check documentation adequacy
+    const soap = encounter.soapNote;
+    if (!soap.subjective || !soap.objective || !soap.assessment || !soap.plan) {
+      findings.push({
+        type: 'INCOMPLETE_DOCUMENTATION',
+        title: 'Incomplete SOAP',
+        description: 'One or more SOAP sections missing or inadequate',
+        severity: 'HIGH',
+        recommendation: 'Complete documentation to support services',
+        riskScore: 70,
+      });
+    }
+  }
+
+  // Coding accuracy review
+  for (const line of claim.claimLines) {
+    const code = line.cptCode;
+    if (!code) continue;
+
+    // Check if code documented
+    const procedureDocumented = encounter.procedures.some(p => p.code === code);
+    if (!procedureDocumented) {
+      const lineCharge = Number(line.chargeAmount) || 0;
+      findings.push({
+        type: 'CODE_NOT_DOCUMENTED',
+        title: `CPT ${code} Not Documented`,
+        description: `Billed code ${code} not found in procedure documentation`,
+        severity: 'CRITICAL',
+        recommendation: 'Verify service was provided and documented',
+        riskScore: 90,
+        financialImpact: lineCharge,
+      });
+      potentialOverpayment += lineCharge;
+    }
+
+    // Check modifier usage for CMT codes
+    if (['98940', '98941', '98942', '98943'].includes(code)) {
+      // Check for AT modifier on Medicare
+      if (auditType === 'CMS' || auditType === 'MAC') {
+        if (line.modifier1 !== 'AT' && line.modifier2 !== 'AT') {
+          findings.push({
+            type: 'MISSING_MODIFIER',
+            title: 'Missing AT Modifier',
+            description: `CMT code ${code} missing AT modifier for active treatment`,
+            severity: 'MEDIUM',
+            recommendation: 'Add AT modifier for Medicare active treatment claims',
+            riskScore: 50,
+          });
+        }
+      }
+
+      // Check for supporting diagnosis
+      const hasSpinalDx = encounter.diagnoses.some(d =>
+        d.code.startsWith('M54') || d.code.startsWith('M99') ||
+        d.code.startsWith('S13') || d.code.startsWith('S23') || d.code.startsWith('S33')
+      );
+      if (!hasSpinalDx) {
+        const lineCharge = Number(line.chargeAmount) || 0;
+        findings.push({
+          type: 'MEDICAL_NECESSITY',
+          title: 'Questionable Medical Necessity',
+          description: `CMT code ${code} without supporting spinal diagnosis`,
+          severity: 'HIGH',
+          recommendation: 'Document appropriate diagnosis supporting CMT',
+          riskScore: 75,
+          financialImpact: lineCharge,
+        });
+        potentialOverpayment += lineCharge * 0.5; // Partial risk
+      }
+    }
+
+    // Check for E/M modifier 25 issues
+    if (code.startsWith('992') && (line.modifier1 === '25' || line.modifier2 === '25')) {
+      // Should have separate identifiable E/M service
+      findings.push({
+        type: 'MODIFIER_REVIEW',
+        title: 'Modifier 25 Usage',
+        description: 'Modifier 25 requires separate, identifiable E/M service documentation',
+        severity: 'MEDIUM',
+        recommendation: 'Ensure E/M is separately documented from other services',
+        riskScore: 60,
+      });
+    }
+  }
+
+  // Treatment plan check
+  if (!encounter.treatmentPlan) {
+    findings.push({
+      type: 'MISSING_TREATMENT_PLAN',
+      title: 'No Treatment Plan',
+      description: 'Active treatment plan not documented',
+      severity: 'MEDIUM',
+      recommendation: 'Create treatment plan with goals and expected duration',
+      riskScore: 50,
+    });
+  }
+
+  // Calculate overall assessment
+  const criticalCount = findings.filter(f => f.severity === 'CRITICAL').length;
+  const highCount = findings.filter(f => f.severity === 'HIGH').length;
+
+  let overallAssessment: string;
+  if (criticalCount > 0) {
+    overallAssessment = 'HIGH RISK - Critical issues require immediate attention';
+  } else if (highCount > 1) {
+    overallAssessment = 'MODERATE RISK - Multiple high-priority findings';
+  } else if (findings.length > 0) {
+    overallAssessment = 'LOW RISK - Minor issues identified';
+  } else {
+    overallAssessment = 'PASS - No significant issues found';
+  }
+
+  return {
+    claimId: claim.id,
+    encounterId: encounter.id,
+    providerId: encounter.provider.id,
+    providerName,
+    dateOfService: claim.dateOfService,
+    totalCharges: Number(claim.totalCharges) || 0,
+    findingsCount: findings.length,
+    potentialOverpayment,
+    potentialUnderpayment,
+    findings,
+    overallAssessment,
+  };
+}
+
+/**
+ * Generate mock audit recommendations
+ */
+function generateMockAuditRecommendations(
+  auditType: string,
+  errorRate: number,
+  results: MockAuditResult[],
+  outcomePrediction: string
+): string[] {
+  const recommendations: string[] = [];
+
+  // Error rate based recommendations
+  if (errorRate > 30) {
+    recommendations.push('CRITICAL: Error rate exceeds 30% - immediate compliance review required');
+    recommendations.push('Consider voluntary refund before formal audit to reduce penalties');
+    recommendations.push('Implement mandatory pre-submission documentation review');
+  } else if (errorRate > 15) {
+    recommendations.push('Error rate indicates systemic issues - targeted training needed');
+    recommendations.push('Review and update documentation templates');
+    recommendations.push('Implement peer review process for high-value claims');
+  } else if (errorRate > 5) {
+    recommendations.push('Address identified issues through provider education');
+    recommendations.push('Monitor coding accuracy trends monthly');
+  }
+
+  // Issue type specific recommendations
+  const allFindings = results.flatMap(r => r.findings);
+  const findingTypes = new Map<string, number>();
+  for (const f of allFindings) {
+    findingTypes.set(f.type, (findingTypes.get(f.type) || 0) + 1);
+  }
+
+  if (findingTypes.get('MISSING_DOCUMENTATION') || 0 > 0) {
+    recommendations.push('Implement documentation completion check before claim submission');
+  }
+  if (findingTypes.get('CODE_NOT_DOCUMENTED') || 0 > 0) {
+    recommendations.push('Review coding workflow - codes must match documented services');
+  }
+  if (findingTypes.get('MEDICAL_NECESSITY') || 0 > 0) {
+    recommendations.push('Enhance medical necessity documentation, especially diagnosis linkage');
+  }
+
+  // Financial impact recommendations
+  const totalExposure = results.reduce((sum, r) => sum + r.potentialOverpayment, 0);
+  if (totalExposure > 10000) {
+    recommendations.push(`Financial exposure of $${totalExposure.toLocaleString()} - prioritize remediation`);
+  }
+
+  // Audit type specific
+  if (auditType === 'RAC' && outcomePrediction !== 'LOW_RISK') {
+    recommendations.push('Prepare RAC appeal strategy for likely audit findings');
+    recommendations.push('Document medical necessity proactively for high-value services');
+  }
+
+  return recommendations;
+}
+
+/**
+ * Get mock audit risk description
+ */
+function getMockAuditRiskDescription(outcomePrediction: string): string {
+  switch (outcomePrediction) {
+    case 'LOW_RISK':
+      return 'Audit results indicate strong compliance. Continue current practices.';
+    case 'MODERATE_RISK':
+      return 'Some issues identified that could result in audit findings. Address before formal audit.';
+    case 'HIGH_RISK':
+      return 'Significant issues found that would likely result in refund demands. Immediate action needed.';
+    case 'CRITICAL_RISK':
+      return 'Severe compliance gaps detected. High probability of significant audit findings and potential penalties.';
+    default:
+      return 'Risk assessment pending.';
+  }
+}
+
+/**
+ * Get mock audit action items
+ */
+function getMockAuditActions(outcomePrediction: string): string[] {
+  switch (outcomePrediction) {
+    case 'LOW_RISK':
+      return [
+        'Continue documentation quality monitoring',
+        'Maintain coding accuracy training',
+      ];
+    case 'MODERATE_RISK':
+      return [
+        'Address identified documentation gaps',
+        'Conduct targeted coding review',
+        'Implement pre-submission checks',
+      ];
+    case 'HIGH_RISK':
+      return [
+        'Immediately address critical findings',
+        'Consider voluntary refund for known issues',
+        'Implement mandatory documentation review',
+        'Engage compliance consultant',
+      ];
+    case 'CRITICAL_RISK':
+      return [
+        'URGENT: Address all critical issues immediately',
+        'Engage legal counsel for audit response preparation',
+        'Implement comprehensive compliance program',
+        'Consider self-disclosure if fraud indicators present',
+        'Conduct full internal audit',
+      ];
+    default:
+      return ['Conduct further analysis'];
+  }
 }
 
 export type AIQARouter = typeof aiQARouter;
