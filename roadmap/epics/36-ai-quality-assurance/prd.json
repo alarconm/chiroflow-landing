@@ -18,7 +18,7 @@
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-348",
@@ -35,7 +35,7 @@
         "Track quality scores over time"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-349",
@@ -52,7 +52,7 @@
         "Targeted education recommendations"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-350",
@@ -69,7 +69,7 @@
         "Compliance score trending"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-351",
@@ -86,7 +86,7 @@
         "Provider performance comparison"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-352",
@@ -102,7 +102,7 @@
         "Risk mitigation tracking"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-353",
@@ -118,7 +118,7 @@
         "Mock audit simulation"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-354",
@@ -135,7 +135,7 @@
         "Audit schedule and history"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }
