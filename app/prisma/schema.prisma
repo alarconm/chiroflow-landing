@@ -286,6 +286,14 @@ model Organization {
   reactivationOpportunities ReactivationOpportunity[]
   growthMetrics            GrowthMetric[]
 
+  // AI Staff Training Agent relations (Epic 38)
+  trainingModules      TrainingModule[]
+  trainingProgress     TrainingProgress[]
+  trainingScenarios    TrainingScenario[]
+  practiceSessions     PracticeSession[]
+  staffCertifications  StaffCertification[]
+  performanceFeedback  PerformanceFeedback[]
+
   @@index([subdomain])
 }
 
@@ -358,6 +366,11 @@ model User {
   // Offline Mode relations (US-270)
   offlineCache     OfflineCache[]
   deviceSyncStates DeviceSyncState[]
+
+  // AI Staff Training Agent relations (Epic 38)
+  trainingProgress     TrainingProgress[]
+  practiceSessions     PracticeSession[]
+  staffCertifications  StaffCertification[]
 
   @@unique([email, organizationId])
   @@index([organizationId])
@@ -13442,4 +13455,361 @@ model GrowthMetric {
   @@index([organizationId])
   @@index([metricType])
   @@index([periodStart])
+}
+
+// ============================================================================
+// AI Staff Training Agent (Epic 38)
+// ============================================================================
+
+// Training module types
+enum TrainingModuleType {
+  ONBOARDING        // New employee orientation
+  COMPLIANCE        // HIPAA, billing, safety
+  SKILL_BUILDING    // Customer service, phone skills
+  SYSTEM_TRAINING   // EHR, scheduling software
+  SCRIPT_PRACTICE   // Phone scripts, patient communication
+  PRODUCT_KNOWLEDGE // Services, procedures, offerings
+}
+
+// Training progress status
+enum TrainingStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  EXPIRED
+}
+
+// Practice scenario types
+enum ScenarioType {
+  SCHEDULING_CALL     // Booking appointments
+  BILLING_INQUIRY     // Insurance, payments questions
+  COMPLAINT_HANDLING  // Upset patients
+  NEW_PATIENT_INTAKE  // First-time callers
+  CANCELLATION        // Handling cancellations
+  INSURANCE_QUESTIONS // Coverage, benefits questions
+  FOLLOW_UP_CALL      // Post-visit calls
+  EMERGENCY_TRIAGE    // Urgent situations
+}
+
+// Difficulty levels
+enum DifficultyLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}
+
+// Certification types
+enum CertificationType {
+  HIPAA_PRIVACY
+  HIPAA_SECURITY
+  BILLING_COMPLIANCE
+  WORKPLACE_SAFETY
+  BLOOD_BORNE_PATHOGENS
+  CUSTOMER_SERVICE
+  PHONE_ETIQUETTE
+  EHR_PROFICIENCY
+  FRONT_DESK_OPERATIONS
+}
+
+// Feedback category
+enum FeedbackCategory {
+  TONE
+  EMPATHY
+  SCRIPT_ADHERENCE
+  RESPONSE_TIME
+  PROBLEM_SOLVING
+  PROFESSIONALISM
+  KNOWLEDGE
+  COMMUNICATION
+}
+
+// Training module - defines a unit of training content
+model TrainingModule {
+  id          String             @id @default(cuid())
+  name        String
+  description String?            @db.Text
+  type        TrainingModuleType
+
+  // Content
+  content     Json?              // Module content (steps, materials, etc.)
+  duration    Int                // Estimated duration in minutes
+
+  // Requirements
+  requiredFor     Role[]         // Which roles must complete this
+  prerequisiteIds String[]       // IDs of modules that must be completed first
+
+  // Metadata
+  version     String             @default("1.0")
+  isActive    Boolean            @default(true)
+  order       Int                @default(0) // Display order
+
+  // Pass criteria
+  passingScore Int               @default(80) // Minimum score to pass
+  maxAttempts  Int               @default(3)  // Max attempts allowed
+
+  // Time constraints
+  dueWithinDays Int?             // Must complete within X days of assignment
+  renewalDays   Int?             // Re-certification required every X days
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  progress       TrainingProgress[]
+  certifications StaffCertification[]
+
+  @@index([organizationId])
+  @@index([type])
+  @@index([isActive])
+}
+
+// Training progress - tracks user progress through modules
+model TrainingProgress {
+  id        String         @id @default(cuid())
+  status    TrainingStatus @default(NOT_STARTED)
+
+  // Progress tracking
+  startedAt    DateTime?
+  completedAt  DateTime?
+  lastAccessAt DateTime?
+
+  // Performance
+  score           Int?           // Score achieved (0-100)
+  attemptNumber   Int            @default(1)
+  timeSpentMinutes Int           @default(0)
+
+  // Progress details
+  currentStep     Int            @default(0)
+  totalSteps      Int            @default(0)
+  progressData    Json?          // Detailed progress (answers, etc.)
+
+  // Quiz/assessment results
+  quizResults     Json?          // Results of embedded quizzes
+
+  // Deadline
+  dueDate        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  moduleId String
+  module   TrainingModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, moduleId])
+  @@index([organizationId])
+  @@index([userId])
+  @@index([moduleId])
+  @@index([status])
+  @@index([dueDate])
+}
+
+// Training scenario - defines practice scenarios for AI role-play
+model TrainingScenario {
+  id          String       @id @default(cuid())
+  name        String
+  description String?      @db.Text
+  type        ScenarioType
+  difficulty  DifficultyLevel @default(BEGINNER)
+
+  // AI patient persona
+  personaName     String         // "Mrs. Johnson", "John Smith"
+  personaAge      Int?
+  personaGender   String?
+  personaTraits   String[]       // "anxious", "impatient", "friendly"
+  personaHistory  String?        @db.Text // Background for AI
+
+  // Scenario script/context
+  script          String         @db.Text // Base script/scenario description
+  context         Json?          // Additional context for AI
+  openingLine     String?        @db.Text // How AI starts conversation
+
+  // Expected handling
+  expectedOutcomes    String[]   // What staff should accomplish
+  keyPhrases          String[]   // Important phrases to use
+  avoidPhrases        String[]   // Phrases to avoid
+
+  // Scoring criteria
+  scoringRubric       Json?      // Detailed scoring criteria
+  idealResponse       String?    @db.Text // Model response for comparison
+
+  // Time expectations
+  targetDurationSecs  Int        @default(180) // Target call length
+  maxDurationSecs     Int        @default(300) // Maximum allowed
+
+  // Metadata
+  isActive    Boolean    @default(true)
+  version     String     @default("1.0")
+  tags        String[]   // For categorization
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  practiceSessions PracticeSession[]
+
+  @@index([organizationId])
+  @@index([type])
+  @@index([difficulty])
+  @@index([isActive])
+}
+
+// Practice session - records of AI practice interactions
+model PracticeSession {
+  id        String         @id @default(cuid())
+  status    TrainingStatus @default(IN_PROGRESS)
+
+  // Session details
+  startedAt   DateTime       @default(now())
+  endedAt     DateTime?
+  durationSecs Int?
+
+  // Recording
+  recordingUrl    String?    // URL to session recording
+  recordingFormat String?    // "video/webm", "audio/webm"
+  transcriptUrl   String?    // URL to transcript
+  transcript      String?    @db.Text // Full conversation transcript
+
+  // Performance scoring
+  overallScore    Int?       // 0-100
+
+  // AI feedback
+  aiFeedback      String?    @db.Text // Summary feedback from AI
+  aiAnalysis      Json?      // Detailed AI analysis
+
+  // Breakdown scores
+  toneScore           Int?
+  empathyScore        Int?
+  scriptAdherenceScore Int?
+  timingScore         Int?
+  outcomeAchieved     Boolean?
+
+  // Improvement suggestions
+  strengths           String[] // What went well
+  improvements        String[] // Areas to improve
+  suggestedPractice   String[] // Recommended follow-up
+
+  // User self-assessment
+  userNotes           String?  @db.Text
+  userSelfRating      Int?     // 1-5
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  scenarioId String
+  scenario   TrainingScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  feedback PerformanceFeedback[]
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([scenarioId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+// Staff certification - tracks compliance certifications
+model StaffCertification {
+  id        String            @id @default(cuid())
+  certType  CertificationType
+
+  // Certification details
+  earnedDate     DateTime
+  expirationDate DateTime?     // null = never expires
+
+  // Performance
+  score          Int?          // Score on certification exam
+  attemptNumber  Int           @default(1)
+
+  // Certificate info
+  certificateNumber String?    // External certificate number
+  certificateUrl    String?    // URL to certificate document
+  issuingAuthority  String?    // Who issued it
+
+  // Renewal tracking
+  renewalReminderSent Boolean   @default(false)
+  renewalReminderDate DateTime?
+
+  // Status
+  isActive    Boolean    @default(true)
+  revokedAt   DateTime?
+  revokedReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  moduleId String?            // Training module that granted this
+  module   TrainingModule?    @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([certType])
+  @@index([expirationDate])
+  @@index([isActive])
+}
+
+// Performance feedback - detailed feedback from practice sessions
+model PerformanceFeedback {
+  id        String           @id @default(cuid())
+  category  FeedbackCategory
+
+  // Feedback content
+  feedback    String         @db.Text // Detailed feedback
+  score       Int?           // Score for this category (0-100)
+
+  // Suggestions
+  suggestions String[]       // Specific improvement suggestions
+  examples    Json?          // Example responses or behaviors
+
+  // Reference to specific moment
+  timestampSecs Int?         // When in recording this applies
+  quotedText    String?      @db.Text // Specific quote being referenced
+
+  // Severity/priority
+  priority    String         @default("NORMAL") // "LOW", "NORMAL", "HIGH", "CRITICAL"
+
+  // AI or human feedback
+  isAIGenerated Boolean      @default(true)
+  reviewedBy    String?      // If reviewed/modified by manager
+
+  createdAt DateTime @default(now())
+
+  // Relations
+  sessionId String
+  session   PracticeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([sessionId])
+  @@index([category])
 }

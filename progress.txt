@@ -1,491 +1,59 @@
-# ChiroFlow Ralph Progress Log
+# Ralph Autonomous Loop - Progress Log
 
-## Epic 37: AI Practice Growth Agent
+## Epic 38: AI Staff Training Agent
 
-### US-355: AI practice growth schema
-**Status:** COMPLETED
+### US-363: AI training agent schema ✅ COMPLETED
+
 **Date:** 2026-01-22
+**Status:** PASSED
 
-**Changes made:**
-1. Added new enums for AI Practice Growth:
-   - GrowthLeadStatus (NEW, SCORING, HOT, WARM, COLD, NURTURING, READY, CONVERTED, LOST)
-   - GrowthCampaignType (LEAD_GENERATION, REACTIVATION, REFERRAL, REVIEW, RETENTION, UPSELL, SEASONAL, EVENT)
-   - GrowthCampaignStatus (DRAFT, SCHEDULED, ACTIVE, PAUSED, COMPLETED, CANCELLED)
-   - ReferralOpportunityStatus (IDENTIFIED, PENDING, CONTACTED, ENGAGED, REFERRED, EXPIRED, DECLINED)
+**Implementation:**
 
-2. Created new models:
-   - **GrowthLead**: AI-managed lead scoring and tracking with quality scores, conversion probability, behavioral data, and nurturing tracking
-   - **GrowthLeadActivity**: Activity tracking for growth leads (score updates, status changes, communications)
-   - **GrowthCampaign**: AI-driven growth campaigns with targeting, goals, budget, content strategy, and performance metrics
-   - **ReferralOpportunity**: AI-identified referral candidates with NPS/satisfaction scores, outreach tracking, and optimal timing
-   - **ReputationMetric**: Platform-specific reputation monitoring (Google, Yelp, Facebook, Healthgrades) with sentiment analysis
-   - **ReactivationOpportunity**: Lapsed patient tracking with lapse analysis, recommended approaches, and outreach tracking
-   - **GrowthMetric**: Practice growth KPIs (new patients, referrals, reactivations, reviews, conversion rates)
+Added 6 new Prisma models to support AI-powered staff training:
 
-3. Updated Organization model with relations:
-   - growthLeads, growthCampaigns, referralOpportunities, reputationMetrics, reactivationOpportunities, growthMetrics
+1. **TrainingModule** - Defines training content units
+   - Fields: name, type (TrainingModuleType enum), content (JSON), duration, requiredFor (Role[])
+   - Includes prerequisites, passing criteria, and renewal tracking
 
-4. Updated Patient model with relations:
-   - referralOpportunities, reactivationOpportunities
+2. **TrainingProgress** - Tracks user progress through modules
+   - Fields: userId, moduleId, status (TrainingStatus enum), score, completedAt
+   - Includes detailed progress tracking, quiz results, and due dates
 
-5. Prisma client generated successfully and schema pushed to database
+3. **TrainingScenario** - Defines AI practice scenarios
+   - Fields: name, type (ScenarioType enum), script, expectedOutcomes
+   - Includes AI persona configuration and scoring rubric
 
-**Notes:**
-- The existing Lead, LeadActivity, ReviewRequest, and Campaign models from Epic 18 (Marketing) remain unchanged
-- The new GrowthLead and GrowthCampaign models are specifically for AI-driven automation with enhanced scoring and behavioral tracking
-- All models follow existing patterns with proper organization scoping and indexes
---- Iteration 1 completed at 2026-01-22 16:41:18 ---
-Story: US-355 - AI practice growth schema
+4. **PracticeSession** - Records AI practice interactions
+   - Fields: userId, scenarioId, recordingUrl, transcript, feedback, score
+   - Includes breakdown scores for tone, empathy, timing, etc.
 
-### US-356: Intelligent lead management
-**Status:** COMPLETED
-**Date:** 2026-01-22
+5. **StaffCertification** - Tracks compliance certifications
+   - Fields: userId, certType (CertificationType enum), earnedDate, expirationDate
+   - Includes certificate tracking and renewal reminders
 
-**Changes made:**
-1. Created new tRPC router `app/src/server/routers/aiGrowth.ts` with comprehensive lead management:
-   - **aiGrowth.scoreLead** - Calculate lead quality score (0-100), conversion probability, and urgency score
-   - **aiGrowth.captureLead** - Auto-capture leads from website, phone calls, referrals, walk-ins, and ads
-   - **aiGrowth.listLeads** - List leads with filtering by status, quality score, source, and assignment
-   - **aiGrowth.getPriorityRankings** - Get priority-ranked leads for follow-up
-   - **aiGrowth.getConversionPrediction** - Detailed conversion prediction with factors and recommended actions
-   - **aiGrowth.autoAssignLead** - Auto-assign leads to staff based on availability and conversion rate
-   - **aiGrowth.triggerNurturing** - Start nurturing sequences (awareness, consideration, decision, re-engagement)
-   - **aiGrowth.trackConversion** - Track lead conversion to patient with value tracking
-   - **aiGrowth.updateLeadStatus** - Manually update lead status
-   - **aiGrowth.bulkScoreLeads** - Bulk score multiple leads at once
-   - **aiGrowth.getLeadActivity** - Get lead activity history
-   - **aiGrowth.getSourceAnalytics** - Analytics by lead source
+6. **PerformanceFeedback** - Detailed feedback from practice sessions
+   - Fields: sessionId, category (FeedbackCategory enum), feedback, suggestions
+   - Includes timestamp references and priority levels
 
-2. Lead scoring algorithm includes:
-   - Website visits (0-20 points)
-   - Page views (0-15 points)
-   - Time on site (0-15 points)
-   - Form interaction (0-15 points)
-   - Email engagement (0-15 points)
-   - Source quality (0-20 points) - referrals score highest
+**Enums Added:**
+- TrainingModuleType (ONBOARDING, COMPLIANCE, SKILL_BUILDING, etc.)
+- TrainingStatus (NOT_STARTED, IN_PROGRESS, COMPLETED, FAILED, EXPIRED)
+- ScenarioType (SCHEDULING_CALL, BILLING_INQUIRY, COMPLAINT_HANDLING, etc.)
+- DifficultyLevel (BEGINNER, INTERMEDIATE, ADVANCED, EXPERT)
+- CertificationType (HIPAA_PRIVACY, BILLING_COMPLIANCE, etc.)
+- FeedbackCategory (TONE, EMPATHY, SCRIPT_ADHERENCE, etc.)
 
-3. Intent signal detection:
-   - Multiple site visits
-   - Extensive page browsing
-   - Long session times
-   - Form abandonment (high intent with friction)
-   - Pricing/insurance/scheduling page views
+**Schema File:** app/prisma/schema.prisma
+**Migration:** Successfully applied via `prisma db push`
 
-4. Auto-assignment algorithm:
-   - Considers current lead count (lower = better)
-   - Considers conversion rate (higher = better)
-   - High-value leads go to high performers
+---
 
-5. Added audit actions to `app/src/lib/audit.ts`:
-   - AI_GROWTH_LEAD_CAPTURED, AI_GROWTH_LEAD_SCORED, AI_GROWTH_LEAD_ASSIGNED
-   - AI_GROWTH_LEAD_STATUS_UPDATED, AI_GROWTH_LEAD_CONVERTED
-   - AI_GROWTH_NURTURE_STARTED, AI_GROWTH_BULK_SCORE
+## Stories Remaining: 7
 
-6. Registered router in `app/src/server/routers/index.ts`
-
-**Acceptance Criteria Met:**
-- ✅ aiGrowth.scoreLead - Calculate lead quality score
-- ✅ Auto-capture leads from website, calls, referrals
-- ✅ Lead source tracking
-- ✅ Conversion probability prediction
-- ✅ Priority ranking for follow-up
-- ✅ Auto-assign to appropriate staff
-- ✅ Lead nurturing sequence trigger
-- ✅ Conversion tracking
-
---- Iteration 2 completed at 2026-01-22 ---
-Story: US-356 - Intelligent lead management
-
---- Iteration 2 completed at 2026-01-22 16:51:55 ---
-Story: US-356 - Intelligent lead management
-
-### US-357: Automated lead nurturing
-**Status:** COMPLETED
-**Date:** 2026-01-22
-
-**Changes made:**
-1. Extended `app/src/server/routers/aiGrowth.ts` with comprehensive lead nurturing functionality:
-   - **aiGrowth.nurtureLead** - Start or continue nurturing with personalized sequences
-   - **aiGrowth.advanceNurtureStep** - Advance lead to next step in sequence
-   - **aiGrowth.recordNurtureEngagement** - Track email opens, link clicks, replies
-   - **aiGrowth.handleLeadResponse** - Process responses and determine next actions
-   - **aiGrowth.getOptimalTiming** - Calculate best send times based on engagement
-   - **aiGrowth.getNurtureSequences** - Get available sequences with recommendations
-   - **aiGrowth.pauseNurture** - Pause nurturing for a lead
-   - **aiGrowth.resumeNurture** - Resume nurturing from where left off
-   - **aiGrowth.escalateHotLead** - Escalate hot leads to staff immediately
-   - **aiGrowth.getNurtureAnalytics** - Get performance metrics for sequences
-
-2. Created 4 pre-built nurture sequence templates:
-   - **Awareness Sequence** (5 steps) - Educational content for new leads
-   - **Consideration Sequence** (4 steps) - Case studies and testimonials
-   - **Decision Sequence** (3 steps) - Special offers for ready-to-book leads
-   - **Re-engagement Sequence** (3 steps) - Win-back campaign for cold leads
-
-3. Added intelligent features:
-   - **Personalized content** - Dynamic variables ({{firstName}}, {{practiceName}}, etc.)
-   - **Optimal timing calculation** - Best day/time based on engagement patterns
-   - **Sentiment analysis** - Detect positive/negative/neutral responses
-   - **Engagement scoring** - Calculate lead engagement (0-100)
-   - **Auto-escalation** - Hot leads automatically flagged for staff follow-up
-   - **Multi-channel support** - Email and SMS nurturing
-
-4. Added new audit actions to `app/src/lib/audit.ts`:
-   - AI_GROWTH_NURTURE_ADVANCED, AI_GROWTH_NURTURE_ENGAGEMENT
-   - AI_GROWTH_RESPONSE_HANDLED, AI_GROWTH_NURTURE_PAUSED
-   - AI_GROWTH_NURTURE_RESUMED, AI_GROWTH_LEAD_ESCALATED
-
-**Acceptance Criteria Met:**
-- ✅ aiGrowth.nurtureLead - Automated follow-up
-- ✅ Personalized email sequences
-- ✅ SMS follow-up campaigns
-- ✅ Content delivery based on interest (sequence selection)
-- ✅ Optimal timing for outreach
-- ✅ Handle responses automatically (sentiment analysis + action determination)
-- ✅ Escalate hot leads to staff
-- ✅ Track engagement and adjust (engagement scoring, analytics)
-
---- Iteration 3 completed at 2026-01-22 ---
-Story: US-357 - Automated lead nurturing
-
---- Iteration 3 completed at 2026-01-22 17:00:04 ---
-Story: US-357 - Automated lead nurturing
-
-### US-358: Reputation management
-**Status:** COMPLETED
-**Date:** 2026-01-22
-
-**Changes made:**
-1. Extended `app/src/server/routers/aiGrowth.ts` with comprehensive reputation management functionality:
-   - **aiGrowth.requestReview** - Smart review request with personalized messaging
-   - **aiGrowth.identifySatisfiedPatients** - Find best review candidates based on visit history and satisfaction
-   - **aiGrowth.getReviewRequests** - List and filter review requests with stats
-   - **aiGrowth.updatePlatformMetrics** - Update reputation metrics from monitoring
-   - **aiGrowth.getPlatformMetrics** - Get current and historical platform metrics
-   - **aiGrowth.alertNegativeReview** - Create alerts for negative reviews
-   - **aiGrowth.getReviewResponseSuggestion** - Generate AI response suggestions
-   - **aiGrowth.getReputationScore** - Calculate overall reputation score with analysis
-   - **aiGrowth.getReputationTrends** - Track reputation trends over time
-   - **aiGrowth.bulkRequestReviews** - Bulk request reviews with spread scheduling
-   - **aiGrowth.acknowledgeNegativeReview** - Handle negative review alerts
-
-2. Added 14 new types for reputation management:
-   - ReviewCandidate, ReviewRequestResult, PlatformMetrics
-   - ReputationScore, NegativeReviewAlert, ReviewResponseSuggestion
-
-3. Added 10 new input schemas for validation:
-   - requestReviewInputSchema, identifySatisfiedPatientsInputSchema
-   - getReviewRequestsInputSchema, updatePlatformMetricsInputSchema
-   - getPlatformMetricsInputSchema, alertNegativeReviewInputSchema
-   - getReviewResponseSuggestionInputSchema, getReputationScoreInputSchema
-   - getReputationTrendsInputSchema, bulkRequestReviewsInputSchema
-   - acknowledgeNegativeReviewInputSchema
-
-4. Added 7 helper functions:
-   - calculatePatientSatisfactionScore - Score based on visit history
-   - calculateOptimalReviewRequestTime - Best time to request reviews
-   - generateReviewRequestMessage - Personalized email/SMS messages
-   - generateReviewResponseSuggestions - AI-powered response drafts
-   - calculateReputationScore - Overall score with platform weights
-   - getPlatformGuidelines - Platform-specific response guidelines
-
-5. Added new audit actions to `app/src/lib/audit.ts`:
-   - AI_GROWTH_REVIEW_REQUESTED, AI_GROWTH_BULK_REVIEW_REQUEST
-   - AI_GROWTH_METRICS_UPDATED, AI_GROWTH_NEGATIVE_REVIEW_ALERT
-   - AI_GROWTH_REVIEW_ALERT_ACTION
-
-**Features implemented:**
-- Smart review request timing (2 days after positive appointment)
-- Patient satisfaction scoring algorithm (0-100 based on visits, completion rate)
-- Multi-platform support (Google, Yelp, Facebook, Healthgrades, ZocDoc)
-- Personalized email and SMS templates with dynamic variables
-- Negative review detection and severity classification
-- AI-generated response suggestions with multiple tones
-- Platform-specific response guidelines
-- Reputation score calculation with trend analysis
-- Review request tracking and conversion metrics
-- Bulk review requests with spread scheduling
-
-**Acceptance Criteria Met:**
-- ✅ aiGrowth.requestReview - Smart review requests
-- ✅ Identify satisfied patients for review ask (satisfaction scoring)
-- ✅ Multi-platform review requests (Google, Yelp, Facebook)
-- ✅ Optimal timing after positive experiences
-- ✅ Monitor review platforms (updatePlatformMetrics, getPlatformMetrics)
-- ✅ Alert on negative reviews (alertNegativeReview)
-- ✅ Generate review response suggestions
-- ✅ Track reputation scores (getReputationScore, getReputationTrends)
-
---- Iteration 4 completed at 2026-01-22 ---
-Story: US-358 - Reputation management
-
---- Iteration 4 completed at 2026-01-22 17:13:11 ---
-Story: US-358 - Reputation management
-
-### US-359: Referral optimization
-**Status:** COMPLETED
-**Date:** 2026-01-22
-
-**Changes made:**
-1. Extended `app/src/server/routers/aiGrowth.ts` with comprehensive referral optimization functionality:
-   - **aiGrowth.identifyReferrers** - Find best referral candidates based on NPS score, visit history, satisfaction
-   - **aiGrowth.calculateNpsScore** - Calculate or update NPS score from survey or behavior
-   - **aiGrowth.promoteReferralProgram** - Automated referral program promotion to selected patients
-   - **aiGrowth.getReferralSources** - Analytics on referral sources with top referrer tracking
-   - **aiGrowth.trackReferral** - Track new referrals with source attribution
-   - **aiGrowth.sendReferralThankYou** - Automated thank-you messages to referrers
-   - **aiGrowth.getReferralIncentives** - Get referral incentive status for patients
-   - **aiGrowth.issueReferralReward** - Issue referral rewards to referrers or referees
-   - **aiGrowth.getProviderRelationships** - Get provider referral relationship analytics
-   - **aiGrowth.nurtureProviderRelationship** - Nurture provider relationships with targeted outreach
-   - **aiGrowth.createProviderRelationship** - Create new provider referral relationship
-
-2. Added 10 new types for referral optimization:
-   - ReferralCandidate, ReferralProgramInfo, ReferralPromotion
-   - ReferralSource, ReferralThankYou, ReferralIncentiveStatus
-   - ProviderReferralRelationship
-
-3. Added 10 new input schemas for validation:
-   - identifyReferrersInputSchema, calculateNpsScoreInputSchema
-   - promoteReferralProgramInputSchema, getReferralSourcesInputSchema
-   - trackReferralInputSchema, sendReferralThankYouInputSchema
-   - getReferralIncentivesInputSchema, issueReferralRewardInputSchema
-   - getProviderRelationshipsInputSchema, nurtureProviderRelationshipInputSchema
-   - createProviderRelationshipInputSchema
-
-4. Added 6 helper functions:
-   - calculateBehavioralNpsScore - Infer NPS from patient behavior
-   - calculateReferralScore - Score patients for referral likelihood (0-100)
-   - calculateOptimalReferralOutreachDate - Best timing for referral outreach
-   - generateReferralProgramMessage - Personalized referral program emails/SMS
-   - generateReferralThankYouMessage - Thank-you messages for successful referrals
-   - calculateRelationshipStrength - Provider relationship strength calculation
-   - generateProviderNurturingActions - Suggested actions for provider nurturing
-
-5. Added 7 new audit actions to `app/src/lib/audit.ts`:
-   - AI_GROWTH_NPS_CALCULATED, AI_GROWTH_REFERRAL_PROGRAM_PROMOTED
-   - AI_GROWTH_REFERRAL_TRACKED, AI_GROWTH_REFERRAL_THANKYOU_SENT
-   - AI_GROWTH_REFERRAL_REWARD_ISSUED, AI_GROWTH_PROVIDER_NURTURED
-   - AI_GROWTH_PROVIDER_CREATED
-
-**Features implemented:**
-- NPS scoring from surveys or behavioral inference (visit frequency, reviews, referrals)
-- Referral candidate scoring algorithm (0-100 based on NPS, visits, tenure, treatment success)
-- Automated referral program promotion with personalized messaging
-- Referral source analytics with conversion tracking
-- Automatic thank-you workflow after successful referrals
-- Referral incentive tracking and reward issuance
-- Provider referral relationship management and nurturing
-- Optimal timing calculation for referral outreach
-- Multi-channel support (email, SMS, in-person)
-
-**Acceptance Criteria Met:**
-- ✅ aiGrowth.identifyReferrers - Find referral candidates
-- ✅ NPS scoring for referral likelihood
-- ✅ Automated referral program promotion
-- ✅ Track referral sources
-- ✅ Thank referring patients automatically
-- ✅ Referral incentive management
-- ✅ Provider referral relationship nurturing
-
---- Iteration 5 completed at 2026-01-22 ---
-Story: US-359 - Referral optimization
-
---- Iteration 5 completed at 2026-01-22 17:27:23 ---
-Story: US-359 - Referral optimization
-
-### US-360: Patient reactivation
-**Status:** COMPLETED
-**Date:** 2026-01-22
-
-**Changes made:**
-1. Extended `app/src/server/routers/aiGrowth.ts` with comprehensive patient reactivation functionality:
-   - **aiGrowth.reactivate** - Win back lapsed patients with personalized outreach
-   - **aiGrowth.identifyReactivationCandidates** - Find lapsed patients with reactivation scoring
-   - **aiGrowth.analyzePatientLapse** - Deep analysis of why a patient stopped coming
-   - **aiGrowth.sendReactivationOffer** - Send specific offers to lapsed patients
-   - **aiGrowth.getReactivationOffers** - List available offers based on lapse reason
-   - **aiGrowth.trackReactivationResponse** - Record patient response to outreach
-   - **aiGrowth.recordReactivationSuccess** - Mark successful reactivations
-   - **aiGrowth.getReactivationMetrics** - Analytics on reactivation efforts
-   - **aiGrowth.bulkReactivationOutreach** - Send outreach to multiple patients
-   - **aiGrowth.getOptimalReactivationTiming** - Calculate best time to reach out
-   - **aiGrowth.getReactivationOpportunities** - List all opportunities with filtering
-
-2. Added 6 new types for patient reactivation:
-   - LapseReason (11 reason types including financial, scheduling, dissatisfied, etc.)
-   - ReactivationCandidate, ReactivationOutreach, ReactivationOffer
-   - ReactivationAnalysis, ReactivationMetrics
-
-3. Added 10 new input schemas for validation:
-   - identifyReactivationCandidatesInputSchema, analyzePatientLapseInputSchema
-   - reactivatePatientInputSchema, sendReactivationOfferInputSchema
-   - getReactivationOffersInputSchema, trackReactivationResponseInputSchema
-   - recordReactivationSuccessInputSchema, getReactivationMetricsInputSchema
-   - bulkReactivationOutreachInputSchema, getOptimalReactivationTimingInputSchema
-   - getReactivationOpportunitiesInputSchema
-
-4. Added 6 helper functions:
-   - analyzeLapseReason - AI analysis of why patient lapsed (financial, scheduling, etc.)
-   - calculateReactivationScore - Score likelihood of reactivation (0-100)
-   - determineReactivationApproach - Select best approach based on lapse reason
-   - generateReactivationMessage - Personalized email/SMS messages with offers
-   - calculateOptimalReactivationTiming - Best day/time for outreach
-   - getReactivationOffers - Predefined offers based on reason and patient value
-
-5. Added 7 new audit actions to `app/src/lib/audit.ts`:
-   - AI_GROWTH_REACTIVATION_IDENTIFIED, AI_GROWTH_REACTIVATION_OUTREACH
-   - AI_GROWTH_REACTIVATION_RESPONSE, AI_GROWTH_REACTIVATION_SUCCESS
-   - AI_GROWTH_REACTIVATION_OFFER_SENT, AI_GROWTH_REACTIVATION_ANALYSIS
-   - AI_GROWTH_REACTIVATION_BULK_OUTREACH
-
-**Features implemented:**
-- Lapse reason analysis (11 possible reasons with confidence scoring)
-- Reactivation scoring algorithm (0-100 based on lifetime value, recency, engagement)
-- Multiple reactivation approaches (special_offer, wellness_check, personal_outreach, reminder, win_back)
-- Predefined offers (percentage discount, dollar discount, free service, complimentary exam, package deal)
-- Personalized messaging templates for email, SMS, and phone scripts
-- Optimal timing calculation based on engagement patterns
-- Multi-channel outreach support (email, SMS, phone)
-- Bulk outreach with spread scheduling
-- Comprehensive metrics tracking by reason, channel, and offer type
-- Full audit trail for all reactivation activities
-
-**Acceptance Criteria Met:**
-- ✅ aiGrowth.reactivate - Win back lapsed patients
-- ✅ Identify reactivation candidates (identifyReactivationCandidates with scoring)
-- ✅ Personalized reactivation messaging (generateReactivationMessage)
-- ✅ Special offers for returning patients (getReactivationOffers, sendReactivationOffer)
-- ✅ Track reactivation success (trackReactivationResponse, recordReactivationSuccess, getReactivationMetrics)
-- ✅ Optimal timing for outreach (getOptimalReactivationTiming, calculateOptimalReactivationTiming)
-- ✅ Reason for lapse analysis (analyzePatientLapse, analyzeLapseReason)
-
---- Iteration 6 completed at 2026-01-22 ---
-Story: US-360 - Patient reactivation
-
---- Iteration 6 completed at 2026-01-22 17:40:15 ---
-Story: US-360 - Patient reactivation
-
-### US-361: Marketing campaign automation
-**Status:** COMPLETED
-**Date:** 2026-01-22
-
-**Changes made:**
-1. Extended `app/src/server/routers/aiGrowth.ts` with comprehensive marketing campaign automation functionality:
-   - **aiGrowth.createCampaign** - AI-powered campaign creation with targeting, content strategy, and A/B testing
-   - **aiGrowth.segmentAudience** - AI audience segmentation (high_value, at_risk, new_patients, loyal, lapsed, engaged, unengaged, custom)
-   - **aiGrowth.generateCampaignContent** - AI content generation for email, SMS, social, direct mail
-   - **aiGrowth.executeCampaign** - Multi-channel campaign execution with test mode support
-   - **aiGrowth.createABTest** - A/B testing setup for subject, content, CTA, timing, and offers
-   - **aiGrowth.getABTestResults** - A/B test performance analysis with statistical significance
-   - **aiGrowth.optimizeCampaign** - AI optimization recommendations based on performance
-   - **aiGrowth.getCampaignROI** - Comprehensive ROI analysis with aggregation by campaign, channel, or type
-   - **aiGrowth.updateCampaignStatus** - Campaign lifecycle management (pause, resume, complete, cancel)
-   - **aiGrowth.listCampaigns** - List campaigns with filtering and sorting
-   - **aiGrowth.getCampaign** - Get full campaign details
-
-2. Added 12 new helper functions:
-   - generateContentStrategy - AI content strategy based on campaign type
-   - estimateAudienceSize - Estimate audience reach based on targeting criteria
-   - generateCampaignSequences - Generate multi-step campaign sequences
-   - getSegmentCriteria - Get patient filter criteria for segment types
-   - calculateSegmentScore - Score patients for segment fit
-   - getPatientCharacteristics - Get patient characteristics for targeting
-   - generateSegmentInsights - Generate insights from segmented audiences
-   - getSegmentRecommendations - Get recommendations for segment types
-   - generateMarketingContent - Generate email/SMS content with personalization
-   - getTargetPatients - Get patients matching targeting criteria
-   - calculateStatisticalSignificance - A/B test statistical analysis
-   - generateOptimizationRecommendations - AI performance recommendations
-   - getCampaignBenchmarks - Industry benchmarks by campaign type
-   - calculateOptimizationScore - Calculate campaign optimization score
-   - generateROIInsights - Generate ROI insights from campaign data
-   - generateROIRecommendations - Generate ROI improvement recommendations
-
-3. Added 12 new audit actions to `app/src/lib/audit.ts`:
-   - AI_GROWTH_CAMPAIGN_CREATED, AI_GROWTH_CAMPAIGN_UPDATED
-   - AI_GROWTH_CAMPAIGN_ACTIVATED, AI_GROWTH_CAMPAIGN_PAUSED
-   - AI_GROWTH_CAMPAIGN_COMPLETED, AI_GROWTH_CAMPAIGN_CANCELLED
-   - AI_GROWTH_AUDIENCE_SEGMENTED, AI_GROWTH_CONTENT_GENERATED
-   - AI_GROWTH_ABTEST_CREATED, AI_GROWTH_ABTEST_RESULT
-   - AI_GROWTH_CAMPAIGN_OPTIMIZED, AI_GROWTH_ROI_CALCULATED
-
-**Features implemented:**
-- AI-powered campaign creation with automatic content strategy generation
-- 8 campaign types: LEAD_GENERATION, REACTIVATION, REFERRAL, REVIEW, RETENTION, UPSELL, SEASONAL, EVENT
-- 8 audience segment types with automatic scoring
-- Multi-channel support: email, SMS, social media, direct mail
-- 4 messaging tones: professional, friendly, urgent, empathetic
-- A/B testing with statistical significance calculation
-- Performance optimization with industry benchmarks
-- ROI tracking with aggregation by campaign, channel, or type
-- Campaign lifecycle management (draft, scheduled, active, paused, completed, cancelled)
-- Personalization variables support (firstName, lastName, lastVisitDate, offerCode, expiryDate)
-
-**Acceptance Criteria Met:**
-- ✅ aiGrowth.createCampaign - Generate campaign
-- ✅ Audience segmentation (segmentAudience with 8 segment types)
-- ✅ Content generation assistance (generateCampaignContent)
-- ✅ Multi-channel campaign execution (executeCampaign)
-- ✅ A/B testing automation (createABTest, getABTestResults)
-- ✅ Performance optimization (optimizeCampaign)
-- ✅ ROI tracking and reporting (getCampaignROI)
-
---- Iteration 7 completed at 2026-01-22 ---
-Story: US-361 - Marketing campaign automation
-
---- Iteration 7 completed at 2026-01-22 17:50:11 ---
-Story: US-361 - Marketing campaign automation
-
-### US-362: Practice growth dashboard
-**Status:** COMPLETED
-**Date:** 2026-01-22
-
-**Changes made:**
-1. Extended `app/src/server/routers/aiGrowth.ts` with dashboard-specific endpoints:
-   - **aiGrowth.getDashboardSummary** - Overview of all growth metrics (leads, conversions, reputation, referrals, campaigns)
-   - **aiGrowth.getLeadPipeline** - Leads by status for funnel visualization
-   - **aiGrowth.getConversionFunnel** - Detailed conversion metrics with funnel stages
-   - **aiGrowth.getGrowthKPIs** - Key performance indicators (8 KPIs with trends and targets)
-   - **aiGrowth.getPatientAcquisitionCost** - CAC by channel with LTV:CAC ratio
-   - **aiGrowth.getCampaignPerformanceSummary** - Recent campaign performance and type aggregation
-   - **aiGrowth.getROIByChannel** - Marketing channel ROI comparison
-
-2. Created `app/src/components/ai-growth/PracticeGrowthDashboard.tsx` with:
-   - **DashboardSummary** - 5 metric cards (leads, conversions, rating, referrals, ROI)
-   - **LeadPipeline** - Visual pipeline with 9 stages (NEW → CONVERTED/LOST)
-   - **ConversionFunnel** - Funnel visualization with stage percentages
-   - **GrowthKPIs** - 8 KPI tiles with trends, targets, and progress bars
-   - **ReferralSourceAnalysis** - Referral sources with conversion rates
-   - **ReputationTrending** - Reputation score with star rating and trend chart
-   - **CampaignPerformance** - Recent campaigns table with status and ROI
-   - **ROIByChannel** - Channel comparison table
-   - **PatientAcquisitionCost** - CAC metrics with LTV:CAC analysis
-
-3. Created `app/src/components/ai-growth/index.ts` for component exports
-
-4. Created `app/src/app/(dashboard)/ai-growth/page.tsx` as the dashboard route
-
-**Features implemented:**
-- Tabbed interface (Overview, Leads, Campaigns, Acquisition)
-- Date range selector (7d, 30d, 90d, 1y)
-- Trend indicators with percentage changes
-- Visual funnel and pipeline charts
-- Summary metrics with previous period comparison
-- Responsive grid layout
-- Loading skeletons for async data
-- Empty states for missing data
-
-**Acceptance Criteria Met:**
-- ✅ Lead pipeline visualization (LeadPipeline component with 9 stages)
-- ✅ Conversion funnel metrics (ConversionFunnel component)
-- ✅ Reputation score trending (ReputationTrending with star display and chart)
-- ✅ Referral source analysis (ReferralSourceAnalysis with conversion rates)
-- ✅ Campaign performance (CampaignPerformance with type aggregation)
-- ✅ Growth KPIs (GrowthKPIs with 8 metrics)
-- ✅ ROI by marketing channel (ROIByChannel component)
-- ✅ Patient acquisition cost (PatientAcquisitionCost with CAC/LTV/ratio)
-
---- Iteration 8 completed at 2026-01-22 ---
-Story: US-362 - Practice growth dashboard
-
+- US-364: Video practice sessions
+- US-365: Real-time practice feedback
+- US-366: Onboarding workflows
+- US-367: Script training and practice
+- US-368: Compliance training
+- US-369: Performance coaching
+- US-370: Training dashboard
