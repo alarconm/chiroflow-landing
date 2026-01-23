@@ -376,3 +376,57 @@ Date: 2026-01-22
 --- Iteration 7 completed at 2026-01-22 ---
 Story: US-353 - Audit preparation
 
+--- Iteration 7 completed at 2026-01-22 16:23:03 ---
+Story: US-353 - Audit preparation
+
+## US-354: QA agent dashboard - COMPLETED
+
+### What was implemented:
+- Created comprehensive QA Agent Dashboard with all required components
+- New page at `/ai-qa` for quality assurance dashboard
+
+**Main Dashboard Components:**
+1. **OverallQualityScore** - Combined quality score from compliance, clinical quality, and risk dimensions with weighted average (compliance 30%, quality 40%, risk 30%)
+2. **AuditFindingsSummary** - Open findings with severity filtering (Critical, High, Medium, Low) and quick summary stats
+3. **ComplianceAlertQueue** - Compliance alerts with status filtering (Open, All, Resolved) and severity breakdown
+4. **ProviderQualityComparison** - Provider rankings by quality metrics with organization averages
+5. **RiskIndicators** - Current risk score, level, trends, and mitigation tracking
+6. **QualityTrendCharts** - Historical quality metrics with multiple metric type selections
+7. **ActionItemTracking** - Remediation tracking with status counts and mitigation rate
+8. **AuditScheduleHistory** - Combined audit history from all audit types with filtering
+
+**Dashboard Features:**
+- Overall quality score with weighted calculation
+- Tabbed navigation (Overview, Findings, Compliance, Providers, Trends, Audits)
+- Key metrics display with trend indicators
+- Color-coded severity and status badges
+- Real-time data refresh capability
+- Responsive grid layout
+- Integration with all existing aiQA router endpoints
+
+**Utility Components:**
+- QualityScoreCard - Reusable metric card with score, trend, and benchmark comparison
+- SeverityBadge - Colored badges for CRITICAL, HIGH, MEDIUM, LOW, INFO severities
+- StatusBadge - Status indicators for finding/alert states
+- AuditTypeBadge - Type indicators for different audit categories
+
+### Acceptance Criteria Met:
+- [x] Overall quality score
+- [x] Audit findings summary
+- [x] Compliance alert queue
+- [x] Provider quality comparison
+- [x] Risk indicators
+- [x] Quality trend charts
+- [x] Action item tracking
+- [x] Audit schedule and history
+
+### Files created:
+- app/src/components/ai-qa/QAAgentDashboard.tsx (~1350 lines)
+- app/src/components/ai-qa/index.ts (component exports)
+- app/src/app/(dashboard)/ai-qa/page.tsx (route page)
+
+### Status: COMPLETE
+Date: 2026-01-22
+--- Iteration 8 completed at 2026-01-22 ---
+Story: US-354 - QA agent dashboard
+

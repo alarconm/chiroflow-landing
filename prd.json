@@ -135,7 +135,7 @@
         "Audit schedule and history"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }
