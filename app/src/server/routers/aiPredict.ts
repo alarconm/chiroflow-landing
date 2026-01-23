@@ -26,10 +26,16 @@ import {
   saveRevenueForecast,
   trackRevenueForecastAccuracy,
   getRevenueForecastAccuracySummary,
+  predictOutcome,
+  batchPredictOutcome,
+  saveOutcomePrediction,
+  trackOutcomePredictionAccuracy,
+  getOutcomePredictionAccuracy,
   type ChurnPredictionConfig,
   type DemandForecastConfig,
   type NoShowPredictionConfig,
   type RevenueForecastConfig,
+  type TreatmentOutcomePredictionConfig,
 } from '@/lib/ai-predict';
 
 // Zod schemas for input validation
@@ -1471,4 +1477,374 @@ export const aiPredictRouter = router({
       lastUpdated: forecast.forecastGeneratedAt,
     };
   }),
+
+  // ============================================
+  // TREATMENT OUTCOME PREDICTION
+  // ============================================
+
+  // Predict treatment outcome for a patient
+  predictOutcome: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        treatmentPlanId: z.string().optional(),
+        config: z.object({
+          confidenceThreshold: z.number().min(0).max(1).optional(),
+          minSimilarCases: z.number().min(1).max(100).optional(),
+          excellentThreshold: z.number().min(50).max(100).optional(),
+          goodThreshold: z.number().min(30).max(90).optional(),
+          moderateThreshold: z.number().min(10).max(70).optional(),
+          includeComorbidities: z.boolean().optional(),
+          includeSimilarCases: z.boolean().optional(),
+          includeHistoricalOutcomes: z.boolean().optional(),
+          shortTermWeeks: z.number().min(1).max(12).optional(),
+          mediumTermWeeks: z.number().min(4).max(24).optional(),
+          longTermWeeks: z.number().min(8).max(52).optional(),
+        }).optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const prediction = await predictOutcome(
+        ctx.user.organizationId,
+        input.patientId,
+        input.treatmentPlanId,
+        input.config as Partial<TreatmentOutcomePredictionConfig> | undefined
+      );
+
+      if (!prediction) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found or not active',
+        });
+      }
+
+      await auditLog('AI_OUTCOME_PREDICTION', 'Prediction', {
+        entityId: input.patientId,
+        changes: {
+          predictedOutcome: prediction.predictedOutcome,
+          predictedImprovement: prediction.predictedImprovement,
+          confidenceScore: prediction.confidenceScore,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return prediction;
+    }),
+
+  // Batch predict outcomes for multiple patients
+  batchPredictOutcome: adminProcedure
+    .input(
+      z.object({
+        patientIds: z.array(z.string()).optional(),
+        treatmentPlanIds: z.array(z.string()).optional(),
+        conditionCodes: z.array(z.string()).optional(),
+        minConfidence: z.number().min(0).max(1).optional(),
+        limit: z.number().min(1).max(200).optional(),
+        saveResults: z.boolean().optional(),
+      }).optional()
+    )
+    .mutation(async ({ ctx, input }) => {
+      const result = await batchPredictOutcome({
+        organizationId: ctx.user.organizationId,
+        patientIds: input?.patientIds,
+        treatmentPlanIds: input?.treatmentPlanIds,
+        conditionCodes: input?.conditionCodes,
+        minConfidence: input?.minConfidence,
+        limit: input?.limit || 50,
+        saveResults: input?.saveResults || false,
+      });
+
+      await auditLog('AI_BATCH_OUTCOME_PREDICTION', 'Prediction', {
+        changes: {
+          processedCount: result.processedCount,
+          savedCount: result.savedCount,
+          byResponseLevel: result.byResponseLevel,
+          averagePredictedImprovement: result.averagePredictedImprovement,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return result;
+    }),
+
+  // Get outcome predictions list
+  getOutcomePredictions: protectedProcedure
+    .input(
+      z.object({
+        minResponseLevel: z.enum(['excellent', 'good', 'moderate', 'poor']).optional(),
+        limit: z.number().min(1).max(100).default(50),
+        offset: z.number().min(0).default(0),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const result = await batchPredictOutcome({
+        organizationId: ctx.user.organizationId,
+        minConfidence: 0.3,
+        limit: (input?.limit || 50) + (input?.offset || 0),
+      });
+
+      // Filter by response level if specified
+      let predictions = result.predictions;
+      if (input?.minResponseLevel) {
+        const levelOrder = { 'excellent': 4, 'good': 3, 'moderate': 2, 'poor': 1, 'unknown': 0 };
+        const minLevel = levelOrder[input.minResponseLevel];
+        predictions = predictions.filter(p => levelOrder[p.predictedOutcome] >= minLevel);
+      }
+
+      // Apply offset
+      predictions = predictions.slice(
+        input?.offset || 0,
+        (input?.offset || 0) + (input?.limit || 50)
+      );
+
+      return {
+        predictions,
+        total: result.processedCount,
+        byResponseLevel: result.byResponseLevel,
+        averagePredictedImprovement: result.averagePredictedImprovement,
+      };
+    }),
+
+  // Get outcome prediction summary
+  getOutcomeSummary: protectedProcedure.query(async ({ ctx }) => {
+    const [predictions, accuracy] = await Promise.all([
+      batchPredictOutcome({
+        organizationId: ctx.user.organizationId,
+        limit: 100,
+      }),
+      getOutcomePredictionAccuracy(ctx.user.organizationId),
+    ]);
+
+    return {
+      totalPatients: predictions.processedCount,
+      byResponseLevel: predictions.byResponseLevel,
+      averagePredictedImprovement: predictions.averagePredictedImprovement,
+      averageConfidence: predictions.averageConfidence,
+      accuracy: {
+        overall: accuracy.overall.accuracy,
+        mape: accuracy.mape,
+        byResponseLevel: accuracy.byResponseLevel,
+      },
+      topPredictions: predictions.predictions.slice(0, 5).map(p => ({
+        patientId: p.patientId,
+        patientName: p.patientName,
+        predictedOutcome: p.predictedOutcome,
+        predictedImprovement: p.predictedImprovement,
+        conditionDescription: p.conditionDescription,
+      })),
+      lastUpdated: new Date(),
+    };
+  }),
+
+  // Save outcome prediction
+  saveOutcomePrediction: adminProcedure
+    .input(z.object({
+      patientId: z.string(),
+      treatmentPlanId: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const prediction = await predictOutcome(
+        ctx.user.organizationId,
+        input.patientId,
+        input.treatmentPlanId
+      );
+
+      if (!prediction) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found or not active',
+        });
+      }
+
+      await saveOutcomePrediction(ctx.user.organizationId, prediction);
+
+      await auditLog('AI_OUTCOME_PREDICTION_SAVED', 'Prediction', {
+        entityId: input.patientId,
+        changes: {
+          predictedOutcome: prediction.predictedOutcome,
+          predictedImprovement: prediction.predictedImprovement,
+          treatmentPlanId: input.treatmentPlanId,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { success: true, prediction };
+    }),
+
+  // Track actual outcome for accuracy measurement
+  trackOutcomeAccuracy: adminProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        treatmentPlanId: z.string(),
+        actualImprovement: z.number().min(0).max(100),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const result = await trackOutcomePredictionAccuracy(
+        ctx.user.organizationId,
+        input.patientId,
+        input.treatmentPlanId,
+        input.actualImprovement,
+        input.notes
+      );
+
+      if (!result) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'No outcome prediction found for this patient and treatment plan',
+        });
+      }
+
+      await auditLog('AI_OUTCOME_ACCURACY_TRACKED', 'Prediction', {
+        entityId: input.patientId,
+        changes: {
+          predictedImprovement: result.predictedImprovement,
+          actualImprovement: result.actualImprovement,
+          variance: result.variance,
+          wasAccurate: result.wasAccurate,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return result;
+    }),
+
+  // Get outcome prediction accuracy metrics
+  getOutcomePredictionAccuracy: protectedProcedure.query(async ({ ctx }) => {
+    return getOutcomePredictionAccuracy(ctx.user.organizationId);
+  }),
+
+  // Get similar patients analysis for a condition
+  getSimilarPatientsAnalysis: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        treatmentPlanId: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const prediction = await predictOutcome(
+        ctx.user.organizationId,
+        input.patientId,
+        input.treatmentPlanId,
+        { includeSimilarCases: true }
+      );
+
+      if (!prediction) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found or not active',
+        });
+      }
+
+      return {
+        similarCasesAnalysis: prediction.similarCasesAnalysis,
+        patientComparison: prediction.patientComparison,
+        conditionCode: prediction.conditionCode,
+        conditionDescription: prediction.conditionDescription,
+      };
+    }),
+
+  // Get optimal treatment duration for a patient
+  getOptimalTreatmentDuration: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        treatmentPlanId: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const prediction = await predictOutcome(
+        ctx.user.organizationId,
+        input.patientId,
+        input.treatmentPlanId
+      );
+
+      if (!prediction) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found or not active',
+        });
+      }
+
+      return {
+        optimalDuration: prediction.optimalDuration,
+        expectedTimelineWeeks: prediction.expectedTimelineWeeks,
+        improvementTimeline: prediction.improvementTimeline,
+        conditionDescription: prediction.conditionDescription,
+      };
+    }),
+
+  // Get non-response risk assessment
+  getNonResponseRisk: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        treatmentPlanId: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const prediction = await predictOutcome(
+        ctx.user.organizationId,
+        input.patientId,
+        input.treatmentPlanId
+      );
+
+      if (!prediction) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found or not active',
+        });
+      }
+
+      return {
+        nonResponseRisk: prediction.nonResponseRisk,
+        riskOfChronicity: prediction.riskOfChronicity,
+        topNegativeFactors: prediction.topNegativeFactors,
+        modifiableFactors: prediction.modifiableFactors.map(f => ({
+          name: f.name,
+          value: f.value,
+          impact: f.impact,
+          improvementSuggestion: f.improvementSuggestion,
+        })),
+      };
+    }),
+
+  // Get patient communication content
+  getPatientCommunication: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        treatmentPlanId: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const prediction = await predictOutcome(
+        ctx.user.organizationId,
+        input.patientId,
+        input.treatmentPlanId
+      );
+
+      if (!prediction) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found or not active',
+        });
+      }
+
+      return {
+        patientExplanation: prediction.patientExplanation,
+        expectationPoints: prediction.expectationPoints,
+        homeInstructions: prediction.homeInstructions,
+        predictedOutcome: prediction.predictedOutcome,
+        predictedImprovement: prediction.predictedImprovement,
+        expectedTimelineWeeks: prediction.expectedTimelineWeeks,
+      };
+    }),
 });

@@ -474,3 +474,122 @@ Date: 2026-01-22
 --- Iteration 5 completed at 2026-01-22 ---
 Story: US-383 - Revenue forecasting
 
+--- Iteration 5 completed at 2026-01-22 21:31:41 ---
+Story: US-383 - Revenue forecasting
+
+## US-384: Treatment outcome prediction - COMPLETED
+
+Date: 2026-01-22
+
+### What was done:
+1. Created comprehensive types in `types.ts`:
+   - TreatmentOutcomePredictionConfig (model parameters, thresholds, analysis settings)
+   - OutcomePredictionFactor (patient, condition, treatment, provider, adherence factors)
+   - TreatmentResponsePrediction (excellent, good, moderate, poor, unknown levels)
+   - ImprovementTimeline (weekly milestones with confidence intervals)
+   - NonResponseRisk (risk assessment with mitigation strategies)
+   - OptimalTreatmentDuration (phased treatment plan recommendations)
+   - SimilarPatientOutcome (analysis of similar cases)
+   - PatientOutcomeComparison (percentile-based comparisons)
+   - OutcomeValidationResult (accuracy tracking)
+   - TreatmentOutcomePredictionResult (full prediction output)
+   - BatchOutcomePredictionOptions/Result (batch processing)
+   - OutcomePredictionAccuracyMetrics (model accuracy metrics)
+
+2. Created `app/src/lib/ai-predict/treatment-outcome.ts` library with:
+   - `predictOutcome()` - Predict clinical outcome for single patient
+   - `batchPredictOutcome()` - Batch prediction for multiple patients
+   - `saveOutcomePrediction()` - Persist to Prediction and OutcomePrediction models
+   - `trackOutcomePredictionAccuracy()` - Track prediction vs actual outcomes
+   - `getOutcomePredictionAccuracy()` - Get accuracy metrics
+
+3. Implemented outcome factor calculations:
+   - Patient Age (younger patients recover faster)
+   - Symptom Duration (acute, subacute, chronic)
+   - Case Complexity (based on comorbidity count)
+   - Appointment Attendance Rate
+   - Treatment Plan Adherence
+   - Recurrent Condition detection
+   - Home Exercise Compliance (modifiable factor)
+
+4. Response prediction engine:
+   - Calculates probability for each response level
+   - Time-to-response estimates by symptom duration
+   - Confidence scoring based on data completeness and similar cases
+
+5. Improvement timeline generation:
+   - Weekly milestones following logarithmic improvement curve
+   - Confidence intervals for each week
+   - Key checkpoint weeks identified (1, 4, 8, 12, completion)
+
+6. Non-response risk assessment:
+   - Risk scoring based on negative factors
+   - Mitigation strategy recommendations
+   - Alternative treatment suggestions for high-risk cases
+
+7. Optimal treatment duration calculation:
+   - Visit count recommendations by condition
+   - Phased treatment plan (Acute/Intensive, Corrective, Maintenance)
+   - Diminishing returns point identification
+   - Frequency recommendations
+
+8. Similar cases analysis:
+   - Historical outcome comparison
+   - Success factor identification
+   - Outcome distribution by response level
+
+9. Patient communication content:
+   - Plain-language explanation of prognosis
+   - Expectation-setting points
+   - Home care instructions based on condition
+
+10. Added tRPC procedures in `aiPredict.ts`:
+    - `predictOutcome` - Predict single patient outcome
+    - `batchPredictOutcome` - Batch prediction with save option
+    - `getOutcomePredictions` - List predictions with filtering
+    - `getOutcomeSummary` - Dashboard summary data
+    - `saveOutcomePrediction` - Persist prediction
+    - `trackOutcomeAccuracy` - Record actual outcomes
+    - `getOutcomePredictionAccuracy` - Get accuracy metrics
+    - `getSimilarPatientsAnalysis` - Similar cases comparison
+    - `getOptimalTreatmentDuration` - Treatment duration recommendations
+    - `getNonResponseRisk` - Risk assessment details
+    - `getPatientCommunication` - Patient communication content
+
+11. Added audit actions in `audit.ts`:
+    - AI_OUTCOME_PREDICTION
+    - AI_BATCH_OUTCOME_PREDICTION
+    - AI_OUTCOME_PREDICTION_SAVED
+    - AI_OUTCOME_ACCURACY_TRACKED
+
+12. Updated `index.ts` exports for treatment outcome module
+
+### Files created:
+- app/src/lib/ai-predict/treatment-outcome.ts
+
+### Files modified:
+- app/src/lib/ai-predict/types.ts (added treatment outcome prediction types)
+- app/src/lib/ai-predict/index.ts (exported treatment outcome functions)
+- app/src/server/routers/aiPredict.ts (added treatment outcome procedures)
+- app/src/lib/audit.ts (added new audit actions)
+
+### Acceptance Criteria Met:
+- ✅ aiPredict.predictOutcome - Forecast clinical outcome
+- ✅ Response to treatment prediction (excellent/good/moderate/poor levels)
+- ✅ Time to improvement estimate (weekly timeline with confidence intervals)
+- ✅ Risk of non-response (assessment with mitigation strategies)
+- ✅ Optimal treatment duration (phased plan with visit counts)
+- ✅ Factors affecting outcome (patient, condition, treatment, adherence)
+- ✅ Similar patient comparison (historical case analysis)
+- ✅ Outcome tracking validation (accuracy metrics and tracking)
+
+### Notes:
+- Uses existing Prediction and OutcomePrediction models from Epic 39/40 schemas
+- Integrates patient demographics, treatment plans, encounters, appointments
+- Considers ICD-10 condition codes for condition-specific analysis
+- Generates patient-friendly communication content
+- Supports batch processing for organization-wide analysis
+- Accuracy tracking enables continuous model improvement
+--- Iteration 6 completed at 2026-01-22 ---
+Story: US-384 - Treatment outcome prediction
+

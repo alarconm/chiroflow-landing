@@ -990,3 +990,238 @@ export interface RevenueForecastAccuracyMetrics {
     wasClosest: boolean;
   }[];
 }
+
+// ============================================
+// TREATMENT OUTCOME PREDICTION TYPES
+// ============================================
+
+export type TreatmentResponseLevel = 'excellent' | 'good' | 'moderate' | 'poor' | 'unknown';
+export type SymptomDuration = 'acute' | 'subacute' | 'chronic';
+
+export interface TreatmentOutcomePredictionConfig {
+  // Model parameters
+  confidenceThreshold: number;     // Minimum confidence to make prediction (0-1)
+  minSimilarCases: number;         // Minimum similar cases needed for comparison
+
+  // Outcome categories
+  excellentThreshold: number;      // Improvement % for excellent (default 80)
+  goodThreshold: number;           // Improvement % for good (default 60)
+  moderateThreshold: number;       // Improvement % for moderate (default 40)
+
+  // Analysis parameters
+  includeComorbidities: boolean;   // Consider comorbidities in prediction
+  includeSimilarCases: boolean;    // Analyze similar patient cases
+  includeHistoricalOutcomes: boolean; // Include organization's historical data
+
+  // Time horizons
+  shortTermWeeks: number;          // Weeks for short-term prediction (default 4)
+  mediumTermWeeks: number;         // Weeks for medium-term prediction (default 12)
+  longTermWeeks: number;           // Weeks for long-term prediction (default 26)
+}
+
+export interface OutcomePredictionFactor {
+  name: string;
+  category: 'patient' | 'condition' | 'treatment' | 'provider' | 'adherence';
+  weight: number;                  // 0-1, importance of this factor
+  value: string | number;
+  impact: 'positive' | 'negative' | 'neutral';
+  contribution: number;            // Contribution to overall prediction
+  description: string;
+  modifiable: boolean;             // Can this factor be improved?
+  improvementSuggestion?: string;  // How to improve if modifiable
+}
+
+export interface TreatmentResponsePrediction {
+  responseLevel: TreatmentResponseLevel;
+  probability: number;             // 0-1 probability of this response level
+  timeToResponseWeeks: number;     // Expected weeks to see this response
+  description: string;
+}
+
+export interface ImprovementTimeline {
+  week: number;
+  expectedImprovement: number;     // 0-100 expected improvement %
+  confidenceInterval: { min: number; max: number };
+  milestone: string | null;        // Key milestone expected this week
+  isKeyWeek: boolean;              // Is this a significant checkpoint?
+}
+
+export interface NonResponseRisk {
+  riskScore: number;               // 0-100 risk of non-response
+  riskLevel: 'high' | 'medium' | 'low';
+  riskFactors: string[];           // Factors contributing to non-response risk
+  mitigationStrategies: string[];  // Strategies to reduce risk
+  alternativeTreatments: string[]; // Alternative approaches if non-response
+}
+
+export interface OptimalTreatmentDuration {
+  recommendedVisits: number;
+  recommendedWeeks: number;
+  confidenceInterval: { minVisits: number; maxVisits: number; minWeeks: number; maxWeeks: number };
+  rationale: string;
+  diminishingReturnsAt: number;    // Visit number where returns diminish
+  frequency: string;               // Recommended frequency (e.g., "2x/week")
+  phasedPlan: {
+    phase: string;
+    visits: number;
+    weeks: number;
+    frequency: string;
+    goals: string[];
+  }[];
+}
+
+export interface SimilarPatientOutcome {
+  caseCount: number;
+  averageImprovement: number;
+  averageVisits: number;
+  averageWeeks: number;
+  successRate: number;             // % who achieved good/excellent outcome
+  outcomeDistribution: {
+    excellent: number;
+    good: number;
+    moderate: number;
+    poor: number;
+  };
+  keySuccessFactors: string[];     // Common factors in successful cases
+  keyFailureFactors: string[];     // Common factors in unsuccessful cases
+}
+
+export interface PatientOutcomeComparison {
+  patientValue: string | number;
+  averageValue: string | number;
+  percentile: number;              // Where patient falls in distribution
+  interpretation: string;
+  isAboveAverage: boolean;
+}
+
+export interface OutcomeValidationResult {
+  predictionId: string;
+  predictedImprovement: number;
+  actualImprovement: number;
+  variance: number;
+  wasAccurate: boolean;
+  accuracyScore: number;           // 0-1 how close prediction was
+  timeToOutcome: number;           // Weeks until outcome measured
+  notes: string | null;
+}
+
+export interface TreatmentOutcomePredictionResult {
+  // Patient and treatment context
+  patientId: string;
+  patientName: string;
+  treatmentPlanId: string | null;
+  conditionCode: string;           // ICD-10
+  conditionDescription: string;
+  treatmentApproach: string;
+
+  // Core prediction
+  predictedOutcome: TreatmentResponseLevel;
+  predictedImprovement: number;    // 0-100 expected improvement %
+  confidenceScore: number;         // 0-1 confidence in prediction
+  confidenceLevel: 'high' | 'medium' | 'low';
+
+  // Response predictions
+  responsePredictions: TreatmentResponsePrediction[];
+
+  // Timeline
+  expectedTimelineWeeks: number;   // Expected weeks to reach predicted outcome
+  improvementTimeline: ImprovementTimeline[];
+
+  // Risk assessment
+  nonResponseRisk: NonResponseRisk;
+  riskOfChronicity: number;        // 0-100 risk of becoming chronic
+
+  // Treatment duration
+  optimalDuration: OptimalTreatmentDuration;
+
+  // Factor analysis
+  outcomeFactors: OutcomePredictionFactor[];
+  topPositiveFactors: string[];
+  topNegativeFactors: string[];
+  modifiableFactors: OutcomePredictionFactor[];
+
+  // Similar cases
+  similarCasesAnalysis: SimilarPatientOutcome | null;
+  patientComparison: {
+    age: PatientOutcomeComparison | null;
+    symptomDuration: PatientOutcomeComparison | null;
+    comorbidityCount: PatientOutcomeComparison | null;
+    baseline: PatientOutcomeComparison | null;
+  };
+
+  // Patient communication
+  patientExplanation: string;      // Plain-language explanation
+  expectationPoints: string[];     // Key expectations to set
+  homeInstructions: string[];      // Home care recommendations
+
+  // Metadata
+  predictionDate: Date;
+  validUntil: Date;
+  modelVersion: string;
+}
+
+export interface BatchOutcomePredictionOptions {
+  organizationId: string;
+  treatmentPlanIds?: string[];     // Specific plans to analyze
+  patientIds?: string[];           // Specific patients to analyze
+  conditionCodes?: string[];       // Filter by condition
+  minConfidence?: number;          // Minimum confidence threshold
+  limit?: number;
+  saveResults?: boolean;
+}
+
+export interface BatchOutcomePredictionResult {
+  processedCount: number;
+  savedCount: number;
+  errorCount: number;
+  byResponseLevel: {
+    excellent: number;
+    good: number;
+    moderate: number;
+    poor: number;
+    unknown: number;
+  };
+  averageConfidence: number;
+  averagePredictedImprovement: number;
+  processingTimeMs: number;
+  predictions: TreatmentOutcomePredictionResult[];
+}
+
+export interface OutcomePredictionAccuracyMetrics {
+  totalPredictions: number;
+  validatedPredictions: number;
+
+  // Accuracy metrics
+  mape: number;                    // Mean Absolute Percentage Error
+  rmse: number;                    // Root Mean Square Error
+  correlationCoefficient: number;  // Correlation between predicted and actual
+
+  // By response level
+  byResponseLevel: {
+    level: TreatmentResponseLevel;
+    predictions: number;
+    accurate: number;
+    accuracy: number;
+  }[];
+
+  // By confidence level
+  byConfidenceLevel: {
+    level: string;
+    predictions: number;
+    accurate: number;
+    accuracy: number;
+  }[];
+
+  // By condition
+  byCondition: {
+    conditionCode: string;
+    conditionDescription: string;
+    predictions: number;
+    averageAccuracy: number;
+  }[];
+
+  // Time periods
+  last30Days: { predictions: number; accuracy: number };
+  last90Days: { predictions: number; accuracy: number };
+  overall: { predictions: number; accuracy: number };
+}

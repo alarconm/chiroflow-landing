@@ -37,3 +37,12 @@ export {
   trackRevenueForecastAccuracy,
   getRevenueForecastAccuracySummary,
 } from './revenue-forecast';
+
+// Treatment Outcome Prediction
+export {
+  predictOutcome,
+  batchPredictOutcome,
+  saveOutcomePrediction,
+  trackOutcomePredictionAccuracy,
+  getOutcomePredictionAccuracy,
+} from './treatment-outcome';
