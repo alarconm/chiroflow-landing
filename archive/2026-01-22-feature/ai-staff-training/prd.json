@@ -18,7 +18,7 @@
         "Prisma migrations run successfully"
       ],
       "priority": 1,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-372",
@@ -35,7 +35,7 @@
         "Learn from provider selections"
       ],
       "priority": 2,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-373",
@@ -52,7 +52,7 @@
         "Citation to clinical guidelines"
       ],
       "priority": 3,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-374",
@@ -69,7 +69,7 @@
         "Override with documentation"
       ],
       "priority": 4,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-375",
@@ -85,7 +85,7 @@
         "Update alerts for new guidelines"
       ],
       "priority": 5,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-376",
@@ -101,7 +101,7 @@
         "Patient communication of expectations"
       ],
       "priority": 6,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-377",
@@ -117,7 +117,7 @@
         "Track referral outcomes"
       ],
       "priority": 7,
-      "passes": true
+      "passes": false
     },
     {
       "id": "US-378",
@@ -134,7 +134,7 @@
         "Evidence and reasoning display"
       ],
       "priority": 8,
-      "passes": true
+      "passes": false
     }
   ]
 }

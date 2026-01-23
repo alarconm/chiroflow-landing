@@ -1,0 +1,914 @@
+# Ralph Autonomous Loop - Progress Log
+
+## Epic 38: AI Staff Training Agent
+
+### US-363: AI training agent schema ✅ COMPLETED
+
+**Date:** 2026-01-22
+**Status:** PASSED
+
+**Implementation:**
+
+Added 6 new Prisma models to support AI-powered staff training:
+
+1. **TrainingModule** - Defines training content units
+   - Fields: name, type (TrainingModuleType enum), content (JSON), duration, requiredFor (Role[])
+   - Includes prerequisites, passing criteria, and renewal tracking
+
+2. **TrainingProgress** - Tracks user progress through modules
+   - Fields: userId, moduleId, status (TrainingStatus enum), score, completedAt
+   - Includes detailed progress tracking, quiz results, and due dates
+
+3. **TrainingScenario** - Defines AI practice scenarios
+   - Fields: name, type (ScenarioType enum), script, expectedOutcomes
+   - Includes AI persona configuration and scoring rubric
+
+4. **PracticeSession** - Records AI practice interactions
+   - Fields: userId, scenarioId, recordingUrl, transcript, feedback, score
+   - Includes breakdown scores for tone, empathy, timing, etc.
+
+5. **StaffCertification** - Tracks compliance certifications
+   - Fields: userId, certType (CertificationType enum), earnedDate, expirationDate
+   - Includes certificate tracking and renewal reminders
+
+6. **PerformanceFeedback** - Detailed feedback from practice sessions
+   - Fields: sessionId, category (FeedbackCategory enum), feedback, suggestions
+   - Includes timestamp references and priority levels
+
+**Enums Added:**
+- TrainingModuleType (ONBOARDING, COMPLIANCE, SKILL_BUILDING, etc.)
+- TrainingStatus (NOT_STARTED, IN_PROGRESS, COMPLETED, FAILED, EXPIRED)
+- ScenarioType (SCHEDULING_CALL, BILLING_INQUIRY, COMPLAINT_HANDLING, etc.)
+- DifficultyLevel (BEGINNER, INTERMEDIATE, ADVANCED, EXPERT)
+- CertificationType (HIPAA_PRIVACY, BILLING_COMPLIANCE, etc.)
+- FeedbackCategory (TONE, EMPATHY, SCRIPT_ADHERENCE, etc.)
+
+**Schema File:** app/prisma/schema.prisma
+**Migration:** Successfully applied via `prisma db push`
+
+---
+
+## Stories Remaining: 7
+
+- US-364: Video practice sessions
+- US-365: Real-time practice feedback
+- US-366: Onboarding workflows
+- US-367: Script training and practice
+- US-368: Compliance training
+- US-369: Performance coaching
+- US-370: Training dashboard
+--- Iteration 1 completed at 2026-01-22 18:08:18 ---
+Story: US-363 - AI training agent schema
+
+### US-364: Video practice sessions ✅ COMPLETED
+
+**Date:** 2026-01-22
+**Status:** PASSED
+
+**Implementation:**
+
+Created comprehensive tRPC router for AI-powered video practice sessions at `app/src/server/routers/aiTraining.ts`.
+
+**Core Procedures Implemented:**
+
+1. **startPractice** - Begin video practice session
+   - Creates PracticeSession record in database
+   - Generates AI persona based on scenario and difficulty
+   - Returns opening line, persona details, and scenario context
+   - Supports difficulty override for progressive training
+
+2. **sendMessage** - Real-time conversation with AI
+   - Processes user responses during practice
+   - Generates contextual AI replies based on scenario type
+   - Tracks conversation history in transcript field
+   - Returns hints for beginner/intermediate difficulties
+
+3. **endSession** - Complete practice session with scoring
+   - Calculates scores for tone, empathy, script adherence, timing
+   - Determines if outcome was achieved
+   - Generates strengths and areas for improvement
+   - Creates PerformanceFeedback entries for each category
+
+4. **saveRecording** - Store session recording URL
+   - Supports video/audio recording URLs
+   - Optional transcript URL storage
+
+5. **abandonSession** - Handle incomplete sessions
+   - Marks session as FAILED
+   - Logs abandonment for analytics
+
+**Scenario Management (Admin):**
+
+6. **getScenarios** - List available practice scenarios
+   - Filter by type, difficulty, tags
+   - Includes user's practice history and scores
+   - Pagination support
+
+7. **getScenario** - Get scenario details
+
+8. **createScenario** - Create new training scenario
+   - Full AI persona configuration
+   - Script, expected outcomes, key phrases
+   - Scoring rubric and ideal responses
+   - Time expectations
+
+9. **updateScenario** - Modify existing scenario
+
+10. **deleteScenario** - Soft delete (sets isActive=false)
+
+**Statistics:**
+
+11. **getStats** - User practice statistics
+    - Total sessions, average score
+    - Score breakdown by category
+    - Outcome achievement rate
+    - Stats by scenario type and difficulty
+
+12. **getSessionHistory** - Past practice sessions
+    - Filter by scenario, type, status
+    - Pagination support
+
+13. **getSession** - Detailed session with feedback
+
+**Scenario Types Supported:**
+- SCHEDULING_CALL - Booking appointments
+- BILLING_INQUIRY - Insurance, payments questions
+- COMPLAINT_HANDLING - Upset patients
+- NEW_PATIENT_INTAKE - First-time callers
+- CANCELLATION - Handling cancellations
+- INSURANCE_QUESTIONS - Coverage, benefits
+- FOLLOW_UP_CALL - Post-visit calls
+- EMERGENCY_TRIAGE - Urgent situations
+
+**Difficulty Levels:**
+- BEGINNER - Calm/friendly personas, hints provided
+- INTERMEDIATE - Mixed emotions, some hints
+- ADVANCED - Frustrated/demanding personas, no hints
+- EXPERT - Complex scenarios, no assistance
+
+**AI Persona Features:**
+- Dynamic emotional states based on difficulty
+- Variable speaking styles (formal, casual, curt, verbose)
+- Scenario-specific opening lines
+- Context-aware responses
+
+**Files Modified:**
+- app/src/server/routers/aiTraining.ts (NEW - 1400+ lines)
+- app/src/server/routers/index.ts (added router registration)
+
+---
+
+## Stories Remaining: 6
+
+- US-365: Real-time practice feedback
+- US-366: Onboarding workflows
+- US-367: Script training and practice
+- US-368: Compliance training
+- US-369: Performance coaching
+- US-370: Training dashboard
+--- Iteration 2 completed at 2026-01-22 ---
+Story: US-364 - Video practice sessions
+
+--- Iteration 2 completed at 2026-01-22 18:19:30 ---
+Story: US-364 - Video practice sessions
+
+### US-365: Real-time practice feedback ✅ COMPLETED
+
+**Date:** 2026-01-22
+**Status:** PASSED
+
+**Implementation:**
+
+Added comprehensive real-time feedback analysis system to `app/src/server/routers/aiTraining.ts`.
+
+**New Types and Interfaces (600+ lines added):**
+
+1. **DetailedAnalysis** - Complete session analysis structure
+   - Overall score with letter grade (A-F)
+   - Category breakdowns for all metrics
+   - Missed opportunities identification
+   - Alternative responses suggestions
+   - Ideal comparison analysis
+   - Strengths and improvements lists
+   - Conversation flow analysis
+   - Recommended practice suggestions
+
+2. **CategoryAnalysis** - Per-category detailed feedback
+   - Score and grade
+   - Observations array
+   - Key moments with timestamps and impact
+   - Improvement tips
+
+3. **MissedOpportunity** - Identifies coaching moments
+   - Timestamp and context
+   - What was missed and better approach
+   - Impact level (minor/moderate/significant)
+   - Category (empathy/resolution/information/rapport/upsell)
+
+4. **AlternativeResponse** - Suggests better responses
+   - Original message reference
+   - Multiple alternatives with reasoning
+   - Expected impact description
+
+5. **IdealComparison** - Compare to best practices
+   - Overall alignment percentage
+   - Key differences breakdown
+   - Matched/missed key phrases
+   - Used avoid phrases
+
+6. **ConversationFlowAnalysis** - Call structure analysis
+   - Phases (greeting/main issue/closing) with quality ratings
+   - Transition smoothness
+   - Pacing assessment
+   - Call control analysis
+
+**New Analysis Helper Functions:**
+
+1. **analyzeTone()** - Professional tone assessment
+   - Positive/negative indicator detection
+   - Key moment identification
+   - Improvement suggestions
+
+2. **analyzeEmpathy()** - Empathy measurement
+   - Empathetic phrase detection
+   - Emotional acknowledgment scoring
+   - AI emotion response analysis
+
+3. **analyzeScriptAdherence()** - Script compliance
+   - Key phrase usage tracking
+   - Avoid phrase detection
+   - Compliance ratio calculation
+
+4. **analyzeTiming()** - Response timing evaluation
+   - Duration vs target comparison
+   - Response time analysis
+   - Pacing recommendations
+
+5. **analyzeProblemSolving()** - Solution-oriented assessment
+   - Solution language detection
+   - Outcome achievement tracking
+
+6. **analyzeProfessionalism()** - Professional image assessment
+   - Professional phrase usage
+   - Casual language detection
+   - Greeting/closing evaluation
+
+7. **findMissedOpportunities()** - Coaching moment identification
+
+8. **generateAlternativeResponses()** - Better response suggestions
+
+9. **compareToIdeal()** - Best practice comparison
+
+10. **analyzeConversationFlow()** - Call structure analysis
+
+11. **generateDetailedAnalysis()** - Main analysis orchestration
+
+12. **getCategoryTrainingResources()** - Training recommendations
+
+**New tRPC Procedures:**
+
+1. **aiTraining.analyzePractice** (Main US-365 procedure)
+   - Full session analysis with all metrics
+   - Stores analysis in aiAnalysis JSON field
+   - Creates PerformanceFeedback entries
+   - Optional: alternativeResponses, idealComparison
+
+2. **aiTraining.getLiveFeedback**
+   - Real-time feedback during active sessions
+   - Contextual suggestions based on conversation progress
+   - Progress indicators (message count, key phrase usage)
+
+3. **aiTraining.getFeedbackTrends**
+   - Performance comparison across sessions
+   - Trend analysis (improving/stable/declining)
+   - Insights and recommendations
+
+4. **aiTraining.getCategoryFeedback**
+   - Detailed feedback for specific category
+   - Training resource recommendations
+   - Examples from conversation
+
+**Acceptance Criteria Fulfilled:**
+- ✅ aiTraining.analyzePractice - Evaluate practice session
+- ✅ Tone and empathy assessment
+- ✅ Script adherence scoring
+- ✅ Response timing evaluation
+- ✅ Identify missed opportunities
+- ✅ Suggest alternative responses
+- ✅ Compare to ideal handling
+- ✅ Highlight strengths and areas for improvement
+
+**Files Modified:**
+- app/src/server/routers/aiTraining.ts (added ~900 lines)
+
+---
+
+## Stories Remaining: 5
+
+- US-366: Onboarding workflows
+- US-367: Script training and practice
+- US-368: Compliance training
+- US-369: Performance coaching
+- US-370: Training dashboard
+--- Iteration 3 completed at 2026-01-22 ---
+Story: US-365 - Real-time practice feedback
+
+--- Iteration 3 completed at 2026-01-22 18:26:01 ---
+Story: US-365 - Real-time practice feedback
+
+### US-366: Onboarding workflows ✅ COMPLETED
+
+**Date:** 2026-01-22
+**Status:** PASSED
+
+**Implementation:**
+
+Added comprehensive onboarding workflow system to `app/src/server/routers/aiTraining.ts`.
+
+**New tRPC Procedures:**
+
+1. **startOnboarding** - Begin onboarding journey for a new employee
+   - Creates personalized onboarding path based on user role
+   - Auto-assigns role-specific training modules
+   - Sets up progress tracking with due dates
+   - Returns onboarding path summary with first module
+
+2. **getOnboardingProgress** - Get onboarding progress for a user
+   - Returns overall progress percentage
+   - Shows current module and checkpoints
+   - Tracks time-to-competency
+
+3. **updateOnboardingProgress** - Update module progress
+   - Advance step within module
+   - Save quiz results and progress data
+   - Complete modules with scoring
+   - Auto-starts next module on completion
+   - Triggers manager notifications
+
+4. **getOnboardingPipeline** - Manager view of all onboarding employees
+   - Shows all employees in onboarding
+   - Filter by status (in_progress, completed, overdue)
+   - Summary statistics (total, overdue, avg days to complete)
+   - Pagination support
+
+5. **createOnboardingModule** - Create onboarding modules (admin)
+   - Define role requirements
+   - Set prerequisites, passing score, max attempts
+   - Configure due dates
+
+6. **updateOnboardingModule** - Update existing modules (admin)
+
+7. **getOnboardingModules** - List configured modules
+
+8. **assignOnboarding** - Manager assigns onboarding to user
+   - Can assign specific modules or all required for role
+   - Set custom due dates
+
+9. **getTimeToCompetencyStats** - Analytics on onboarding performance
+   - Average days to complete by role
+   - Average scores by module
+   - Completion rates
+
+**Helper Functions Added:**
+
+1. **notifyManagersOnCompletion()** - Notify managers when staff completes a module
+   - Creates audit log entries for each manager
+   - Includes module name, score, and completion details
+
+2. **notifyManagersOnOnboardingComplete()** - Notify when all onboarding complete
+   - Includes average score and days to complete
+   - Triggers for each manager in the organization
+
+**Role-Specific Onboarding:**
+- Modules can be configured with `requiredFor` field containing roles
+- OWNER, ADMIN, PROVIDER, STAFF, BILLER roles supported
+- System training, policy training, and practice scenarios per role
+
+**Progress Tracking Features:**
+- Step-by-step progress within modules
+- Quiz/assessment results storage
+- Time spent tracking
+- Due date enforcement
+- Overdue alerts in pipeline view
+
+**Checkpoints:**
+- Each completed module creates a checkpoint
+- Score, completion time, and time spent recorded
+- Manager visibility into progress
+
+**Time-to-Competency Tracking:**
+- Days from start to completion
+- Metrics by role and by module
+- Comparison across employees
+
+**Acceptance Criteria Fulfilled:**
+- ✅ aiTraining.startOnboarding - Begin onboarding journey
+- ✅ Role-specific onboarding paths
+- ✅ System training modules
+- ✅ Policy and procedure training
+- ✅ Practice scenarios for each skill
+- ✅ Progress tracking and checkpoints
+- ✅ Manager notifications on completion
+- ✅ Time-to-competency tracking
+
+**Files Modified:**
+- app/src/server/routers/aiTraining.ts (added ~700 lines)
+
+---
+
+## Stories Remaining: 4
+
+- US-367: Script training and practice
+- US-368: Compliance training
+- US-369: Performance coaching
+- US-370: Training dashboard
+--- Iteration 4 completed at 2026-01-22 ---
+Story: US-366 - Onboarding workflows
+
+--- Iteration 4 completed at 2026-01-22 18:33:48 ---
+Story: US-366 - Onboarding workflows
+
+### US-367: Script training and practice ✅ COMPLETED
+
+**Date:** 2026-01-22
+**Status:** PASSED
+
+**Implementation:**
+
+Added comprehensive script training and practice system to `app/src/server/routers/aiTraining.ts`.
+
+**New tRPC Procedures:**
+
+1. **practiceScript** - Start a script practice session
+   - Creates PracticeSession with script-specific context
+   - Auto-determines difficulty based on user history
+   - Configurable focus areas (KEY_PHRASES, AVOID_PHRASES, TIMING, PERSONALIZATION, FULL_SCRIPT)
+   - Generates AI persona based on script type and difficulty
+   - Returns key phrases, avoid phrases, and expected outcomes
+
+2. **submitScriptResponse** - Submit response during script practice
+   - Tracks key phrase and avoid phrase usage in real-time
+   - Generates contextual AI responses based on conversation phase
+   - Provides real-time feedback on script adherence
+   - Returns hints appropriate to difficulty level
+
+3. **completeScriptPractice** - Complete practice session with detailed analysis
+   - Calculates comprehensive scores (tone, empathy, script adherence, timing)
+   - Generates detailed key phrase and avoid phrase breakdowns
+   - Creates PerformanceFeedback entries
+   - Updates user's mastery level
+   - Returns recommended next steps
+
+4. **getScripts** - List available phone scripts
+   - Filter by type (SCHEDULING_CALL, BILLING_INQUIRY, etc.)
+   - Include/exclude archived scripts
+   - Returns user's mastery level for each script
+
+5. **getScript** - Get specific script with full details
+   - Practice history for the script
+   - Mastery progress and improvement trends
+   - Key phrases guide with context and examples
+   - Avoid phrases guide with reasons and alternatives
+
+6. **getScriptMasteryLevels** - View script mastery for all scripts
+   - Grouped by script type
+   - Overall progress statistics
+   - Admin can view other users' mastery
+
+7. **createScript** - Create custom training scripts (admin)
+   - Full script configuration
+   - Key phrases, avoid phrases, expected outcomes
+   - Persona and difficulty settings
+
+8. **getRecommendedScripts** - Get personalized script recommendations
+   - Based on user's weaknesses
+   - Identifies weak areas from practice history
+   - Suggests unpracticed script types
+
+**Script Types Supported:**
+- Scheduling call scripts
+- Insurance explanation scripts
+- Billing inquiry scripts
+- Complaint handling scripts
+- New patient intake scripts
+- Cancellation handling scripts
+- Follow-up call scripts
+- Emergency triage scripts
+
+**Mastery Level System:**
+- NOVICE: No practice yet
+- LEARNING: 1-2 practices or score < 60%
+- COMPETENT: 3+ practices with 60-74% score
+- PROFICIENT: 3+ practices with 75-89% score
+- MASTER: 3+ practices with 90%+ score
+
+**Helper Functions Added:**
+
+1. **getMasteryLevel()** - Calculate mastery based on practice count and score
+2. **calculateProgressToNextLevel()** - Track progress toward next level
+3. **calculateImprovementTrend()** - Analyze score trends over time
+4. **generateKeyPhrasesGuide()** - Context-aware key phrase guidance
+5. **generateAvoidPhrasesGuide()** - Reasons and alternatives for avoid phrases
+6. **determineRecommendedDifficulty()** - Auto-adjust difficulty based on history
+7. **determineConversationPhase()** - Track call progression
+8. **generateScriptAIResponse()** - Generate contextual AI responses
+9. **getScriptHints()** - Difficulty-appropriate hints
+10. **generateRealtimeScriptFeedback()** - Instant feedback during practice
+11. **analyzeScriptAdherenceDetailed()** - Comprehensive script analysis
+12. **calculateScriptPracticeScores()** - Multi-factor scoring
+13. **generateScriptPracticeFeedback()** - Detailed feedback generation
+14. **updateScriptMastery()** - Update mastery after practice
+15. **generateNextSteps()** - Personalized improvement recommendations
+
+**Acceptance Criteria Fulfilled:**
+- ✅ aiTraining.practiceScript - Practice specific scripts
+- ✅ Scheduling call scripts
+- ✅ Insurance explanation scripts
+- ✅ Billing inquiry scripts
+- ✅ Complaint handling scripts
+- ✅ AI evaluates script adherence
+- ✅ Personalization within script guidance
+- ✅ Track script mastery levels
+
+**Files Modified:**
+- app/src/server/routers/aiTraining.ts (added ~800 lines)
+
+---
+
+## Stories Remaining: 3
+
+- US-368: Compliance training
+- US-369: Performance coaching
+- US-370: Training dashboard
+--- Iteration 5 completed at 2026-01-22 ---
+Story: US-367 - Script training and practice
+
+--- Iteration 5 completed at 2026-01-22 18:43:19 ---
+Story: US-367 - Script training and practice
+
+### US-368: Compliance training ✅ COMPLETED
+
+**Date:** 2026-01-22
+**Status:** PASSED
+
+**Implementation:**
+
+Added comprehensive compliance training system to `app/src/server/routers/aiTraining.ts`.
+
+**New tRPC Procedures:**
+
+1. **getComplianceModules** - List all compliance training modules
+   - Filter by certification type
+   - Include user's progress and certification status
+   - Show expiration status and renewal info
+
+2. **startComplianceModule** - Begin a compliance training module
+   - Check prerequisites
+   - Enforce max attempts limit
+   - Create or reset progress record
+   - Return module content with sections and quizzes
+
+3. **submitComplianceQuiz** - Submit answers for module section quiz
+   - Grade answers against correct answers
+   - Calculate section score
+   - Store detailed quiz results
+   - Provide explanations for wrong answers
+
+4. **advanceComplianceModule** - Move to next section or complete module
+   - Track time spent
+   - Calculate final score on completion
+   - Create/update StaffCertification on passing
+   - Handle annual renewal expiration dates
+
+5. **getCertifications** - Get user's certifications
+   - Filter by active/expired status
+   - Include expiration alerts
+   - Summary statistics
+
+6. **getExpirationAlerts** - Get expiring certifications for organization
+   - Configurable look-ahead period (default 30 days)
+   - Urgency levels (CRITICAL, HIGH, MEDIUM, LOW, EXPIRED)
+   - Include user details for manager follow-up
+
+7. **sendRenewalReminder** - Send renewal reminder (admin)
+   - Mark reminder as sent
+   - Audit log tracking
+
+8. **getComplianceReport** - Organization-wide compliance report (admin)
+   - User compliance rates
+   - Module completion statistics
+   - Per-user module status details
+   - Expiring and expired certification counts
+
+9. **autoAssignComplianceTraining** - Auto-assign required training (admin)
+   - Assign to all users or specific user
+   - Check role requirements
+   - Skip already certified users
+   - Detailed assignment tracking
+
+10. **createComplianceModule** - Create new compliance module (admin)
+    - Full content structure with sections and quizzes
+    - Renewal period configuration
+    - Role requirements
+
+11. **updateComplianceModule** - Update existing module (admin)
+
+**Certification Types Supported:**
+- HIPAA_PRIVACY - HIPAA Privacy Rule training
+- HIPAA_SECURITY - HIPAA Security Rule training
+- BILLING_COMPLIANCE - Billing compliance training
+- WORKPLACE_SAFETY - Workplace safety training
+- BLOOD_BORNE_PATHOGENS - Blood-borne pathogen safety
+- CUSTOMER_SERVICE - Customer service training
+- PHONE_ETIQUETTE - Phone etiquette training
+- EHR_PROFICIENCY - EHR system proficiency
+- FRONT_DESK_OPERATIONS - Front desk operations
+
+**Key Features:**
+- Quiz-based assessments with explanations
+- Multiple attempts with configurable limits
+- Annual renewal tracking with expiration alerts
+- Certificate number generation
+- Manager visibility into team compliance
+- Auto-assignment based on role requirements
+- Comprehensive compliance reports
+
+**Audit Actions Added:**
+- TRAINING_START
+- TRAINING_COMPLETE
+- TRAINING_FAIL
+- TRAINING_AUTO_ASSIGN
+- CERTIFICATION_EARNED
+- CERTIFICATION_RENEWAL_REMINDER
+
+**Acceptance Criteria Fulfilled:**
+- ✅ HIPAA training module with quiz
+- ✅ Billing compliance training
+- ✅ Safety training modules
+- ✅ Annual renewal requirements
+- ✅ Certification tracking
+- ✅ Expiration alerts
+- ✅ Compliance training reports
+- ✅ Auto-assign required training
+
+**Files Modified:**
+- app/src/server/routers/aiTraining.ts (added ~1100 lines)
+- app/src/lib/audit.ts (added training audit actions)
+
+---
+
+## Stories Remaining: 2
+
+- US-369: Performance coaching
+- US-370: Training dashboard
+--- Iteration 6 completed at 2026-01-22 ---
+Story: US-368 - Compliance training
+
+--- Iteration 6 completed at 2026-01-22 18:51:18 ---
+Story: US-368 - Compliance training
+
+### US-369: Performance coaching ✅ COMPLETED
+
+**Date:** 2026-01-22
+**Status:** PASSED
+
+**Implementation:**
+
+Added comprehensive performance coaching system to `app/src/server/routers/aiTraining.ts`.
+
+**New tRPC Procedures:**
+
+1. **coachFromCall** - Analyze real calls for coaching opportunities (Main US-369 procedure)
+   - Analyzes call transcripts for coaching insights
+   - Evaluates tone, empathy, problem-solving, professionalism, timing
+   - Compares to historical performance for trends
+   - Generates personalized coaching insights
+   - Creates PerformanceFeedback records
+   - Provides micro-learning suggestions
+
+2. **generateImprovementPlan** - Create personalized improvement plans
+   - Builds comprehensive performance profile
+   - Identifies strengths and weaknesses
+   - Creates multi-week improvement plan with focus areas
+   - Generates milestones and success criteria
+   - Admin can view other users' plans
+
+3. **getImprovementTracking** - Track improvement over time
+   - Compares current vs previous period metrics
+   - Calculates improvement across all categories
+   - Provides timeline data for charting
+   - Identifies trends (improving/stable/declining)
+   - Generates insights on performance changes
+
+4. **getMicroLearningSuggestions** - Get personalized micro-learning
+   - Identifies weak areas from recent sessions
+   - Generates targeted 5-15 minute exercises
+   - Provides difficulty-appropriate content
+   - Includes tips and practice activities
+
+5. **getPeerComparison** - Anonymized peer comparison
+   - Calculates user's percentile rank vs organization
+   - Shows average, median, top 25%, bottom 25%
+   - Compares across all scoring categories
+   - Generates insights about relative standing
+
+6. **setGoal** - Set and track performance goals
+   - Creates goal with baseline and target scores
+   - Tracks progress toward goals
+   - Generates recommendations for achieving goals
+   - Supports all scoring categories
+
+7. **getGoals** - Get all active/completed/expired goals
+   - Returns goals with current progress
+   - Auto-updates goal status (completed/expired)
+   - Shows days remaining and gap to close
+
+8. **updateGoalCheckpoint** - Update goal progress checkpoint
+   - Records current score at checkpoint
+   - Tracks progress over time
+   - Supports notes for each checkpoint
+
+9. **getCoachingDashboard** - Manager view of staff performance (admin)
+   - Shows all staff performance summaries
+   - Identifies coaching priorities
+   - Calculates organization-wide metrics
+   - Generates improvement opportunities
+   - Lists staff needing attention
+
+**Helper Functions Added (~800 lines):**
+
+1. **analyzeRealCallForCoaching()** - Analyze call transcript
+2. **calculatePerformanceTrends()** - Calculate trends from historical data
+3. **generateCoachingInsights()** - Generate personalized coaching insights
+4. **generateMicroLearningSuggestions()** - Create micro-learning content
+5. **buildPerformanceProfile()** - Build comprehensive performance profile
+6. **generateImprovementPlan()** - Create improvement plan structure
+7. **generateMilestones()** - Create plan milestones
+8. **calculatePeriodMetrics()** - Calculate metrics for time period
+9. **calculateImprovement()** - Calculate improvement between periods
+10. **determineTrend()** - Determine overall trend direction
+11. **buildTimelineData()** - Build timeline for charting
+12. **generateImprovementInsights()** - Generate improvement insights
+13. **identifyWeakAreas()** - Find areas needing work
+14. **generateMicroLearningForArea()** - Create micro-learning for specific area
+15. **calculateAverageScores()** - Calculate average scores from sessions
+16. **calculateOrgStatistics()** - Calculate org-wide statistics
+17. **calculatePercentileRanks()** - Calculate percentile rankings
+18. **generatePeerComparisonInsights()** - Create peer comparison insights
+19. **calculateCategoryAverage()** - Calculate average for specific category
+20. **calculateGoalProgress()** - Calculate goal progress percentage
+21. **generateGoalRecommendations()** - Generate goal achievement recommendations
+22. **identifyTopStrength()** - Find user's strongest area
+23. **identifyPrimaryWeakness()** - Find user's weakest area
+24. **generateOrgImprovementOpportunities()** - Find org-wide improvement areas
+25. **getLetterGrade()** - Convert score to letter grade
+26. Various tone/empathy/problem-solving analysis functions
+
+**Key Features:**
+
+- Coaching from real calls (not just practice sessions)
+- Personalized improvement plans with weekly schedules
+- Progress tracking with trend analysis
+- Micro-learning suggestions based on weaknesses
+- Anonymized peer comparison for context
+- Goal setting and tracking with checkpoints
+- Manager dashboard for coaching oversight
+
+**Acceptance Criteria Fulfilled:**
+- ✅ aiTraining.coachFromCall - Analyze real calls for coaching
+- ✅ Identify coaching opportunities from actual patient interactions
+- ✅ Generate personalized improvement plans
+- ✅ Track improvement over time
+- ✅ Micro-learning suggestions
+- ✅ Peer comparison (anonymized)
+- ✅ Goal setting and tracking
+
+**Files Modified:**
+- app/src/server/routers/aiTraining.ts (added ~1500 lines)
+
+---
+
+## Stories Remaining: 1
+
+- US-370: Training dashboard
+--- Iteration 7 completed at 2026-01-22 ---
+Story: US-369 - Performance coaching
+
+--- Iteration 7 completed at 2026-01-22 19:02:23 ---
+Story: US-369 - Performance coaching
+
+### US-370: Training dashboard ✅ COMPLETED
+
+**Date:** 2026-01-22
+**Status:** PASSED
+
+**Implementation:**
+
+Created comprehensive training dashboard UI at `app/src/components/ai-training/` with 9 specialized components.
+
+**Components Created:**
+
+1. **AITrainingDashboard** - Main dashboard component
+   - Tab-based navigation across 8 sections
+   - Quick stats bar showing key metrics
+   - Responsive design with mobile support
+   - Quick actions footer for common tasks
+
+2. **StaffProgressOverview** - Staff training progress
+   - Summary cards (total staff, fully trained, avg score, needs attention)
+   - Staff list with progress bars and status badges
+   - Avatar display with initials fallback
+   - Certification status indicators (current/expiring/expired)
+
+3. **PracticeSessionHistory** - Practice session history with scores
+   - Filterable table by scenario type and status
+   - Score badges with color coding (green/yellow/red)
+   - Session details dialog with full breakdown
+   - Duration formatting and outcome indicators
+
+4. **CertificationStatusBoard** - Certification status board
+   - Summary stats (total, current, expiring, expired, compliance rate)
+   - Expiration alerts section with urgency badges
+   - Filterable certification list
+   - Send reminder functionality
+
+5. **OnboardingPipeline** - Onboarding pipeline view
+   - Summary stats (in onboarding, overdue, completed, avg days)
+   - Employee cards with progress tracking
+   - Checkpoint visualization
+   - Employee details dialog with full progress
+
+6. **TrainingContentLibrary** - Training content library
+   - Tabbed view for modules vs practice scenarios
+   - Card-based content display
+   - Search and filter functionality
+   - Module details dialog with full configuration
+
+7. **PerformanceImprovementTrends** - Performance improvement trends
+   - Period comparison (30/60/90 days)
+   - Category breakdown with trend indicators
+   - Visual timeline chart
+   - AI-generated insights section
+
+8. **ManagerAssignmentTools** - Manager assignment tools
+   - Bulk assign functionality with templates
+   - Individual assignment dialogs
+   - Auto-assign required training
+   - Staff list with assignment status
+
+9. **TrainingCompletionReports** - Training completion reports
+   - Summary stats (completion rate, avg score, avg time, overdue)
+   - Module performance summary table
+   - Detailed completion report with filters
+   - Export, print, and email options
+
+**Page Created:**
+- `app/src/app/(dashboard)/ai-training/page.tsx` - Dashboard route
+
+**Exports:**
+- `app/src/components/ai-training/index.ts` - Component barrel exports
+
+**UI Features:**
+- shadcn/ui components throughout
+- Lucide React icons
+- Responsive grid layouts
+- Loading skeletons
+- Dialog modals for details
+- Filter dropdowns
+- Progress bars with color coding
+- Badge system for status indicators
+- Tab navigation
+
+**Acceptance Criteria Fulfilled:**
+- ✅ Staff training progress overview
+- ✅ Practice session history with scores
+- ✅ Certification status board
+- ✅ Onboarding pipeline
+- ✅ Training content library
+- ✅ Performance improvement trends
+- ✅ Manager assignment tools
+- ✅ Training completion reports
+
+**Files Created:**
+- app/src/components/ai-training/index.ts
+- app/src/components/ai-training/AITrainingDashboard.tsx (~200 lines)
+- app/src/components/ai-training/StaffProgressOverview.tsx (~250 lines)
+- app/src/components/ai-training/PracticeSessionHistory.tsx (~400 lines)
+- app/src/components/ai-training/CertificationStatusBoard.tsx (~450 lines)
+- app/src/components/ai-training/OnboardingPipeline.tsx (~450 lines)
+- app/src/components/ai-training/TrainingContentLibrary.tsx (~550 lines)
+- app/src/components/ai-training/PerformanceImprovementTrends.tsx (~400 lines)
+- app/src/components/ai-training/ManagerAssignmentTools.tsx (~500 lines)
+- app/src/components/ai-training/TrainingCompletionReports.tsx (~450 lines)
+- app/src/app/(dashboard)/ai-training/page.tsx
+
+**Total:** ~3,600+ lines of UI code
+
+---
+
+## Stories Remaining: 0
+
+All stories in Epic 38 have been completed!
+--- Iteration 8 completed at 2026-01-22 ---
+Story: US-370 - Training dashboard
+

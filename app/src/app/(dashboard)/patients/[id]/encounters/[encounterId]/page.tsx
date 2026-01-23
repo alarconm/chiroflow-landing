@@ -18,6 +18,7 @@ import {
   MoreHorizontal,
   Lock,
   Loader2,
+  Brain,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -48,6 +49,7 @@ import {
   AssessmentList,
   BodyDiagramSection,
 } from '@/components/encounters';
+import { ClinicalDecisionSupportPanel } from '@/components/clinical-decision-support';
 import { trpc } from '@/trpc/client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -301,9 +303,25 @@ export default function EncounterDetailPage() {
         </Card>
       )}
 
+      {/* AI Clinical Decision Support Panel */}
+      <div className="print:hidden">
+        <ClinicalDecisionSupportPanel
+          patientId={patientId}
+          encounterId={encounterId}
+          chiefComplaint={encounter.chiefComplaint || undefined}
+          subjective={encounter.soapNote?.subjective || undefined}
+          objective={encounter.soapNote?.objective || undefined}
+          primaryDiagnosisCode={encounter.diagnoses?.find((d: { isPrimary: boolean }) => d.isPrimary)?.icd10Code}
+          onDiagnosisAdded={refetch}
+          onUpdate={refetch}
+          readOnly={isReadOnly}
+          defaultExpanded={encounter.status === 'IN_PROGRESS'}
+        />
+      </div>
+
       {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="print:block">
-        <TabsList className="grid w-full grid-cols-6 print:hidden">
+        <TabsList className="grid w-full grid-cols-7 print:hidden">
           <TabsTrigger value="soap" className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
             SOAP
@@ -327,6 +345,10 @@ export default function EncounterDetailPage() {
           <TabsTrigger value="diagrams" className="flex items-center gap-2">
             <User className="h-4 w-4" />
             Diagrams
+          </TabsTrigger>
+          <TabsTrigger value="ai-assist" className="flex items-center gap-2">
+            <Brain className="h-4 w-4" />
+            AI Assist
           </TabsTrigger>
         </TabsList>
 
@@ -371,6 +393,22 @@ export default function EncounterDetailPage() {
         {/* Diagrams Tab */}
         <TabsContent value="diagrams" className="print:block print:break-before-page">
           <BodyDiagramSection encounterId={encounterId} patientId={patientId} readOnly={isReadOnly} />
+        </TabsContent>
+
+        {/* AI Assist Tab */}
+        <TabsContent value="ai-assist" className="print:hidden">
+          <ClinicalDecisionSupportPanel
+            patientId={patientId}
+            encounterId={encounterId}
+            chiefComplaint={encounter.chiefComplaint || undefined}
+            subjective={encounter.soapNote?.subjective || undefined}
+            objective={encounter.soapNote?.objective || undefined}
+            primaryDiagnosisCode={encounter.diagnoses?.find((d: { isPrimary: boolean }) => d.isPrimary)?.icd10Code}
+            onDiagnosisAdded={refetch}
+            onUpdate={refetch}
+            readOnly={isReadOnly}
+            defaultExpanded={true}
+          />
         </TabsContent>
       </Tabs>
 
