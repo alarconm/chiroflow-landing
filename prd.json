@@ -134,7 +134,7 @@
         "Patient acquisition cost"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }

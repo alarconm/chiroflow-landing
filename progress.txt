@@ -434,3 +434,58 @@ Story: US-360 - Patient reactivation
 --- Iteration 7 completed at 2026-01-22 ---
 Story: US-361 - Marketing campaign automation
 
+--- Iteration 7 completed at 2026-01-22 17:50:11 ---
+Story: US-361 - Marketing campaign automation
+
+### US-362: Practice growth dashboard
+**Status:** COMPLETED
+**Date:** 2026-01-22
+
+**Changes made:**
+1. Extended `app/src/server/routers/aiGrowth.ts` with dashboard-specific endpoints:
+   - **aiGrowth.getDashboardSummary** - Overview of all growth metrics (leads, conversions, reputation, referrals, campaigns)
+   - **aiGrowth.getLeadPipeline** - Leads by status for funnel visualization
+   - **aiGrowth.getConversionFunnel** - Detailed conversion metrics with funnel stages
+   - **aiGrowth.getGrowthKPIs** - Key performance indicators (8 KPIs with trends and targets)
+   - **aiGrowth.getPatientAcquisitionCost** - CAC by channel with LTV:CAC ratio
+   - **aiGrowth.getCampaignPerformanceSummary** - Recent campaign performance and type aggregation
+   - **aiGrowth.getROIByChannel** - Marketing channel ROI comparison
+
+2. Created `app/src/components/ai-growth/PracticeGrowthDashboard.tsx` with:
+   - **DashboardSummary** - 5 metric cards (leads, conversions, rating, referrals, ROI)
+   - **LeadPipeline** - Visual pipeline with 9 stages (NEW → CONVERTED/LOST)
+   - **ConversionFunnel** - Funnel visualization with stage percentages
+   - **GrowthKPIs** - 8 KPI tiles with trends, targets, and progress bars
+   - **ReferralSourceAnalysis** - Referral sources with conversion rates
+   - **ReputationTrending** - Reputation score with star rating and trend chart
+   - **CampaignPerformance** - Recent campaigns table with status and ROI
+   - **ROIByChannel** - Channel comparison table
+   - **PatientAcquisitionCost** - CAC metrics with LTV:CAC analysis
+
+3. Created `app/src/components/ai-growth/index.ts` for component exports
+
+4. Created `app/src/app/(dashboard)/ai-growth/page.tsx` as the dashboard route
+
+**Features implemented:**
+- Tabbed interface (Overview, Leads, Campaigns, Acquisition)
+- Date range selector (7d, 30d, 90d, 1y)
+- Trend indicators with percentage changes
+- Visual funnel and pipeline charts
+- Summary metrics with previous period comparison
+- Responsive grid layout
+- Loading skeletons for async data
+- Empty states for missing data
+
+**Acceptance Criteria Met:**
+- ✅ Lead pipeline visualization (LeadPipeline component with 9 stages)
+- ✅ Conversion funnel metrics (ConversionFunnel component)
+- ✅ Reputation score trending (ReputationTrending with star display and chart)
+- ✅ Referral source analysis (ReferralSourceAnalysis with conversion rates)
+- ✅ Campaign performance (CampaignPerformance with type aggregation)
+- ✅ Growth KPIs (GrowthKPIs with 8 metrics)
+- ✅ ROI by marketing channel (ROIByChannel component)
+- ✅ Patient acquisition cost (PatientAcquisitionCost with CAC/LTV/ratio)
+
+--- Iteration 8 completed at 2026-01-22 ---
+Story: US-362 - Practice growth dashboard
+

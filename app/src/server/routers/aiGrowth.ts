@@ -10178,4 +10178,664 @@ export const aiGrowthRouter = router({
         updatedAt: campaign.updatedAt,
       };
     }),
+
+  // ============================================
+  // US-362: Practice Growth Dashboard Endpoints
+  // ============================================
+
+  /**
+   * Get dashboard summary - Overview of all growth metrics
+   */
+  getDashboardSummary: protectedProcedure.query(async ({ ctx }) => {
+    const orgId = ctx.user.organizationId;
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const sixtyDaysAgo = new Date();
+    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+
+    // Get lead counts and conversions
+    const [
+      totalLeads,
+      newLeadsCurrent,
+      newLeadsPrevious,
+      hotLeads,
+      convertedLeadsCurrent,
+      convertedLeadsPrevious,
+    ] = await Promise.all([
+      ctx.prisma.growthLead.count({ where: { organizationId: orgId } }),
+      ctx.prisma.growthLead.count({
+        where: { organizationId: orgId, createdAt: { gte: thirtyDaysAgo } },
+      }),
+      ctx.prisma.growthLead.count({
+        where: { organizationId: orgId, createdAt: { gte: sixtyDaysAgo, lt: thirtyDaysAgo } },
+      }),
+      ctx.prisma.growthLead.count({
+        where: { organizationId: orgId, status: 'HOT' },
+      }),
+      ctx.prisma.growthLead.count({
+        where: { organizationId: orgId, status: 'CONVERTED', convertedAt: { gte: thirtyDaysAgo } },
+      }),
+      ctx.prisma.growthLead.count({
+        where: { organizationId: orgId, status: 'CONVERTED', convertedAt: { gte: sixtyDaysAgo, lt: thirtyDaysAgo } },
+      }),
+    ]);
+
+    // Get reputation metrics
+    const reputationMetrics = await ctx.prisma.reputationMetric.findMany({
+      where: { organizationId: orgId },
+      orderBy: { snapshotDate: 'desc' },
+      take: 10,
+    });
+
+    const avgRating = reputationMetrics.length > 0
+      ? reputationMetrics.reduce((sum, m) => sum + Number(m.averageRating), 0) / reputationMetrics.length
+      : 0;
+
+    // Get referral counts
+    const [referralsCurrent, referralsPrevious] = await Promise.all([
+      ctx.prisma.referralOpportunity.count({
+        where: { organizationId: orgId, referralMade: true, referralDate: { gte: thirtyDaysAgo } },
+      }),
+      ctx.prisma.referralOpportunity.count({
+        where: { organizationId: orgId, referralMade: true, referralDate: { gte: sixtyDaysAgo, lt: thirtyDaysAgo } },
+      }),
+    ]);
+
+    // Get active campaigns
+    const activeCampaigns = await ctx.prisma.growthCampaign.count({
+      where: { organizationId: orgId, status: 'ACTIVE' },
+    });
+
+    // Get campaign performance
+    const campaigns = await ctx.prisma.growthCampaign.findMany({
+      where: { organizationId: orgId, status: { in: ['ACTIVE', 'COMPLETED'] } },
+      select: {
+        totalRevenue: true,
+        actualSpend: true,
+        totalConversions: true,
+        totalLeads: true,
+      },
+    });
+
+    const totalCampaignRevenue = campaigns.reduce((sum, c) => sum + Number(c.totalRevenue || 0), 0);
+    const totalCampaignSpend = campaigns.reduce((sum, c) => sum + Number(c.actualSpend || 0), 0);
+    const overallROI = totalCampaignSpend > 0 ? ((totalCampaignRevenue - totalCampaignSpend) / totalCampaignSpend) * 100 : 0;
+
+    // Calculate trends
+    const leadsTrend = newLeadsPrevious > 0
+      ? ((newLeadsCurrent - newLeadsPrevious) / newLeadsPrevious) * 100
+      : newLeadsCurrent > 0 ? 100 : 0;
+
+    const conversionTrend = convertedLeadsPrevious > 0
+      ? ((convertedLeadsCurrent - convertedLeadsPrevious) / convertedLeadsPrevious) * 100
+      : convertedLeadsCurrent > 0 ? 100 : 0;
+
+    const referralTrend = referralsPrevious > 0
+      ? ((referralsCurrent - referralsPrevious) / referralsPrevious) * 100
+      : referralsCurrent > 0 ? 100 : 0;
+
+    return {
+      leads: {
+        total: totalLeads,
+        new: newLeadsCurrent,
+        hot: hotLeads,
+        trend: leadsTrend,
+      },
+      conversions: {
+        current: convertedLeadsCurrent,
+        trend: conversionTrend,
+        rate: newLeadsCurrent > 0 ? (convertedLeadsCurrent / newLeadsCurrent) * 100 : 0,
+      },
+      reputation: {
+        averageRating: Math.round(avgRating * 10) / 10,
+        totalReviews: reputationMetrics.reduce((sum, m) => sum + m.totalReviews, 0),
+      },
+      referrals: {
+        current: referralsCurrent,
+        trend: referralTrend,
+      },
+      campaigns: {
+        active: activeCampaigns,
+        totalRevenue: totalCampaignRevenue,
+        totalSpend: totalCampaignSpend,
+        roi: Math.round(overallROI * 10) / 10,
+      },
+    };
+  }),
+
+  /**
+   * Get lead pipeline - Leads by status for funnel visualization
+   */
+  getLeadPipeline: protectedProcedure.query(async ({ ctx }) => {
+    const orgId = ctx.user.organizationId;
+
+    const statusCounts = await ctx.prisma.growthLead.groupBy({
+      by: ['status'],
+      where: { organizationId: orgId },
+      _count: { id: true },
+      _sum: { conversionValue: true },
+    });
+
+    const pipeline = [
+      { stage: 'NEW', label: 'New Leads', count: 0, value: 0 },
+      { stage: 'SCORING', label: 'Scoring', count: 0, value: 0 },
+      { stage: 'HOT', label: 'Hot', count: 0, value: 0 },
+      { stage: 'WARM', label: 'Warm', count: 0, value: 0 },
+      { stage: 'COLD', label: 'Cold', count: 0, value: 0 },
+      { stage: 'NURTURING', label: 'Nurturing', count: 0, value: 0 },
+      { stage: 'READY', label: 'Ready', count: 0, value: 0 },
+      { stage: 'CONVERTED', label: 'Converted', count: 0, value: 0 },
+      { stage: 'LOST', label: 'Lost', count: 0, value: 0 },
+    ];
+
+    statusCounts.forEach((sc) => {
+      const stage = pipeline.find((p) => p.stage === sc.status);
+      if (stage && sc._count) {
+        stage.count = sc._count.id;
+        stage.value = Number(sc._sum?.conversionValue || 0);
+      }
+    });
+
+    // Calculate conversion funnel metrics
+    const totalLeads = pipeline.reduce((sum, p) => sum + p.count, 0);
+    const convertedCount = pipeline.find((p) => p.stage === 'CONVERTED')?.count || 0;
+    const hotCount = pipeline.find((p) => p.stage === 'HOT')?.count || 0;
+    const readyCount = pipeline.find((p) => p.stage === 'READY')?.count || 0;
+
+    return {
+      pipeline,
+      metrics: {
+        totalLeads,
+        conversionRate: totalLeads > 0 ? (convertedCount / totalLeads) * 100 : 0,
+        hotLeadRate: totalLeads > 0 ? (hotCount / totalLeads) * 100 : 0,
+        readyToConvertRate: totalLeads > 0 ? (readyCount / totalLeads) * 100 : 0,
+      },
+    };
+  }),
+
+  /**
+   * Get conversion funnel - Detailed conversion metrics
+   */
+  getConversionFunnel: protectedProcedure
+    .input(
+      z.object({
+        dateRange: z.enum(['7d', '30d', '90d', '1y']).default('30d'),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const orgId = ctx.user.organizationId;
+      const { dateRange } = input;
+
+      const days = dateRange === '7d' ? 7 : dateRange === '30d' ? 30 : dateRange === '90d' ? 90 : 365;
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+
+      // Get leads created in date range
+      const leads = await ctx.prisma.growthLead.findMany({
+        where: {
+          organizationId: orgId,
+          createdAt: { gte: startDate },
+        },
+        select: {
+          status: true,
+          source: true,
+          qualityScore: true,
+          createdAt: true,
+          convertedAt: true,
+          conversionValue: true,
+        },
+      });
+
+      // Calculate funnel stages
+      const totalLeads = leads.length;
+      const qualifiedLeads = leads.filter((l) => (l.qualityScore || 0) >= 50).length;
+      const nurturingLeads = leads.filter((l) => l.status === 'NURTURING' || l.status === 'HOT' || l.status === 'WARM').length;
+      const readyLeads = leads.filter((l) => l.status === 'READY' || l.status === 'CONVERTED').length;
+      const convertedLeads = leads.filter((l) => l.status === 'CONVERTED').length;
+
+      // Calculate time to conversion
+      const convertedWithTime = leads.filter((l) => l.status === 'CONVERTED' && l.convertedAt);
+      const avgTimeToConvert = convertedWithTime.length > 0
+        ? convertedWithTime.reduce((sum, l) => {
+            const diff = l.convertedAt!.getTime() - l.createdAt.getTime();
+            return sum + diff / (1000 * 60 * 60 * 24); // days
+          }, 0) / convertedWithTime.length
+        : 0;
+
+      // Calculate value
+      const totalValue = convertedWithTime.reduce((sum, l) => sum + Number(l.conversionValue || 0), 0);
+
+      return {
+        funnel: [
+          { stage: 'Total Leads', count: totalLeads, percentage: 100 },
+          { stage: 'Qualified', count: qualifiedLeads, percentage: totalLeads > 0 ? (qualifiedLeads / totalLeads) * 100 : 0 },
+          { stage: 'Engaged', count: nurturingLeads, percentage: totalLeads > 0 ? (nurturingLeads / totalLeads) * 100 : 0 },
+          { stage: 'Ready', count: readyLeads, percentage: totalLeads > 0 ? (readyLeads / totalLeads) * 100 : 0 },
+          { stage: 'Converted', count: convertedLeads, percentage: totalLeads > 0 ? (convertedLeads / totalLeads) * 100 : 0 },
+        ],
+        metrics: {
+          overallConversionRate: totalLeads > 0 ? (convertedLeads / totalLeads) * 100 : 0,
+          qualifiedConversionRate: qualifiedLeads > 0 ? (convertedLeads / qualifiedLeads) * 100 : 0,
+          avgTimeToConvert: Math.round(avgTimeToConvert * 10) / 10,
+          totalValue,
+          avgDealValue: convertedLeads > 0 ? totalValue / convertedLeads : 0,
+        },
+        dateRange,
+      };
+    }),
+
+  /**
+   * Get growth KPIs - Key performance indicators
+   */
+  getGrowthKPIs: protectedProcedure
+    .input(
+      z.object({
+        dateRange: z.enum(['7d', '30d', '90d', '1y']).default('30d'),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const orgId = ctx.user.organizationId;
+      const { dateRange } = input;
+
+      const days = dateRange === '7d' ? 7 : dateRange === '30d' ? 30 : dateRange === '90d' ? 90 : 365;
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+      const previousStartDate = new Date(startDate);
+      previousStartDate.setDate(previousStartDate.getDate() - days);
+
+      // New patients (converted leads)
+      const [newPatientsCurrent, newPatientsPrevious] = await Promise.all([
+        ctx.prisma.growthLead.count({
+          where: { organizationId: orgId, status: 'CONVERTED', convertedAt: { gte: startDate } },
+        }),
+        ctx.prisma.growthLead.count({
+          where: { organizationId: orgId, status: 'CONVERTED', convertedAt: { gte: previousStartDate, lt: startDate } },
+        }),
+      ]);
+
+      // Leads generated
+      const [leadsCurrent, leadsPrevious] = await Promise.all([
+        ctx.prisma.growthLead.count({
+          where: { organizationId: orgId, createdAt: { gte: startDate } },
+        }),
+        ctx.prisma.growthLead.count({
+          where: { organizationId: orgId, createdAt: { gte: previousStartDate, lt: startDate } },
+        }),
+      ]);
+
+      // Referrals
+      const [referralsCurrent, referralsPrevious] = await Promise.all([
+        ctx.prisma.referralOpportunity.count({
+          where: { organizationId: orgId, referralMade: true, referralDate: { gte: startDate } },
+        }),
+        ctx.prisma.referralOpportunity.count({
+          where: { organizationId: orgId, referralMade: true, referralDate: { gte: previousStartDate, lt: startDate } },
+        }),
+      ]);
+
+      // Reactivations
+      const [reactivationsCurrent, reactivationsPrevious] = await Promise.all([
+        ctx.prisma.reactivationOpportunity.count({
+          where: { organizationId: orgId, reactivated: true, reactivationDate: { gte: startDate } },
+        }),
+        ctx.prisma.reactivationOpportunity.count({
+          where: { organizationId: orgId, reactivated: true, reactivationDate: { gte: previousStartDate, lt: startDate } },
+        }),
+      ]);
+
+      // Reviews
+      const [reviewsCurrent, reviewsPrevious] = await Promise.all([
+        ctx.prisma.reviewRequest.count({
+          where: { organizationId: orgId, reviewedAt: { gte: startDate } },
+        }),
+        ctx.prisma.reviewRequest.count({
+          where: { organizationId: orgId, reviewedAt: { gte: previousStartDate, lt: startDate } },
+        }),
+      ]);
+
+      // Campaign metrics
+      const campaigns = await ctx.prisma.growthCampaign.findMany({
+        where: {
+          organizationId: orgId,
+          OR: [
+            { startDate: { gte: startDate } },
+            { status: 'ACTIVE' },
+          ],
+        },
+        select: {
+          totalRevenue: true,
+          actualSpend: true,
+          totalConversions: true,
+          totalLeads: true,
+        },
+      });
+
+      const totalRevenue = campaigns.reduce((sum, c) => sum + Number(c.totalRevenue || 0), 0);
+      const totalSpend = campaigns.reduce((sum, c) => sum + Number(c.actualSpend || 0), 0);
+
+      // Helper to calculate trend
+      const calcTrend = (current: number, previous: number) =>
+        previous > 0 ? ((current - previous) / previous) * 100 : current > 0 ? 100 : 0;
+
+      return {
+        kpis: [
+          {
+            id: 'new_patients',
+            label: 'New Patients',
+            value: newPatientsCurrent,
+            previousValue: newPatientsPrevious,
+            trend: calcTrend(newPatientsCurrent, newPatientsPrevious),
+            target: null,
+          },
+          {
+            id: 'leads_generated',
+            label: 'Leads Generated',
+            value: leadsCurrent,
+            previousValue: leadsPrevious,
+            trend: calcTrend(leadsCurrent, leadsPrevious),
+            target: null,
+          },
+          {
+            id: 'conversion_rate',
+            label: 'Conversion Rate',
+            value: leadsCurrent > 0 ? Math.round((newPatientsCurrent / leadsCurrent) * 100 * 10) / 10 : 0,
+            previousValue: leadsPrevious > 0 ? Math.round((newPatientsPrevious / leadsPrevious) * 100 * 10) / 10 : 0,
+            trend: null,
+            target: 25, // 25% target
+            unit: '%',
+          },
+          {
+            id: 'referrals',
+            label: 'Referrals',
+            value: referralsCurrent,
+            previousValue: referralsPrevious,
+            trend: calcTrend(referralsCurrent, referralsPrevious),
+            target: null,
+          },
+          {
+            id: 'reactivations',
+            label: 'Reactivations',
+            value: reactivationsCurrent,
+            previousValue: reactivationsPrevious,
+            trend: calcTrend(reactivationsCurrent, reactivationsPrevious),
+            target: null,
+          },
+          {
+            id: 'reviews',
+            label: 'New Reviews',
+            value: reviewsCurrent,
+            previousValue: reviewsPrevious,
+            trend: calcTrend(reviewsCurrent, reviewsPrevious),
+            target: null,
+          },
+          {
+            id: 'campaign_revenue',
+            label: 'Campaign Revenue',
+            value: totalRevenue,
+            previousValue: null,
+            trend: null,
+            target: null,
+            unit: '$',
+          },
+          {
+            id: 'roi',
+            label: 'Overall ROI',
+            value: totalSpend > 0 ? Math.round(((totalRevenue - totalSpend) / totalSpend) * 100 * 10) / 10 : 0,
+            previousValue: null,
+            trend: null,
+            target: 300, // 300% ROI target
+            unit: '%',
+          },
+        ],
+        dateRange,
+      };
+    }),
+
+  /**
+   * Get patient acquisition cost - CAC by channel
+   */
+  getPatientAcquisitionCost: protectedProcedure
+    .input(
+      z.object({
+        dateRange: z.enum(['30d', '90d', '1y']).default('90d'),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const orgId = ctx.user.organizationId;
+      const { dateRange } = input;
+
+      const days = dateRange === '30d' ? 30 : dateRange === '90d' ? 90 : 365;
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+
+      // Get converted leads by source
+      const convertedLeads = await ctx.prisma.growthLead.findMany({
+        where: {
+          organizationId: orgId,
+          status: 'CONVERTED',
+          convertedAt: { gte: startDate },
+        },
+        select: {
+          source: true,
+          conversionValue: true,
+        },
+      });
+
+      // Get campaign spend by channel
+      const campaigns = await ctx.prisma.growthCampaign.findMany({
+        where: {
+          organizationId: orgId,
+          startDate: { gte: startDate },
+        },
+        select: {
+          channels: true,
+          actualSpend: true,
+          totalConversions: true,
+        },
+      });
+
+      // Aggregate by source
+      const sourceMap: Record<string, { conversions: number; value: number; spend: number }> = {};
+      const sources = ['website', 'referral', 'phone', 'walk_in', 'social', 'email', 'ads', 'other'];
+
+      sources.forEach((s) => {
+        sourceMap[s] = { conversions: 0, value: 0, spend: 0 };
+      });
+
+      // Count conversions by source
+      convertedLeads.forEach((lead) => {
+        const source = lead.source?.toLowerCase() || 'other';
+        const key = sources.includes(source) ? source : 'other';
+        sourceMap[key].conversions++;
+        sourceMap[key].value += Number(lead.conversionValue || 0);
+      });
+
+      // Allocate campaign spend to channels
+      campaigns.forEach((c) => {
+        const channelList = c.channels as string[] || [];
+        const spendPerChannel = Number(c.actualSpend || 0) / (channelList.length || 1);
+
+        channelList.forEach((channel) => {
+          // Map campaign channels to sources
+          let source = 'other';
+          if (channel.toLowerCase().includes('email')) source = 'email';
+          else if (channel.toLowerCase().includes('social')) source = 'social';
+          else if (channel.toLowerCase().includes('sms')) source = 'phone';
+          else if (channel.toLowerCase().includes('ads') || channel.toLowerCase().includes('ppc')) source = 'ads';
+          else if (channel.toLowerCase().includes('direct')) source = 'direct_mail';
+
+          if (sourceMap[source]) {
+            sourceMap[source].spend += spendPerChannel;
+          }
+        });
+      });
+
+      // Calculate CAC for each source
+      const acquisitionCosts = Object.entries(sourceMap)
+        .filter(([_, data]) => data.conversions > 0 || data.spend > 0)
+        .map(([source, data]) => ({
+          source,
+          conversions: data.conversions,
+          spend: data.spend,
+          cac: data.conversions > 0 ? data.spend / data.conversions : 0,
+          ltv: data.conversions > 0 ? data.value / data.conversions : 0,
+          ltvCacRatio: data.spend > 0 && data.conversions > 0
+            ? (data.value / data.conversions) / (data.spend / data.conversions)
+            : 0,
+        }))
+        .sort((a, b) => b.conversions - a.conversions);
+
+      // Calculate overall metrics
+      const totalConversions = acquisitionCosts.reduce((sum, a) => sum + a.conversions, 0);
+      const totalSpend = acquisitionCosts.reduce((sum, a) => sum + a.spend, 0);
+      const totalValue = acquisitionCosts.reduce((sum, a) => sum + (a.ltv * a.conversions), 0);
+
+      return {
+        bySource: acquisitionCosts,
+        overall: {
+          totalConversions,
+          totalSpend,
+          avgCAC: totalConversions > 0 ? totalSpend / totalConversions : 0,
+          avgLTV: totalConversions > 0 ? totalValue / totalConversions : 0,
+          ltvCacRatio: totalSpend > 0 && totalConversions > 0
+            ? (totalValue / totalConversions) / (totalSpend / totalConversions)
+            : 0,
+        },
+        dateRange,
+      };
+    }),
+
+  /**
+   * Get campaign performance summary - For dashboard
+   */
+  getCampaignPerformanceSummary: protectedProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(10).default(5),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const orgId = ctx.user.organizationId;
+      const { limit } = input;
+
+      // Get recent active/completed campaigns
+      const campaigns = await ctx.prisma.growthCampaign.findMany({
+        where: {
+          organizationId: orgId,
+          status: { in: ['ACTIVE', 'COMPLETED'] },
+        },
+        orderBy: { startDate: 'desc' },
+        take: limit,
+      });
+
+      // Get campaign type summary
+      const typeSummary = await ctx.prisma.growthCampaign.groupBy({
+        by: ['campaignType'],
+        where: { organizationId: orgId, status: { in: ['ACTIVE', 'COMPLETED'] } },
+        _count: { id: true },
+        _sum: { totalRevenue: true, actualSpend: true, totalConversions: true },
+      });
+
+      return {
+        campaigns: campaigns.map((c) => ({
+          id: c.id,
+          name: c.name,
+          type: c.campaignType,
+          status: c.status,
+          startDate: c.startDate,
+          endDate: c.endDate,
+          budget: c.budget ? Number(c.budget) : null,
+          spend: c.actualSpend ? Number(c.actualSpend) : 0,
+          revenue: Number(c.totalRevenue || 0),
+          conversions: c.totalConversions || 0,
+          roi: c.actualSpend && Number(c.actualSpend) > 0
+            ? ((Number(c.totalRevenue || 0) - Number(c.actualSpend)) / Number(c.actualSpend)) * 100
+            : 0,
+        })),
+        byType: typeSummary.map((ts) => ({
+          type: ts.campaignType,
+          count: ts._count.id,
+          revenue: Number(ts._sum.totalRevenue || 0),
+          spend: Number(ts._sum.actualSpend || 0),
+          conversions: ts._sum.totalConversions || 0,
+          roi: Number(ts._sum.actualSpend || 0) > 0
+            ? ((Number(ts._sum.totalRevenue || 0) - Number(ts._sum.actualSpend || 0)) / Number(ts._sum.actualSpend || 0)) * 100
+            : 0,
+        })),
+      };
+    }),
+
+  /**
+   * Get ROI by marketing channel - For dashboard chart
+   */
+  getROIByChannel: protectedProcedure
+    .input(
+      z.object({
+        dateRange: z.enum(['30d', '90d', '1y']).default('90d'),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const orgId = ctx.user.organizationId;
+      const { dateRange } = input;
+
+      const days = dateRange === '30d' ? 30 : dateRange === '90d' ? 90 : 365;
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+
+      const campaigns = await ctx.prisma.growthCampaign.findMany({
+        where: {
+          organizationId: orgId,
+          startDate: { gte: startDate },
+          status: { in: ['ACTIVE', 'COMPLETED'] },
+        },
+        select: {
+          channels: true,
+          totalRevenue: true,
+          actualSpend: true,
+          totalConversions: true,
+          totalLeads: true,
+        },
+      });
+
+      // Aggregate by channel
+      const channelMap: Record<string, {
+        spend: number;
+        revenue: number;
+        conversions: number;
+        leads: number;
+        campaigns: number;
+      }> = {};
+
+      campaigns.forEach((c) => {
+        const channelList = c.channels as string[] || ['other'];
+        const sharePerChannel = 1 / channelList.length;
+
+        channelList.forEach((channel) => {
+          const key = channel.toLowerCase();
+          if (!channelMap[key]) {
+            channelMap[key] = { spend: 0, revenue: 0, conversions: 0, leads: 0, campaigns: 0 };
+          }
+          channelMap[key].spend += Number(c.actualSpend || 0) * sharePerChannel;
+          channelMap[key].revenue += Number(c.totalRevenue || 0) * sharePerChannel;
+          channelMap[key].conversions += Math.floor((c.totalConversions || 0) * sharePerChannel);
+          channelMap[key].leads += Math.floor((c.totalLeads || 0) * sharePerChannel);
+          channelMap[key].campaigns++;
+        });
+      });
+
+      const channels = Object.entries(channelMap)
+        .map(([channel, data]) => ({
+          channel,
+          ...data,
+          roi: data.spend > 0 ? ((data.revenue - data.spend) / data.spend) * 100 : 0,
+          costPerConversion: data.conversions > 0 ? data.spend / data.conversions : 0,
+          conversionRate: data.leads > 0 ? (data.conversions / data.leads) * 100 : 0,
+        }))
+        .sort((a, b) => b.roi - a.roi);
+
+      return {
+        channels,
+        dateRange,
+      };
+    }),
 });
