@@ -11,7 +11,7 @@ import { TRPCError } from '@trpc/server';
 import { auditLog } from '@/lib/audit';
 // AI service will be used for future AI-powered recommendations
 // import { aiService } from '@/lib/ai-service';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 // ============================================
 // US-348: Documentation quality audit
@@ -2373,7 +2373,1462 @@ export const aiQARouter = router({
         hasMore: offset + limit < total,
       };
     }),
+
+  // ============================================
+  // US-352: Risk identification
+  // ============================================
+
+  /**
+   * Identify compliance and audit risks
+   * Performs comprehensive risk analysis across multiple dimensions
+   */
+  identifyRisks: providerProcedure
+    .input(
+      z.object({
+        // Risk scope
+        providerId: z.string().optional(),
+        dateFrom: z.date().optional(),
+        dateTo: z.date().optional(),
+        // Risk types to analyze
+        riskTypes: z.array(z.enum([
+          'AUDIT_TARGET',
+          'PATTERN_BASED',
+          'PROVIDER_OUTLIER',
+          'PAYER_AUDIT',
+          'ALL'
+        ])).default(['ALL']),
+        // Threshold for flagging risks
+        riskThreshold: z.number().min(0).max(100).default(50),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { providerId, dateFrom, dateTo, riskTypes, riskThreshold } = input;
+
+      const endDate = dateTo || new Date();
+      const startDate = dateFrom || new Date(endDate.getTime() - 90 * 24 * 60 * 60 * 1000); // 90 days default
+
+      // Create the audit record for risk identification
+      const audit = await ctx.prisma.qAAudit.create({
+        data: {
+          organizationId: ctx.user.organizationId,
+          auditType: 'COMPLIANCE',
+          targetType: 'RiskAssessment',
+          targetId: null,
+          providerId: providerId || null,
+          dateFrom: startDate,
+          dateTo: endDate,
+          methodology: 'AI-assisted risk identification and analysis',
+          status: 'IN_PROGRESS',
+        },
+      });
+
+      const risks: RiskFinding[] = [];
+      const riskScores: { type: string; score: number; details: string }[] = [];
+
+      // Analyze requested risk types
+      const analyzeAll = riskTypes.includes('ALL');
+
+      // 1. Audit Target Risk Scoring
+      if (analyzeAll || riskTypes.includes('AUDIT_TARGET')) {
+        const auditTargetRisks = await analyzeAuditTargetRisk(ctx, startDate, endDate, providerId);
+        risks.push(...auditTargetRisks.risks);
+        riskScores.push({
+          type: 'AUDIT_TARGET',
+          score: auditTargetRisks.overallScore,
+          details: auditTargetRisks.summary,
+        });
+      }
+
+      // 2. Pattern-Based Risk Detection
+      if (analyzeAll || riskTypes.includes('PATTERN_BASED')) {
+        const patternRisks = await analyzePatternBasedRisk(ctx, startDate, endDate, providerId);
+        risks.push(...patternRisks.risks);
+        riskScores.push({
+          type: 'PATTERN_BASED',
+          score: patternRisks.overallScore,
+          details: patternRisks.summary,
+        });
+      }
+
+      // 3. Provider Outlier Identification
+      if (analyzeAll || riskTypes.includes('PROVIDER_OUTLIER')) {
+        const providerRisks = await analyzeProviderOutliers(ctx, startDate, endDate);
+        risks.push(...providerRisks.risks);
+        riskScores.push({
+          type: 'PROVIDER_OUTLIER',
+          score: providerRisks.overallScore,
+          details: providerRisks.summary,
+        });
+      }
+
+      // 4. Payer Audit Risk Assessment
+      if (analyzeAll || riskTypes.includes('PAYER_AUDIT')) {
+        const payerRisks = await analyzePayerAuditRisk(ctx, startDate, endDate, providerId);
+        risks.push(...payerRisks.risks);
+        riskScores.push({
+          type: 'PAYER_AUDIT',
+          score: payerRisks.overallScore,
+          details: payerRisks.summary,
+        });
+      }
+
+      // Filter risks above threshold
+      const significantRisks = risks.filter(r => r.riskScore >= riskThreshold);
+
+      // Calculate overall risk score (weighted average)
+      const overallRiskScore = riskScores.length > 0
+        ? Math.round(riskScores.reduce((sum, r) => sum + r.score, 0) / riskScores.length)
+        : 0;
+
+      // Determine risk level
+      const riskLevel = getRiskLevel(overallRiskScore);
+
+      // Create findings in database
+      const findingsToCreate: Prisma.QAFindingCreateManyInput[] = significantRisks.map(risk => ({
+        auditId: audit.id,
+        organizationId: ctx.user.organizationId,
+        findingType: risk.riskType,
+        severity: risk.severity,
+        title: risk.title,
+        description: risk.description,
+        recommendation: risk.remediation,
+        entityType: risk.entityType,
+        entityId: risk.entityId,
+        providerId: risk.providerId,
+        riskScore: risk.riskScore,
+        complianceImpact: risk.complianceImpact,
+        financialImpact: risk.financialImpact ? new Prisma.Decimal(risk.financialImpact) : null,
+        auditRiskFactor: risk.auditRiskFactor,
+      }));
+
+      if (findingsToCreate.length > 0) {
+        await ctx.prisma.qAFinding.createMany({
+          data: findingsToCreate,
+        });
+      }
+
+      // Generate remediation suggestions
+      const remediationPlan = generateRemediationPlan(significantRisks);
+
+      // Count by severity
+      const criticalCount = significantRisks.filter(r => r.severity === 'CRITICAL').length;
+      const highCount = significantRisks.filter(r => r.severity === 'HIGH').length;
+      const mediumCount = significantRisks.filter(r => r.severity === 'MEDIUM').length;
+      const lowCount = significantRisks.filter(r => r.severity === 'LOW').length;
+
+      // Update audit with results
+      const updatedAudit = await ctx.prisma.qAAudit.update({
+        where: { id: audit.id },
+        data: {
+          status: 'COMPLETED',
+          completedAt: new Date(),
+          score: 100 - overallRiskScore, // Higher score = lower risk
+          scoreCategory: riskLevel,
+          findingsCount: significantRisks.length,
+          criticalCount,
+          highCount,
+          mediumCount,
+          lowCount,
+          summary: `Risk assessment completed. Overall risk score: ${overallRiskScore}/100 (${riskLevel}). Identified ${significantRisks.length} significant risk(s).`,
+          recommendations: remediationPlan.map(r => r.action),
+        },
+        include: {
+          findings: {
+            orderBy: [{ riskScore: 'desc' }, { severity: 'asc' }],
+            take: 20,
+          },
+        },
+      });
+
+      // Log the audit action
+      await auditLog('AI_QA_RISK_IDENTIFICATION', 'QAAudit', {
+        entityId: audit.id,
+        changes: {
+          riskScore: overallRiskScore,
+          risksIdentified: significantRisks.length,
+          riskTypes: riskTypes,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        auditId: updatedAudit.id,
+        overallRiskScore,
+        riskLevel,
+        riskScoresByType: riskScores,
+        summary: {
+          total: significantRisks.length,
+          critical: criticalCount,
+          high: highCount,
+          medium: mediumCount,
+          low: lowCount,
+        },
+        topRisks: updatedAudit.findings,
+        remediationPlan,
+      };
+    }),
+
+  /**
+   * Get risk dashboard with current risk status
+   */
+  getRiskDashboard: providerProcedure
+    .input(z.object({
+      providerId: z.string().optional(),
+    }))
+    .query(async ({ ctx, input }) => {
+      const { providerId } = input;
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      // Get recent risk audits
+      const whereClause: Prisma.QAAuditWhereInput = {
+        organizationId: ctx.user.organizationId,
+        auditType: 'COMPLIANCE',
+        targetType: 'RiskAssessment',
+        status: 'COMPLETED',
+      };
+      if (providerId) whereClause.providerId = providerId;
+
+      const recentAudits = await ctx.prisma.qAAudit.findMany({
+        where: whereClause,
+        orderBy: { auditDate: 'desc' },
+        take: 5,
+        include: {
+          _count: { select: { findings: true } },
+        },
+      });
+
+      // Get open high-risk findings
+      const openHighRiskFindings = await ctx.prisma.qAFinding.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: { in: ['OPEN', 'IN_REVIEW', 'IN_PROGRESS'] },
+          riskScore: { gte: 70 },
+          ...(providerId ? { providerId } : {}),
+        },
+        orderBy: { riskScore: 'desc' },
+        take: 10,
+      });
+
+      // Get risk score trends
+      const riskTrends = await ctx.prisma.qAMetric.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          metricType: { in: ['RISK_AUDIT_TARGET', 'RISK_PATTERN', 'RISK_OVERALL'] },
+          periodStart: { gte: thirtyDaysAgo },
+          ...(providerId ? { providerId } : {}),
+        },
+        orderBy: { periodStart: 'desc' },
+        take: 12,
+      });
+
+      // Calculate current overall risk
+      const latestAudit = recentAudits[0];
+      const currentRiskScore = latestAudit ? (100 - (latestAudit.score || 0)) : null;
+      const currentRiskLevel = currentRiskScore !== null ? getRiskLevel(currentRiskScore) : null;
+
+      // Get mitigations in progress
+      const mitigationsInProgress = await ctx.prisma.qAFinding.count({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: 'IN_PROGRESS',
+          riskScore: { gte: 50 },
+          ...(providerId ? { providerId } : {}),
+        },
+      });
+
+      // Get recently resolved risks
+      const resolvedRisks = await ctx.prisma.qAFinding.count({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: 'RESOLVED',
+          resolvedAt: { gte: thirtyDaysAgo },
+          riskScore: { gte: 50 },
+          ...(providerId ? { providerId } : {}),
+        },
+      });
+
+      return {
+        currentRiskScore,
+        currentRiskLevel,
+        recentAudits: recentAudits.map(a => ({
+          id: a.id,
+          date: a.auditDate,
+          score: a.score,
+          riskScore: 100 - (a.score || 0),
+          findingsCount: a._count.findings,
+        })),
+        openHighRiskFindings: openHighRiskFindings.map(f => ({
+          id: f.id,
+          title: f.title,
+          riskScore: f.riskScore,
+          severity: f.severity,
+          status: f.status,
+          entityType: f.entityType,
+        })),
+        riskTrends: riskTrends.map(t => ({
+          metricType: t.metricType,
+          period: t.period,
+          periodStart: t.periodStart,
+          score: Number(t.score),
+        })),
+        mitigationsInProgress,
+        resolvedRisks,
+      };
+    }),
+
+  /**
+   * Get provider risk comparison
+   */
+  getProviderRiskComparison: providerProcedure
+    .input(z.object({
+      dateFrom: z.date().optional(),
+      dateTo: z.date().optional(),
+    }))
+    .query(async ({ ctx, input }) => {
+      const { dateFrom, dateTo } = input;
+      const endDate = dateTo || new Date();
+      const startDate = dateFrom || new Date(endDate.getTime() - 90 * 24 * 60 * 60 * 1000);
+
+      // Get all providers in the organization
+      const providers = await ctx.prisma.provider.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          isActive: true,
+        },
+        include: {
+          user: { select: { firstName: true, lastName: true } },
+        },
+      });
+
+      // Get risk findings grouped by provider
+      const risksByProvider = await ctx.prisma.qAFinding.groupBy({
+        by: ['providerId'],
+        where: {
+          organizationId: ctx.user.organizationId,
+          riskScore: { gte: 50 },
+          createdAt: { gte: startDate, lte: endDate },
+          providerId: { not: null },
+        },
+        _count: true,
+        _avg: { riskScore: true },
+      });
+
+      // Build provider risk profiles
+      const providerProfiles = providers.map(provider => {
+        const riskData = risksByProvider.find(r => r.providerId === provider.id);
+        return {
+          providerId: provider.id,
+          providerName: `${provider.user.firstName} ${provider.user.lastName}`,
+          riskCount: riskData?._count || 0,
+          averageRiskScore: Math.round(riskData?._avg.riskScore || 0),
+          riskLevel: getRiskLevel(riskData?._avg.riskScore || 0),
+        };
+      });
+
+      // Sort by average risk score descending
+      providerProfiles.sort((a, b) => b.averageRiskScore - a.averageRiskScore);
+
+      // Calculate organization averages
+      const orgAverageRiskScore = providerProfiles.length > 0
+        ? Math.round(providerProfiles.reduce((sum, p) => sum + p.averageRiskScore, 0) / providerProfiles.length)
+        : 0;
+
+      // Identify outliers (more than 1.5x org average)
+      const outlierThreshold = orgAverageRiskScore * 1.5;
+      const outliers = providerProfiles.filter(p => p.averageRiskScore > outlierThreshold);
+
+      return {
+        providers: providerProfiles,
+        organizationAverage: orgAverageRiskScore,
+        outliers,
+        period: { startDate, endDate },
+      };
+    }),
+
+  /**
+   * Track risk mitigation progress
+   */
+  getRiskMitigationTracking: providerProcedure
+    .input(z.object({
+      providerId: z.string().optional(),
+      status: z.enum(['ALL', 'OPEN', 'IN_PROGRESS', 'RESOLVED']).default('ALL'),
+      minRiskScore: z.number().min(0).max(100).default(50),
+      limit: z.number().min(1).max(100).default(20),
+      offset: z.number().min(0).default(0),
+    }))
+    .query(async ({ ctx, input }) => {
+      const { providerId, status, minRiskScore, limit, offset } = input;
+
+      const whereClause: Prisma.QAFindingWhereInput = {
+        organizationId: ctx.user.organizationId,
+        riskScore: { gte: minRiskScore },
+      };
+
+      if (providerId) whereClause.providerId = providerId;
+      if (status !== 'ALL') {
+        whereClause.status = status === 'OPEN' ? { in: ['OPEN', 'IN_REVIEW'] } : status;
+      }
+
+      const [findings, total] = await Promise.all([
+        ctx.prisma.qAFinding.findMany({
+          where: whereClause,
+          orderBy: [{ riskScore: 'desc' }, { createdAt: 'desc' }],
+          take: limit,
+          skip: offset,
+          include: {
+            audit: { select: { id: true, auditType: true, auditDate: true } },
+          },
+        }),
+        ctx.prisma.qAFinding.count({ where: whereClause }),
+      ]);
+
+      // Calculate mitigation statistics
+      const stats = await ctx.prisma.qAFinding.groupBy({
+        by: ['status'],
+        where: {
+          organizationId: ctx.user.organizationId,
+          riskScore: { gte: minRiskScore },
+          ...(providerId ? { providerId } : {}),
+        },
+        _count: true,
+      });
+
+      const statusCounts = {
+        open: stats.find(s => s.status === 'OPEN')?._count || 0,
+        inReview: stats.find(s => s.status === 'IN_REVIEW')?._count || 0,
+        inProgress: stats.find(s => s.status === 'IN_PROGRESS')?._count || 0,
+        resolved: stats.find(s => s.status === 'RESOLVED')?._count || 0,
+        dismissed: stats.find(s => s.status === 'DISMISSED')?._count || 0,
+        deferred: stats.find(s => s.status === 'DEFERRED')?._count || 0,
+      };
+
+      return {
+        findings: findings.map(f => ({
+          id: f.id,
+          title: f.title,
+          description: f.description,
+          riskScore: f.riskScore,
+          severity: f.severity,
+          status: f.status,
+          recommendation: f.recommendation,
+          entityType: f.entityType,
+          entityId: f.entityId,
+          providerId: f.providerId,
+          createdAt: f.createdAt,
+          resolvedAt: f.resolvedAt,
+          auditDate: f.audit.auditDate,
+        })),
+        total,
+        hasMore: offset + limit < total,
+        statusCounts,
+        mitigationRate: total > 0
+          ? Math.round((statusCounts.resolved / total) * 100)
+          : 0,
+      };
+    }),
+
+  /**
+   * Start risk mitigation for a finding
+   */
+  startMitigation: providerProcedure
+    .input(z.object({
+      findingId: z.string(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { findingId, notes } = input;
+
+      const finding = await ctx.prisma.qAFinding.findFirst({
+        where: {
+          id: findingId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!finding) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Finding not found',
+        });
+      }
+
+      const updated = await ctx.prisma.qAFinding.update({
+        where: { id: findingId },
+        data: {
+          status: 'IN_PROGRESS',
+          resolutionNote: notes || 'Mitigation started',
+        },
+      });
+
+      await auditLog('AI_QA_RISK_MITIGATION_STARTED', 'QAFinding', {
+        entityId: findingId,
+        changes: {
+          previousStatus: finding.status,
+          newStatus: 'IN_PROGRESS',
+          notes,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return updated;
+    }),
+
+  /**
+   * Complete risk mitigation for a finding
+   */
+  completeMitigation: providerProcedure
+    .input(z.object({
+      findingId: z.string(),
+      notes: z.string(),
+      verificationEvidence: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { findingId, notes, verificationEvidence } = input;
+
+      const finding = await ctx.prisma.qAFinding.findFirst({
+        where: {
+          id: findingId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!finding) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Finding not found',
+        });
+      }
+
+      const updated = await ctx.prisma.qAFinding.update({
+        where: { id: findingId },
+        data: {
+          status: 'RESOLVED',
+          resolvedAt: new Date(),
+          resolvedBy: ctx.user.id,
+          resolutionNote: notes,
+        },
+      });
+
+      await auditLog('AI_QA_RISK_MITIGATION_COMPLETED', 'QAFinding', {
+        entityId: findingId,
+        changes: {
+          previousStatus: finding.status,
+          newStatus: 'RESOLVED',
+          notes,
+          hasVerification: !!verificationEvidence,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return updated;
+    }),
+
+  /**
+   * Get risk finding details with education content
+   */
+  getRiskFindingDetails: providerProcedure
+    .input(z.object({ findingId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const finding = await ctx.prisma.qAFinding.findFirst({
+        where: {
+          id: input.findingId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          audit: true,
+        },
+      });
+
+      if (!finding) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Finding not found',
+        });
+      }
+
+      // Generate education content based on finding type
+      const education = generateRiskEducation(finding.findingType, finding.severity);
+
+      return {
+        ...finding,
+        education,
+      };
+    }),
 });
+
+// ============================================
+// Helper functions for risk identification (US-352)
+// ============================================
+
+// Risk finding interface
+interface RiskFinding {
+  riskType: string;
+  title: string;
+  description: string;
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
+  riskScore: number;
+  entityType?: string;
+  entityId?: string;
+  providerId?: string;
+  remediation: string;
+  complianceImpact: boolean;
+  financialImpact?: number;
+  auditRiskFactor?: number;
+}
+
+// Risk analysis result interface
+interface RiskAnalysisResult {
+  risks: RiskFinding[];
+  overallScore: number;
+  summary: string;
+}
+
+/**
+ * Analyze audit target risk - likelihood of being selected for payer audit
+ */
+async function analyzeAuditTargetRisk(
+  ctx: { prisma: import('@prisma/client').PrismaClient; user: { organizationId: string } },
+  startDate: Date,
+  endDate: Date,
+  providerId?: string
+): Promise<RiskAnalysisResult> {
+  const risks: RiskFinding[] = [];
+  let totalRiskScore = 0;
+  let riskFactors = 0;
+
+  // 1. High-value claim frequency
+  const highValueClaims = await ctx.prisma.claim.count({
+    where: {
+      organizationId: ctx.user.organizationId,
+      createdDate: { gte: startDate, lte: endDate },
+      totalCharges: { gte: 500 }, // High-value threshold
+      ...(providerId ? { billingProviderId: providerId } : {}),
+    },
+  });
+
+  const totalClaims = await ctx.prisma.claim.count({
+    where: {
+      organizationId: ctx.user.organizationId,
+      createdDate: { gte: startDate, lte: endDate },
+      ...(providerId ? { billingProviderId: providerId } : {}),
+    },
+  });
+
+  if (totalClaims > 0) {
+    const highValueRate = (highValueClaims / totalClaims) * 100;
+    if (highValueRate > 30) {
+      const score = Math.min(100, Math.round(highValueRate * 2));
+      risks.push({
+        riskType: 'AUDIT_TARGET_HIGH_VALUE',
+        title: 'High-value claim frequency above threshold',
+        description: `${highValueRate.toFixed(1)}% of claims exceed $500, which may trigger payer review`,
+        severity: highValueRate > 50 ? 'HIGH' : 'MEDIUM',
+        riskScore: score,
+        remediation: 'Ensure thorough documentation for high-value claims. Consider implementing pre-submission review.',
+        complianceImpact: true,
+        financialImpact: highValueClaims * 500 * 0.1, // Estimated 10% recovery risk
+        auditRiskFactor: highValueRate / 100,
+      });
+      totalRiskScore += score;
+      riskFactors++;
+    }
+  }
+
+  // 2. Modifier usage patterns
+  const modifierClaims = await ctx.prisma.claimLine.count({
+    where: {
+      claim: {
+        organizationId: ctx.user.organizationId,
+        createdDate: { gte: startDate, lte: endDate },
+        ...(providerId ? { billingProviderId: providerId } : {}),
+      },
+      modifiers: { isEmpty: false },
+    },
+  });
+
+  const totalLines = await ctx.prisma.claimLine.count({
+    where: {
+      claim: {
+        organizationId: ctx.user.organizationId,
+        createdDate: { gte: startDate, lte: endDate },
+        ...(providerId ? { billingProviderId: providerId } : {}),
+      },
+    },
+  });
+
+  if (totalLines > 0) {
+    const modifierRate = (modifierClaims / totalLines) * 100;
+    if (modifierRate > 40) {
+      const score = Math.min(90, Math.round(modifierRate));
+      risks.push({
+        riskType: 'AUDIT_TARGET_MODIFIER_USAGE',
+        title: 'High modifier usage rate',
+        description: `${modifierRate.toFixed(1)}% of claim lines use modifiers, which may trigger audit`,
+        severity: modifierRate > 60 ? 'HIGH' : 'MEDIUM',
+        riskScore: score,
+        remediation: 'Review modifier usage policy. Ensure all modifiers have supporting documentation.',
+        complianceImpact: true,
+        auditRiskFactor: modifierRate / 100,
+      });
+      totalRiskScore += score;
+      riskFactors++;
+    }
+  }
+
+  // 3. Denial rate analysis
+  const deniedClaims = await ctx.prisma.claim.count({
+    where: {
+      organizationId: ctx.user.organizationId,
+      createdDate: { gte: startDate, lte: endDate },
+      status: 'DENIED',
+      ...(providerId ? { billingProviderId: providerId } : {}),
+    },
+  });
+
+  if (totalClaims > 0) {
+    const denialRate = (deniedClaims / totalClaims) * 100;
+    if (denialRate > 10) {
+      const score = Math.min(100, Math.round(denialRate * 5));
+      risks.push({
+        riskType: 'AUDIT_TARGET_DENIAL_RATE',
+        title: 'Elevated claim denial rate',
+        description: `${denialRate.toFixed(1)}% denial rate indicates potential documentation or coding issues`,
+        severity: denialRate > 20 ? 'CRITICAL' : denialRate > 15 ? 'HIGH' : 'MEDIUM',
+        riskScore: score,
+        remediation: 'Analyze denial reasons. Implement pre-submission claim scrubbing. Review coding accuracy.',
+        complianceImpact: true,
+        financialImpact: deniedClaims * 200, // Average lost revenue per denial
+        auditRiskFactor: denialRate / 100,
+      });
+      totalRiskScore += score;
+      riskFactors++;
+    }
+  }
+
+  // 4. Same-day service frequency
+  const sameDayEncounters = await ctx.prisma.$queryRaw<{ count: bigint }[]>`
+    SELECT COUNT(*) as count FROM "Encounter" e1
+    WHERE e1."organizationId" = ${ctx.user.organizationId}
+    AND e1."encounterDate" BETWEEN ${startDate} AND ${endDate}
+    ${providerId ? Prisma.sql`AND e1."providerId" = ${providerId}` : Prisma.empty}
+    AND EXISTS (
+      SELECT 1 FROM "Encounter" e2
+      WHERE e2."patientId" = e1."patientId"
+      AND e2."id" != e1."id"
+      AND DATE(e2."encounterDate") = DATE(e1."encounterDate")
+    )
+  `;
+
+  const sameDayCount = Number(sameDayEncounters[0]?.count || 0);
+  const totalEncounters = await ctx.prisma.encounter.count({
+    where: {
+      organizationId: ctx.user.organizationId,
+      encounterDate: { gte: startDate, lte: endDate },
+      ...(providerId ? { providerId } : {}),
+    },
+  });
+
+  if (totalEncounters > 0 && sameDayCount > 0) {
+    const sameDayRate = (sameDayCount / totalEncounters) * 100;
+    if (sameDayRate > 5) {
+      const score = Math.min(85, Math.round(sameDayRate * 10));
+      risks.push({
+        riskType: 'AUDIT_TARGET_SAME_DAY',
+        title: 'Same-day service pattern detected',
+        description: `${sameDayRate.toFixed(1)}% of encounters are same-day multiple visits`,
+        severity: sameDayRate > 15 ? 'HIGH' : 'MEDIUM',
+        riskScore: score,
+        remediation: 'Review same-day visit documentation. Ensure separate and distinct services are documented.',
+        complianceImpact: true,
+        auditRiskFactor: sameDayRate / 100,
+      });
+      totalRiskScore += score;
+      riskFactors++;
+    }
+  }
+
+  const overallScore = riskFactors > 0 ? Math.round(totalRiskScore / riskFactors) : 0;
+
+  return {
+    risks,
+    overallScore,
+    summary: `Analyzed ${riskFactors} audit target risk factors. ${risks.length} areas require attention.`,
+  };
+}
+
+/**
+ * Analyze pattern-based risks - unusual patterns that may indicate issues
+ */
+async function analyzePatternBasedRisk(
+  ctx: { prisma: import('@prisma/client').PrismaClient; user: { organizationId: string } },
+  startDate: Date,
+  endDate: Date,
+  providerId?: string
+): Promise<RiskAnalysisResult> {
+  const risks: RiskFinding[] = [];
+  let totalRiskScore = 0;
+  let riskFactors = 0;
+
+  // 1. Weekend/after-hours billing patterns
+  const afterHoursEncounters = await ctx.prisma.encounter.count({
+    where: {
+      organizationId: ctx.user.organizationId,
+      encounterDate: { gte: startDate, lte: endDate },
+      ...(providerId ? { providerId } : {}),
+      OR: [
+        // Check encounters on weekends would require raw query
+      ],
+    },
+  });
+
+  // Use raw query for weekend detection
+  const weekendEncounters = await ctx.prisma.$queryRaw<{ count: bigint }[]>`
+    SELECT COUNT(*) as count FROM "Encounter"
+    WHERE "organizationId" = ${ctx.user.organizationId}
+    AND "encounterDate" BETWEEN ${startDate} AND ${endDate}
+    ${providerId ? Prisma.sql`AND "providerId" = ${providerId}` : Prisma.empty}
+    AND EXTRACT(DOW FROM "encounterDate") IN (0, 6)
+  `;
+
+  const weekendCount = Number(weekendEncounters[0]?.count || 0);
+  const totalEncounters = await ctx.prisma.encounter.count({
+    where: {
+      organizationId: ctx.user.organizationId,
+      encounterDate: { gte: startDate, lte: endDate },
+      ...(providerId ? { providerId } : {}),
+    },
+  });
+
+  if (totalEncounters > 0 && weekendCount > 0) {
+    const weekendRate = (weekendCount / totalEncounters) * 100;
+    if (weekendRate > 10) {
+      const score = Math.min(70, Math.round(weekendRate * 4));
+      risks.push({
+        riskType: 'PATTERN_WEEKEND_BILLING',
+        title: 'High weekend service volume',
+        description: `${weekendRate.toFixed(1)}% of services on weekends may trigger scrutiny`,
+        severity: weekendRate > 20 ? 'MEDIUM' : 'LOW',
+        riskScore: score,
+        remediation: 'Verify weekend services are legitimate. Document reasons for weekend appointments.',
+        complianceImpact: false,
+        auditRiskFactor: weekendRate / 100,
+      });
+      totalRiskScore += score;
+      riskFactors++;
+    }
+  }
+
+  // 2. Consistent visit patterns (same services every visit)
+  const repeatServicePatterns = await ctx.prisma.$queryRaw<{ patientId: string; count: bigint }[]>`
+    SELECT e."patientId", COUNT(DISTINCT e.id) as count
+    FROM "Encounter" e
+    JOIN "Procedure" p ON p."encounterId" = e.id
+    WHERE e."organizationId" = ${ctx.user.organizationId}
+    AND e."encounterDate" BETWEEN ${startDate} AND ${endDate}
+    ${providerId ? Prisma.sql`AND e."providerId" = ${providerId}` : Prisma.empty}
+    GROUP BY e."patientId"
+    HAVING COUNT(DISTINCT e.id) > 5
+  `;
+
+  if (repeatServicePatterns.length > 0) {
+    const patientsWithHighVisits = repeatServicePatterns.length;
+    if (patientsWithHighVisits > 10) {
+      const score = Math.min(60, patientsWithHighVisits);
+      risks.push({
+        riskType: 'PATTERN_REPEAT_SERVICES',
+        title: 'High-frequency visit patterns detected',
+        description: `${patientsWithHighVisits} patients with more than 5 visits in the period`,
+        severity: patientsWithHighVisits > 25 ? 'MEDIUM' : 'LOW',
+        riskScore: score,
+        remediation: 'Review treatment plans for high-frequency patients. Ensure medical necessity documented for each visit.',
+        complianceImpact: true,
+        auditRiskFactor: Math.min(1, patientsWithHighVisits / 50),
+      });
+      totalRiskScore += score;
+      riskFactors++;
+    }
+  }
+
+  // 3. Diagnosis clustering (using same diagnoses repeatedly)
+  const diagnosisClustering = await ctx.prisma.diagnosis.groupBy({
+    by: ['icd10Code'],
+    where: {
+      encounter: {
+        organizationId: ctx.user.organizationId,
+        encounterDate: { gte: startDate, lte: endDate },
+        ...(providerId ? { providerId } : {}),
+      },
+    },
+    _count: true,
+    orderBy: { _count: { icd10Code: 'desc' } },
+    take: 10,
+  });
+
+  const totalDiagnoses = await ctx.prisma.diagnosis.count({
+    where: {
+      encounter: {
+        organizationId: ctx.user.organizationId,
+        encounterDate: { gte: startDate, lte: endDate },
+        ...(providerId ? { providerId } : {}),
+      },
+    },
+  });
+
+  if (diagnosisClustering.length > 0 && totalDiagnoses > 0) {
+    const topDiagnosisPercent = (diagnosisClustering[0]._count / totalDiagnoses) * 100;
+    if (topDiagnosisPercent > 30) {
+      const score = Math.min(75, Math.round(topDiagnosisPercent * 2));
+      risks.push({
+        riskType: 'PATTERN_DIAGNOSIS_CLUSTERING',
+        title: 'High diagnosis concentration',
+        description: `${topDiagnosisPercent.toFixed(1)}% of diagnoses are ${diagnosisClustering[0].icd10Code}`,
+        severity: topDiagnosisPercent > 50 ? 'HIGH' : 'MEDIUM',
+        riskScore: score,
+        remediation: 'Ensure diagnosis variety reflects actual patient conditions. Review documentation for specificity.',
+        complianceImpact: true,
+        auditRiskFactor: topDiagnosisPercent / 100,
+      });
+      totalRiskScore += score;
+      riskFactors++;
+    }
+  }
+
+  // 4. Service code clustering
+  const codeClustering = await ctx.prisma.procedure.groupBy({
+    by: ['cptCode'],
+    where: {
+      encounter: {
+        organizationId: ctx.user.organizationId,
+        encounterDate: { gte: startDate, lte: endDate },
+        ...(providerId ? { providerId } : {}),
+      },
+    },
+    _count: true,
+    orderBy: { _count: { cptCode: 'desc' } },
+    take: 10,
+  });
+
+  const totalProcedures = await ctx.prisma.procedure.count({
+    where: {
+      encounter: {
+        organizationId: ctx.user.organizationId,
+        encounterDate: { gte: startDate, lte: endDate },
+        ...(providerId ? { providerId } : {}),
+      },
+    },
+  });
+
+  if (codeClustering.length > 0 && totalProcedures > 0) {
+    const topCodePercent = (codeClustering[0]._count / totalProcedures) * 100;
+    if (topCodePercent > 40) {
+      const score = Math.min(70, Math.round(topCodePercent * 1.5));
+      risks.push({
+        riskType: 'PATTERN_CODE_CLUSTERING',
+        title: 'High procedure code concentration',
+        description: `${topCodePercent.toFixed(1)}% of procedures use code ${codeClustering[0].cptCode}`,
+        severity: topCodePercent > 60 ? 'HIGH' : 'MEDIUM',
+        riskScore: score,
+        remediation: 'Review service variety. Ensure coding accurately reflects services provided.',
+        complianceImpact: true,
+        auditRiskFactor: topCodePercent / 100,
+      });
+      totalRiskScore += score;
+      riskFactors++;
+    }
+  }
+
+  const overallScore = riskFactors > 0 ? Math.round(totalRiskScore / riskFactors) : 0;
+
+  return {
+    risks,
+    overallScore,
+    summary: `Analyzed ${riskFactors} pattern-based risk factors. ${risks.length} unusual patterns identified.`,
+  };
+}
+
+/**
+ * Analyze provider outliers - identify providers with significantly different patterns
+ */
+async function analyzeProviderOutliers(
+  ctx: { prisma: import('@prisma/client').PrismaClient; user: { organizationId: string } },
+  startDate: Date,
+  endDate: Date
+): Promise<RiskAnalysisResult> {
+  const risks: RiskFinding[] = [];
+  let totalRiskScore = 0;
+  let riskFactors = 0;
+
+  // Get all providers
+  const providers = await ctx.prisma.provider.findMany({
+    where: {
+      organizationId: ctx.user.organizationId,
+      isActive: true,
+    },
+    include: {
+      user: { select: { firstName: true, lastName: true } },
+    },
+  });
+
+  if (providers.length < 2) {
+    return { risks: [], overallScore: 0, summary: 'Insufficient providers for outlier analysis' };
+  }
+
+  // Calculate per-provider metrics
+  const providerMetrics: {
+    providerId: string;
+    providerName: string;
+    encounterCount: number;
+    avgChargePerEncounter: number;
+    avgProceduresPerEncounter: number;
+    denialRate: number;
+  }[] = [];
+
+  for (const provider of providers) {
+    const encounters = await ctx.prisma.encounter.count({
+      where: {
+        organizationId: ctx.user.organizationId,
+        providerId: provider.id,
+        encounterDate: { gte: startDate, lte: endDate },
+      },
+    });
+
+    const procedures = await ctx.prisma.procedure.count({
+      where: {
+        encounter: {
+          organizationId: ctx.user.organizationId,
+          providerId: provider.id,
+          encounterDate: { gte: startDate, lte: endDate },
+        },
+      },
+    });
+
+    const claims = await ctx.prisma.claim.aggregate({
+      where: {
+        organizationId: ctx.user.organizationId,
+        billingProviderId: provider.id,
+        createdDate: { gte: startDate, lte: endDate },
+      },
+      _sum: { totalCharges: true },
+      _count: { id: true },
+    });
+
+    const denials = await ctx.prisma.claim.count({
+      where: {
+        organizationId: ctx.user.organizationId,
+        billingProviderId: provider.id,
+        createdDate: { gte: startDate, lte: endDate },
+        status: 'DENIED',
+      },
+    });
+
+    if (encounters > 0) {
+      const claimCount = claims._count.id || 0;
+      providerMetrics.push({
+        providerId: provider.id,
+        providerName: `${provider.user.firstName} ${provider.user.lastName}`,
+        encounterCount: encounters,
+        avgChargePerEncounter: Number(claims._sum.totalCharges || 0) / encounters,
+        avgProceduresPerEncounter: procedures / encounters,
+        denialRate: claimCount > 0 ? (denials / claimCount) * 100 : 0,
+      });
+    }
+  }
+
+  if (providerMetrics.length < 2) {
+    return { risks: [], overallScore: 0, summary: 'Insufficient data for outlier analysis' };
+  }
+
+  // Calculate organization averages
+  const avgCharge = providerMetrics.reduce((sum, p) => sum + p.avgChargePerEncounter, 0) / providerMetrics.length;
+  const avgProcedures = providerMetrics.reduce((sum, p) => sum + p.avgProceduresPerEncounter, 0) / providerMetrics.length;
+  const avgDenialRate = providerMetrics.reduce((sum, p) => sum + p.denialRate, 0) / providerMetrics.length;
+
+  // Identify outliers (>1.5x or <0.5x the average)
+  for (const provider of providerMetrics) {
+    // High charge outlier
+    if (provider.avgChargePerEncounter > avgCharge * 1.5) {
+      const deviation = ((provider.avgChargePerEncounter / avgCharge) - 1) * 100;
+      const score = Math.min(85, Math.round(deviation));
+      risks.push({
+        riskType: 'PROVIDER_OUTLIER_HIGH_CHARGES',
+        title: `Provider ${provider.providerName}: High average charges`,
+        description: `Average charge per encounter is ${deviation.toFixed(0)}% above organization average`,
+        severity: deviation > 100 ? 'HIGH' : 'MEDIUM',
+        riskScore: score,
+        providerId: provider.providerId,
+        remediation: 'Review documentation for this provider. Ensure charges reflect services provided.',
+        complianceImpact: true,
+        financialImpact: (provider.avgChargePerEncounter - avgCharge) * provider.encounterCount,
+        auditRiskFactor: deviation / 200,
+      });
+      totalRiskScore += score;
+      riskFactors++;
+    }
+
+    // High procedure count outlier
+    if (provider.avgProceduresPerEncounter > avgProcedures * 1.5) {
+      const deviation = ((provider.avgProceduresPerEncounter / avgProcedures) - 1) * 100;
+      const score = Math.min(80, Math.round(deviation));
+      risks.push({
+        riskType: 'PROVIDER_OUTLIER_HIGH_PROCEDURES',
+        title: `Provider ${provider.providerName}: High procedure volume`,
+        description: `Average procedures per encounter is ${deviation.toFixed(0)}% above organization average`,
+        severity: deviation > 80 ? 'HIGH' : 'MEDIUM',
+        riskScore: score,
+        providerId: provider.providerId,
+        remediation: 'Review treatment patterns. Ensure all procedures have medical necessity documentation.',
+        complianceImpact: true,
+        auditRiskFactor: deviation / 200,
+      });
+      totalRiskScore += score;
+      riskFactors++;
+    }
+
+    // High denial rate outlier
+    if (provider.denialRate > avgDenialRate * 1.5 && provider.denialRate > 10) {
+      const score = Math.min(90, Math.round(provider.denialRate * 3));
+      risks.push({
+        riskType: 'PROVIDER_OUTLIER_HIGH_DENIALS',
+        title: `Provider ${provider.providerName}: High denial rate`,
+        description: `Denial rate of ${provider.denialRate.toFixed(1)}% is significantly above average`,
+        severity: provider.denialRate > 25 ? 'CRITICAL' : 'HIGH',
+        riskScore: score,
+        providerId: provider.providerId,
+        remediation: 'Conduct targeted coding education. Review documentation practices.',
+        complianceImpact: true,
+        auditRiskFactor: provider.denialRate / 100,
+      });
+      totalRiskScore += score;
+      riskFactors++;
+    }
+  }
+
+  const overallScore = riskFactors > 0 ? Math.round(totalRiskScore / riskFactors) : 0;
+
+  return {
+    risks,
+    overallScore,
+    summary: `Analyzed ${providers.length} providers. ${risks.length} outlier patterns identified.`,
+  };
+}
+
+/**
+ * Analyze payer audit risk - likelihood of audit from specific payers
+ */
+async function analyzePayerAuditRisk(
+  ctx: { prisma: import('@prisma/client').PrismaClient; user: { organizationId: string } },
+  startDate: Date,
+  endDate: Date,
+  providerId?: string
+): Promise<RiskAnalysisResult> {
+  const risks: RiskFinding[] = [];
+  let totalRiskScore = 0;
+  let riskFactors = 0;
+
+  // Get claims by payer
+  const claimsByPayer = await ctx.prisma.claim.groupBy({
+    by: ['payerId'],
+    where: {
+      organizationId: ctx.user.organizationId,
+      createdDate: { gte: startDate, lte: endDate },
+      ...(providerId ? { billingProviderId: providerId } : {}),
+    },
+    _count: { id: true },
+    _sum: { totalCharges: true },
+  });
+
+  // Analyze each payer
+  for (const payerData of claimsByPayer) {
+    if (!payerData.payerId) continue;
+
+    const payer = await ctx.prisma.insurancePayer.findUnique({
+      where: { id: payerData.payerId },
+    });
+
+    if (!payer) continue;
+
+    // Get denial rate for this payer
+    const deniedClaims = await ctx.prisma.claim.count({
+      where: {
+        organizationId: ctx.user.organizationId,
+        payerId: payerData.payerId,
+        createdDate: { gte: startDate, lte: endDate },
+        status: 'DENIED',
+        ...(providerId ? { billingProviderId: providerId } : {}),
+      },
+    });
+
+    const claimCount = payerData._count.id || 0;
+    const denialRate = claimCount > 0 ? (deniedClaims / claimCount) * 100 : 0;
+
+    // Medicare/Medicaid have higher audit risk
+    const isMedicare = payer.name.toLowerCase().includes('medicare');
+    const isMedicaid = payer.name.toLowerCase().includes('medicaid');
+    const isGovernment = isMedicare || isMedicaid;
+
+    // Calculate risk factors
+    let payerRiskScore = 0;
+
+    // Government payer base risk
+    if (isGovernment) {
+      payerRiskScore += 30;
+    }
+
+    // High claim volume risk
+    if (claimCount > 100) {
+      payerRiskScore += Math.min(30, claimCount / 10);
+    }
+
+    // High denial rate risk
+    if (denialRate > 10) {
+      payerRiskScore += Math.min(40, denialRate * 2);
+    }
+
+    if (payerRiskScore >= 50) {
+      risks.push({
+        riskType: 'PAYER_AUDIT_RISK',
+        title: `${payer.name}: Elevated audit risk`,
+        description: `${claimCount} claims with ${denialRate.toFixed(1)}% denial rate${isGovernment ? ' (government payer)' : ''}`,
+        severity: payerRiskScore > 80 ? 'HIGH' : 'MEDIUM',
+        riskScore: payerRiskScore,
+        entityType: 'Payer',
+        entityId: payer.id,
+        remediation: isGovernment
+          ? 'Implement Medicare/Medicaid-specific compliance review. Ensure LCD/NCD requirements met.'
+          : 'Review claim accuracy for this payer. Address denial patterns.',
+        complianceImpact: isGovernment,
+        financialImpact: Number(payerData._sum.totalCharges || 0) * 0.05, // 5% recovery risk
+        auditRiskFactor: payerRiskScore / 100,
+      });
+      totalRiskScore += payerRiskScore;
+      riskFactors++;
+    }
+
+    // Specific Medicare LCD compliance check
+    if (isMedicare) {
+      // Check for chiropractic services without AT modifier
+      // ClaimLine uses modifiers array, check if AT is not present
+      const chiropracticWithoutAT = await ctx.prisma.claimLine.count({
+        where: {
+          claim: {
+            organizationId: ctx.user.organizationId,
+            payerId: payerData.payerId,
+            createdDate: { gte: startDate, lte: endDate },
+            ...(providerId ? { billingProviderId: providerId } : {}),
+          },
+          cptCode: { in: ['98940', '98941', '98942', '98943'] },
+          NOT: {
+            modifiers: { has: 'AT' },
+          },
+        },
+      });
+
+      if (chiropracticWithoutAT > 0) {
+        const score = Math.min(95, 70 + chiropracticWithoutAT);
+        risks.push({
+          riskType: 'PAYER_AUDIT_MEDICARE_LCD',
+          title: 'Medicare chiropractic claims missing AT modifier',
+          description: `${chiropracticWithoutAT} Medicare CMT claims without required AT modifier`,
+          severity: 'CRITICAL',
+          riskScore: score,
+          entityType: 'Payer',
+          entityId: payer.id,
+          remediation: 'Add AT modifier to all Medicare CMT claims to indicate active treatment.',
+          complianceImpact: true,
+          financialImpact: chiropracticWithoutAT * 75, // Average CMT reimbursement
+          auditRiskFactor: 0.9,
+        });
+        totalRiskScore += score;
+        riskFactors++;
+      }
+    }
+  }
+
+  const overallScore = riskFactors > 0 ? Math.round(totalRiskScore / riskFactors) : 0;
+
+  return {
+    risks,
+    overallScore,
+    summary: `Analyzed ${claimsByPayer.length} payers. ${risks.length} payer-specific risks identified.`,
+  };
+}
+
+/**
+ * Get risk level from score
+ */
+function getRiskLevel(score: number): string {
+  if (score >= 80) return 'critical';
+  if (score >= 60) return 'high';
+  if (score >= 40) return 'moderate';
+  if (score >= 20) return 'low';
+  return 'minimal';
+}
+
+/**
+ * Generate remediation plan from risks
+ */
+function generateRemediationPlan(risks: RiskFinding[]): { priority: number; action: string; impact: string }[] {
+  const plan: { priority: number; action: string; impact: string }[] = [];
+
+  // Sort by risk score descending
+  const sortedRisks = [...risks].sort((a, b) => b.riskScore - a.riskScore);
+
+  let priority = 1;
+  for (const risk of sortedRisks.slice(0, 10)) { // Top 10 risks
+    plan.push({
+      priority,
+      action: risk.remediation,
+      impact: `Addresses ${risk.title} (Risk Score: ${risk.riskScore})`,
+    });
+    priority++;
+  }
+
+  // Add general recommendations based on risk patterns
+  const auditTargetRisks = risks.filter(r => r.riskType.startsWith('AUDIT_TARGET'));
+  const providerOutliers = risks.filter(r => r.riskType.startsWith('PROVIDER_OUTLIER'));
+  const payerRisks = risks.filter(r => r.riskType.startsWith('PAYER_AUDIT'));
+
+  if (auditTargetRisks.length > 2) {
+    plan.push({
+      priority: priority++,
+      action: 'Implement comprehensive pre-submission claim review process',
+      impact: `Mitigates ${auditTargetRisks.length} audit target risks`,
+    });
+  }
+
+  if (providerOutliers.length > 0) {
+    plan.push({
+      priority: priority++,
+      action: 'Conduct provider-specific coding education and documentation review',
+      impact: `Addresses ${providerOutliers.length} provider outlier issues`,
+    });
+  }
+
+  if (payerRisks.length > 2) {
+    plan.push({
+      priority: priority++,
+      action: 'Review payer-specific requirements and update coding policies',
+      impact: `Reduces audit risk for ${payerRisks.length} payers`,
+    });
+  }
+
+  return plan;
+}
+
+/**
+ * Generate education content for risk findings
+ */
+function generateRiskEducation(findingType: string, severity: string): {
+  overview: string;
+  bestPractices: string[];
+  resources: string[];
+} {
+  const educationMap: Record<string, { overview: string; bestPractices: string[]; resources: string[] }> = {
+    AUDIT_TARGET_HIGH_VALUE: {
+      overview: 'High-value claims attract payer scrutiny due to their financial impact.',
+      bestPractices: [
+        'Document medical necessity thoroughly for all high-value services',
+        'Include objective findings that support the level of service',
+        'Reference relevant clinical guidelines in notes',
+        'Consider pre-authorization for services over $500',
+      ],
+      resources: [
+        'CMS Medicare Benefit Policy Manual',
+        'AMA CPT Documentation Guidelines',
+        'Payer-specific high-value service policies',
+      ],
+    },
+    AUDIT_TARGET_MODIFIER_USAGE: {
+      overview: 'Modifier usage patterns are closely monitored by payers for potential abuse.',
+      bestPractices: [
+        'Only use modifiers when clinically appropriate',
+        'Document the specific circumstances requiring each modifier',
+        'Ensure staff understand modifier definitions',
+        'Implement modifier audit as part of claim review',
+      ],
+      resources: [
+        'AMA CPT Modifier Guidelines',
+        'Medicare Claims Processing Manual (modifiers)',
+        'NCCI Policy Manual',
+      ],
+    },
+    AUDIT_TARGET_DENIAL_RATE: {
+      overview: 'High denial rates indicate potential documentation or coding issues.',
+      bestPractices: [
+        'Analyze denial reasons by category',
+        'Implement front-end claim edits',
+        'Provide targeted coder education',
+        'Establish denial management workflow',
+      ],
+      resources: [
+        'AHIMA Denial Management Toolkit',
+        'CMS Coverage Determination Database',
+        'Payer-specific denial reason codes',
+      ],
+    },
+    PROVIDER_OUTLIER_HIGH_CHARGES: {
+      overview: 'Providers with charges significantly above peers may face audit scrutiny.',
+      bestPractices: [
+        'Ensure charges match documentation',
+        'Review fee schedule accuracy',
+        'Document time and complexity appropriately',
+        'Compare to specialty benchmarks',
+      ],
+      resources: [
+        'Medicare Physician Fee Schedule',
+        'Specialty society guidelines',
+        'Internal audit procedures',
+      ],
+    },
+    PROVIDER_OUTLIER_HIGH_DENIALS: {
+      overview: 'Elevated denial rates for specific providers indicate training needs.',
+      bestPractices: [
+        'Conduct one-on-one coding education',
+        'Review documentation templates',
+        'Implement pre-submission review for this provider',
+        'Monitor improvement over time',
+      ],
+      resources: [
+        'Provider-specific denial analysis',
+        'Coding education materials',
+        'Documentation improvement guides',
+      ],
+    },
+    PAYER_AUDIT_MEDICARE_LCD: {
+      overview: 'Medicare LCD requirements are strictly enforced for coverage determination.',
+      bestPractices: [
+        'Review applicable LCDs for all Medicare services',
+        'Document all LCD criteria in clinical notes',
+        'Use AT modifier for active chiropractic treatment',
+        'Maintain 12-visit tracking per episode',
+      ],
+      resources: [
+        'Medicare LCD L33507 (Chiropractic)',
+        'CMS Chiropractic Services Manual',
+        'MAC-specific chiropractic policies',
+      ],
+    },
+  };
+
+  // Return specific education or generic
+  return educationMap[findingType] || {
+    overview: `${severity} severity risk requiring attention.`,
+    bestPractices: [
+      'Review the specific finding details',
+      'Address root cause of the issue',
+      'Implement preventive measures',
+      'Monitor for recurrence',
+    ],
+    resources: [
+      'Internal compliance policies',
+      'Relevant regulatory guidelines',
+    ],
+  };
+}
 
 // ============================================
 // Helper functions for clinical quality assessment (US-351)

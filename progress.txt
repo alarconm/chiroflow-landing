@@ -231,3 +231,59 @@ Date: 2026-01-22
 --- Iteration 5 completed at 2026-01-22 ---
 Story: US-351 - Clinical quality measures
 
+--- Iteration 5 completed at 2026-01-22 15:53:32 ---
+Story: US-351 - Clinical quality measures
+
+## US-352: Risk identification - COMPLETED
+
+### What was implemented:
+- Created `aiQA.identifyRisks` mutation for comprehensive risk identification and analysis
+- Implemented 4 risk analysis dimensions:
+  1. **Audit Target Risk Scoring** - High-value claim frequency, modifier usage patterns, denial rates, same-day service frequency
+  2. **Pattern-Based Risk Detection** - Weekend billing patterns, repeat service patterns, diagnosis clustering, code clustering
+  3. **Provider Outlier Identification** - High charges vs org average, high procedure volume, high denial rates
+  4. **Payer Audit Risk Assessment** - Government payer risk, claim volume analysis, Medicare LCD compliance (AT modifier)
+
+- Risk dashboard and tracking endpoints:
+  - `aiQA.getRiskDashboard` - Current risk status with open findings, trends
+  - `aiQA.getProviderRiskComparison` - Compare providers by risk metrics
+  - `aiQA.getRiskMitigationTracking` - Track remediation progress by status
+  - `aiQA.startMitigation` - Begin work on a risk finding
+  - `aiQA.completeMitigation` - Complete and resolve a risk finding
+  - `aiQA.getRiskFindingDetails` - Finding details with education content
+
+- Proactive remediation:
+  - Auto-generated remediation plan prioritized by risk score
+  - Targeted recommendations based on risk types found
+  - Risk-specific education content for each finding type
+
+- Risk mitigation tracking:
+  - Status tracking (open, in_progress, resolved)
+  - Mitigation rate calculation
+  - Resolution notes and verification
+
+- Added new QAMetricType enum values:
+  - RISK_AUDIT_TARGET, RISK_PATTERN, RISK_PROVIDER_OUTLIER, RISK_PAYER_AUDIT, RISK_OVERALL
+
+- Added new AuditAction types:
+  - AI_QA_RISK_IDENTIFICATION, AI_QA_RISK_MITIGATION_STARTED, AI_QA_RISK_MITIGATION_COMPLETED
+
+### Acceptance Criteria Met:
+- [x] aiQA.identifyRisks - Find potential risks
+- [x] Audit target risk scoring
+- [x] Pattern-based risk detection
+- [x] Provider outlier identification
+- [x] Payer audit risk assessment
+- [x] Proactive remediation suggestions
+- [x] Risk mitigation tracking
+
+### Files modified:
+- app/src/server/routers/aiQA.ts (~1100 lines added for risk identification)
+- app/src/lib/audit.ts (added 3 new audit action types)
+- app/prisma/schema.prisma (added 5 new QAMetricType enum values)
+
+### Status: COMPLETE
+Date: 2026-01-22
+--- Iteration 6 completed at 2026-01-22 ---
+Story: US-352 - Risk identification
+

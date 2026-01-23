@@ -102,7 +102,7 @@
         "Risk mitigation tracking"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-353",
