@@ -463,3 +463,215 @@ export interface ForecastAccuracyMetrics {
     variancePercent: number;
   }[];
 }
+
+// ============================================
+// NO-SHOW PREDICTION TYPES
+// ============================================
+
+export interface NoShowPredictionConfig {
+  // Risk level thresholds (0-100)
+  criticalThreshold: number;      // Above this = critical risk
+  highThreshold: number;          // Above this = high risk
+  mediumThreshold: number;        // Above this = medium risk
+  lowThreshold: number;           // Above this = low risk
+
+  // Factor weights (must sum to 1.0)
+  factorWeights: {
+    historicalNoShowRate: number;   // Patient's no-show history
+    daysSinceLastVisit: number;     // Recency impacts attendance
+    appointmentLeadTime: number;    // How far in advance booked
+    appointmentTimeOfDay: number;   // Morning vs afternoon vs evening
+    dayOfWeek: number;              // Monday vs Friday patterns
+    appointmentType: number;        // New patient vs follow-up
+    weatherForecast: number;        // Bad weather = more no-shows
+    patientAge: number;             // Age-related patterns
+    outstandingBalance: number;     // Financial barriers
+    confirmationStatus: number;     // Confirmed vs unconfirmed
+  };
+
+  // Analysis parameters
+  lookbackMonths: number;           // Historical data window
+  minAppointments: number;          // Min appointments for reliable prediction
+  overbookingThreshold: number;     // No-show % to trigger overbooking
+}
+
+export interface NoShowRiskFactor {
+  name: string;
+  weight: number;
+  rawValue: number | string;
+  normalizedScore: number;        // 0-100 (higher = more risk)
+  impact: 'increases_risk' | 'neutral' | 'decreases_risk';
+  contribution: number;           // Weight * normalized score
+  description: string;
+}
+
+export interface ExternalFactor {
+  factor: 'weather' | 'holiday' | 'local_event' | 'season';
+  name: string;
+  impactScore: number;            // How much this increases no-show risk (0-100)
+  confidence: number;             // How confident we are in this factor
+  description: string;
+  dataSource?: string;
+}
+
+export interface AppointmentCharacteristics {
+  appointmentId: string;
+  appointmentType: string;
+  appointmentTypeId: string;
+  scheduledDateTime: Date;
+  dayOfWeek: number;
+  dayName: string;
+  timeOfDay: 'morning' | 'midday' | 'afternoon' | 'evening';
+  hour: number;
+  leadTimeDays: number;           // Days between booking and appointment
+  providerId: string;
+  providerName: string;
+  isNewPatient: boolean;
+  isFirstAppointment: boolean;
+  duration: number;               // Minutes
+}
+
+export interface PatientNoShowHistory {
+  totalAppointments: number;
+  completedAppointments: number;
+  noShowAppointments: number;
+  cancelledAppointments: number;
+  noShowRate: number;             // Percentage
+  recentNoShowRate: number;       // Last 6 months
+  lastNoShowDate?: Date;
+  daysSinceLastNoShow?: number;
+  streakType: 'attendance' | 'no_shows' | 'mixed';
+  currentStreak: number;          // Consecutive attended or no-showed
+  averageLeadTime: number;        // Days patient typically books ahead
+  preferredTimeOfDay: 'morning' | 'midday' | 'afternoon' | 'evening' | null;
+}
+
+export interface NoShowIntervention {
+  intervention: string;
+  description: string;
+  timing: 'immediate' | 'day_before' | 'week_before' | 'at_booking';
+  channel: 'sms' | 'email' | 'phone' | 'automated' | 'multiple';
+  expectedImpact: 'high' | 'medium' | 'low';
+  priority: number;               // 1 = highest
+  automatable: boolean;
+}
+
+export interface OverbookingSuggestion {
+  recommendedOverbook: boolean;
+  overbookSlots: number;          // How many extra appointments to book
+  confidence: number;             // 0-1
+  expectedNoShows: number;        // How many no-shows predicted for the time slot
+  timeSlot: string;               // e.g., "Monday 9am-10am"
+  riskLevel: 'safe' | 'moderate' | 'risky';
+  reasoning: string;
+}
+
+export interface ConfirmationStrategy {
+  recommendedReminders: number;   // How many reminders to send
+  reminderTiming: string[];       // e.g., ["7 days", "2 days", "1 day", "2 hours"]
+  reminderChannels: ('sms' | 'email' | 'phone')[];
+  requireConfirmation: boolean;
+  confirmationDeadline?: number;  // Hours before appointment
+  escalateIfNoConfirmation: boolean;
+  personalizedMessage: boolean;
+  includeReschedulingOption: boolean;
+}
+
+export interface NoShowPredictionResult {
+  appointmentId: string;
+  patientId: string;
+  patientName: string;
+
+  // Core prediction
+  noShowProbability: number;      // 0-100
+  confidenceScore: number;        // 0-1
+  riskLevel: 'critical' | 'high' | 'medium' | 'low' | 'minimal';
+
+  // Detailed analysis
+  riskFactors: NoShowRiskFactor[];
+  topRiskFactors: string[];       // Top 3 contributing factors
+  patientHistory: PatientNoShowHistory;
+  appointmentDetails: AppointmentCharacteristics;
+  externalFactors: ExternalFactor[];
+
+  // Recommendations
+  interventions: NoShowIntervention[];
+  overbookingSuggestion: OverbookingSuggestion;
+  confirmationStrategy: ConfirmationStrategy;
+
+  // Tracking
+  predictionDate: Date;
+  validUntil: Date;
+  modelVersion: string;
+}
+
+export interface BatchNoShowPredictionOptions {
+  organizationId: string;
+  startDate?: Date;               // Filter appointments from this date
+  endDate?: Date;                 // Filter appointments until this date
+  providerId?: string;            // Filter by provider
+  appointmentTypeId?: string;     // Filter by appointment type
+  minRiskLevel?: 'critical' | 'high' | 'medium' | 'low';
+  limit?: number;
+  saveResults?: boolean;
+}
+
+export interface BatchNoShowPredictionResult {
+  processedCount: number;
+  atRiskCount: number;
+  errorCount: number;
+  byRiskLevel: {
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+    minimal: number;
+  };
+  processingTimeMs: number;
+  atRiskAppointments: NoShowPredictionResult[];
+  overbookingRecommendations: OverbookingSuggestion[];
+  aggregateStats: {
+    averageNoShowRisk: number;
+    expectedNoShows: number;
+    expectedAttendance: number;
+  };
+}
+
+export interface NoShowAccuracyMetrics {
+  totalPredictions: number;
+  validatedPredictions: number;
+  accuratePredictions: number;
+
+  // Classification metrics
+  truePositives: number;          // Predicted no-show, actually no-showed
+  trueNegatives: number;          // Predicted attend, actually attended
+  falsePositives: number;         // Predicted no-show, actually attended
+  falseNegatives: number;         // Predicted attend, actually no-showed
+
+  // Accuracy metrics
+  accuracy: number;               // Overall accuracy
+  precision: number;              // TP / (TP + FP)
+  recall: number;                 // TP / (TP + FN)
+  f1Score: number;                // Harmonic mean
+
+  // By risk level
+  byRiskLevel: {
+    level: string;
+    predictions: number;
+    actualNoShows: number;
+    accuracy: number;
+  }[];
+
+  // By appointment characteristics
+  byDayOfWeek: {
+    day: string;
+    predictions: number;
+    accuracy: number;
+  }[];
+
+  byTimeOfDay: {
+    timeSlot: string;
+    predictions: number;
+    accuracy: number;
+  }[];
+}

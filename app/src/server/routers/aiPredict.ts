@@ -17,8 +17,14 @@ import {
   saveDemandForecast,
   trackForecastAccuracy,
   getForecastAccuracySummary,
+  predictNoShow,
+  batchPredictNoShow,
+  saveNoShowPrediction,
+  trackNoShowPredictionAccuracy,
+  getNoShowPredictionAccuracy,
   type ChurnPredictionConfig,
   type DemandForecastConfig,
+  type NoShowPredictionConfig,
 } from '@/lib/ai-predict';
 
 // Zod schemas for input validation
@@ -745,4 +751,406 @@ export const aiPredictRouter = router({
       lastUpdated: forecast.forecastGeneratedAt,
     };
   }),
+
+  // ============================================
+  // NO-SHOW PREDICTION
+  // ============================================
+
+  // Predict no-show risk for a single appointment
+  predictNoShow: protectedProcedure
+    .input(
+      z.object({
+        appointmentId: z.string(),
+        config: z.object({
+          criticalThreshold: z.number().min(50).max(100).optional(),
+          highThreshold: z.number().min(40).max(90).optional(),
+          mediumThreshold: z.number().min(20).max(70).optional(),
+          lowThreshold: z.number().min(10).max(50).optional(),
+          lookbackMonths: z.number().min(3).max(24).optional(),
+          minAppointments: z.number().min(1).max(20).optional(),
+          overbookingThreshold: z.number().min(5).max(50).optional(),
+        }).optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const prediction = await predictNoShow(
+        ctx.user.organizationId,
+        input.appointmentId,
+        input.config as Partial<NoShowPredictionConfig> | undefined
+      );
+
+      if (!prediction) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Appointment not found or not in scheduled/confirmed status',
+        });
+      }
+
+      return prediction;
+    }),
+
+  // Batch predict no-shows for upcoming appointments
+  batchPredictNoShow: adminProcedure
+    .input(
+      z.object({
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+        providerId: z.string().optional(),
+        appointmentTypeId: z.string().optional(),
+        minRiskLevel: z.enum(['critical', 'high', 'medium', 'low']).optional(),
+        limit: z.number().min(1).max(500).optional(),
+        saveResults: z.boolean().optional(),
+      }).optional()
+    )
+    .mutation(async ({ ctx, input }) => {
+      const result = await batchPredictNoShow({
+        organizationId: ctx.user.organizationId,
+        startDate: input?.startDate,
+        endDate: input?.endDate,
+        providerId: input?.providerId,
+        appointmentTypeId: input?.appointmentTypeId,
+        minRiskLevel: input?.minRiskLevel || 'low',
+        limit: input?.limit || 100,
+        saveResults: input?.saveResults || false,
+      });
+
+      await auditLog('AI_NOSHOW_BATCH_PREDICTION', 'Prediction', {
+        changes: {
+          processedCount: result.processedCount,
+          atRiskCount: result.atRiskCount,
+          byRiskLevel: result.byRiskLevel,
+          aggregateStats: result.aggregateStats,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return result;
+    }),
+
+  // Get at-risk appointments list
+  getAtRiskAppointments: protectedProcedure
+    .input(
+      z.object({
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+        providerId: z.string().optional(),
+        minRiskLevel: z.enum(['critical', 'high', 'medium', 'low']).optional(),
+        limit: z.number().min(1).max(100).default(50),
+        offset: z.number().min(0).default(0),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const result = await batchPredictNoShow({
+        organizationId: ctx.user.organizationId,
+        startDate: input?.startDate || new Date(),
+        endDate: input?.endDate || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // Default 2 weeks
+        providerId: input?.providerId,
+        minRiskLevel: input?.minRiskLevel || 'medium',
+        limit: (input?.limit || 50) + (input?.offset || 0),
+      });
+
+      // Apply offset
+      const appointments = result.atRiskAppointments.slice(
+        input?.offset || 0,
+        (input?.offset || 0) + (input?.limit || 50)
+      );
+
+      return {
+        appointments,
+        total: result.atRiskCount,
+        byRiskLevel: result.byRiskLevel,
+        aggregateStats: result.aggregateStats,
+      };
+    }),
+
+  // Get no-show risk summary
+  getNoShowSummary: protectedProcedure
+    .input(
+      z.object({
+        forecastDays: z.number().min(1).max(30).default(14),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const endDate = new Date(Date.now() + (input?.forecastDays || 14) * 24 * 60 * 60 * 1000);
+
+      const [predictions, accuracy] = await Promise.all([
+        batchPredictNoShow({
+          organizationId: ctx.user.organizationId,
+          startDate: new Date(),
+          endDate,
+          minRiskLevel: 'low',
+          limit: 500,
+        }),
+        getNoShowPredictionAccuracy(ctx.user.organizationId),
+      ]);
+
+      return {
+        totalAppointments: predictions.processedCount,
+        atRiskAppointments: predictions.atRiskCount,
+        byRiskLevel: predictions.byRiskLevel,
+        aggregateStats: predictions.aggregateStats,
+        overbookingRecommendations: predictions.overbookingRecommendations,
+        accuracy: {
+          overallAccuracy: accuracy.accuracy,
+          precision: accuracy.precision,
+          recall: accuracy.recall,
+          f1Score: accuracy.f1Score,
+        },
+        lastUpdated: new Date(),
+      };
+    }),
+
+  // Save no-show prediction
+  saveNoShowPrediction: adminProcedure
+    .input(z.object({ appointmentId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const prediction = await predictNoShow(
+        ctx.user.organizationId,
+        input.appointmentId
+      );
+
+      if (!prediction) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Appointment not found or not in scheduled/confirmed status',
+        });
+      }
+
+      await saveNoShowPrediction(ctx.user.organizationId, prediction);
+
+      await auditLog('AI_NOSHOW_PREDICTION_SAVED', 'Prediction', {
+        entityId: input.appointmentId,
+        changes: {
+          noShowProbability: prediction.noShowProbability,
+          riskLevel: prediction.riskLevel,
+          topRiskFactors: prediction.topRiskFactors,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { success: true, prediction };
+    }),
+
+  // Track no-show prediction outcome
+  trackNoShowOutcome: adminProcedure
+    .input(
+      z.object({
+        appointmentId: z.string(),
+        actuallyNoShowed: z.boolean(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      await trackNoShowPredictionAccuracy(
+        ctx.user.organizationId,
+        input.appointmentId,
+        input.actuallyNoShowed
+      );
+
+      await auditLog('AI_NOSHOW_OUTCOME_TRACKED', 'Prediction', {
+        entityId: input.appointmentId,
+        changes: {
+          actuallyNoShowed: input.actuallyNoShowed,
+          notes: input.notes,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return { success: true };
+    }),
+
+  // Get no-show prediction accuracy metrics
+  getNoShowPredictionAccuracy: protectedProcedure.query(async ({ ctx }) => {
+    return getNoShowPredictionAccuracy(ctx.user.organizationId);
+  }),
+
+  // Get interventions for high-risk appointments
+  getInterventionsForRiskyAppointments: protectedProcedure
+    .input(
+      z.object({
+        minRiskLevel: z.enum(['critical', 'high', 'medium']).default('high'),
+        forecastDays: z.number().min(1).max(14).default(7),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const endDate = new Date(Date.now() + (input?.forecastDays || 7) * 24 * 60 * 60 * 1000);
+
+      const result = await batchPredictNoShow({
+        organizationId: ctx.user.organizationId,
+        startDate: new Date(),
+        endDate,
+        minRiskLevel: input?.minRiskLevel || 'high',
+        limit: 50,
+      });
+
+      // Extract and aggregate interventions
+      const allInterventions = result.atRiskAppointments.flatMap((apt) =>
+        apt.interventions.map((intervention) => ({
+          ...intervention,
+          appointmentId: apt.appointmentId,
+          patientId: apt.patientId,
+          patientName: apt.patientName,
+          noShowProbability: apt.noShowProbability,
+          riskLevel: apt.riskLevel,
+          appointmentDateTime: apt.appointmentDetails.scheduledDateTime,
+        }))
+      );
+
+      // Group by intervention type
+      const byInterventionType = allInterventions.reduce((acc, intervention) => {
+        const key = intervention.intervention;
+        if (!acc[key]) {
+          acc[key] = {
+            intervention: key,
+            description: intervention.description,
+            count: 0,
+            appointments: [],
+          };
+        }
+        acc[key].count++;
+        acc[key].appointments.push({
+          appointmentId: intervention.appointmentId,
+          patientName: intervention.patientName,
+          noShowProbability: intervention.noShowProbability,
+          appointmentDateTime: intervention.appointmentDateTime,
+        });
+        return acc;
+      }, {} as Record<string, { intervention: string; description: string; count: number; appointments: { appointmentId: string; patientName: string; noShowProbability: number; appointmentDateTime: Date }[] }>);
+
+      return {
+        totalAtRiskAppointments: result.atRiskCount,
+        interventionSummary: Object.values(byInterventionType),
+        detailedInterventions: allInterventions.slice(0, 50),
+        overbookingRecommendations: result.overbookingRecommendations,
+      };
+    }),
+
+  // Get overbooking suggestions
+  getOverbookingSuggestions: protectedProcedure
+    .input(
+      z.object({
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+        providerId: z.string().optional(),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const startDate = input?.startDate || new Date();
+      const endDate = input?.endDate || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+
+      const result = await batchPredictNoShow({
+        organizationId: ctx.user.organizationId,
+        startDate,
+        endDate,
+        providerId: input?.providerId,
+        minRiskLevel: 'low',
+        limit: 500,
+      });
+
+      // Group by day for daily overbooking recommendations
+      const byDay = result.atRiskAppointments.reduce((acc, apt) => {
+        const dayKey = apt.appointmentDetails.scheduledDateTime.toISOString().split('T')[0];
+        if (!acc[dayKey]) {
+          acc[dayKey] = {
+            date: dayKey,
+            appointments: [],
+            totalExpectedNoShows: 0,
+            averageNoShowRisk: 0,
+          };
+        }
+        acc[dayKey].appointments.push(apt);
+        acc[dayKey].totalExpectedNoShows += apt.noShowProbability / 100;
+        return acc;
+      }, {} as Record<string, { date: string; appointments: typeof result.atRiskAppointments; totalExpectedNoShows: number; averageNoShowRisk: number }>);
+
+      // Calculate daily recommendations
+      const dailyRecommendations = Object.values(byDay).map((day) => {
+        const avgRisk = day.appointments.reduce((sum, a) => sum + a.noShowProbability, 0) / day.appointments.length;
+        day.averageNoShowRisk = avgRisk;
+
+        return {
+          date: day.date,
+          appointmentCount: day.appointments.length,
+          expectedNoShows: Math.round(day.totalExpectedNoShows * 10) / 10,
+          averageNoShowRisk: Math.round(avgRisk * 10) / 10,
+          recommendedOverbooking: day.totalExpectedNoShows >= 1 ? Math.min(3, Math.ceil(day.totalExpectedNoShows * 0.5)) : 0,
+          riskLevel: avgRisk >= 30 ? 'high' : avgRisk >= 15 ? 'moderate' : 'low',
+        };
+      });
+
+      return {
+        dailyRecommendations: dailyRecommendations.sort((a, b) => a.date.localeCompare(b.date)),
+        aggregateStats: result.aggregateStats,
+        summary: {
+          totalAppointments: result.processedCount,
+          totalExpectedNoShows: result.aggregateStats.expectedNoShows,
+          averageNoShowRisk: result.aggregateStats.averageNoShowRisk,
+          totalRecommendedOverbooking: dailyRecommendations.reduce((sum, d) => sum + d.recommendedOverbooking, 0),
+        },
+      };
+    }),
+
+  // Get confirmation strategy recommendations
+  getConfirmationStrategies: protectedProcedure
+    .input(
+      z.object({
+        forecastDays: z.number().min(1).max(14).default(7),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const endDate = new Date(Date.now() + (input?.forecastDays || 7) * 24 * 60 * 60 * 1000);
+
+      const result = await batchPredictNoShow({
+        organizationId: ctx.user.organizationId,
+        startDate: new Date(),
+        endDate,
+        minRiskLevel: 'low',
+        limit: 200,
+      });
+
+      // Group by confirmation strategy needs
+      const needsMultiChannel = result.atRiskAppointments.filter(
+        (apt) => apt.confirmationStrategy.reminderChannels.length >= 3
+      );
+      const needsPhoneCall = result.atRiskAppointments.filter(
+        (apt) => apt.confirmationStrategy.reminderChannels.includes('phone')
+      );
+      const requiresConfirmation = result.atRiskAppointments.filter(
+        (apt) => apt.confirmationStrategy.requireConfirmation && !apt.appointmentDetails.appointmentType.includes('Confirmed')
+      );
+      const escalationNeeded = result.atRiskAppointments.filter(
+        (apt) => apt.confirmationStrategy.escalateIfNoConfirmation
+      );
+
+      return {
+        summary: {
+          totalAppointments: result.processedCount,
+          needsMultiChannelReminders: needsMultiChannel.length,
+          needsPhoneCall: needsPhoneCall.length,
+          needsConfirmation: requiresConfirmation.length,
+          needsEscalation: escalationNeeded.length,
+        },
+        byPriority: {
+          immediate: result.atRiskAppointments
+            .filter((apt) => apt.interventions.some((i) => i.timing === 'immediate'))
+            .map((apt) => ({
+              appointmentId: apt.appointmentId,
+              patientName: apt.patientName,
+              appointmentDateTime: apt.appointmentDetails.scheduledDateTime,
+              noShowProbability: apt.noShowProbability,
+              strategy: apt.confirmationStrategy,
+            }))
+            .slice(0, 20),
+          dayBefore: result.atRiskAppointments
+            .filter((apt) => apt.interventions.some((i) => i.timing === 'day_before'))
+            .length,
+          weekBefore: result.atRiskAppointments
+            .filter((apt) => apt.interventions.some((i) => i.timing === 'week_before'))
+            .length,
+        },
+      };
+    }),
 });

@@ -253,3 +253,115 @@ Date: 2026-01-22
 --- Iteration 3 completed at 2026-01-22 ---
 Story: US-381 - Demand forecasting
 
+--- Iteration 3 completed at 2026-01-22 21:11:29 ---
+Story: US-381 - Demand forecasting
+
+## US-382: No-show prediction - COMPLETED
+
+Date: 2026-01-22
+
+### What was done:
+1. Created `app/src/lib/ai-predict/noshow-prediction.ts` library with:
+   - `predictNoShow()` - Predict no-show risk for single appointment
+   - `batchPredictNoShow()` - Batch prediction for upcoming appointments
+   - `saveNoShowPrediction()` - Persist predictions to database
+   - `trackNoShowPredictionAccuracy()` - Track prediction vs actual outcomes
+   - `getNoShowPredictionAccuracy()` - Get accuracy metrics
+
+2. Added comprehensive types in `types.ts`:
+   - NoShowPredictionConfig (thresholds, factor weights)
+   - NoShowRiskFactor (name, weight, rawValue, normalizedScore, impact)
+   - ExternalFactor (weather, holidays, special events)
+   - AppointmentCharacteristics (day, time, type, provider, lead time)
+   - PatientNoShowHistory (rates, streaks, patterns)
+   - NoShowIntervention (intervention recommendations)
+   - OverbookingSuggestion (overbooking strategy)
+   - ConfirmationStrategy (confirmation timing and channels)
+   - NoShowPredictionResult (full prediction output)
+   - BatchNoShowPredictionOptions/Result
+   - NoShowAccuracyMetrics
+
+3. Implemented 10 risk factor calculations:
+   - Historical no-show rate (lifetime and recent)
+   - Recency factor (days since last visit)
+   - Lead time factor (days until appointment)
+   - Time of day factor (morning, afternoon, evening)
+   - Day of week factor (weekend vs weekday)
+   - Appointment type factor (new patient vs return)
+   - Weather factor (adverse conditions impact)
+   - Patient age factor (demographic patterns)
+   - Outstanding balance factor (financial barriers)
+   - Confirmation status factor (confirmed vs unconfirmed)
+
+4. External factors analysis:
+   - Weather condition impact modeling
+   - Holiday proximity detection
+   - Special event impact
+   - Traffic/commute considerations
+
+5. Intervention generation:
+   - Reminder calls and texts
+   - Transportation assistance offers
+   - Flexible rescheduling options
+   - Priority-based intervention queue
+
+6. Overbooking suggestions:
+   - Risk-based overbooking recommendations
+   - Slot-specific overbooking guidance
+   - Time-of-day overbooking patterns
+   - Provider-specific recommendations
+
+7. Confirmation strategy optimization:
+   - Multi-channel confirmation (phone, text, email, automated)
+   - Timing recommendations based on risk level
+   - Escalation paths for high-risk appointments
+
+8. Added tRPC procedures in `aiPredict.ts`:
+   - `predictNoShow` - Single appointment prediction
+   - `batchPredictNoShow` - Batch prediction with save option
+   - `getAtRiskAppointments` - List at-risk appointments
+   - `getNoShowSummary` - Dashboard summary data
+   - `saveNoShowPrediction` - Persist prediction to database
+   - `trackNoShowOutcome` - Record actual outcomes
+   - `getNoShowPredictionAccuracy` - Get accuracy metrics
+   - `getInterventionsForRiskyAppointments` - Get intervention recommendations
+   - `getOverbookingSuggestions` - Get overbooking recommendations
+   - `getConfirmationStrategies` - Get confirmation strategy recommendations
+
+9. Added audit actions in `audit.ts`:
+   - AI_NOSHOW_BATCH_PREDICTION
+   - AI_NOSHOW_PREDICTION_SAVED
+   - AI_NOSHOW_OUTCOME_TRACKED
+
+10. Updated `index.ts` exports for no-show prediction module
+
+### Files created:
+- app/src/lib/ai-predict/noshow-prediction.ts
+
+### Files modified:
+- app/src/lib/ai-predict/types.ts (added no-show prediction types)
+- app/src/lib/ai-predict/index.ts (exported no-show prediction functions)
+- app/src/server/routers/aiPredict.ts (added no-show prediction procedures)
+- app/src/lib/audit.ts (added new audit actions)
+
+### Acceptance Criteria Met:
+- ✅ aiPredict.predictNoShow - Identify no-show risk
+- ✅ Patient history analysis
+- ✅ Appointment characteristics
+- ✅ Weather and external factors
+- ✅ No-show probability score
+- ✅ Recommended interventions
+- ✅ Overbooking suggestions
+- ✅ Confirmation strategy optimization
+
+### Notes:
+- Uses Prediction and PatientRiskScore models from Epic 40 schema
+- 10 configurable risk factors with weighted scoring
+- Supports batch processing for all upcoming appointments
+- External factors include weather, holidays, special events
+- Generates actionable interventions prioritized by risk level
+- Overbooking suggestions based on historical patterns
+- Confirmation strategies optimized by channel and timing
+--- Iteration 4 completed at 2026-01-22 ---
+Story: US-382 - No-show prediction
+
