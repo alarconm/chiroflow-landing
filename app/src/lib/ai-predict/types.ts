@@ -675,3 +675,318 @@ export interface NoShowAccuracyMetrics {
     accuracy: number;
   }[];
 }
+
+// ============================================
+// REVENUE FORECASTING TYPES
+// ============================================
+
+export type RevenueForecastGranularity = 'daily' | 'weekly' | 'monthly' | 'quarterly';
+export type RevenueScenario = 'optimistic' | 'expected' | 'pessimistic';
+
+export interface RevenueForecastConfig {
+  // Analysis parameters
+  lookbackMonths: number;          // How many months of historical data to use
+  forecastHorizonMonths: number;   // How many months ahead to forecast
+  minDataPoints: number;           // Minimum transactions for reliable forecast
+
+  // Forecast components
+  includeCharges: boolean;         // Include billed charges
+  includeCollections: boolean;     // Include collected payments
+  includeAR: boolean;              // Include AR recovery predictions
+  includeNewPatients: boolean;     // Include new patient revenue impact
+
+  // Confidence intervals
+  confidenceLevel: number;         // 0.95 for 95% confidence intervals
+
+  // Scenario modeling
+  includeScenarios: boolean;       // Generate optimistic/pessimistic scenarios
+}
+
+export interface RevenueConfidenceInterval {
+  min: number;
+  max: number;
+  p25: number;
+  p50: number;
+  p75: number;
+}
+
+export interface CollectionsForecast {
+  forecastDate: Date;
+  predictedCollections: number;
+  confidenceInterval: RevenueConfidenceInterval;
+  confidence: number;
+
+  // By source
+  fromPatients: number;
+  fromInsurance: number;
+  fromOther: number;
+
+  // Historical comparison
+  sameMonthLastYear: number | null;
+  monthOverMonthChange: number | null;
+  yearOverYearChange: number | null;
+}
+
+export interface ARRecoveryPrediction {
+  forecastDate: Date;
+
+  // Current AR status
+  totalARBalance: number;
+  ar0To30: number;
+  ar31To60: number;
+  ar61To90: number;
+  ar91To120: number;
+  arOver120: number;
+
+  // Predicted recoveries
+  predictedRecovery30Days: number;
+  predictedRecovery60Days: number;
+  predictedRecovery90Days: number;
+
+  // Recovery rates by age
+  expectedRecoveryRates: {
+    bucket: string;
+    amount: number;
+    recoveryRate: number;
+    expectedRecovery: number;
+  }[];
+
+  // Write-off predictions
+  predictedWriteOffs: number;
+  badDebtRisk: number;
+
+  confidence: number;
+}
+
+export interface NewPatientRevenueImpact {
+  forecastDate: Date;
+
+  // New patient predictions
+  predictedNewPatients: number;
+  confidenceInterval: { min: number; max: number };
+
+  // Revenue per new patient
+  averageFirstVisitRevenue: number;
+  averageLifetimeValue: number;
+  estimatedRetentionRate: number;
+
+  // Projected revenue
+  firstMonthRevenue: number;
+  quarterlyRevenue: number;
+  annualRevenue: number;
+
+  // By source
+  byReferralSource: {
+    source: string;
+    expectedPatients: number;
+    expectedRevenue: number;
+  }[];
+}
+
+export interface RevenueScenarioModel {
+  scenario: RevenueScenario;
+  description: string;
+
+  // Assumptions
+  assumptions: {
+    factor: string;
+    assumption: string;
+    impact: number;
+  }[];
+
+  // Projected revenue
+  totalRevenue: number;
+  chargesRevenue: number;
+  collectionsRevenue: number;
+  arRecovery: number;
+  newPatientRevenue: number;
+
+  // Compared to expected
+  varianceFromExpected: number;
+  variancePercent: number;
+
+  // Probability
+  probability: number;
+}
+
+export interface DailyRevenueForecast {
+  date: Date;
+  dayOfWeek: number;
+  dayName: string;
+
+  predictedRevenue: number;
+  predictedCharges: number;
+  predictedCollections: number;
+  confidenceInterval: RevenueConfidenceInterval;
+  confidence: number;
+
+  // Factors
+  isWeekend: boolean;
+  isHoliday: boolean;
+  holidayName: string | null;
+  seasonalFactor: number;
+  dayOfWeekFactor: number;
+
+  // Comparison
+  sameWeekdayAverage: number;
+  varianceFromAverage: number;
+}
+
+export interface WeeklyRevenueForecast {
+  weekStartDate: Date;
+  weekEndDate: Date;
+  weekNumber: number;
+  year: number;
+
+  predictedRevenue: number;
+  predictedCharges: number;
+  predictedCollections: number;
+  confidenceInterval: RevenueConfidenceInterval;
+  confidence: number;
+
+  dailyForecasts: DailyRevenueForecast[];
+
+  // Week patterns
+  peakDay: string;
+  lowestDay: string;
+}
+
+export interface MonthlyRevenueForecast {
+  month: number;
+  year: number;
+  monthName: string;
+
+  predictedRevenue: number;
+  predictedCharges: number;
+  predictedCollections: number;
+  arRecovery: number;
+  newPatientRevenue: number;
+
+  confidenceInterval: RevenueConfidenceInterval;
+  confidence: number;
+
+  // Weekly breakdown
+  weeklyForecasts: WeeklyRevenueForecast[];
+
+  // Trends
+  trend: TrendDirection;
+  monthOverMonthChange: number;
+  yearOverYearChange: number | null;
+  seasonalFactor: number;
+}
+
+export interface RevenueVarianceAnalysis {
+  period: string;
+  predicted: number;
+  actual: number;
+  variance: number;
+  variancePercent: number;
+  withinConfidenceInterval: boolean;
+
+  // Variance breakdown
+  varianceByCategory: {
+    category: string;
+    predicted: number;
+    actual: number;
+    variance: number;
+  }[];
+
+  // Top contributors to variance
+  topVarianceDrivers: string[];
+}
+
+export interface GoalAttainmentProbability {
+  goalType: 'monthly' | 'quarterly' | 'annual';
+  goalAmount: number;
+  period: string;
+
+  predictedAmount: number;
+  gap: number;
+  probability: number;
+
+  // Risk factors
+  riskFactors: string[];
+  opportunities: string[];
+
+  // Actions to improve probability
+  suggestedActions: {
+    action: string;
+    estimatedImpact: number;
+    difficulty: 'easy' | 'medium' | 'hard';
+  }[];
+}
+
+export interface RevenueForecastResult {
+  organizationId: string;
+
+  // Forecast parameters
+  forecastStartDate: Date;
+  forecastEndDate: Date;
+  granularity: RevenueForecastGranularity;
+
+  // Summary projections
+  totalPredictedRevenue: number;
+  totalPredictedCharges: number;
+  totalPredictedCollections: number;
+  totalARRecovery: number;
+  totalNewPatientRevenue: number;
+  averageMonthlyRevenue: number;
+  confidence: number;
+
+  // Detailed forecasts
+  dailyForecasts: DailyRevenueForecast[];
+  weeklyForecasts: WeeklyRevenueForecast[];
+  monthlyForecasts: MonthlyRevenueForecast[];
+
+  // Component forecasts
+  collectionsForecast: CollectionsForecast[];
+  arRecoveryPrediction: ARRecoveryPrediction;
+  newPatientImpact: NewPatientRevenueImpact;
+
+  // Scenario modeling
+  scenarios: RevenueScenarioModel[];
+  expectedScenario: RevenueScenarioModel;
+
+  // Confidence intervals
+  overallConfidenceInterval: RevenueConfidenceInterval;
+
+  // Variance analysis (if historical data available)
+  historicalVariance: RevenueVarianceAnalysis[];
+
+  // Goal attainment
+  goalAttainment: GoalAttainmentProbability[];
+
+  // Model info
+  modelVersion: string;
+  dataPointsUsed: number;
+  forecastGeneratedAt: Date;
+  validUntil: Date;
+}
+
+export interface RevenueForecastAccuracyMetrics {
+  period: string;
+  granularity: RevenueForecastGranularity;
+
+  // Predictions vs actuals
+  predictedRevenue: number;
+  actualRevenue: number;
+  variance: number;
+  variancePercent: number;
+
+  // By component
+  chargesAccuracy: { predicted: number; actual: number; variance: number };
+  collectionsAccuracy: { predicted: number; actual: number; variance: number };
+  arRecoveryAccuracy: { predicted: number; actual: number; variance: number };
+
+  // Metrics
+  mape: number;
+  rmse: number;
+  withinConfidenceInterval: boolean;
+
+  // By scenario
+  scenarioAccuracy: {
+    scenario: RevenueScenario;
+    predictedRevenue: number;
+    wasClosest: boolean;
+  }[];
+}

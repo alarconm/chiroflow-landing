@@ -365,3 +365,112 @@ Date: 2026-01-22
 --- Iteration 4 completed at 2026-01-22 ---
 Story: US-382 - No-show prediction
 
+--- Iteration 4 completed at 2026-01-22 21:23:04 ---
+Story: US-382 - No-show prediction
+
+## US-383: Revenue forecasting - COMPLETED
+
+Date: 2026-01-22
+
+### What was done:
+1. Created `app/src/lib/ai-predict/revenue-forecast.ts` library with:
+   - `forecastRevenue()` - Main function to generate revenue forecasts
+   - `saveRevenueForecast()` - Persist forecasts to database
+   - `trackRevenueForecastAccuracy()` - Track prediction vs actual outcomes
+   - `getRevenueForecastAccuracySummary()` - Get accuracy metrics over time
+
+2. Added comprehensive types in `types.ts`:
+   - RevenueForecastConfig (lookbackMonths, horizon, components to include)
+   - RevenueConfidenceInterval (min, max, percentiles)
+   - CollectionsForecast (by source: patients, insurance, other)
+   - ARRecoveryPrediction (aging buckets, recovery rates, bad debt risk)
+   - NewPatientRevenueImpact (LTV, retention, first month revenue)
+   - RevenueScenarioModel (optimistic, expected, pessimistic scenarios)
+   - DailyRevenueForecast, WeeklyRevenueForecast, MonthlyRevenueForecast
+   - RevenueVarianceAnalysis (predicted vs actual breakdown)
+   - GoalAttainmentProbability (with suggested actions)
+   - RevenueForecastResult (full forecast output)
+   - RevenueForecastAccuracyMetrics
+
+3. Implemented revenue forecasting algorithms:
+   - Historical charge and payment analysis
+   - Day-of-week factor calculation
+   - Seasonal factor calculation by month
+   - Holiday impact modeling (US federal holidays)
+   - Confidence interval calculation
+
+4. AR Recovery Prediction:
+   - Aging bucket analysis (0-30, 31-60, 61-90, 91-120, 120+ days)
+   - Industry-standard recovery rates by bucket
+   - Predicted write-offs and bad debt risk
+   - 30/60/90 day recovery projections
+
+5. New Patient Revenue Impact:
+   - Average first visit revenue calculation
+   - Estimated lifetime value (LTV)
+   - Retention rate modeling
+   - Revenue by referral source
+
+6. Scenario Modeling:
+   - Expected scenario (60% probability)
+   - Optimistic scenario (+15%, 20% probability)
+   - Pessimistic scenario (-15%, 20% probability)
+   - Assumptions and variance breakdown for each
+
+7. Goal Attainment Analysis:
+   - Probability calculation based on confidence intervals
+   - Risk factors identification
+   - Opportunities listing
+   - Suggested actions with estimated impact and difficulty
+
+8. Added tRPC procedures in `aiPredict.ts`:
+   - `forecastRevenue` - Generate full forecast with config
+   - `getMonthlyRevenueForecasts` - Get monthly forecasts
+   - `getCollectionsForecast` - Get collections breakdown
+   - `getARRecoveryPrediction` - Get AR recovery analysis
+   - `getNewPatientRevenueImpact` - Get new patient impact
+   - `getRevenueScenarios` - Get scenario models
+   - `getGoalAttainment` - Get goal attainment probabilities
+   - `getRevenueVarianceAnalysis` - Get variance analysis
+   - `saveRevenueForecast` - Persist forecast to database
+   - `trackRevenueForecastAccuracy` - Record actual outcomes
+   - `getRevenueForecastAccuracySummary` - Get accuracy metrics
+   - `getRevenueSummary` - Dashboard summary data
+
+9. Added audit actions in `audit.ts`:
+   - AI_REVENUE_FORECAST_GENERATED
+   - AI_REVENUE_FORECAST_SAVED
+   - AI_REVENUE_FORECAST_ACCURACY_TRACKED
+
+10. Updated `index.ts` exports for revenue forecasting module
+
+### Files created:
+- app/src/lib/ai-predict/revenue-forecast.ts
+
+### Files modified:
+- app/src/lib/ai-predict/types.ts (added revenue forecasting types)
+- app/src/lib/ai-predict/index.ts (exported revenue forecasting functions)
+- app/src/server/routers/aiPredict.ts (added revenue forecasting procedures)
+- app/src/lib/audit.ts (added new audit actions)
+
+### Acceptance Criteria Met:
+- ✅ aiPredict.forecastRevenue - Project revenue
+- ✅ Collections forecast (by source: patients, insurance, other)
+- ✅ AR recovery predictions (aging buckets, recovery rates)
+- ✅ New patient revenue impact (LTV, retention, referrals)
+- ✅ Scenario modeling (optimistic, expected, pessimistic)
+- ✅ Confidence intervals (with percentiles)
+- ✅ Variance analysis (predicted vs actual)
+- ✅ Goal attainment probability (with suggested actions)
+
+### Notes:
+- Uses Prediction model from Epic 40 schema for persistence
+- Analyzes historical charges and payments for forecasting
+- Day-of-week and seasonal factors based on historical patterns
+- US federal holidays modeled for impact
+- Scenario models include probability and assumptions
+- Goal attainment includes actionable suggestions
+- Accuracy tracking enabled for model improvement
+--- Iteration 5 completed at 2026-01-22 ---
+Story: US-383 - Revenue forecasting
+

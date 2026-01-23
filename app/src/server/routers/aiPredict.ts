@@ -22,9 +22,14 @@ import {
   saveNoShowPrediction,
   trackNoShowPredictionAccuracy,
   getNoShowPredictionAccuracy,
+  forecastRevenue,
+  saveRevenueForecast,
+  trackRevenueForecastAccuracy,
+  getRevenueForecastAccuracySummary,
   type ChurnPredictionConfig,
   type DemandForecastConfig,
   type NoShowPredictionConfig,
+  type RevenueForecastConfig,
 } from '@/lib/ai-predict';
 
 // Zod schemas for input validation
@@ -1153,4 +1158,317 @@ export const aiPredictRouter = router({
         },
       };
     }),
+
+  // ============================================
+  // REVENUE FORECASTING
+  // ============================================
+
+  // Forecast revenue for the organization
+  forecastRevenue: protectedProcedure
+    .input(
+      z.object({
+        config: z.object({
+          lookbackMonths: z.number().min(3).max(24).optional(),
+          forecastHorizonMonths: z.number().min(1).max(12).optional(),
+          minDataPoints: z.number().min(10).max(200).optional(),
+          includeCharges: z.boolean().optional(),
+          includeCollections: z.boolean().optional(),
+          includeAR: z.boolean().optional(),
+          includeNewPatients: z.boolean().optional(),
+          confidenceLevel: z.number().min(0.8).max(0.99).optional(),
+          includeScenarios: z.boolean().optional(),
+        }).optional(),
+        goals: z.array(z.object({
+          type: z.enum(['monthly', 'quarterly', 'annual']),
+          amount: z.number().positive(),
+          period: z.string(),
+        })).optional(),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const forecast = await forecastRevenue(
+        ctx.user.organizationId,
+        input?.config as Partial<RevenueForecastConfig> | undefined,
+        { goals: input?.goals }
+      );
+
+      return forecast;
+    }),
+
+  // Get monthly revenue forecasts
+  getMonthlyRevenueForecasts: protectedProcedure
+    .input(
+      z.object({
+        months: z.number().min(1).max(12).default(3),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const forecast = await forecastRevenue(
+        ctx.user.organizationId,
+        { forecastHorizonMonths: input?.months || 3 }
+      );
+
+      return {
+        forecasts: forecast.monthlyForecasts,
+        totalPredictedRevenue: forecast.totalPredictedRevenue,
+        averageMonthlyRevenue: forecast.averageMonthlyRevenue,
+        confidence: forecast.confidence,
+      };
+    }),
+
+  // Get collections forecast
+  getCollectionsForecast: protectedProcedure
+    .input(
+      z.object({
+        months: z.number().min(1).max(6).default(3),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const forecast = await forecastRevenue(
+        ctx.user.organizationId,
+        { forecastHorizonMonths: input?.months || 3 }
+      );
+
+      return {
+        forecasts: forecast.collectionsForecast,
+        totalPredictedCollections: forecast.totalPredictedCollections,
+        confidence: forecast.confidence,
+      };
+    }),
+
+  // Get AR recovery predictions
+  getARRecoveryPrediction: protectedProcedure.query(async ({ ctx }) => {
+    const forecast = await forecastRevenue(ctx.user.organizationId);
+
+    return {
+      prediction: forecast.arRecoveryPrediction,
+      totalARRecovery: forecast.totalARRecovery,
+      confidence: forecast.confidence,
+    };
+  }),
+
+  // Get new patient revenue impact
+  getNewPatientRevenueImpact: protectedProcedure.query(async ({ ctx }) => {
+    const forecast = await forecastRevenue(ctx.user.organizationId);
+
+    return {
+      impact: forecast.newPatientImpact,
+      totalNewPatientRevenue: forecast.totalNewPatientRevenue,
+      confidence: forecast.confidence,
+    };
+  }),
+
+  // Get revenue scenarios
+  getRevenueScenarios: protectedProcedure
+    .input(
+      z.object({
+        forecastMonths: z.number().min(1).max(12).default(3),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const forecast = await forecastRevenue(
+        ctx.user.organizationId,
+        {
+          forecastHorizonMonths: input?.forecastMonths || 3,
+          includeScenarios: true,
+        }
+      );
+
+      return {
+        scenarios: forecast.scenarios,
+        expectedScenario: forecast.expectedScenario,
+        confidence: forecast.confidence,
+      };
+    }),
+
+  // Get goal attainment probability
+  getGoalAttainment: protectedProcedure
+    .input(
+      z.object({
+        goals: z.array(z.object({
+          type: z.enum(['monthly', 'quarterly', 'annual']),
+          amount: z.number().positive(),
+          period: z.string(),
+        })),
+        forecastMonths: z.number().min(1).max(12).default(3),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const forecast = await forecastRevenue(
+        ctx.user.organizationId,
+        { forecastHorizonMonths: input.forecastMonths },
+        { goals: input.goals }
+      );
+
+      return {
+        goalAttainment: forecast.goalAttainment,
+        totalPredictedRevenue: forecast.totalPredictedRevenue,
+        overallConfidenceInterval: forecast.overallConfidenceInterval,
+        confidence: forecast.confidence,
+      };
+    }),
+
+  // Get revenue variance analysis
+  getRevenueVarianceAnalysis: protectedProcedure
+    .input(
+      z.object({
+        lookbackMonths: z.number().min(1).max(12).default(6),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const forecast = await forecastRevenue(
+        ctx.user.organizationId,
+        { lookbackMonths: input?.lookbackMonths || 6 }
+      );
+
+      return {
+        variance: forecast.historicalVariance,
+        confidence: forecast.confidence,
+        modelVersion: forecast.modelVersion,
+      };
+    }),
+
+  // Save revenue forecast to database
+  saveRevenueForecast: adminProcedure
+    .input(
+      z.object({
+        forecastMonths: z.number().min(1).max(12).default(3),
+      }).optional()
+    )
+    .mutation(async ({ ctx, input }) => {
+      const forecast = await forecastRevenue(
+        ctx.user.organizationId,
+        { forecastHorizonMonths: input?.forecastMonths || 3 }
+      );
+
+      await saveRevenueForecast(ctx.user.organizationId, forecast);
+
+      await auditLog('AI_REVENUE_FORECAST_SAVED', 'Prediction', {
+        changes: {
+          forecastMonths: input?.forecastMonths || 3,
+          totalPredictedRevenue: forecast.totalPredictedRevenue,
+          totalPredictedCharges: forecast.totalPredictedCharges,
+          totalPredictedCollections: forecast.totalPredictedCollections,
+          dataPointsUsed: forecast.dataPointsUsed,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        success: true,
+        totalPredictedRevenue: forecast.totalPredictedRevenue,
+        confidence: forecast.confidence,
+      };
+    }),
+
+  // Track revenue forecast accuracy
+  trackRevenueForecastAccuracy: adminProcedure
+    .input(
+      z.object({
+        year: z.number().min(2020).max(2030),
+        month: z.number().min(1).max(12),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const accuracy = await trackRevenueForecastAccuracy(
+        ctx.user.organizationId,
+        input
+      );
+
+      if (!accuracy) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'No revenue forecast found for this period',
+        });
+      }
+
+      await auditLog('AI_REVENUE_FORECAST_ACCURACY_TRACKED', 'Prediction', {
+        changes: {
+          period: accuracy.period,
+          predictedRevenue: accuracy.predictedRevenue,
+          actualRevenue: accuracy.actualRevenue,
+          variance: accuracy.variance,
+          variancePercent: accuracy.variancePercent,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return accuracy;
+    }),
+
+  // Get revenue forecast accuracy summary
+  getRevenueForecastAccuracySummary: protectedProcedure
+    .input(
+      z.object({
+        lookbackMonths: z.number().min(1).max(12).default(6),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      return getRevenueForecastAccuracySummary(
+        ctx.user.organizationId,
+        input?.lookbackMonths || 6
+      );
+    }),
+
+  // Get revenue forecast summary for dashboard
+  getRevenueSummary: protectedProcedure.query(async ({ ctx }) => {
+    const forecast = await forecastRevenue(ctx.user.organizationId);
+    const accuracy = await getRevenueForecastAccuracySummary(ctx.user.organizationId);
+
+    // Get next 3 months forecast
+    const next3Months = forecast.monthlyForecasts.slice(0, 3);
+
+    return {
+      // Summary projections
+      next3MonthsRevenue: next3Months.reduce((sum, m) => sum + m.predictedRevenue, 0),
+      averageMonthlyRevenue: forecast.averageMonthlyRevenue,
+
+      // Component breakdown
+      totalCharges: forecast.totalPredictedCharges,
+      totalCollections: forecast.totalPredictedCollections,
+      totalARRecovery: forecast.totalARRecovery,
+      totalNewPatientRevenue: forecast.totalNewPatientRevenue,
+
+      // Monthly breakdown
+      byMonth: next3Months.map(m => ({
+        month: m.monthName,
+        year: m.year,
+        predictedRevenue: m.predictedRevenue,
+        predictedCharges: m.predictedCharges,
+        predictedCollections: m.predictedCollections,
+        confidence: m.confidence,
+        trend: m.trend,
+      })),
+
+      // Scenarios
+      optimisticRevenue: forecast.scenarios.find(s => s.scenario === 'optimistic')?.totalRevenue || 0,
+      pessimisticRevenue: forecast.scenarios.find(s => s.scenario === 'pessimistic')?.totalRevenue || 0,
+
+      // AR insights
+      arInsights: {
+        totalARBalance: forecast.arRecoveryPrediction.totalARBalance,
+        expected30DayRecovery: forecast.arRecoveryPrediction.predictedRecovery30Days,
+        badDebtRisk: forecast.arRecoveryPrediction.badDebtRisk,
+      },
+
+      // Goal attainment
+      goalAttainment: forecast.goalAttainment.length > 0 ? {
+        probability: forecast.goalAttainment[0].probability,
+        gap: forecast.goalAttainment[0].gap,
+        suggestedActionsCount: forecast.goalAttainment[0].suggestedActions.length,
+      } : null,
+
+      // Confidence and accuracy
+      confidence: forecast.confidence,
+      confidenceInterval: forecast.overallConfidenceInterval,
+      accuracy: {
+        averageMape: accuracy.averageMape,
+        withinConfidenceRate: accuracy.withinConfidenceRate,
+      },
+
+      lastUpdated: forecast.forecastGeneratedAt,
+    };
+  }),
 });

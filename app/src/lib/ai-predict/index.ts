@@ -29,3 +29,11 @@ export {
   trackNoShowPredictionAccuracy,
   getNoShowPredictionAccuracy,
 } from './noshow-prediction';
+
+// Revenue Forecasting
+export {
+  forecastRevenue,
+  saveRevenueForecast,
+  trackRevenueForecastAccuracy,
+  getRevenueForecastAccuracySummary,
+} from './revenue-forecast';
