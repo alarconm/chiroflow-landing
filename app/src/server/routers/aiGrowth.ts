@@ -2765,6 +2765,895 @@ function getReactivationOffers(
 }
 
 // ============================================
+// US-361: Marketing Campaign Automation Helper Functions
+// ============================================
+
+/**
+ * Generate AI content strategy based on campaign type
+ */
+function generateContentStrategy(
+  campaignType: string,
+  messagingTone: string,
+  channels: string[]
+): {
+  approach: string;
+  themes: string[];
+  contentTypes: string[];
+  frequencyRecommendation: string;
+  keyMessages: string[];
+} {
+  const strategies: Record<string, {
+    approach: string;
+    themes: string[];
+    contentTypes: string[];
+    frequencyRecommendation: string;
+    keyMessages: string[];
+  }> = {
+    LEAD_GENERATION: {
+      approach: 'Educational content with clear value proposition and calls-to-action',
+      themes: ['Pain relief', 'Wellness benefits', 'Local expertise', 'Patient success stories'],
+      contentTypes: ['Educational articles', 'Video testimonials', 'Free consultation offers', 'Health tips'],
+      frequencyRecommendation: '2-3 touchpoints over 2 weeks',
+      keyMessages: [
+        'Expert chiropractic care in your neighborhood',
+        'Start your journey to pain-free living',
+        'New patient special: Free consultation',
+      ],
+    },
+    REACTIVATION: {
+      approach: 'Personal reconnection with incentives and wellness reminders',
+      themes: ['We miss you', 'Health check-in', 'New services', 'Special welcome back offers'],
+      contentTypes: ['Personal emails', 'Special offers', 'Wellness reminders', 'Service updates'],
+      frequencyRecommendation: '3 touchpoints over 3 weeks with increasing urgency',
+      keyMessages: [
+        'We miss seeing you!',
+        "It's been a while - time for a wellness check",
+        'Special offer just for returning patients',
+      ],
+    },
+    REFERRAL: {
+      approach: 'Gratitude-based messaging emphasizing mutual benefits',
+      themes: ['Thank you', 'Share the wellness', 'Rewards for referring', 'Community building'],
+      contentTypes: ['Thank you messages', 'Referral program details', 'Success stories', 'Reward updates'],
+      frequencyRecommendation: 'Post-visit touchpoint + quarterly reminders',
+      keyMessages: [
+        'Thank you for being a valued patient',
+        'Share the gift of wellness with friends and family',
+        'Earn rewards when you refer',
+      ],
+    },
+    REVIEW: {
+      approach: 'Appreciation-focused requests at optimal moments',
+      themes: ['Your feedback matters', 'Help others discover us', 'Share your experience'],
+      contentTypes: ['Review requests', 'Satisfaction surveys', 'Thank you messages'],
+      frequencyRecommendation: '1-2 days post-positive experience',
+      keyMessages: [
+        'We hope you had a great experience',
+        'Your review helps others find quality care',
+        'Share your story',
+      ],
+    },
+    RETENTION: {
+      approach: 'Value reinforcement and proactive wellness engagement',
+      themes: ['Ongoing wellness', 'Preventive care', 'Appointment reminders', 'Health tips'],
+      contentTypes: ['Wellness tips', 'Appointment reminders', 'Educational content', 'Loyalty rewards'],
+      frequencyRecommendation: 'Monthly touchpoints with appointment-based triggers',
+      keyMessages: [
+        'Stay on track with your wellness goals',
+        'Preventive care keeps you feeling great',
+        'Your next appointment is coming up',
+      ],
+    },
+    UPSELL: {
+      approach: 'Value-add recommendations based on patient history',
+      themes: ['Complementary services', 'Enhanced care options', 'Package deals', 'New offerings'],
+      contentTypes: ['Service recommendations', 'Package offers', 'Educational content on services'],
+      frequencyRecommendation: 'Post-treatment recommendations + quarterly service highlights',
+      keyMessages: [
+        'Take your wellness to the next level',
+        'Services that complement your care plan',
+        'Save with our wellness packages',
+      ],
+    },
+    SEASONAL: {
+      approach: 'Timely messaging tied to seasonal health needs',
+      themes: ['Seasonal health tips', 'Holiday wellness', 'Back-to-school', 'Sports season prep'],
+      contentTypes: ['Seasonal tips', 'Holiday specials', 'Timely health advice'],
+      frequencyRecommendation: 'Campaign duration: 2-4 weeks around seasonal event',
+      keyMessages: [
+        'Stay healthy this season',
+        'Prepare your body for the season ahead',
+        'Limited-time seasonal special',
+      ],
+    },
+    EVENT: {
+      approach: 'Event-focused urgency with clear value proposition',
+      themes: ['Community event', 'Free screening', 'Workshop', 'Open house'],
+      contentTypes: ['Event invitations', 'RSVP requests', 'Event reminders', 'Follow-up'],
+      frequencyRecommendation: '3 touchpoints: Announcement, reminder, last chance',
+      keyMessages: [
+        "You're invited to our special event",
+        'Limited spots available - RSVP today',
+        "Don't miss out on this opportunity",
+      ],
+    },
+  };
+
+  const strategy = strategies[campaignType] || strategies.LEAD_GENERATION;
+
+  // Adjust for messaging tone
+  if (messagingTone === 'urgent') {
+    strategy.keyMessages = strategy.keyMessages.map(
+      (msg) => msg.replace(/!$/, ' - Act now!').replace(/today$/, 'today!')
+    );
+  } else if (messagingTone === 'empathetic') {
+    strategy.approach = `Empathetic, understanding approach: ${strategy.approach}`;
+  }
+
+  return strategy;
+}
+
+/**
+ * Estimate audience size based on targeting criteria
+ */
+async function estimateAudienceSize(
+  prisma: any,
+  organizationId: string,
+  targetAudience: Record<string, unknown>
+): Promise<number> {
+  const where: any = {
+    organizationId,
+    isActive: true,
+  };
+
+  if (targetAudience.minVisits || targetAudience.maxVisits) {
+    // Would need to join with appointments for accurate count
+    // For now, estimate based on active patients
+  }
+
+  if (targetAudience.excludeActive) {
+    // Exclude patients with recent appointments
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  }
+
+  try {
+    const count = await prisma.patient.count({ where });
+    // Apply estimated reduction based on criteria
+    let reductionFactor = 1;
+    if (targetAudience.minAge || targetAudience.maxAge) reductionFactor *= 0.7;
+    if (targetAudience.gender && targetAudience.gender !== 'all') reductionFactor *= 0.5;
+    if (targetAudience.insuranceTypes) reductionFactor *= 0.6;
+    if (targetAudience.diagnosisCodes) reductionFactor *= 0.4;
+    if (targetAudience.engagementLevel && targetAudience.engagementLevel !== 'all') reductionFactor *= 0.5;
+
+    return Math.max(1, Math.floor(count * reductionFactor));
+  } catch {
+    return 100; // Default estimate
+  }
+}
+
+/**
+ * Generate campaign sequences based on type and channels
+ */
+function generateCampaignSequences(
+  campaignType: string,
+  channels: string[],
+  messagingTone: string
+): Array<{
+  stepNumber: number;
+  delayDays: number;
+  channel: string;
+  contentType: string;
+  subject?: string;
+  previewText?: string;
+}> {
+  const sequences: Array<{
+    stepNumber: number;
+    delayDays: number;
+    channel: string;
+    contentType: string;
+    subject?: string;
+    previewText?: string;
+  }> = [];
+
+  const primaryChannel = channels[0] || 'email';
+  const secondaryChannel = channels[1] || primaryChannel;
+
+  switch (campaignType) {
+    case 'LEAD_GENERATION':
+      sequences.push(
+        { stepNumber: 1, delayDays: 0, channel: primaryChannel, contentType: 'introduction', subject: 'Welcome to [Practice Name]' },
+        { stepNumber: 2, delayDays: 3, channel: primaryChannel, contentType: 'educational', subject: 'How chiropractic care can help you' },
+        { stepNumber: 3, delayDays: 7, channel: secondaryChannel, contentType: 'testimonial', subject: 'See what our patients say' },
+        { stepNumber: 4, delayDays: 10, channel: primaryChannel, contentType: 'offer', subject: 'Special offer just for you' }
+      );
+      break;
+    case 'REACTIVATION':
+      sequences.push(
+        { stepNumber: 1, delayDays: 0, channel: primaryChannel, contentType: 'reconnect', subject: 'We miss you!' },
+        { stepNumber: 2, delayDays: 5, channel: secondaryChannel, contentType: 'wellness_check', subject: 'How have you been feeling?' },
+        { stepNumber: 3, delayDays: 12, channel: primaryChannel, contentType: 'offer', subject: 'Welcome back offer' }
+      );
+      break;
+    case 'REFERRAL':
+      sequences.push(
+        { stepNumber: 1, delayDays: 0, channel: primaryChannel, contentType: 'thank_you', subject: 'Thank you for being a valued patient' },
+        { stepNumber: 2, delayDays: 3, channel: primaryChannel, contentType: 'referral_ask', subject: 'Share the wellness' }
+      );
+      break;
+    case 'REVIEW':
+      sequences.push(
+        { stepNumber: 1, delayDays: 1, channel: primaryChannel, contentType: 'review_request', subject: 'How was your visit?' }
+      );
+      break;
+    case 'RETENTION':
+      sequences.push(
+        { stepNumber: 1, delayDays: 0, channel: primaryChannel, contentType: 'wellness_tip', subject: 'Your wellness tip of the month' },
+        { stepNumber: 2, delayDays: 14, channel: secondaryChannel, contentType: 'check_in', subject: 'Checking in on your wellness journey' }
+      );
+      break;
+    default:
+      sequences.push(
+        { stepNumber: 1, delayDays: 0, channel: primaryChannel, contentType: 'announcement', subject: 'Exciting news from [Practice Name]' },
+        { stepNumber: 2, delayDays: 5, channel: primaryChannel, contentType: 'reminder', subject: "Don't miss out" }
+      );
+  }
+
+  return sequences;
+}
+
+/**
+ * Get segment criteria based on segment type
+ */
+function getSegmentCriteria(
+  segmentType: string,
+  customCriteria?: Record<string, unknown>
+): { patientFilters: Record<string, unknown> } {
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const ninetyDaysAgo = new Date();
+  ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+  const oneYearAgo = new Date();
+  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+  switch (segmentType) {
+    case 'high_value':
+      return {
+        patientFilters: {
+          // Patients with high visit frequency or high lifetime value
+          // In production, would filter by actual financial data
+        },
+      };
+    case 'at_risk':
+      return {
+        patientFilters: {
+          // Patients showing signs of disengagement
+          // Would filter by appointment gaps, missed appointments
+        },
+      };
+    case 'new_patients':
+      return {
+        patientFilters: {
+          createdAt: { gte: thirtyDaysAgo },
+        },
+      };
+    case 'loyal':
+      return {
+        patientFilters: {
+          createdAt: { lte: oneYearAgo },
+        },
+      };
+    case 'lapsed':
+      return {
+        patientFilters: {
+          // Would filter by last appointment date > 90 days
+        },
+      };
+    case 'engaged':
+      return {
+        patientFilters: {
+          // Recent activity, multiple appointments
+        },
+      };
+    case 'unengaged':
+      return {
+        patientFilters: {
+          // No recent activity, few appointments
+        },
+      };
+    case 'custom':
+      return {
+        patientFilters: customCriteria || {},
+      };
+    default:
+      return { patientFilters: {} };
+  }
+}
+
+/**
+ * Calculate segment score for a patient
+ */
+function calculateSegmentScore(patient: any, segmentType: string): number {
+  let score = 50; // Base score
+
+  const appointmentCount = patient.appointments?.length || 0;
+  const daysSinceCreated = Math.floor(
+    (Date.now() - new Date(patient.createdAt).getTime()) / (1000 * 60 * 60 * 24)
+  );
+  const lastAppointment = patient.appointments?.[0];
+  const daysSinceLastVisit = lastAppointment
+    ? Math.floor(
+        (Date.now() - new Date(lastAppointment.startTime).getTime()) / (1000 * 60 * 60 * 24)
+      )
+    : 999;
+
+  switch (segmentType) {
+    case 'high_value':
+      score += Math.min(30, appointmentCount * 5);
+      score += daysSinceCreated > 365 ? 20 : daysSinceCreated / 365 * 20;
+      break;
+    case 'at_risk':
+      if (daysSinceLastVisit > 60) score += 30;
+      if (daysSinceLastVisit > 90) score += 20;
+      break;
+    case 'new_patients':
+      score = daysSinceCreated < 30 ? 100 : Math.max(0, 100 - daysSinceCreated);
+      break;
+    case 'loyal':
+      score = Math.min(100, (daysSinceCreated / 365) * 50 + appointmentCount * 5);
+      break;
+    case 'lapsed':
+      score = daysSinceLastVisit > 90 ? Math.min(100, 50 + (daysSinceLastVisit - 90) / 10) : 0;
+      break;
+    case 'engaged':
+      score = Math.min(100, 50 + appointmentCount * 10 - daysSinceLastVisit);
+      break;
+    case 'unengaged':
+      score = daysSinceLastVisit > 60 && appointmentCount < 3 ? 80 : 20;
+      break;
+  }
+
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+/**
+ * Get patient characteristics for segmentation
+ */
+function getPatientCharacteristics(
+  patient: any,
+  segmentType: string
+): string[] {
+  const characteristics: string[] = [];
+  const appointmentCount = patient.appointments?.length || 0;
+  const lastAppointment = patient.appointments?.[0];
+  const daysSinceLastVisit = lastAppointment
+    ? Math.floor(
+        (Date.now() - new Date(lastAppointment.startTime).getTime()) / (1000 * 60 * 60 * 24)
+      )
+    : null;
+
+  if (appointmentCount >= 10) characteristics.push('Frequent visitor');
+  else if (appointmentCount >= 5) characteristics.push('Regular patient');
+  else if (appointmentCount <= 2) characteristics.push('New or infrequent');
+
+  if (daysSinceLastVisit !== null) {
+    if (daysSinceLastVisit <= 30) characteristics.push('Recently active');
+    else if (daysSinceLastVisit <= 90) characteristics.push('Moderately active');
+    else characteristics.push('Inactive');
+  }
+
+  if (patient.demographics?.dateOfBirth) {
+    const age = Math.floor(
+      (Date.now() - new Date(patient.demographics.dateOfBirth).getTime()) /
+        (1000 * 60 * 60 * 24 * 365)
+    );
+    if (age < 30) characteristics.push('Young adult');
+    else if (age < 50) characteristics.push('Middle-aged');
+    else if (age < 65) characteristics.push('Mature adult');
+    else characteristics.push('Senior');
+  }
+
+  return characteristics;
+}
+
+/**
+ * Generate insights for a segment
+ */
+function generateSegmentInsights(
+  patients: Array<{ segmentScore: number; totalVisits: number; lastVisitDate: Date | null }>,
+  segmentType: string
+): {
+  averageScore: number;
+  averageVisits: number;
+  activePercentage: number;
+  topCharacteristics: string[];
+  recommendations: string[];
+} {
+  const avgScore = patients.length > 0
+    ? patients.reduce((sum, p) => sum + p.segmentScore, 0) / patients.length
+    : 0;
+  const avgVisits = patients.length > 0
+    ? patients.reduce((sum, p) => sum + p.totalVisits, 0) / patients.length
+    : 0;
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const activeCount = patients.filter(
+    (p) => p.lastVisitDate && new Date(p.lastVisitDate) >= thirtyDaysAgo
+  ).length;
+  const activePercentage = patients.length > 0 ? (activeCount / patients.length) * 100 : 0;
+
+  return {
+    averageScore: Math.round(avgScore),
+    averageVisits: Math.round(avgVisits * 10) / 10,
+    activePercentage: Math.round(activePercentage),
+    topCharacteristics: ['Regular visitors', 'Email responsive'],
+    recommendations: [
+      `${segmentType} segment shows ${avgScore > 60 ? 'strong' : 'moderate'} engagement potential`,
+      avgVisits > 5 ? 'Consider loyalty rewards for this segment' : 'Focus on increasing visit frequency',
+    ],
+  };
+}
+
+/**
+ * Get recommendations for a segment
+ */
+function getSegmentRecommendations(segmentType: string, patientCount: number): string[] {
+  const recommendations: string[] = [];
+
+  if (patientCount < 10) {
+    recommendations.push('Consider broadening your targeting criteria for larger reach');
+  } else if (patientCount > 500) {
+    recommendations.push('Consider splitting into smaller, more targeted segments');
+  }
+
+  switch (segmentType) {
+    case 'high_value':
+      recommendations.push('Send personalized appreciation and loyalty rewards');
+      recommendations.push('Invite to VIP events or early access programs');
+      break;
+    case 'at_risk':
+      recommendations.push('Send re-engagement campaign with special offers');
+      recommendations.push('Conduct satisfaction survey to identify issues');
+      break;
+    case 'new_patients':
+      recommendations.push('Send welcome series with educational content');
+      recommendations.push('Request feedback after first few visits');
+      break;
+    case 'lapsed':
+      recommendations.push('Send win-back campaign with compelling offer');
+      recommendations.push('Highlight new services or improvements');
+      break;
+    case 'engaged':
+      recommendations.push('Request reviews and referrals');
+      recommendations.push('Upsell complementary services');
+      break;
+  }
+
+  return recommendations;
+}
+
+/**
+ * Generate marketing content based on parameters
+ */
+function generateMarketingContent(params: {
+  campaignType: string;
+  channel: string;
+  tone: string;
+  contentType: string;
+  includeOffer: boolean;
+  offerDetails?: { type: string; value: string; expiresInDays: number };
+  practiceName: string;
+  practicePhone: string;
+  abVariant?: string;
+}): { subject?: string; body: string; cta: string } {
+  const { campaignType, channel, tone, contentType, includeOffer, offerDetails, practiceName, practicePhone, abVariant } = params;
+
+  let subject: string | undefined;
+  let body: string;
+  let cta: string;
+
+  // Base content by type
+  switch (contentType) {
+    case 'promotional':
+      subject = abVariant === 'B'
+        ? `{{firstName}}, Your Exclusive Offer Awaits`
+        : `Special Offer from ${practiceName}`;
+      body = `Hi {{firstName}},\n\nWe have a special offer just for you! ${includeOffer && offerDetails ? `Enjoy ${offerDetails.value} on your next visit.` : ''}\n\nTake the first step toward better health today.\n\nBest regards,\n${practiceName}`;
+      cta = 'Book Now';
+      break;
+    case 'educational':
+      subject = `Health Tips from ${practiceName}`;
+      body = `Hi {{firstName}},\n\nDid you know that regular chiropractic care can help with more than just back pain? Here are some benefits you might not know about:\n\n• Improved posture\n• Better sleep quality\n• Enhanced immune function\n• Reduced stress\n\nLearn more about how we can help you achieve optimal wellness.\n\nBest regards,\n${practiceName}`;
+      cta = 'Learn More';
+      break;
+    case 'testimonial':
+      subject = `See What Our Patients Say About ${practiceName}`;
+      body = `Hi {{firstName}},\n\n"I was skeptical at first, but after just a few visits, I noticed a huge difference in my daily comfort and energy levels. The team at ${practiceName} truly cares about their patients." - Happy Patient\n\nWe'd love to help you achieve similar results.\n\nBest regards,\n${practiceName}`;
+      cta = 'Read More Stories';
+      break;
+    case 'offer':
+      subject = abVariant === 'B'
+        ? `Don't Miss Out, {{firstName}}!`
+        : `Your Special Offer from ${practiceName}`;
+      body = `Hi {{firstName}},\n\n${includeOffer && offerDetails ? `For a limited time, enjoy ${offerDetails.value}!` : 'We have a special offer waiting for you!'}\n\n${offerDetails ? `Use code: {{offerCode}}\nExpires: {{expiryDate}}` : ''}\n\nDon't miss this opportunity to prioritize your health.\n\nBest regards,\n${practiceName}`;
+      cta = 'Claim Your Offer';
+      break;
+    case 'reminder':
+      subject = `Reminder: Your Health Matters`;
+      body = `Hi {{firstName}},\n\nJust a friendly reminder that staying on top of your wellness routine is important for long-term health.\n\nWhen was your last visit? If it's been a while, we'd love to see you again.\n\nCall us at ${practicePhone} or book online.\n\nBest regards,\n${practiceName}`;
+      cta = 'Schedule Now';
+      break;
+    case 'announcement':
+      subject = `Exciting News from ${practiceName}!`;
+      body = `Hi {{firstName}},\n\nWe have exciting news to share with you!\n\n[Announcement details here]\n\nWe're committed to providing you with the best care possible.\n\nBest regards,\n${practiceName}`;
+      cta = 'Learn More';
+      break;
+    default:
+      subject = `A Message from ${practiceName}`;
+      body = `Hi {{firstName}},\n\nThank you for being a valued member of our practice family.\n\nWe're here to support your health journey.\n\nBest regards,\n${practiceName}`;
+      cta = 'Contact Us';
+  }
+
+  // Adjust tone
+  if (tone === 'urgent') {
+    subject = subject ? `⚡ ${subject}` : undefined;
+    cta = `${cta} - Limited Time!`;
+  } else if (tone === 'friendly') {
+    body = body.replace(/Best regards/g, 'Warmly');
+  } else if (tone === 'empathetic') {
+    body = body.replace('Hi {{firstName}},', 'Dear {{firstName}},\n\nWe hope this message finds you well.');
+  }
+
+  // Channel-specific adjustments
+  if (channel === 'sms') {
+    // Shorten for SMS
+    body = body.split('\n\n')[0] + ` ${includeOffer && offerDetails ? `${offerDetails.value}! ` : ''}Reply YES to book or call ${practicePhone}`;
+    subject = undefined;
+  }
+
+  return { subject, body, cta };
+}
+
+/**
+ * Get target patients based on audience criteria
+ */
+async function getTargetPatients(
+  prisma: any,
+  organizationId: string,
+  targetAudience: Record<string, unknown>,
+  limit: number
+): Promise<Array<{
+  id: string;
+  demographics: any;
+  contacts: any[];
+}>> {
+  const where: any = {
+    organizationId,
+    isActive: true,
+  };
+
+  // Apply filters from targetAudience
+  // In production, would build comprehensive query based on all criteria
+
+  return prisma.patient.findMany({
+    where,
+    take: limit,
+    include: {
+      demographics: true,
+      contacts: { where: { isPrimary: true }, take: 1 },
+    },
+  });
+}
+
+/**
+ * Calculate statistical significance for A/B test
+ */
+function calculateStatisticalSignificance(
+  variants: Array<{
+    variant: string;
+    recipients: number;
+    openRate: number;
+    clickRate: number;
+    conversionRate: number;
+  }>,
+  winnerMetric: string
+): {
+  isSignificant: boolean;
+  confidenceLevel: number;
+  betterVariant: string;
+  improvement: number;
+} {
+  if (variants.length < 2) {
+    return { isSignificant: false, confidenceLevel: 0, betterVariant: 'A', improvement: 0 };
+  }
+
+  const [a, b] = variants;
+  const metricKey = winnerMetric === 'open_rate' ? 'openRate'
+    : winnerMetric === 'click_rate' ? 'clickRate'
+    : 'conversionRate';
+
+  const aMetric = (a as any)[metricKey] as number;
+  const bMetric = (b as any)[metricKey] as number;
+
+  const betterVariant = bMetric > aMetric ? 'B' : 'A';
+  const improvement = aMetric > 0 ? Math.abs(bMetric - aMetric) / aMetric * 100 : 0;
+
+  // Simplified significance calculation (in production, use proper statistical test)
+  const totalSamples = a.recipients + b.recipients;
+  const minSamples = 200;
+  const significantDifference = 10; // 10% relative difference
+
+  const isSignificant = totalSamples >= minSamples && improvement >= significantDifference;
+  const confidenceLevel = isSignificant
+    ? Math.min(99, 80 + Math.min(19, improvement))
+    : Math.min(80, 50 + totalSamples / 10);
+
+  return {
+    isSignificant,
+    confidenceLevel: Math.round(confidenceLevel),
+    betterVariant,
+    improvement: Math.round(improvement * 10) / 10,
+  };
+}
+
+/**
+ * Generate optimization recommendations for a campaign
+ */
+function generateOptimizationRecommendations(
+  campaign: any,
+  performance: {
+    ctr: number;
+    conversionRate: number;
+    costPerLead: number | null;
+    roi: number | null;
+  }
+): Array<{
+  category: string;
+  priority: 'high' | 'medium' | 'low';
+  recommendation: string;
+  action: string;
+  expectedImpact: string;
+}> {
+  const recommendations: Array<{
+    category: string;
+    priority: 'high' | 'medium' | 'low';
+    recommendation: string;
+    action: string;
+    expectedImpact: string;
+  }> = [];
+
+  const benchmarks = getCampaignBenchmarks(campaign.campaignType);
+
+  // CTR recommendations
+  if (performance.ctr < benchmarks.ctr) {
+    recommendations.push({
+      category: 'Engagement',
+      priority: performance.ctr < benchmarks.ctr * 0.5 ? 'high' : 'medium',
+      recommendation: 'Click-through rate is below industry benchmark',
+      action: 'Test different subject lines and preview text; consider A/B testing',
+      expectedImpact: `+${Math.round((benchmarks.ctr - performance.ctr) * 10) / 10}% CTR improvement potential`,
+    });
+  }
+
+  // Conversion recommendations
+  if (performance.conversionRate < benchmarks.conversionRate) {
+    recommendations.push({
+      category: 'Conversion',
+      priority: 'high',
+      recommendation: 'Conversion rate needs improvement',
+      action: 'Review landing pages; strengthen calls-to-action; simplify booking process',
+      expectedImpact: `+${Math.round((benchmarks.conversionRate - performance.conversionRate) * 10) / 10}% conversion potential`,
+    });
+  }
+
+  // Cost efficiency
+  if (performance.costPerLead !== null && performance.costPerLead > benchmarks.costPerLead) {
+    recommendations.push({
+      category: 'Cost Efficiency',
+      priority: 'medium',
+      recommendation: 'Cost per lead is higher than target',
+      action: 'Refine audience targeting; remove underperforming segments',
+      expectedImpact: `$${Math.round(performance.costPerLead - benchmarks.costPerLead)} savings per lead`,
+    });
+  }
+
+  // ROI recommendations
+  if (performance.roi !== null && performance.roi < benchmarks.roi) {
+    recommendations.push({
+      category: 'ROI',
+      priority: performance.roi < 0 ? 'high' : 'medium',
+      recommendation: 'Campaign ROI is below target',
+      action: 'Focus on high-value segments; increase conversion-focused content',
+      expectedImpact: `${Math.round(benchmarks.roi - performance.roi)}% ROI improvement potential`,
+    });
+  }
+
+  // Timing optimization
+  recommendations.push({
+    category: 'Timing',
+    priority: 'low',
+    recommendation: 'Consider send time optimization',
+    action: 'Test sending at different times; analyze engagement patterns',
+    expectedImpact: '+5-15% open rate improvement',
+  });
+
+  // Content freshness
+  if (campaign.status === 'ACTIVE') {
+    const daysSinceStart = campaign.startDate
+      ? Math.floor((Date.now() - new Date(campaign.startDate).getTime()) / (1000 * 60 * 60 * 24))
+      : 0;
+    if (daysSinceStart > 30) {
+      recommendations.push({
+        category: 'Content',
+        priority: 'medium',
+        recommendation: 'Campaign content may need refresh',
+        action: 'Update messaging; introduce new offers or content angles',
+        expectedImpact: 'Prevent audience fatigue',
+      });
+    }
+  }
+
+  return recommendations.sort((a, b) => {
+    const priorityOrder = { high: 0, medium: 1, low: 2 };
+    return priorityOrder[a.priority] - priorityOrder[b.priority];
+  });
+}
+
+/**
+ * Get benchmark metrics for campaign type
+ */
+function getCampaignBenchmarks(campaignType: string): {
+  ctr: number;
+  conversionRate: number;
+  costPerLead: number;
+  roi: number;
+} {
+  const benchmarks: Record<string, {
+    ctr: number;
+    conversionRate: number;
+    costPerLead: number;
+    roi: number;
+  }> = {
+    LEAD_GENERATION: { ctr: 2.5, conversionRate: 3, costPerLead: 50, roi: 200 },
+    REACTIVATION: { ctr: 3.5, conversionRate: 5, costPerLead: 30, roi: 300 },
+    REFERRAL: { ctr: 4, conversionRate: 8, costPerLead: 20, roi: 500 },
+    REVIEW: { ctr: 5, conversionRate: 15, costPerLead: 10, roi: 400 },
+    RETENTION: { ctr: 3, conversionRate: 4, costPerLead: 25, roi: 350 },
+    UPSELL: { ctr: 3.5, conversionRate: 6, costPerLead: 35, roi: 250 },
+    SEASONAL: { ctr: 2.8, conversionRate: 4, costPerLead: 40, roi: 220 },
+    EVENT: { ctr: 4.5, conversionRate: 10, costPerLead: 25, roi: 300 },
+  };
+
+  return benchmarks[campaignType] || benchmarks.LEAD_GENERATION;
+}
+
+/**
+ * Calculate optimization score for campaign
+ */
+function calculateOptimizationScore(
+  performance: {
+    ctr: number;
+    conversionRate: number;
+    costPerLead: number | null;
+    roi: number | null;
+  },
+  campaignType: string
+): number {
+  const benchmarks = getCampaignBenchmarks(campaignType);
+  let score = 50; // Base score
+
+  // CTR score (up to 25 points)
+  if (performance.ctr >= benchmarks.ctr) {
+    score += 25;
+  } else {
+    score += Math.round((performance.ctr / benchmarks.ctr) * 25);
+  }
+
+  // Conversion score (up to 30 points)
+  if (performance.conversionRate >= benchmarks.conversionRate) {
+    score += 30;
+  } else {
+    score += Math.round((performance.conversionRate / benchmarks.conversionRate) * 30);
+  }
+
+  // Cost efficiency score (up to 20 points)
+  if (performance.costPerLead !== null) {
+    if (performance.costPerLead <= benchmarks.costPerLead) {
+      score += 20;
+    } else {
+      score += Math.max(0, 20 - Math.round((performance.costPerLead - benchmarks.costPerLead) / 5));
+    }
+  }
+
+  // ROI score (up to 25 points)
+  if (performance.roi !== null) {
+    if (performance.roi >= benchmarks.roi) {
+      score += 25;
+    } else if (performance.roi > 0) {
+      score += Math.round((performance.roi / benchmarks.roi) * 25);
+    }
+  }
+
+  return Math.max(0, Math.min(100, score));
+}
+
+/**
+ * Generate ROI insights from campaign data
+ */
+function generateROIInsights(
+  campaigns: Array<{ metrics: { roi: number; spend: number; revenue: number }; campaignType: string }>,
+  totals: { overallROI: number; totalSpend: number; totalRevenue: number }
+): string[] {
+  const insights: string[] = [];
+
+  if (totals.overallROI > 200) {
+    insights.push(`Strong overall ROI of ${Math.round(totals.overallROI)}% - marketing efforts are highly effective`);
+  } else if (totals.overallROI > 100) {
+    insights.push(`Good ROI of ${Math.round(totals.overallROI)}% - room for optimization`);
+  } else if (totals.overallROI > 0) {
+    insights.push(`Positive but modest ROI of ${Math.round(totals.overallROI)}% - consider refining strategy`);
+  } else {
+    insights.push('ROI is negative - urgent optimization needed');
+  }
+
+  // Find best performing campaign type
+  const byType: Record<string, { revenue: number; spend: number }> = {};
+  campaigns.forEach((c) => {
+    if (!byType[c.campaignType]) {
+      byType[c.campaignType] = { revenue: 0, spend: 0 };
+    }
+    byType[c.campaignType].revenue += c.metrics.revenue;
+    byType[c.campaignType].spend += c.metrics.spend;
+  });
+
+  let bestType = '';
+  let bestROI = -999;
+  Object.entries(byType).forEach(([type, data]) => {
+    const roi = data.spend > 0 ? ((data.revenue - data.spend) / data.spend) * 100 : 0;
+    if (roi > bestROI) {
+      bestROI = roi;
+      bestType = type;
+    }
+  });
+
+  if (bestType) {
+    insights.push(`${bestType.replace('_', ' ')} campaigns show highest ROI at ${Math.round(bestROI)}%`);
+  }
+
+  return insights;
+}
+
+/**
+ * Generate ROI recommendations
+ */
+function generateROIRecommendations(
+  campaigns: Array<{ metrics: { roi: number }; campaignType: string; status: string }>,
+  totals: { overallROI: number }
+): string[] {
+  const recommendations: string[] = [];
+
+  if (totals.overallROI < 100) {
+    recommendations.push('Consider pausing underperforming campaigns and reallocating budget');
+  }
+
+  const activeCampaigns = campaigns.filter((c) => c.status === 'ACTIVE');
+  if (activeCampaigns.length > 5) {
+    recommendations.push('Many active campaigns - consider consolidating for better focus');
+  }
+
+  const negativeROI = campaigns.filter((c) => c.metrics.roi < 0);
+  if (negativeROI.length > 0) {
+    recommendations.push(`${negativeROI.length} campaign(s) with negative ROI - review and optimize or pause`);
+  }
+
+  recommendations.push('Test new audience segments to find untapped opportunities');
+  recommendations.push('Implement A/B testing on top-performing campaigns to maximize results');
+
+  return recommendations;
+}
+
+// ============================================
 // Router
 // ============================================
 
@@ -8143,6 +9032,1150 @@ export const aiGrowthRouter = router({
         limit,
         offset,
         hasMore: offset + opportunities.length < total,
+      };
+    }),
+
+  // ============================================
+  // US-361: Marketing Campaign Automation
+  // ============================================
+
+  /**
+   * Create a marketing campaign - AI generates campaign with targeting and content
+   */
+  createCampaign: protectedProcedure
+    .input(
+      z.object({
+        name: z.string().min(1).max(100),
+        campaignType: z.enum([
+          'LEAD_GENERATION',
+          'REACTIVATION',
+          'REFERRAL',
+          'REVIEW',
+          'RETENTION',
+          'UPSELL',
+          'SEASONAL',
+          'EVENT',
+        ]),
+        description: z.string().optional(),
+        targetAudience: z
+          .object({
+            minAge: z.number().optional(),
+            maxAge: z.number().optional(),
+            gender: z.enum(['male', 'female', 'all']).optional(),
+            insuranceTypes: z.array(z.string()).optional(),
+            diagnosisCodes: z.array(z.string()).optional(),
+            minVisits: z.number().optional(),
+            maxVisits: z.number().optional(),
+            daysSinceLastVisit: z
+              .object({
+                min: z.number().optional(),
+                max: z.number().optional(),
+              })
+              .optional(),
+            lifetimeValueRange: z
+              .object({
+                min: z.number().optional(),
+                max: z.number().optional(),
+              })
+              .optional(),
+            engagementLevel: z.enum(['high', 'medium', 'low', 'all']).optional(),
+            excludeActive: z.boolean().optional(),
+            customSegment: z.string().optional(),
+          })
+          .optional(),
+        channels: z.array(z.enum(['email', 'sms', 'social', 'direct_mail'])),
+        messagingTone: z.enum(['professional', 'friendly', 'urgent', 'empathetic']),
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+        budget: z.number().optional(),
+        targetLeads: z.number().optional(),
+        targetConversions: z.number().optional(),
+        targetROI: z.number().optional(),
+        enableABTesting: z.boolean().default(false),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const {
+        name,
+        campaignType,
+        description,
+        targetAudience,
+        channels,
+        messagingTone,
+        startDate,
+        endDate,
+        budget,
+        targetLeads,
+        targetConversions,
+        targetROI,
+        enableABTesting,
+      } = input;
+
+      // AI-generated content strategy based on campaign type
+      const contentStrategy = generateContentStrategy(campaignType, messagingTone, channels);
+
+      // Calculate estimated target patient count
+      const estimatedReach = await estimateAudienceSize(
+        ctx.prisma,
+        ctx.user.organizationId,
+        targetAudience || {}
+      );
+
+      // Generate campaign sequences
+      const sequences = generateCampaignSequences(campaignType, channels, messagingTone);
+
+      // A/B test configuration if enabled
+      const abTestConfig = enableABTesting
+        ? {
+            enabled: true,
+            variants: ['A', 'B'],
+            splitRatio: 50,
+            winnerMetric: 'conversion_rate',
+            minimumSampleSize: Math.min(100, Math.floor(estimatedReach / 4)),
+            testDuration: 7, // days
+          }
+        : null;
+
+      const campaign = await ctx.prisma.growthCampaign.create({
+        data: {
+          organizationId: ctx.user.organizationId,
+          name,
+          description,
+          campaignType,
+          status: startDate && startDate > new Date() ? 'SCHEDULED' : 'DRAFT',
+          startDate,
+          endDate,
+          targetAudience: targetAudience || {},
+          targetPatientCount: estimatedReach,
+          targetLeads,
+          targetConversions,
+          targetROI,
+          budget,
+          contentStrategy,
+          messagingTone,
+          channels,
+          sequences,
+          abTestConfig: abTestConfig as Prisma.InputJsonValue | undefined,
+        },
+      });
+
+      await auditLog('AI_GROWTH_CAMPAIGN_CREATED', 'GrowthCampaign', {
+        entityId: campaign.id,
+        changes: {
+          name,
+          campaignType,
+          channels,
+          estimatedReach,
+          enableABTesting,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        campaignId: campaign.id,
+        name,
+        campaignType,
+        status: campaign.status,
+        estimatedReach,
+        contentStrategy,
+        sequences,
+        abTestConfig,
+        createdAt: campaign.createdAt,
+      };
+    }),
+
+  /**
+   * Segment audience - AI-powered audience segmentation for targeting
+   */
+  segmentAudience: protectedProcedure
+    .input(
+      z.object({
+        segmentType: z.enum([
+          'high_value',
+          'at_risk',
+          'new_patients',
+          'loyal',
+          'lapsed',
+          'engaged',
+          'unengaged',
+          'custom',
+        ]),
+        customCriteria: z
+          .object({
+            minAge: z.number().optional(),
+            maxAge: z.number().optional(),
+            gender: z.enum(['male', 'female', 'all']).optional(),
+            insuranceTypes: z.array(z.string()).optional(),
+            diagnosisCodes: z.array(z.string()).optional(),
+            minVisits: z.number().optional(),
+            maxVisits: z.number().optional(),
+            daysSinceLastVisit: z
+              .object({
+                min: z.number().optional(),
+                max: z.number().optional(),
+              })
+              .optional(),
+            lifetimeValueRange: z
+              .object({
+                min: z.number().optional(),
+                max: z.number().optional(),
+              })
+              .optional(),
+            appointmentTypes: z.array(z.string()).optional(),
+            excludePatientIds: z.array(z.string()).optional(),
+          })
+          .optional(),
+        limit: z.number().min(1).max(1000).default(100),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { segmentType, customCriteria, limit } = input;
+
+      // Get segment criteria based on type
+      const segmentCriteria = getSegmentCriteria(segmentType, customCriteria);
+
+      // Build query
+      const patients = await ctx.prisma.patient.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: 'ACTIVE',
+          ...(segmentCriteria.patientFilters || {}),
+        },
+        take: limit,
+        include: {
+          demographics: true,
+          contacts: { where: { isPrimary: true }, take: 1 },
+          appointments: {
+            orderBy: { startTime: 'desc' },
+            take: 10,
+          },
+        },
+      });
+
+      // Calculate segment scores for each patient
+      const segmentedPatients = patients.map((patient) => {
+        const patientWithAppts = patient as typeof patient & { appointments: Array<{ startTime: Date }> };
+        const score = calculateSegmentScore(patientWithAppts, segmentType);
+        const lastVisit = patientWithAppts.appointments[0]?.startTime || null;
+        const totalVisits = patientWithAppts.appointments.length;
+
+        return {
+          patientId: patient.id,
+          patientName: patient.demographics
+            ? `${patient.demographics.firstName} ${patient.demographics.lastName}`
+            : patient.id,
+          email: patient.contacts[0]?.email || null,
+          phone: patient.contacts[0]?.mobilePhone || patient.contacts[0]?.homePhone || null,
+          segmentScore: score,
+          lastVisitDate: lastVisit,
+          totalVisits,
+          characteristics: getPatientCharacteristics(patientWithAppts, segmentType),
+        };
+      });
+
+      // Sort by segment score descending
+      segmentedPatients.sort((a, b) => b.segmentScore - a.segmentScore);
+
+      await auditLog('AI_GROWTH_AUDIENCE_SEGMENTED', 'Patient', {
+        changes: {
+          segmentType,
+          totalPatients: segmentedPatients.length,
+          criteria: customCriteria,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        segmentType,
+        totalPatients: segmentedPatients.length,
+        patients: segmentedPatients,
+        segmentInsights: generateSegmentInsights(segmentedPatients, segmentType),
+        recommendedActions: getSegmentRecommendations(segmentType, segmentedPatients.length),
+      };
+    }),
+
+  /**
+   * Generate campaign content - AI assists with content creation
+   */
+  generateCampaignContent: protectedProcedure
+    .input(
+      z.object({
+        campaignId: z.string().optional(),
+        campaignType: z.enum([
+          'LEAD_GENERATION',
+          'REACTIVATION',
+          'REFERRAL',
+          'REVIEW',
+          'RETENTION',
+          'UPSELL',
+          'SEASONAL',
+          'EVENT',
+        ]),
+        channel: z.enum(['email', 'sms', 'social', 'direct_mail']),
+        tone: z.enum(['professional', 'friendly', 'urgent', 'empathetic']),
+        contentType: z.enum([
+          'promotional',
+          'educational',
+          'testimonial',
+          'offer',
+          'reminder',
+          'announcement',
+        ]),
+        customPrompt: z.string().optional(),
+        includeOffer: z.boolean().default(false),
+        offerDetails: z
+          .object({
+            type: z.enum(['percentage', 'dollar', 'free_service', 'complimentary']),
+            value: z.string(),
+            expiresInDays: z.number(),
+          })
+          .optional(),
+        abVariant: z.enum(['A', 'B']).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { campaignType, channel, tone, contentType, includeOffer, offerDetails, abVariant } =
+        input;
+
+      // Get organization info for personalization
+      const org = await ctx.prisma.organization.findUnique({
+        where: { id: ctx.user.organizationId },
+        select: { name: true, primaryContactPhone: true },
+      });
+
+      const practiceName = org?.name || 'Our Practice';
+      const practicePhone = org?.primaryContactPhone || '';
+
+      // Generate content based on parameters
+      const content = generateMarketingContent({
+        campaignType,
+        channel,
+        tone,
+        contentType,
+        includeOffer,
+        offerDetails,
+        practiceName,
+        practicePhone,
+        abVariant,
+      });
+
+      await auditLog('AI_GROWTH_CONTENT_GENERATED', 'GrowthCampaign', {
+        entityId: input.campaignId,
+        changes: {
+          campaignType,
+          channel,
+          tone,
+          contentType,
+          abVariant,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        channel,
+        contentType,
+        tone,
+        abVariant,
+        content,
+        personalizationVariables: [
+          '{{firstName}}',
+          '{{lastName}}',
+          '{{lastVisitDate}}',
+          '{{offerCode}}',
+          '{{expiryDate}}',
+        ],
+        characterCount: content.body.length,
+        estimatedReadTime:
+          channel === 'email' ? `${Math.ceil(content.body.length / 1000)} min` : 'N/A',
+      };
+    }),
+
+  /**
+   * Execute multi-channel campaign - Run campaign across channels
+   */
+  executeCampaign: protectedProcedure
+    .input(
+      z.object({
+        campaignId: z.string(),
+        testMode: z.boolean().default(false),
+        testRecipients: z.array(z.string()).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { campaignId, testMode, testRecipients } = input;
+
+      const campaign = await ctx.prisma.growthCampaign.findFirst({
+        where: {
+          id: campaignId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!campaign) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Campaign not found',
+        });
+      }
+
+      if (campaign.status === 'ACTIVE' && !testMode) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Campaign is already active',
+        });
+      }
+
+      // Get target audience
+      const targetAudience = (campaign.targetAudience as Record<string, unknown>) || {};
+      const patients = testMode
+        ? await ctx.prisma.patient.findMany({
+            where: {
+              organizationId: ctx.user.organizationId,
+              id: { in: testRecipients },
+            },
+            include: {
+              demographics: true,
+              contacts: { where: { isPrimary: true }, take: 1 },
+            },
+          })
+        : await getTargetPatients(ctx.prisma, ctx.user.organizationId, targetAudience, 1000);
+
+      // Activate campaign if not test mode
+      if (!testMode) {
+        await ctx.prisma.growthCampaign.update({
+          where: { id: campaignId },
+          data: {
+            status: 'ACTIVE',
+            startDate: new Date(),
+            actualReach: patients.length,
+          },
+        });
+      }
+
+      await auditLog('AI_GROWTH_CAMPAIGN_ACTIVATED', 'GrowthCampaign', {
+        entityId: campaignId,
+        changes: {
+          testMode,
+          recipientCount: patients.length,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        campaignId,
+        status: testMode ? 'TEST_SENT' : 'ACTIVE',
+        recipientCount: patients.length,
+        estimatedDeliveryTime: testMode ? 'Immediate' : 'Within 24 hours',
+        channels: campaign.channels as string[],
+        sequences: campaign.sequences as unknown[],
+      };
+    }),
+
+  /**
+   * Create A/B test - Set up A/B testing for campaign
+   */
+  createABTest: protectedProcedure
+    .input(
+      z.object({
+        campaignId: z.string(),
+        testName: z.string(),
+        testElement: z.enum(['subject', 'content', 'cta', 'timing', 'offer']),
+        variantA: z.object({
+          name: z.string(),
+          content: z.string(),
+        }),
+        variantB: z.object({
+          name: z.string(),
+          content: z.string(),
+        }),
+        splitRatio: z.number().min(10).max(90).default(50),
+        winnerMetric: z.enum(['open_rate', 'click_rate', 'conversion_rate', 'revenue']),
+        testDuration: z.number().min(1).max(30).default(7), // days
+        minimumSampleSize: z.number().min(50).default(100),
+        autoSelectWinner: z.boolean().default(true),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const {
+        campaignId,
+        testName,
+        testElement,
+        variantA,
+        variantB,
+        splitRatio,
+        winnerMetric,
+        testDuration,
+        minimumSampleSize,
+        autoSelectWinner,
+      } = input;
+
+      const campaign = await ctx.prisma.growthCampaign.findFirst({
+        where: {
+          id: campaignId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!campaign) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Campaign not found',
+        });
+      }
+
+      const abTestConfig = {
+        testId: `abtest_${Date.now()}`,
+        testName,
+        testElement,
+        variants: {
+          A: { ...variantA, recipients: 0, opens: 0, clicks: 0, conversions: 0, revenue: 0 },
+          B: { ...variantB, recipients: 0, opens: 0, clicks: 0, conversions: 0, revenue: 0 },
+        },
+        splitRatio,
+        winnerMetric,
+        testDuration,
+        minimumSampleSize,
+        autoSelectWinner,
+        startedAt: new Date(),
+        endsAt: new Date(Date.now() + testDuration * 24 * 60 * 60 * 1000),
+        winner: null,
+        statisticalSignificance: null,
+      };
+
+      await ctx.prisma.growthCampaign.update({
+        where: { id: campaignId },
+        data: {
+          abTestConfig,
+        },
+      });
+
+      await auditLog('AI_GROWTH_ABTEST_CREATED', 'GrowthCampaign', {
+        entityId: campaignId,
+        changes: {
+          testName,
+          testElement,
+          splitRatio,
+          winnerMetric,
+          testDuration,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        campaignId,
+        testId: abTestConfig.testId,
+        testName,
+        testElement,
+        variants: ['A', 'B'],
+        splitRatio,
+        winnerMetric,
+        endsAt: abTestConfig.endsAt,
+      };
+    }),
+
+  /**
+   * Get A/B test results - Analyze test performance
+   */
+  getABTestResults: protectedProcedure
+    .input(
+      z.object({
+        campaignId: z.string(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { campaignId } = input;
+
+      const campaign = await ctx.prisma.growthCampaign.findFirst({
+        where: {
+          id: campaignId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!campaign) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Campaign not found',
+        });
+      }
+
+      const abTestConfig = campaign.abTestConfig as Record<string, unknown> | null;
+
+      if (!abTestConfig) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'No A/B test configured for this campaign',
+        });
+      }
+
+      const variants = abTestConfig.variants as Record<
+        string,
+        { recipients: number; opens: number; clicks: number; conversions: number; revenue: number }
+      >;
+
+      // Calculate metrics for each variant
+      const variantMetrics = Object.entries(variants).map(([variant, data]) => {
+        const openRate = data.recipients > 0 ? (data.opens / data.recipients) * 100 : 0;
+        const clickRate = data.opens > 0 ? (data.clicks / data.opens) * 100 : 0;
+        const conversionRate = data.clicks > 0 ? (data.conversions / data.clicks) * 100 : 0;
+        const revenuePerRecipient = data.recipients > 0 ? data.revenue / data.recipients : 0;
+
+        return {
+          variant,
+          recipients: data.recipients,
+          opens: data.opens,
+          clicks: data.clicks,
+          conversions: data.conversions,
+          revenue: data.revenue,
+          openRate: Math.round(openRate * 100) / 100,
+          clickRate: Math.round(clickRate * 100) / 100,
+          conversionRate: Math.round(conversionRate * 100) / 100,
+          revenuePerRecipient: Math.round(revenuePerRecipient * 100) / 100,
+        };
+      });
+
+      // Calculate statistical significance
+      const significance = calculateStatisticalSignificance(variantMetrics, abTestConfig.winnerMetric as string);
+
+      // Determine winner if significant
+      const winner =
+        significance.isSignificant && significance.confidenceLevel >= 95
+          ? significance.betterVariant
+          : null;
+
+      await auditLog('AI_GROWTH_ABTEST_RESULT', 'GrowthCampaign', {
+        entityId: campaignId,
+        changes: {
+          testComplete: !!winner,
+          winner,
+          significance: significance.confidenceLevel,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        campaignId,
+        testName: abTestConfig.testName,
+        testElement: abTestConfig.testElement,
+        variantMetrics,
+        comparison: {
+          winnerMetric: abTestConfig.winnerMetric,
+          isSignificant: significance.isSignificant,
+          confidenceLevel: significance.confidenceLevel,
+          betterVariant: significance.betterVariant,
+          improvement: significance.improvement,
+        },
+        winner,
+        recommendation:
+          winner != null
+            ? `Variant ${winner} is the clear winner with ${significance.confidenceLevel}% confidence`
+            : significance.isSignificant
+              ? `Variant ${significance.betterVariant} is trending better, but more data needed`
+              : 'No significant difference yet - continue testing',
+        endsAt: abTestConfig.endsAt,
+        testComplete: !!winner,
+      };
+    }),
+
+  /**
+   * Optimize campaign performance - AI optimization recommendations
+   */
+  optimizeCampaign: protectedProcedure
+    .input(
+      z.object({
+        campaignId: z.string(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { campaignId } = input;
+
+      const campaign = await ctx.prisma.growthCampaign.findFirst({
+        where: {
+          id: campaignId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!campaign) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Campaign not found',
+        });
+      }
+
+      // Calculate current performance metrics
+      const currentPerformance = {
+        impressions: campaign.totalImpressions,
+        clicks: campaign.totalClicks,
+        leads: campaign.totalLeads,
+        conversions: campaign.totalConversions,
+        revenue: Number(campaign.totalRevenue),
+        ctr: campaign.totalImpressions > 0
+          ? (campaign.totalClicks / campaign.totalImpressions) * 100
+          : 0,
+        conversionRate: campaign.totalClicks > 0
+          ? (campaign.totalConversions / campaign.totalClicks) * 100
+          : 0,
+        costPerLead: campaign.actualSpend && campaign.totalLeads > 0
+          ? Number(campaign.actualSpend) / campaign.totalLeads
+          : null,
+        roi: campaign.actualSpend && Number(campaign.actualSpend) > 0
+          ? ((Number(campaign.totalRevenue) - Number(campaign.actualSpend)) / Number(campaign.actualSpend)) * 100
+          : null,
+      };
+
+      // Generate optimization recommendations
+      const recommendations = generateOptimizationRecommendations(
+        campaign,
+        currentPerformance
+      );
+
+      await auditLog('AI_GROWTH_CAMPAIGN_OPTIMIZED', 'GrowthCampaign', {
+        entityId: campaignId,
+        changes: {
+          currentPerformance,
+          recommendationsCount: recommendations.length,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        campaignId,
+        campaignName: campaign.name,
+        status: campaign.status,
+        currentPerformance,
+        benchmarks: getCampaignBenchmarks(campaign.campaignType),
+        recommendations,
+        optimizationScore: calculateOptimizationScore(currentPerformance, campaign.campaignType),
+        nextSteps: recommendations.slice(0, 3).map((r) => r.action),
+      };
+    }),
+
+  /**
+   * Get campaign ROI report - Comprehensive ROI analysis
+   */
+  getCampaignROI: protectedProcedure
+    .input(
+      z.object({
+        campaignId: z.string().optional(),
+        dateRange: z.object({
+          start: z.date(),
+          end: z.date(),
+        }).optional(),
+        groupBy: z.enum(['campaign', 'channel', 'type']).default('campaign'),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { campaignId, dateRange, groupBy } = input;
+
+      const where: Prisma.GrowthCampaignWhereInput = {
+        organizationId: ctx.user.organizationId,
+      };
+
+      if (campaignId) {
+        where.id = campaignId;
+      }
+
+      if (dateRange) {
+        where.createdAt = {
+          gte: dateRange.start,
+          lte: dateRange.end,
+        };
+      }
+
+      const campaigns = await ctx.prisma.growthCampaign.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+      });
+
+      // Calculate ROI for each campaign
+      const campaignROIs = campaigns.map((c) => {
+        const spend = Number(c.actualSpend || 0);
+        const revenue = Number(c.totalRevenue || 0);
+        const profit = revenue - spend;
+        const roi = spend > 0 ? (profit / spend) * 100 : 0;
+        const costPerLead = c.totalLeads > 0 ? spend / c.totalLeads : 0;
+        const costPerConversion = c.totalConversions > 0 ? spend / c.totalConversions : 0;
+        const revenuePerConversion = c.totalConversions > 0 ? revenue / c.totalConversions : 0;
+
+        return {
+          campaignId: c.id,
+          campaignName: c.name,
+          campaignType: c.campaignType,
+          channels: c.channels as string[],
+          status: c.status,
+          metrics: {
+            spend,
+            revenue,
+            profit,
+            roi: Math.round(roi * 100) / 100,
+            costPerLead: Math.round(costPerLead * 100) / 100,
+            costPerConversion: Math.round(costPerConversion * 100) / 100,
+            revenuePerConversion: Math.round(revenuePerConversion * 100) / 100,
+            impressions: c.totalImpressions,
+            clicks: c.totalClicks,
+            leads: c.totalLeads,
+            conversions: c.totalConversions,
+          },
+          performance: {
+            ctr: c.clickThroughRate ? Number(c.clickThroughRate) * 100 : 0,
+            conversionRate: c.conversionRate ? Number(c.conversionRate) * 100 : 0,
+            reachVsTarget: c.targetPatientCount
+              ? (c.actualReach / c.targetPatientCount) * 100
+              : 0,
+            leadsVsTarget: c.targetLeads
+              ? (c.totalLeads / c.targetLeads) * 100
+              : 0,
+            roiVsTarget: c.targetROI
+              ? (roi / Number(c.targetROI)) * 100
+              : 0,
+          },
+          startDate: c.startDate,
+          endDate: c.endDate,
+        };
+      });
+
+      // Aggregate by groupBy dimension
+      let aggregated: Record<string, {
+        count: number;
+        totalSpend: number;
+        totalRevenue: number;
+        totalProfit: number;
+        totalLeads: number;
+        totalConversions: number;
+        avgROI: number;
+        avgCostPerLead: number;
+        avgCostPerConversion: number;
+      }> = {};
+
+      if (groupBy === 'type') {
+        aggregated = campaignROIs.reduce((acc, c) => {
+          const key = c.campaignType;
+          if (!acc[key]) {
+            acc[key] = {
+              count: 0,
+              totalSpend: 0,
+              totalRevenue: 0,
+              totalProfit: 0,
+              totalLeads: 0,
+              totalConversions: 0,
+              avgROI: 0,
+              avgCostPerLead: 0,
+              avgCostPerConversion: 0,
+            };
+          }
+          acc[key].count++;
+          acc[key].totalSpend += c.metrics.spend;
+          acc[key].totalRevenue += c.metrics.revenue;
+          acc[key].totalProfit += c.metrics.profit;
+          acc[key].totalLeads += c.metrics.leads;
+          acc[key].totalConversions += c.metrics.conversions;
+          return acc;
+        }, {} as typeof aggregated);
+
+        // Calculate averages
+        Object.keys(aggregated).forEach((key) => {
+          const a = aggregated[key];
+          a.avgROI = a.totalSpend > 0 ? (a.totalProfit / a.totalSpend) * 100 : 0;
+          a.avgCostPerLead = a.totalLeads > 0 ? a.totalSpend / a.totalLeads : 0;
+          a.avgCostPerConversion = a.totalConversions > 0 ? a.totalSpend / a.totalConversions : 0;
+        });
+      } else if (groupBy === 'channel') {
+        campaignROIs.forEach((c) => {
+          c.channels.forEach((channel) => {
+            if (!aggregated[channel]) {
+              aggregated[channel] = {
+                count: 0,
+                totalSpend: 0,
+                totalRevenue: 0,
+                totalProfit: 0,
+                totalLeads: 0,
+                totalConversions: 0,
+                avgROI: 0,
+                avgCostPerLead: 0,
+                avgCostPerConversion: 0,
+              };
+            }
+            const channelShare = 1 / c.channels.length;
+            aggregated[channel].count++;
+            aggregated[channel].totalSpend += c.metrics.spend * channelShare;
+            aggregated[channel].totalRevenue += c.metrics.revenue * channelShare;
+            aggregated[channel].totalProfit += c.metrics.profit * channelShare;
+            aggregated[channel].totalLeads += Math.floor(c.metrics.leads * channelShare);
+            aggregated[channel].totalConversions += Math.floor(c.metrics.conversions * channelShare);
+          });
+        });
+
+        // Calculate averages
+        Object.keys(aggregated).forEach((key) => {
+          const a = aggregated[key];
+          a.avgROI = a.totalSpend > 0 ? (a.totalProfit / a.totalSpend) * 100 : 0;
+          a.avgCostPerLead = a.totalLeads > 0 ? a.totalSpend / a.totalLeads : 0;
+          a.avgCostPerConversion = a.totalConversions > 0 ? a.totalSpend / a.totalConversions : 0;
+        });
+      }
+
+      // Calculate totals
+      const totals = {
+        totalCampaigns: campaigns.length,
+        totalSpend: campaignROIs.reduce((sum, c) => sum + c.metrics.spend, 0),
+        totalRevenue: campaignROIs.reduce((sum, c) => sum + c.metrics.revenue, 0),
+        totalProfit: campaignROIs.reduce((sum, c) => sum + c.metrics.profit, 0),
+        totalLeads: campaignROIs.reduce((sum, c) => sum + c.metrics.leads, 0),
+        totalConversions: campaignROIs.reduce((sum, c) => sum + c.metrics.conversions, 0),
+        overallROI: 0,
+        avgCostPerLead: 0,
+        avgCostPerConversion: 0,
+      };
+
+      totals.overallROI = totals.totalSpend > 0
+        ? (totals.totalProfit / totals.totalSpend) * 100
+        : 0;
+      totals.avgCostPerLead = totals.totalLeads > 0
+        ? totals.totalSpend / totals.totalLeads
+        : 0;
+      totals.avgCostPerConversion = totals.totalConversions > 0
+        ? totals.totalSpend / totals.totalConversions
+        : 0;
+
+      await auditLog('AI_GROWTH_ROI_CALCULATED', 'GrowthCampaign', {
+        changes: {
+          campaignCount: campaigns.length,
+          dateRange,
+          groupBy,
+          overallROI: totals.overallROI,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        campaigns: campaignROIs,
+        aggregated: groupBy !== 'campaign' ? aggregated : undefined,
+        totals,
+        insights: generateROIInsights(campaignROIs, totals),
+        recommendations: generateROIRecommendations(campaignROIs, totals),
+      };
+    }),
+
+  /**
+   * Update campaign status - Pause, resume, or complete campaign
+   */
+  updateCampaignStatus: protectedProcedure
+    .input(
+      z.object({
+        campaignId: z.string(),
+        status: z.enum(['ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELLED']),
+        reason: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { campaignId, status, reason } = input;
+
+      const campaign = await ctx.prisma.growthCampaign.findFirst({
+        where: {
+          id: campaignId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!campaign) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Campaign not found',
+        });
+      }
+
+      const updateData: Prisma.GrowthCampaignUpdateInput = {
+        status,
+      };
+
+      if (status === 'COMPLETED' || status === 'CANCELLED') {
+        updateData.endDate = new Date();
+      }
+
+      const updated = await ctx.prisma.growthCampaign.update({
+        where: { id: campaignId },
+        data: updateData,
+      });
+
+      const auditAction =
+        status === 'ACTIVE'
+          ? 'AI_GROWTH_CAMPAIGN_ACTIVATED'
+          : status === 'PAUSED'
+            ? 'AI_GROWTH_CAMPAIGN_PAUSED'
+            : status === 'COMPLETED'
+              ? 'AI_GROWTH_CAMPAIGN_COMPLETED'
+              : 'AI_GROWTH_CAMPAIGN_CANCELLED';
+
+      await auditLog(auditAction, 'GrowthCampaign', {
+        entityId: campaignId,
+        changes: {
+          previousStatus: campaign.status,
+          newStatus: status,
+          reason,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        campaignId,
+        name: updated.name,
+        previousStatus: campaign.status,
+        newStatus: status,
+        updatedAt: updated.updatedAt,
+      };
+    }),
+
+  /**
+   * List campaigns - Get all campaigns with filtering
+   */
+  listCampaigns: protectedProcedure
+    .input(
+      z.object({
+        status: z.enum(['DRAFT', 'SCHEDULED', 'ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELLED']).optional(),
+        campaignType: z.enum([
+          'LEAD_GENERATION',
+          'REACTIVATION',
+          'REFERRAL',
+          'REVIEW',
+          'RETENTION',
+          'UPSELL',
+          'SEASONAL',
+          'EVENT',
+        ]).optional(),
+        limit: z.number().min(1).max(100).default(20),
+        offset: z.number().min(0).default(0),
+        sortBy: z.enum(['createdAt', 'startDate', 'totalRevenue', 'totalConversions']).default('createdAt'),
+        sortOrder: z.enum(['asc', 'desc']).default('desc'),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { status, campaignType, limit, offset, sortBy, sortOrder } = input;
+
+      const where: Prisma.GrowthCampaignWhereInput = {
+        organizationId: ctx.user.organizationId,
+      };
+
+      if (status) {
+        where.status = status;
+      }
+
+      if (campaignType) {
+        where.campaignType = campaignType;
+      }
+
+      const orderBy: Prisma.GrowthCampaignOrderByWithRelationInput = {};
+      orderBy[sortBy] = sortOrder;
+
+      const [campaigns, total] = await Promise.all([
+        ctx.prisma.growthCampaign.findMany({
+          where,
+          orderBy,
+          take: limit,
+          skip: offset,
+        }),
+        ctx.prisma.growthCampaign.count({ where }),
+      ]);
+
+      return {
+        campaigns: campaigns.map((c) => ({
+          id: c.id,
+          name: c.name,
+          description: c.description,
+          campaignType: c.campaignType,
+          status: c.status,
+          channels: c.channels as string[],
+          startDate: c.startDate,
+          endDate: c.endDate,
+          budget: c.budget ? Number(c.budget) : null,
+          actualSpend: c.actualSpend ? Number(c.actualSpend) : null,
+          targetLeads: c.targetLeads,
+          targetConversions: c.targetConversions,
+          actualReach: c.actualReach,
+          totalImpressions: c.totalImpressions,
+          totalClicks: c.totalClicks,
+          totalLeads: c.totalLeads,
+          totalConversions: c.totalConversions,
+          totalRevenue: Number(c.totalRevenue),
+          roi: c.roi ? Number(c.roi) * 100 : null,
+          createdAt: c.createdAt,
+          updatedAt: c.updatedAt,
+        })),
+        total,
+        limit,
+        offset,
+        hasMore: offset + campaigns.length < total,
+      };
+    }),
+
+  /**
+   * Get campaign details - Full campaign information
+   */
+  getCampaign: protectedProcedure
+    .input(z.object({ campaignId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const { campaignId } = input;
+
+      const campaign = await ctx.prisma.growthCampaign.findFirst({
+        where: {
+          id: campaignId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!campaign) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Campaign not found',
+        });
+      }
+
+      return {
+        id: campaign.id,
+        name: campaign.name,
+        description: campaign.description,
+        campaignType: campaign.campaignType,
+        status: campaign.status,
+        startDate: campaign.startDate,
+        endDate: campaign.endDate,
+        targetAudience: campaign.targetAudience,
+        targetPatientCount: campaign.targetPatientCount,
+        actualReach: campaign.actualReach,
+        targetLeads: campaign.targetLeads,
+        targetConversions: campaign.targetConversions,
+        targetRevenue: campaign.targetRevenue ? Number(campaign.targetRevenue) : null,
+        targetROI: campaign.targetROI ? Number(campaign.targetROI) : null,
+        budget: campaign.budget ? Number(campaign.budget) : null,
+        actualSpend: campaign.actualSpend ? Number(campaign.actualSpend) : null,
+        contentStrategy: campaign.contentStrategy,
+        messagingTone: campaign.messagingTone,
+        channels: campaign.channels as string[],
+        sequences: campaign.sequences,
+        abTestConfig: campaign.abTestConfig,
+        metrics: {
+          totalImpressions: campaign.totalImpressions,
+          totalClicks: campaign.totalClicks,
+          totalLeads: campaign.totalLeads,
+          totalConversions: campaign.totalConversions,
+          totalRevenue: Number(campaign.totalRevenue),
+          clickThroughRate: campaign.clickThroughRate ? Number(campaign.clickThroughRate) * 100 : null,
+          conversionRate: campaign.conversionRate ? Number(campaign.conversionRate) * 100 : null,
+          costPerLead: campaign.costPerLead ? Number(campaign.costPerLead) : null,
+          costPerConversion: campaign.costPerConversion ? Number(campaign.costPerConversion) : null,
+          roi: campaign.roi ? Number(campaign.roi) * 100 : null,
+        },
+        optimizationScore: campaign.optimizationScore,
+        createdAt: campaign.createdAt,
+        updatedAt: campaign.updatedAt,
       };
     }),
 });

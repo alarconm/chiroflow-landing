@@ -363,3 +363,74 @@ Story: US-359 - Referral optimization
 --- Iteration 6 completed at 2026-01-22 ---
 Story: US-360 - Patient reactivation
 
+--- Iteration 6 completed at 2026-01-22 17:40:15 ---
+Story: US-360 - Patient reactivation
+
+### US-361: Marketing campaign automation
+**Status:** COMPLETED
+**Date:** 2026-01-22
+
+**Changes made:**
+1. Extended `app/src/server/routers/aiGrowth.ts` with comprehensive marketing campaign automation functionality:
+   - **aiGrowth.createCampaign** - AI-powered campaign creation with targeting, content strategy, and A/B testing
+   - **aiGrowth.segmentAudience** - AI audience segmentation (high_value, at_risk, new_patients, loyal, lapsed, engaged, unengaged, custom)
+   - **aiGrowth.generateCampaignContent** - AI content generation for email, SMS, social, direct mail
+   - **aiGrowth.executeCampaign** - Multi-channel campaign execution with test mode support
+   - **aiGrowth.createABTest** - A/B testing setup for subject, content, CTA, timing, and offers
+   - **aiGrowth.getABTestResults** - A/B test performance analysis with statistical significance
+   - **aiGrowth.optimizeCampaign** - AI optimization recommendations based on performance
+   - **aiGrowth.getCampaignROI** - Comprehensive ROI analysis with aggregation by campaign, channel, or type
+   - **aiGrowth.updateCampaignStatus** - Campaign lifecycle management (pause, resume, complete, cancel)
+   - **aiGrowth.listCampaigns** - List campaigns with filtering and sorting
+   - **aiGrowth.getCampaign** - Get full campaign details
+
+2. Added 12 new helper functions:
+   - generateContentStrategy - AI content strategy based on campaign type
+   - estimateAudienceSize - Estimate audience reach based on targeting criteria
+   - generateCampaignSequences - Generate multi-step campaign sequences
+   - getSegmentCriteria - Get patient filter criteria for segment types
+   - calculateSegmentScore - Score patients for segment fit
+   - getPatientCharacteristics - Get patient characteristics for targeting
+   - generateSegmentInsights - Generate insights from segmented audiences
+   - getSegmentRecommendations - Get recommendations for segment types
+   - generateMarketingContent - Generate email/SMS content with personalization
+   - getTargetPatients - Get patients matching targeting criteria
+   - calculateStatisticalSignificance - A/B test statistical analysis
+   - generateOptimizationRecommendations - AI performance recommendations
+   - getCampaignBenchmarks - Industry benchmarks by campaign type
+   - calculateOptimizationScore - Calculate campaign optimization score
+   - generateROIInsights - Generate ROI insights from campaign data
+   - generateROIRecommendations - Generate ROI improvement recommendations
+
+3. Added 12 new audit actions to `app/src/lib/audit.ts`:
+   - AI_GROWTH_CAMPAIGN_CREATED, AI_GROWTH_CAMPAIGN_UPDATED
+   - AI_GROWTH_CAMPAIGN_ACTIVATED, AI_GROWTH_CAMPAIGN_PAUSED
+   - AI_GROWTH_CAMPAIGN_COMPLETED, AI_GROWTH_CAMPAIGN_CANCELLED
+   - AI_GROWTH_AUDIENCE_SEGMENTED, AI_GROWTH_CONTENT_GENERATED
+   - AI_GROWTH_ABTEST_CREATED, AI_GROWTH_ABTEST_RESULT
+   - AI_GROWTH_CAMPAIGN_OPTIMIZED, AI_GROWTH_ROI_CALCULATED
+
+**Features implemented:**
+- AI-powered campaign creation with automatic content strategy generation
+- 8 campaign types: LEAD_GENERATION, REACTIVATION, REFERRAL, REVIEW, RETENTION, UPSELL, SEASONAL, EVENT
+- 8 audience segment types with automatic scoring
+- Multi-channel support: email, SMS, social media, direct mail
+- 4 messaging tones: professional, friendly, urgent, empathetic
+- A/B testing with statistical significance calculation
+- Performance optimization with industry benchmarks
+- ROI tracking with aggregation by campaign, channel, or type
+- Campaign lifecycle management (draft, scheduled, active, paused, completed, cancelled)
+- Personalization variables support (firstName, lastName, lastVisitDate, offerCode, expiryDate)
+
+**Acceptance Criteria Met:**
+- ✅ aiGrowth.createCampaign - Generate campaign
+- ✅ Audience segmentation (segmentAudience with 8 segment types)
+- ✅ Content generation assistance (generateCampaignContent)
+- ✅ Multi-channel campaign execution (executeCampaign)
+- ✅ A/B testing automation (createABTest, getABTestResults)
+- ✅ Performance optimization (optimizeCampaign)
+- ✅ ROI tracking and reporting (getCampaignROI)
+
+--- Iteration 7 completed at 2026-01-22 ---
+Story: US-361 - Marketing campaign automation
+
