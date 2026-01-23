@@ -634,3 +634,94 @@ Story: US-376 - Outcome prediction
 --- Iteration 7 completed at 2026-01-22 ---
 Story: US-377 - Referral recommendations
 
+--- Iteration 7 completed at 2026-01-22 20:22:57 ---
+Story: US-377 - Referral recommendations
+
+## 2026-01-22 - US-378: Clinical decision support UI
+
+### Completed
+- Created 6 comprehensive UI components for the clinical decision support system:
+
+**1. ClinicalAlertPanel** (`ClinicalAlertPanel.tsx`)
+- Displays active clinical alerts with severity-based styling (CRITICAL, HIGH, MODERATE, LOW)
+- Alert types: RED_FLAG, CONTRAINDICATION, DRUG_INTERACTION, PRECAUTION, GUIDELINE, OUTCOME_ALERT, REFERRAL_NEEDED
+- Acknowledge dialog with optional notes
+- Compact mode for embedding in other panels
+- Color-coded severity badges and icons
+
+**2. DiagnosisSuggestionsSidebar** (`DiagnosisSuggestionsSidebar.tsx`)
+- Displays AI diagnosis suggestions with confidence scores
+- Progress bars for confidence visualization
+- "Top Match" badge for highest-confidence suggestion
+- Supporting findings and reasoning display
+- Red flag indicators with details
+- Accept/Reject workflow with reason capture
+- Generate button for on-demand AI suggestions
+
+**3. TreatmentRecommendationsDisplay** (`TreatmentRecommendationsDisplay.tsx`)
+- Displays evidence-based treatment recommendations
+- Evidence level badges (HIGH, MODERATE, LOW, VERY_LOW, EXPERT)
+- Accordion sections for techniques, frequency/duration, expected outcomes
+- Condition code display
+- Modification notes for accepted recommendations
+- Accept/Reject workflow with required rejection reason
+
+**4. ContraindicationWarnings** (`ContraindicationWarnings.tsx`)
+- Real-time procedure safety checking
+- Unified contraindication display (detected + existing)
+- Severity-based styling (ABSOLUTE, RELATIVE, PRECAUTION)
+- Override dialog for relative/precaution types
+- Override documentation (reason, patient consent, alternatives, precautions)
+- Safety status badges (CLEAR, PRECAUTION, RELATIVE, ABSOLUTE)
+
+**5. GuidelineQuickReference** (`GuidelineQuickReference.tsx`)
+- Searchable clinical guidelines reference
+- Guidelines list with evidence level badges
+- Full guideline detail sheet with:
+  - Summary and recommendations (graded A/B/C/D/I)
+  - Red flags to watch for
+  - Referral criteria
+  - Contraindications
+  - Citations with external links
+- Track adherence buttons (Followed/Not Applicable)
+
+**6. ClinicalDecisionSupportPanel** (`ClinicalDecisionSupportPanel.tsx`)
+- Main wrapper component that integrates all 5 child components
+- Alert panel at top with critical alerts prominently displayed
+- Tab-based navigation (Diagnosis, Treatment, Contraindications, Guidelines)
+- Props pass-through for encounter/patient context
+- Callbacks for cross-component coordination
+
+**7. Barrel Export** (`index.ts`)
+- Clean exports for all 6 components
+
+### TypeScript Fixes Applied
+All components were updated to match the tRPC API exactly:
+- ContraindicationWarnings: `procedureFilter` param, `safetyStatus` field, UnifiedContraindication interface
+- GuidelineQuickReference: `guidelineId` param, `guidelines.guidelines` iteration, field name mappings
+- TreatmentRecommendationsDisplay: `modifications` param, required `reason` for rejection, condition object structure
+
+### Files Created
+- app/src/components/clinical-decision-support/ClinicalAlertPanel.tsx (~295 lines)
+- app/src/components/clinical-decision-support/DiagnosisSuggestionsSidebar.tsx (~353 lines)
+- app/src/components/clinical-decision-support/TreatmentRecommendationsDisplay.tsx (~394 lines)
+- app/src/components/clinical-decision-support/ContraindicationWarnings.tsx (~423 lines)
+- app/src/components/clinical-decision-support/GuidelineQuickReference.tsx (~397 lines)
+- app/src/components/clinical-decision-support/ClinicalDecisionSupportPanel.tsx (~109 lines)
+- app/src/components/clinical-decision-support/index.ts (~13 lines)
+
+### Technical Notes
+- All components use shadcn/ui components
+- Brand colors: Primary #053e67, Accent #c90000
+- Full tRPC integration with proper typing
+- TooltipProvider pattern for accessible tooltips
+- ScrollArea for overflow handling
+- Accordion for expandable sections
+- Dialog/Sheet for modals and sidepanels
+- Proper error handling with sonner toast notifications
+- readOnly mode support for all components
+- Pre-existing errors in mobile app and aiCare.ts are unrelated
+
+--- Iteration 8 completed at 2026-01-22 ---
+Story: US-378 - Clinical decision support UI
+
