@@ -120,7 +120,7 @@
         "Goal setting and tracking"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-370",

@@ -2257,6 +2257,1127 @@ function generateNextSteps(
   return nextSteps;
 }
 
+// ============================================
+// US-369: Performance Coaching Helpers
+// ============================================
+
+type CategoryType = 'TONE' | 'EMPATHY' | 'SCRIPT_ADHERENCE' | 'TIMING' | 'PROBLEM_SOLVING' | 'PROFESSIONALISM' | 'OVERALL';
+
+interface RealCallAnalysis {
+  overallScore: number;
+  toneScore: number;
+  empathyScore: number;
+  problemSolvingScore: number;
+  professionalismScore: number;
+  timingScore: number;
+  toneObservations: string[];
+  empathyObservations: string[];
+  problemSolvingObservations: string[];
+  professionalismObservations: string[];
+  toneKeyMoments: Array<{ timestamp: string; observation: string; impact: 'positive' | 'negative' }>;
+  empathyKeyMoments: Array<{ timestamp: string; observation: string; impact: 'positive' | 'negative' }>;
+  pacingNotes: string;
+}
+
+interface CoachingInsight {
+  summary: {
+    headline: string;
+    overallAssessment: string;
+    topStrength: string;
+    primaryFocus: string;
+  };
+  actionItems: string[];
+  priority: 'HIGH' | 'MEDIUM' | 'LOW';
+  detailedFeedback: Array<{
+    category: string;
+    finding: string;
+    suggestion: string;
+    resources?: string[];
+  }>;
+}
+
+interface PerformanceTrends {
+  overall: 'IMPROVING' | 'STABLE' | 'DECLINING';
+  byCategory: Record<string, 'IMPROVING' | 'STABLE' | 'DECLINING'>;
+  recentAverage: number;
+  historicalAverage: number;
+  bestPerformance: { date: Date | null; score: number };
+  sessionsAnalyzed: number;
+}
+
+interface MicroLearningSuggestion {
+  id: string;
+  title: string;
+  description: string;
+  category: CategoryType;
+  durationMinutes: number;
+  difficulty: 'EASY' | 'MEDIUM' | 'HARD';
+  exercises: string[];
+  tips: string[];
+}
+
+interface PerformanceProfile {
+  strengths: Array<{ category: CategoryType; avgScore: number; trend: string }>;
+  weaknesses: Array<{ category: CategoryType; avgScore: number; trend: string }>;
+  overallTrend: 'IMPROVING' | 'STABLE' | 'DECLINING';
+  sessionsTotal: number;
+  averageScore: number;
+  consistency: number;
+  byScenarioType: Record<string, { count: number; avgScore: number }>;
+}
+
+interface ImprovementPlan {
+  focusAreas: Array<{
+    category: CategoryType;
+    currentScore: number;
+    targetScore: number;
+    priority: number;
+    strategies: string[];
+    exercises: string[];
+    successCriteria: string[];
+  }>;
+  weeklySchedule: Array<{
+    week: number;
+    focus: string;
+    activities: string[];
+    targetImprovement: number;
+  }>;
+  totalEstimatedHours: number;
+}
+
+interface Milestone {
+  week: number;
+  target: string;
+  measureableGoal: string;
+  checkIn: string;
+}
+
+/**
+ * Get letter grade from score
+ */
+function getLetterGrade(score: number): string {
+  if (score >= 90) return 'A';
+  if (score >= 80) return 'B';
+  if (score >= 70) return 'C';
+  if (score >= 60) return 'D';
+  return 'F';
+}
+
+/**
+ * Analyze a real call transcript for coaching opportunities
+ */
+function analyzeRealCallForCoaching(
+  transcript: string,
+  callType: ScenarioType,
+  callDuration: number,
+  outcome?: string
+): RealCallAnalysis {
+  const lines = transcript.toLowerCase();
+
+  // Tone analysis
+  const positiveIndicators = ['thank you', 'please', 'happy to', 'absolutely', 'certainly', 'of course'];
+  const negativeIndicators = ['no', "can't", "won't", 'unfortunately'];
+  const positiveCount = positiveIndicators.filter(p => lines.includes(p)).length;
+  const negativeCount = negativeIndicators.filter(n => lines.includes(n)).length;
+  const toneScore = Math.min(100, Math.max(0, 70 + (positiveCount * 5) - (negativeCount * 3)));
+
+  // Empathy analysis
+  const empathyPhrases = ['i understand', 'i hear you', 'that must be', 'i apologize', 'sorry to hear'];
+  const empathyCount = empathyPhrases.filter(e => lines.includes(e)).length;
+  const empathyScore = Math.min(100, Math.max(0, 60 + (empathyCount * 10)));
+
+  // Problem solving analysis
+  const solutionPhrases = ['let me', "i'll", 'we can', "here's what", 'solution'];
+  const solutionCount = solutionPhrases.filter(s => lines.includes(s)).length;
+  const problemSolvingScore = outcome === 'RESOLVED' ? 85 + solutionCount * 3 : 50 + solutionCount * 5;
+
+  // Professionalism analysis
+  const professionalPhrases = ['thank you for calling', 'is there anything else', 'have a great day'];
+  const unprofessionalPhrases = ['yeah', 'uh', 'um', 'like,'];
+  const profCount = professionalPhrases.filter(p => lines.includes(p)).length;
+  const unprofCount = unprofessionalPhrases.filter(u => lines.includes(u)).length;
+  const professionalismScore = Math.min(100, Math.max(0, 75 + (profCount * 8) - (unprofCount * 5)));
+
+  // Timing analysis
+  const idealDuration = callType === 'COMPLAINT_HANDLING' ? 420 : 180;
+  const timingDiff = Math.abs(callDuration - idealDuration);
+  const timingScore = Math.max(0, 100 - (timingDiff / idealDuration) * 50);
+
+  // Overall score
+  const overallScore = Math.round(
+    (toneScore * 0.2) + (empathyScore * 0.25) + (problemSolvingScore * 0.25) +
+    (professionalismScore * 0.15) + (timingScore * 0.15)
+  );
+
+  return {
+    overallScore,
+    toneScore: Math.round(toneScore),
+    empathyScore: Math.round(empathyScore),
+    problemSolvingScore: Math.round(Math.min(100, problemSolvingScore)),
+    professionalismScore: Math.round(professionalismScore),
+    timingScore: Math.round(timingScore),
+    toneObservations: generateToneObservations(toneScore, positiveCount, negativeCount),
+    empathyObservations: generateEmpathyObservations(empathyScore, empathyCount),
+    problemSolvingObservations: generateProblemSolvingObservations(problemSolvingScore, outcome),
+    professionalismObservations: generateProfessionalismObservations(professionalismScore),
+    toneKeyMoments: [],
+    empathyKeyMoments: [],
+    pacingNotes: callDuration > idealDuration * 1.5 ? 'Call ran longer than expected' :
+                 callDuration < idealDuration * 0.5 ? 'Call was shorter than expected - ensure all issues addressed' :
+                 'Call duration was appropriate',
+  };
+}
+
+function generateToneObservations(score: number, positive: number, negative: number): string[] {
+  const observations: string[] = [];
+  if (score >= 80) observations.push('Maintained professional and courteous tone throughout');
+  else if (score >= 60) observations.push('Generally professional tone with room for improvement');
+  else observations.push('Tone needs significant improvement');
+
+  if (positive > 3) observations.push('Good use of positive language');
+  if (negative > 2) observations.push('Consider reducing negative phrasing');
+
+  return observations;
+}
+
+function generateEmpathyObservations(score: number, count: number): string[] {
+  const observations: string[] = [];
+  if (score >= 80) observations.push('Demonstrated strong empathy and understanding');
+  else if (score >= 60) observations.push('Some empathy shown, but could be more consistent');
+  else observations.push('Need to demonstrate more empathy and understanding');
+
+  if (count === 0) observations.push('Consider acknowledging caller feelings before problem-solving');
+
+  return observations;
+}
+
+function generateProblemSolvingObservations(score: number, outcome?: string): string[] {
+  const observations: string[] = [];
+  if (outcome === 'RESOLVED') observations.push('Successfully resolved the caller\'s issue');
+  else if (outcome === 'ESCALATED') observations.push('Appropriately escalated for additional support');
+  else if (outcome === 'UNRESOLVED') observations.push('Issue remained unresolved - review handling approach');
+
+  if (score >= 80) observations.push('Demonstrated proactive solution-oriented approach');
+  else if (score >= 60) observations.push('Adequate problem-solving with room for improvement');
+  else observations.push('Focus on offering clear solutions and next steps');
+
+  return observations;
+}
+
+function generateProfessionalismObservations(score: number): string[] {
+  const observations: string[] = [];
+  if (score >= 80) observations.push('Maintained high professional standards');
+  else if (score >= 60) observations.push('Professional but could improve greeting/closing');
+  else observations.push('Review professional communication standards');
+
+  return observations;
+}
+
+/**
+ * Calculate performance trends from historical data
+ */
+function calculatePerformanceTrends(
+  historicalData: Array<{
+    overallScore: number | null;
+    toneScore: number | null;
+    empathyScore: number | null;
+    scriptAdherenceScore: number | null;
+    completedAt: Date | null;
+  }>
+): PerformanceTrends {
+  if (historicalData.length < 3) {
+    return {
+      overall: 'STABLE',
+      byCategory: {},
+      recentAverage: historicalData[0]?.overallScore || 0,
+      historicalAverage: historicalData[0]?.overallScore || 0,
+      bestPerformance: { date: null, score: 0 },
+      sessionsAnalyzed: historicalData.length,
+    };
+  }
+
+  const recent = historicalData.slice(0, 5);
+  const older = historicalData.slice(5);
+
+  const recentAvg = recent.reduce((s, d) => s + (d.overallScore || 0), 0) / recent.length;
+  const olderAvg = older.length > 0 ? older.reduce((s, d) => s + (d.overallScore || 0), 0) / older.length : recentAvg;
+
+  const diff = recentAvg - olderAvg;
+  const overall: 'IMPROVING' | 'STABLE' | 'DECLINING' = diff > 5 ? 'IMPROVING' : diff < -5 ? 'DECLINING' : 'STABLE';
+
+  const bestSession = historicalData.reduce((best, curr) =>
+    (curr.overallScore || 0) > (best.overallScore || 0) ? curr : best
+  , historicalData[0]);
+
+  return {
+    overall,
+    byCategory: {
+      tone: calculateCategoryTrend(historicalData.map(d => d.toneScore)),
+      empathy: calculateCategoryTrend(historicalData.map(d => d.empathyScore)),
+      scriptAdherence: calculateCategoryTrend(historicalData.map(d => d.scriptAdherenceScore)),
+    },
+    recentAverage: Math.round(recentAvg),
+    historicalAverage: Math.round(olderAvg),
+    bestPerformance: { date: bestSession?.completedAt || null, score: bestSession?.overallScore || 0 },
+    sessionsAnalyzed: historicalData.length,
+  };
+}
+
+function calculateCategoryTrend(scores: (number | null)[]): 'IMPROVING' | 'STABLE' | 'DECLINING' {
+  const validScores = scores.filter((s): s is number => s !== null);
+  if (validScores.length < 3) return 'STABLE';
+
+  const recent = validScores.slice(0, 3).reduce((s, v) => s + v, 0) / 3;
+  const older = validScores.slice(3).reduce((s, v) => s + v, 0) / Math.max(1, validScores.length - 3);
+
+  const diff = recent - older;
+  return diff > 5 ? 'IMPROVING' : diff < -5 ? 'DECLINING' : 'STABLE';
+}
+
+/**
+ * Generate personalized coaching insights
+ */
+function generateCoachingInsights(
+  analysis: RealCallAnalysis,
+  trends: PerformanceTrends,
+  callType: ScenarioType
+): CoachingInsight {
+  const scores = [
+    { category: 'Tone', score: analysis.toneScore },
+    { category: 'Empathy', score: analysis.empathyScore },
+    { category: 'Problem Solving', score: analysis.problemSolvingScore },
+    { category: 'Professionalism', score: analysis.professionalismScore },
+    { category: 'Timing', score: analysis.timingScore },
+  ];
+
+  const sorted = [...scores].sort((a, b) => b.score - a.score);
+  const topStrength = sorted[0];
+  const primaryWeakness = sorted[sorted.length - 1];
+
+  const priority: 'HIGH' | 'MEDIUM' | 'LOW' =
+    analysis.overallScore < 60 ? 'HIGH' :
+    analysis.overallScore < 75 ? 'MEDIUM' : 'LOW';
+
+  const actionItems: string[] = [];
+  if (primaryWeakness.score < 70) {
+    actionItems.push(`Focus on improving ${primaryWeakness.category.toLowerCase()} - current score: ${primaryWeakness.score}%`);
+  }
+  if (trends.overall === 'DECLINING') {
+    actionItems.push('Schedule additional practice sessions to reverse declining trend');
+  }
+  if (analysis.overallScore >= 80) {
+    actionItems.push('Maintain current performance and try more challenging scenarios');
+  } else {
+    actionItems.push(`Practice ${callType.toLowerCase().replace('_', ' ')} scenarios at BEGINNER difficulty`);
+  }
+
+  const detailedFeedback = scores
+    .filter(s => s.score < 80)
+    .map(s => ({
+      category: s.category,
+      finding: `${s.category} score of ${s.score}% is below target`,
+      suggestion: getCoachingSuggestion(s.category, s.score),
+      resources: getCoachingResources(s.category),
+    }));
+
+  return {
+    summary: {
+      headline: analysis.overallScore >= 80 ? 'Strong Performance!' :
+                analysis.overallScore >= 60 ? 'Good Progress' : 'Needs Improvement',
+      overallAssessment: `Overall score of ${analysis.overallScore}% (${getLetterGrade(analysis.overallScore)})`,
+      topStrength: `${topStrength.category} (${topStrength.score}%)`,
+      primaryFocus: `${primaryWeakness.category} (${primaryWeakness.score}%)`,
+    },
+    actionItems,
+    priority,
+    detailedFeedback,
+  };
+}
+
+function getCoachingSuggestion(category: string, score: number): string {
+  const suggestions: Record<string, string> = {
+    'Tone': 'Practice using more positive and courteous language. Avoid negative phrasing.',
+    'Empathy': 'Acknowledge caller feelings before jumping to solutions. Use phrases like "I understand."',
+    'Problem Solving': 'Focus on offering clear solutions and next steps. Be proactive.',
+    'Professionalism': 'Ensure proper greeting and closing. Avoid filler words.',
+    'Timing': 'Work on being efficient while thorough. Practice transitions.',
+  };
+  return suggestions[category] || 'Continue practicing this area.';
+}
+
+function getCoachingResources(category: string): string[] {
+  const resources: Record<string, string[]> = {
+    'Tone': ['Professional phone etiquette guide', 'Positive language training module'],
+    'Empathy': ['Empathy in customer service training', 'Active listening exercises'],
+    'Problem Solving': ['Solution-focused communication', 'Call resolution strategies'],
+    'Professionalism': ['Professional standards review', 'Greeting and closing scripts'],
+    'Timing': ['Call efficiency techniques', 'Conversation pacing guide'],
+  };
+  return resources[category] || [];
+}
+
+/**
+ * Generate micro-learning suggestions based on analysis
+ */
+function generateMicroLearningSuggestions(analysis: RealCallAnalysis, callType: ScenarioType): MicroLearningSuggestion[] {
+  const suggestions: MicroLearningSuggestion[] = [];
+
+  if (analysis.empathyScore < 70) {
+    suggestions.push({
+      id: 'micro-empathy-1',
+      title: 'Empathy Quick Practice',
+      description: 'Quick exercises to improve empathetic responses',
+      category: 'EMPATHY',
+      durationMinutes: 5,
+      difficulty: 'EASY',
+      exercises: [
+        'Practice 5 empathy phrases',
+        'Role-play acknowledging frustration',
+        'Review empathy examples',
+      ],
+      tips: [
+        'Always acknowledge feelings before solving',
+        'Use phrases like "I understand" and "That must be frustrating"',
+      ],
+    });
+  }
+
+  if (analysis.toneScore < 70) {
+    suggestions.push({
+      id: 'micro-tone-1',
+      title: 'Positive Language Boost',
+      description: 'Quick drills for more positive communication',
+      category: 'TONE',
+      durationMinutes: 5,
+      difficulty: 'EASY',
+      exercises: [
+        'Transform 5 negative phrases to positive',
+        'Practice courteous alternatives',
+      ],
+      tips: [
+        'Replace "can\'t" with "what I can do is..."',
+        'Use "please" and "thank you" liberally',
+      ],
+    });
+  }
+
+  if (analysis.problemSolvingScore < 70) {
+    suggestions.push({
+      id: 'micro-solve-1',
+      title: 'Solution-First Approach',
+      description: 'Learn to lead with solutions',
+      category: 'PROBLEM_SOLVING',
+      durationMinutes: 10,
+      difficulty: 'MEDIUM',
+      exercises: [
+        'Practice offering 3 solutions for common issues',
+        'Role-play resolving a complaint',
+      ],
+      tips: [
+        'Always offer what you CAN do, not what you can\'t',
+        'Summarize the solution and next steps clearly',
+      ],
+    });
+  }
+
+  return suggestions;
+}
+
+/**
+ * Build a comprehensive performance profile
+ */
+function buildPerformanceProfile(
+  sessions: Array<{
+    overallScore: number | null;
+    toneScore: number | null;
+    empathyScore: number | null;
+    scriptAdherenceScore: number | null;
+    timingScore: number | null;
+    completedAt: Date | null;
+    scenario: { type: ScenarioType; name: string };
+    feedback: Array<{ category: string; score: number | null }>;
+  }>,
+  feedbackHistory: Array<{ category: string; score: number | null; createdAt: Date }>
+): PerformanceProfile {
+  if (sessions.length === 0) {
+    return {
+      strengths: [],
+      weaknesses: [],
+      overallTrend: 'STABLE',
+      sessionsTotal: 0,
+      averageScore: 0,
+      consistency: 0,
+      byScenarioType: {},
+    };
+  }
+
+  const avgScores = {
+    tone: sessions.reduce((s, d) => s + (d.toneScore || 0), 0) / sessions.length,
+    empathy: sessions.reduce((s, d) => s + (d.empathyScore || 0), 0) / sessions.length,
+    scriptAdherence: sessions.reduce((s, d) => s + (d.scriptAdherenceScore || 0), 0) / sessions.length,
+    timing: sessions.reduce((s, d) => s + (d.timingScore || 0), 0) / sessions.length,
+    overall: sessions.reduce((s, d) => s + (d.overallScore || 0), 0) / sessions.length,
+  };
+
+  const categories: Array<{ category: CategoryType; avgScore: number; trend: string }> = [
+    { category: 'TONE', avgScore: Math.round(avgScores.tone), trend: 'STABLE' },
+    { category: 'EMPATHY', avgScore: Math.round(avgScores.empathy), trend: 'STABLE' },
+    { category: 'SCRIPT_ADHERENCE', avgScore: Math.round(avgScores.scriptAdherence), trend: 'STABLE' },
+    { category: 'TIMING', avgScore: Math.round(avgScores.timing), trend: 'STABLE' },
+  ];
+
+  const sorted = [...categories].sort((a, b) => b.avgScore - a.avgScore);
+  const strengths = sorted.slice(0, 2);
+  const weaknesses = sorted.slice(-2).reverse();
+
+  // Calculate consistency (lower std dev = more consistent)
+  const overallScores = sessions.map(s => s.overallScore || 0);
+  const mean = avgScores.overall;
+  const variance = overallScores.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / overallScores.length;
+  const stdDev = Math.sqrt(variance);
+  const consistency = Math.max(0, 100 - stdDev);
+
+  // Group by scenario type
+  const byScenarioType: Record<string, { count: number; avgScore: number }> = {};
+  sessions.forEach(s => {
+    const type = s.scenario.type;
+    if (!byScenarioType[type]) byScenarioType[type] = { count: 0, avgScore: 0 };
+    byScenarioType[type].count++;
+    byScenarioType[type].avgScore += s.overallScore || 0;
+  });
+  Object.keys(byScenarioType).forEach(type => {
+    byScenarioType[type].avgScore = Math.round(byScenarioType[type].avgScore / byScenarioType[type].count);
+  });
+
+  // Calculate trend
+  const trends = calculatePerformanceTrends(sessions.map(s => ({
+    overallScore: s.overallScore,
+    toneScore: s.toneScore,
+    empathyScore: s.empathyScore,
+    scriptAdherenceScore: s.scriptAdherenceScore,
+    completedAt: s.completedAt,
+  })));
+
+  return {
+    strengths,
+    weaknesses,
+    overallTrend: trends.overall,
+    sessionsTotal: sessions.length,
+    averageScore: Math.round(avgScores.overall),
+    consistency: Math.round(consistency),
+    byScenarioType,
+  };
+}
+
+/**
+ * Generate a personalized improvement plan
+ */
+function generateImprovementPlan(
+  profile: PerformanceProfile,
+  focusAreas: CategoryType[] | undefined,
+  timeframeWeeks: number
+): ImprovementPlan {
+  const areasToImprove = focusAreas
+    ? profile.weaknesses.filter(w => focusAreas.includes(w.category))
+    : profile.weaknesses;
+
+  const focusAreaPlans = areasToImprove.map((area, index) => ({
+    category: area.category,
+    currentScore: area.avgScore,
+    targetScore: Math.min(100, area.avgScore + 15),
+    priority: index + 1,
+    strategies: getImprovementStrategies(area.category),
+    exercises: getImprovementExercises(area.category),
+    successCriteria: [`Achieve ${Math.min(100, area.avgScore + 15)}% average in ${area.category}`],
+  }));
+
+  const weeklySchedule: ImprovementPlan['weeklySchedule'] = [];
+  for (let week = 1; week <= timeframeWeeks; week++) {
+    const weekFocus = focusAreaPlans[(week - 1) % focusAreaPlans.length];
+    weeklySchedule.push({
+      week,
+      focus: weekFocus?.category || 'OVERALL',
+      activities: weekFocus?.exercises.slice(0, 2) || ['Practice sessions', 'Review feedback'],
+      targetImprovement: 3,
+    });
+  }
+
+  return {
+    focusAreas: focusAreaPlans,
+    weeklySchedule,
+    totalEstimatedHours: timeframeWeeks * 2,
+  };
+}
+
+function getImprovementStrategies(category: CategoryType): string[] {
+  const strategies: Record<string, string[]> = {
+    'TONE': ['Practice positive language patterns', 'Review professional communication standards', 'Record and review your calls'],
+    'EMPATHY': ['Lead with acknowledgment', 'Practice active listening', 'Use empathy phrase library'],
+    'SCRIPT_ADHERENCE': ['Review key phrases daily', 'Practice scripts before shifts', 'Use script checklists'],
+    'TIMING': ['Set time goals for call phases', 'Practice transitions', 'Review efficient call recordings'],
+    'PROBLEM_SOLVING': ['Learn common solutions', 'Practice decision trees', 'Review resolved cases'],
+    'PROFESSIONALISM': ['Review greeting/closing standards', 'Eliminate filler words', 'Practice formal communication'],
+    'OVERALL': ['Consistent practice', 'Regular feedback review', 'Set incremental goals'],
+  };
+  return strategies[category] || strategies['OVERALL'];
+}
+
+function getImprovementExercises(category: CategoryType): string[] {
+  const exercises: Record<string, string[]> = {
+    'TONE': ['Positive phrase conversion drill', 'Recorded self-assessment', 'Peer feedback session'],
+    'EMPATHY': ['Empathy phrase practice', 'Emotional scenario role-play', 'Feedback incorporation'],
+    'SCRIPT_ADHERENCE': ['Key phrase memorization', 'Script timing practice', 'Scenario variations'],
+    'TIMING': ['Timed call drills', 'Phase transition practice', 'Efficiency review'],
+    'PROBLEM_SOLVING': ['Case study analysis', 'Solution brainstorming', 'Decision tree practice'],
+    'PROFESSIONALISM': ['Opening/closing practice', 'Filler word elimination', 'Professional language drill'],
+    'OVERALL': ['Full scenario practice', 'Multi-skill integration', 'Performance review'],
+  };
+  return exercises[category] || exercises['OVERALL'];
+}
+
+/**
+ * Generate milestones for improvement plan
+ */
+function generateMilestones(plan: ImprovementPlan, weeks: number): Milestone[] {
+  const milestones: Milestone[] = [];
+  const checkpoints = [Math.floor(weeks / 3), Math.floor(weeks * 2 / 3), weeks];
+
+  checkpoints.forEach((week, index) => {
+    const focus = plan.focusAreas[index % plan.focusAreas.length];
+    milestones.push({
+      week,
+      target: focus ? `Improve ${focus.category} to ${focus.targetScore}%` : 'Overall improvement',
+      measureableGoal: focus ? `${focus.currentScore + (index + 1) * 5}% average` : 'Consistent scores',
+      checkIn: `Week ${week} progress review`,
+    });
+  });
+
+  return milestones;
+}
+
+/**
+ * Calculate period metrics from sessions
+ */
+function calculatePeriodMetrics(
+  sessions: Array<{
+    overallScore: number | null;
+    toneScore: number | null;
+    empathyScore: number | null;
+    scriptAdherenceScore: number | null;
+    timingScore: number | null;
+  }>
+): {
+  overall: number;
+  tone: number;
+  empathy: number;
+  scriptAdherence: number;
+  timing: number;
+  sessionsCount: number;
+} {
+  if (sessions.length === 0) {
+    return { overall: 0, tone: 0, empathy: 0, scriptAdherence: 0, timing: 0, sessionsCount: 0 };
+  }
+
+  return {
+    overall: Math.round(sessions.reduce((s, d) => s + (d.overallScore || 0), 0) / sessions.length),
+    tone: Math.round(sessions.reduce((s, d) => s + (d.toneScore || 0), 0) / sessions.length),
+    empathy: Math.round(sessions.reduce((s, d) => s + (d.empathyScore || 0), 0) / sessions.length),
+    scriptAdherence: Math.round(sessions.reduce((s, d) => s + (d.scriptAdherenceScore || 0), 0) / sessions.length),
+    timing: Math.round(sessions.reduce((s, d) => s + (d.timingScore || 0), 0) / sessions.length),
+    sessionsCount: sessions.length,
+  };
+}
+
+/**
+ * Calculate improvement between periods
+ */
+function calculateImprovement(
+  current: ReturnType<typeof calculatePeriodMetrics>,
+  previous: ReturnType<typeof calculatePeriodMetrics>
+): {
+  overall: number;
+  tone: number;
+  empathy: number;
+  scriptAdherence: number;
+  timing: number;
+} {
+  return {
+    overall: current.overall - previous.overall,
+    tone: current.tone - previous.tone,
+    empathy: current.empathy - previous.empathy,
+    scriptAdherence: current.scriptAdherence - previous.scriptAdherence,
+    timing: current.timing - previous.timing,
+  };
+}
+
+/**
+ * Determine overall trend from improvement
+ */
+function determineTrend(improvement: ReturnType<typeof calculateImprovement>): 'IMPROVING' | 'STABLE' | 'DECLINING' {
+  if (improvement.overall > 5) return 'IMPROVING';
+  if (improvement.overall < -5) return 'DECLINING';
+  return 'STABLE';
+}
+
+/**
+ * Build timeline data for charting
+ */
+function buildTimelineData(
+  sessions: Array<{
+    id: string;
+    overallScore: number | null;
+    toneScore: number | null;
+    empathyScore: number | null;
+    scriptAdherenceScore: number | null;
+    timingScore: number | null;
+    completedAt: Date | null;
+    scenario: { type: ScenarioType; name: string };
+  }>,
+  category?: CategoryType
+): Array<{ date: string; score: number; sessionId: string; scenarioName: string }> {
+  return sessions.map(s => {
+    let score = s.overallScore || 0;
+    if (category === 'TONE') score = s.toneScore || 0;
+    else if (category === 'EMPATHY') score = s.empathyScore || 0;
+    else if (category === 'SCRIPT_ADHERENCE') score = s.scriptAdherenceScore || 0;
+    else if (category === 'TIMING') score = s.timingScore || 0;
+
+    return {
+      date: s.completedAt?.toISOString() || new Date().toISOString(),
+      score,
+      sessionId: s.id,
+      scenarioName: s.scenario.name,
+    };
+  });
+}
+
+/**
+ * Generate improvement insights
+ */
+function generateImprovementInsights(
+  current: ReturnType<typeof calculatePeriodMetrics>,
+  previous: ReturnType<typeof calculatePeriodMetrics>,
+  improvement: ReturnType<typeof calculateImprovement>
+): string[] {
+  const insights: string[] = [];
+
+  if (improvement.overall > 10) {
+    insights.push(`Excellent progress! Overall score improved by ${improvement.overall}%`);
+  } else if (improvement.overall > 0) {
+    insights.push(`Good progress - overall score improved by ${improvement.overall}%`);
+  } else if (improvement.overall < -5) {
+    insights.push(`Scores have declined by ${Math.abs(improvement.overall)}% - consider additional practice`);
+  }
+
+  // Find biggest improvement
+  const categories = [
+    { name: 'Tone', diff: improvement.tone },
+    { name: 'Empathy', diff: improvement.empathy },
+    { name: 'Script Adherence', diff: improvement.scriptAdherence },
+    { name: 'Timing', diff: improvement.timing },
+  ];
+
+  const bestImproved = categories.sort((a, b) => b.diff - a.diff)[0];
+  if (bestImproved.diff > 5) {
+    insights.push(`Greatest improvement in ${bestImproved.name} (+${bestImproved.diff}%)`);
+  }
+
+  const worstDeclined = categories.sort((a, b) => a.diff - b.diff)[0];
+  if (worstDeclined.diff < -5) {
+    insights.push(`Focus needed on ${worstDeclined.name} (${worstDeclined.diff}%)`);
+  }
+
+  if (current.sessionsCount < 5) {
+    insights.push('Complete more practice sessions for accurate trend analysis');
+  }
+
+  return insights;
+}
+
+/**
+ * Identify weak areas from recent sessions
+ */
+function identifyWeakAreas(
+  sessions: Array<{
+    overallScore: number | null;
+    toneScore: number | null;
+    empathyScore: number | null;
+    scriptAdherenceScore: number | null;
+    timingScore: number | null;
+    scenario: { type: ScenarioType };
+    feedback: Array<{ category: string; score: number | null }>;
+  }>
+): Array<{ category: CategoryType; avgScore: number; sessionsBelow70: number }> {
+  if (sessions.length === 0) return [];
+
+  const categories: Array<{ category: CategoryType; scores: number[] }> = [
+    { category: 'TONE', scores: sessions.map(s => s.toneScore || 0) },
+    { category: 'EMPATHY', scores: sessions.map(s => s.empathyScore || 0) },
+    { category: 'SCRIPT_ADHERENCE', scores: sessions.map(s => s.scriptAdherenceScore || 0) },
+    { category: 'TIMING', scores: sessions.map(s => s.timingScore || 0) },
+  ];
+
+  return categories
+    .map(c => ({
+      category: c.category,
+      avgScore: Math.round(c.scores.reduce((s, v) => s + v, 0) / c.scores.length),
+      sessionsBelow70: c.scores.filter(s => s < 70).length,
+    }))
+    .sort((a, b) => a.avgScore - b.avgScore);
+}
+
+/**
+ * Generate micro-learning for a specific weak area
+ */
+function generateMicroLearningForArea(
+  area: { category: CategoryType; avgScore: number; sessionsBelow70: number }
+): MicroLearningSuggestion {
+  const resources: Record<CategoryType, MicroLearningSuggestion> = {
+    'TONE': {
+      id: `micro-tone-${Date.now()}`,
+      title: 'Positive Language Quick Drill',
+      description: 'Practice converting negative phrases to positive alternatives',
+      category: 'TONE',
+      durationMinutes: 5,
+      difficulty: area.avgScore < 50 ? 'EASY' : 'MEDIUM',
+      exercises: ['Convert 5 negative phrases', 'Practice courteous alternatives', 'Self-record and review'],
+      tips: ['Replace "can\'t" with "what I can do"', 'Use "please" and "thank you"'],
+    },
+    'EMPATHY': {
+      id: `micro-empathy-${Date.now()}`,
+      title: 'Empathy Response Practice',
+      description: 'Quick exercises for empathetic communication',
+      category: 'EMPATHY',
+      durationMinutes: 5,
+      difficulty: area.avgScore < 50 ? 'EASY' : 'MEDIUM',
+      exercises: ['Practice 5 empathy phrases', 'Acknowledge feelings exercise', 'Active listening drill'],
+      tips: ['Always acknowledge before solving', 'Use "I understand" genuinely'],
+    },
+    'SCRIPT_ADHERENCE': {
+      id: `micro-script-${Date.now()}`,
+      title: 'Key Phrase Memorization',
+      description: 'Review and practice key script phrases',
+      category: 'SCRIPT_ADHERENCE',
+      durationMinutes: 10,
+      difficulty: 'MEDIUM',
+      exercises: ['Review key phrases', 'Practice script flow', 'Timed script recitation'],
+      tips: ['Keep key phrases visible', 'Practice during slow periods'],
+    },
+    'TIMING': {
+      id: `micro-timing-${Date.now()}`,
+      title: 'Call Efficiency Training',
+      description: 'Techniques for better call pacing',
+      category: 'TIMING',
+      durationMinutes: 10,
+      difficulty: 'MEDIUM',
+      exercises: ['Timed greeting practice', 'Transition drills', 'Wrap-up efficiency'],
+      tips: ['Set phase time targets', 'Practice smooth transitions'],
+    },
+    'PROBLEM_SOLVING': {
+      id: `micro-solve-${Date.now()}`,
+      title: 'Solution-First Training',
+      description: 'Practice leading with solutions',
+      category: 'PROBLEM_SOLVING',
+      durationMinutes: 10,
+      difficulty: 'MEDIUM',
+      exercises: ['Common issue solutions', 'Decision tree practice', 'Resolution role-play'],
+      tips: ['Focus on what you CAN do', 'Always offer next steps'],
+    },
+    'PROFESSIONALISM': {
+      id: `micro-prof-${Date.now()}`,
+      title: 'Professional Standards Review',
+      description: 'Polish your professional communication',
+      category: 'PROFESSIONALISM',
+      durationMinutes: 5,
+      difficulty: 'EASY',
+      exercises: ['Greeting/closing practice', 'Filler word elimination', 'Formal tone drill'],
+      tips: ['Avoid "um", "uh", "like"', 'Use proper greetings'],
+    },
+    'OVERALL': {
+      id: `micro-overall-${Date.now()}`,
+      title: 'Comprehensive Skill Review',
+      description: 'Overall performance enhancement',
+      category: 'OVERALL',
+      durationMinutes: 15,
+      difficulty: 'MEDIUM',
+      exercises: ['Full call simulation', 'Multi-skill practice', 'Feedback review'],
+      tips: ['Focus on weakest area first', 'Track your progress'],
+    },
+  };
+
+  return resources[area.category] || resources['OVERALL'];
+}
+
+/**
+ * Calculate average scores from sessions
+ */
+function calculateAverageScores(
+  sessions: Array<{
+    overallScore: number | null;
+    toneScore: number | null;
+    empathyScore: number | null;
+    scriptAdherenceScore: number | null;
+    timingScore: number | null;
+  }>
+): { overall: number; tone: number; empathy: number; scriptAdherence: number; timing: number } {
+  if (sessions.length === 0) {
+    return { overall: 0, tone: 0, empathy: 0, scriptAdherence: 0, timing: 0 };
+  }
+
+  return {
+    overall: Math.round(sessions.reduce((s, d) => s + (d.overallScore || 0), 0) / sessions.length),
+    tone: Math.round(sessions.reduce((s, d) => s + (d.toneScore || 0), 0) / sessions.length),
+    empathy: Math.round(sessions.reduce((s, d) => s + (d.empathyScore || 0), 0) / sessions.length),
+    scriptAdherence: Math.round(sessions.reduce((s, d) => s + (d.scriptAdherenceScore || 0), 0) / sessions.length),
+    timing: Math.round(sessions.reduce((s, d) => s + (d.timingScore || 0), 0) / sessions.length),
+  };
+}
+
+/**
+ * Calculate organization-wide statistics
+ */
+function calculateOrgStatistics(
+  sessions: Array<{
+    overallScore: number | null;
+    toneScore: number | null;
+    empathyScore: number | null;
+    scriptAdherenceScore: number | null;
+    timingScore: number | null;
+  }>
+): {
+  average: { overall: number; tone: number; empathy: number; scriptAdherence: number; timing: number };
+  median: number;
+  top25: number;
+  bottom25: number;
+} {
+  if (sessions.length === 0) {
+    return {
+      average: { overall: 0, tone: 0, empathy: 0, scriptAdherence: 0, timing: 0 },
+      median: 0,
+      top25: 0,
+      bottom25: 0,
+    };
+  }
+
+  const overallScores = sessions.map(s => s.overallScore || 0).sort((a, b) => a - b);
+  const median = overallScores[Math.floor(overallScores.length / 2)];
+  const top25 = overallScores[Math.floor(overallScores.length * 0.75)];
+  const bottom25 = overallScores[Math.floor(overallScores.length * 0.25)];
+
+  return {
+    average: calculateAverageScores(sessions),
+    median,
+    top25,
+    bottom25,
+  };
+}
+
+/**
+ * Calculate percentile ranks
+ */
+function calculatePercentileRanks(
+  userAvgs: ReturnType<typeof calculateAverageScores>,
+  allSessions: Array<{ overallScore: number | null; toneScore: number | null; empathyScore: number | null; scriptAdherenceScore: number | null; timingScore: number | null }>
+): { overall: number; tone: number; empathy: number; scriptAdherence: number; timing: number } {
+  const calcPercentile = (userScore: number, allScores: number[]): number => {
+    if (allScores.length === 0) return 50;
+    const below = allScores.filter(s => s < userScore).length;
+    return Math.round((below / allScores.length) * 100);
+  };
+
+  return {
+    overall: calcPercentile(userAvgs.overall, allSessions.map(s => s.overallScore || 0)),
+    tone: calcPercentile(userAvgs.tone, allSessions.map(s => s.toneScore || 0)),
+    empathy: calcPercentile(userAvgs.empathy, allSessions.map(s => s.empathyScore || 0)),
+    scriptAdherence: calcPercentile(userAvgs.scriptAdherence, allSessions.map(s => s.scriptAdherenceScore || 0)),
+    timing: calcPercentile(userAvgs.timing, allSessions.map(s => s.timingScore || 0)),
+  };
+}
+
+/**
+ * Generate peer comparison insights
+ */
+function generatePeerComparisonInsights(
+  userAvgs: ReturnType<typeof calculateAverageScores>,
+  orgStats: ReturnType<typeof calculateOrgStatistics>,
+  percentiles: ReturnType<typeof calculatePercentileRanks>
+): string[] {
+  const insights: string[] = [];
+
+  if (percentiles.overall >= 75) {
+    insights.push('You are in the top 25% of performers in your organization!');
+  } else if (percentiles.overall >= 50) {
+    insights.push('You are performing above the median for your organization.');
+  } else {
+    insights.push('There is opportunity to improve relative to your peers.');
+  }
+
+  // Find strongest relative area
+  const areas = [
+    { name: 'Tone', percentile: percentiles.tone },
+    { name: 'Empathy', percentile: percentiles.empathy },
+    { name: 'Script Adherence', percentile: percentiles.scriptAdherence },
+    { name: 'Timing', percentile: percentiles.timing },
+  ];
+
+  const strongest = areas.sort((a, b) => b.percentile - a.percentile)[0];
+  const weakest = areas.sort((a, b) => a.percentile - b.percentile)[0];
+
+  if (strongest.percentile >= 75) {
+    insights.push(`Your ${strongest.name} is a standout strength (top ${100 - strongest.percentile}%)`);
+  }
+
+  if (weakest.percentile < 50) {
+    insights.push(`Focus on ${weakest.name} to catch up with peers`);
+  }
+
+  const diff = userAvgs.overall - orgStats.average.overall;
+  if (diff > 0) {
+    insights.push(`You're ${diff} points above the organization average`);
+  } else if (diff < 0) {
+    insights.push(`You're ${Math.abs(diff)} points below the organization average`);
+  }
+
+  return insights;
+}
+
+/**
+ * Calculate category average for goal tracking
+ */
+function calculateCategoryAverage(
+  sessions: Array<{
+    overallScore: number | null;
+    toneScore: number | null;
+    empathyScore: number | null;
+    scriptAdherenceScore: number | null;
+    timingScore: number | null;
+  }>,
+  category: CategoryType | string
+): number {
+  if (sessions.length === 0) return 0;
+
+  let sum = 0;
+  sessions.forEach(s => {
+    switch (category) {
+      case 'TONE': sum += s.toneScore || 0; break;
+      case 'EMPATHY': sum += s.empathyScore || 0; break;
+      case 'SCRIPT_ADHERENCE': sum += s.scriptAdherenceScore || 0; break;
+      case 'TIMING': sum += s.timingScore || 0; break;
+      case 'OVERALL': default: sum += s.overallScore || 0; break;
+    }
+  });
+
+  return Math.round(sum / sessions.length);
+}
+
+/**
+ * Calculate goal progress
+ */
+function calculateGoalProgress(baseline: number, current: number, target: number): number {
+  if (target <= baseline) return 100;
+  const progress = ((current - baseline) / (target - baseline)) * 100;
+  return Math.max(0, Math.min(100, Math.round(progress)));
+}
+
+/**
+ * Generate goal recommendations
+ */
+function generateGoalRecommendations(category: CategoryType, currentScore: number, targetScore: number): string[] {
+  const gap = targetScore - currentScore;
+  const recommendations: string[] = [];
+
+  if (gap > 20) {
+    recommendations.push('This is an ambitious goal - consider breaking it into smaller milestones');
+  }
+
+  recommendations.push(`Focus on ${category.toLowerCase().replace('_', ' ')} in your next 5 practice sessions`);
+  recommendations.push('Review feedback from recent sessions for specific improvement areas');
+
+  if (gap > 10) {
+    recommendations.push('Consider scheduling dedicated practice time daily');
+  }
+
+  recommendations.push('Track your progress weekly and adjust strategies as needed');
+
+  return recommendations;
+}
+
+/**
+ * Identify top strength from scores
+ */
+function identifyTopStrength(
+  avgScores: ReturnType<typeof calculateAverageScores>
+): string {
+  const categories = [
+    { name: 'Tone', score: avgScores.tone },
+    { name: 'Empathy', score: avgScores.empathy },
+    { name: 'Script Adherence', score: avgScores.scriptAdherence },
+    { name: 'Timing', score: avgScores.timing },
+  ];
+
+  return categories.sort((a, b) => b.score - a.score)[0].name;
+}
+
+/**
+ * Identify primary weakness from scores
+ */
+function identifyPrimaryWeakness(
+  avgScores: ReturnType<typeof calculateAverageScores>
+): string {
+  const categories = [
+    { name: 'Tone', score: avgScores.tone },
+    { name: 'Empathy', score: avgScores.empathy },
+    { name: 'Script Adherence', score: avgScores.scriptAdherence },
+    { name: 'Timing', score: avgScores.timing },
+  ];
+
+  return categories.sort((a, b) => a.score - b.score)[0].name;
+}
+
+/**
+ * Generate organization improvement opportunities
+ */
+function generateOrgImprovementOpportunities(
+  staffPerformance: Array<{
+    userId: string;
+    name: string | null;
+    role: string;
+    sessionsCount: number;
+    averageScores: ReturnType<typeof calculateAverageScores>;
+    needsAttention: boolean;
+    topStrength: string;
+    primaryWeakness: string;
+  }>
+): string[] {
+  const opportunities: string[] = [];
+
+  // Find common weaknesses
+  const weaknesses = staffPerformance.map(s => s.primaryWeakness);
+  const weaknessCounts: Record<string, number> = {};
+  weaknesses.forEach(w => { weaknessCounts[w] = (weaknessCounts[w] || 0) + 1; });
+
+  const mostCommonWeakness = Object.entries(weaknessCounts)
+    .sort(([, a], [, b]) => b - a)[0];
+
+  if (mostCommonWeakness && mostCommonWeakness[1] > 1) {
+    opportunities.push(`Team-wide training opportunity: ${mostCommonWeakness[0]} (${mostCommonWeakness[1]} staff members)`);
+  }
+
+  // Check for low practice frequency
+  const lowPractice = staffPerformance.filter(s => s.sessionsCount < 3);
+  if (lowPractice.length > 0) {
+    opportunities.push(`${lowPractice.length} staff member(s) need more practice sessions`);
+  }
+
+  // Check for high performers to leverage as mentors
+  const highPerformers = staffPerformance.filter(s => s.averageScores.overall >= 85);
+  if (highPerformers.length > 0) {
+    opportunities.push(`${highPerformers.length} high performer(s) could mentor others`);
+  }
+
+  return opportunities;
+}
+
 export const aiTrainingRouter = router({
   // ============================================
   // US-364: Video Practice Sessions
@@ -6871,5 +7992,837 @@ export const aiTrainingRouter = router({
       });
 
       return updated;
+    }),
+
+  // ============================================
+  // US-369: Performance Coaching
+  // ============================================
+
+  /**
+   * Analyze a real call for coaching opportunities
+   * Main entry point for US-369
+   */
+  coachFromCall: protectedProcedure
+    .input(
+      z.object({
+        callId: z.string().optional(),
+        transcript: z.string().optional(),
+        callType: scenarioTypeEnum,
+        callDuration: z.number().int().min(0),
+        metadata: z
+          .object({
+            callerName: z.string().optional(),
+            callDateTime: z.string().optional(),
+            outcome: z.enum(['RESOLVED', 'ESCALATED', 'CALLBACK_SCHEDULED', 'UNRESOLVED']).optional(),
+            notes: z.string().optional(),
+          })
+          .optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { callId, transcript, callType, callDuration, metadata } = input;
+
+      if (!transcript) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Call transcript is required for coaching analysis',
+        });
+      }
+
+      // Analyze the call transcript
+      const analysis = analyzeRealCallForCoaching(transcript, callType, callDuration, metadata?.outcome);
+
+      // Get user's historical performance for comparison
+      const historicalData = await ctx.prisma.practiceSession.findMany({
+        where: {
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+          status: 'COMPLETED',
+          scenario: { type: callType },
+        },
+        orderBy: { endedAt: 'desc' },
+        take: 20,
+        select: {
+          overallScore: true,
+          toneScore: true,
+          empathyScore: true,
+          scriptAdherenceScore: true,
+          endedAt: true,
+        },
+      });
+
+      // Calculate performance trends - map to expected format
+      const trends = calculatePerformanceTrends(
+        historicalData.map(d => ({
+          overallScore: d.overallScore,
+          toneScore: d.toneScore,
+          empathyScore: d.empathyScore,
+          scriptAdherenceScore: d.scriptAdherenceScore,
+          completedAt: d.endedAt,
+        }))
+      );
+
+      // Generate personalized coaching insights
+      const coachingInsights = generateCoachingInsights(analysis, trends, callType);
+
+      // Create a performance feedback record
+      const feedbackRecord = await ctx.prisma.performanceFeedback.create({
+        data: {
+          sessionId: callId || `real-call-${Date.now()}`,
+          organizationId: ctx.user.organizationId,
+          category: 'PROFESSIONALISM', // Using valid enum - OVERALL not available
+          feedback: JSON.stringify(coachingInsights.summary),
+          suggestions: coachingInsights.actionItems,
+          score: analysis.overallScore,
+          priority: coachingInsights.priority,
+        },
+      });
+
+      // Check for micro-learning suggestions
+      const microLearning = generateMicroLearningSuggestions(analysis, callType);
+
+      await auditLog('CREATE', 'CoachingAnalysis', {
+        entityId: feedbackRecord.id,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: { callType, overallScore: analysis.overallScore },
+      });
+
+      return {
+        analysisId: feedbackRecord.id,
+        callType,
+        duration: callDuration,
+        analysis: {
+          overallScore: analysis.overallScore,
+          letterGrade: getLetterGrade(analysis.overallScore),
+          categories: {
+            tone: {
+              score: analysis.toneScore,
+              observations: analysis.toneObservations,
+              keyMoments: analysis.toneKeyMoments,
+            },
+            empathy: {
+              score: analysis.empathyScore,
+              observations: analysis.empathyObservations,
+              keyMoments: analysis.empathyKeyMoments,
+            },
+            problemSolving: {
+              score: analysis.problemSolvingScore,
+              observations: analysis.problemSolvingObservations,
+              outcomeAchieved: metadata?.outcome === 'RESOLVED',
+            },
+            professionalism: {
+              score: analysis.professionalismScore,
+              observations: analysis.professionalismObservations,
+            },
+            timing: {
+              score: analysis.timingScore,
+              callDuration,
+              pacingNotes: analysis.pacingNotes,
+            },
+          },
+        },
+        coachingInsights,
+        trends,
+        microLearning,
+        metadata,
+      };
+    }),
+
+  /**
+   * Generate a personalized improvement plan based on performance history
+   */
+  generateImprovementPlan: protectedProcedure
+    .input(
+      z.object({
+        userId: z.string().optional(), // Admin can view other users
+        focusAreas: z.array(z.enum(['TONE', 'EMPATHY', 'SCRIPT_ADHERENCE', 'TIMING', 'PROBLEM_SOLVING', 'PROFESSIONALISM'])).optional(),
+        timeframeWeeks: z.number().int().min(1).max(12).default(4),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const targetUserId = input.userId || ctx.user.id;
+
+      // Verify permission to view other users
+      if (input.userId && input.userId !== ctx.user.id) {
+        const user = await ctx.prisma.user.findFirst({
+          where: { id: ctx.user.id },
+        });
+        if (user?.role !== 'OWNER' && user?.role !== 'ADMIN') {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'You do not have permission to view other users improvement plans',
+          });
+        }
+      }
+
+      // Get comprehensive performance data
+      const sessions = await ctx.prisma.practiceSession.findMany({
+        where: {
+          userId: targetUserId,
+          organizationId: ctx.user.organizationId,
+          status: 'COMPLETED',
+        },
+        orderBy: { endedAt: 'desc' },
+        take: 50,
+        include: {
+          scenario: { select: { type: true, name: true } },
+          feedback: true,
+        },
+      });
+
+      // Get coaching feedback history
+      const feedbackHistory = await ctx.prisma.performanceFeedback.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+      });
+
+      // Identify weaknesses and strengths - map to expected format
+      const mappedSessions = sessions.map(s => ({
+        overallScore: s.overallScore,
+        toneScore: s.toneScore,
+        empathyScore: s.empathyScore,
+        scriptAdherenceScore: s.scriptAdherenceScore,
+        timingScore: s.timingScore,
+        completedAt: s.endedAt,
+        scenario: s.scenario,
+        feedback: s.feedback,
+      }));
+      const performanceProfile = buildPerformanceProfile(mappedSessions, feedbackHistory);
+
+      // Generate improvement plan
+      const improvementPlan = generateImprovementPlan(
+        performanceProfile,
+        input.focusAreas,
+        input.timeframeWeeks
+      );
+
+      // Get user info
+      const user = await ctx.prisma.user.findUnique({
+        where: { id: targetUserId },
+        select: { firstName: true, lastName: true, role: true },
+      });
+
+      return {
+        userId: targetUserId,
+        userName: user ? `${user.firstName} ${user.lastName}` : 'Unknown',
+        userRole: user?.role,
+        generatedAt: new Date().toISOString(),
+        timeframeWeeks: input.timeframeWeeks,
+        performanceProfile,
+        plan: improvementPlan,
+        milestones: generateMilestones(improvementPlan, input.timeframeWeeks),
+      };
+    }),
+
+  /**
+   * Track improvement over time
+   */
+  getImprovementTracking: protectedProcedure
+    .input(
+      z.object({
+        userId: z.string().optional(),
+        periodDays: z.number().int().min(7).max(365).default(30),
+        category: z.enum(['TONE', 'EMPATHY', 'SCRIPT_ADHERENCE', 'TIMING', 'PROBLEM_SOLVING', 'PROFESSIONALISM', 'OVERALL']).optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const targetUserId = input.userId || ctx.user.id;
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - input.periodDays);
+
+      // Verify permission
+      if (input.userId && input.userId !== ctx.user.id) {
+        const user = await ctx.prisma.user.findFirst({ where: { id: ctx.user.id } });
+        if (user?.role !== 'OWNER' && user?.role !== 'ADMIN') {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'Permission denied' });
+        }
+      }
+
+      // Get sessions in period
+      const sessionsRaw = await ctx.prisma.practiceSession.findMany({
+        where: {
+          userId: targetUserId,
+          organizationId: ctx.user.organizationId,
+          status: 'COMPLETED',
+          endedAt: { gte: startDate },
+        },
+        orderBy: { endedAt: 'asc' },
+        select: {
+          id: true,
+          overallScore: true,
+          toneScore: true,
+          empathyScore: true,
+          scriptAdherenceScore: true,
+          timingScore: true,
+          endedAt: true,
+          scenario: { select: { type: true, name: true } },
+        },
+      });
+
+      // Map to expected format
+      const sessions = sessionsRaw.map(s => ({
+        id: s.id,
+        overallScore: s.overallScore,
+        toneScore: s.toneScore,
+        empathyScore: s.empathyScore,
+        scriptAdherenceScore: s.scriptAdherenceScore,
+        timingScore: s.timingScore,
+        completedAt: s.endedAt,
+        scenario: s.scenario,
+      }));
+
+      // Get previous period for comparison
+      const previousStartDate = new Date(startDate);
+      previousStartDate.setDate(previousStartDate.getDate() - input.periodDays);
+
+      const previousSessions = await ctx.prisma.practiceSession.findMany({
+        where: {
+          userId: targetUserId,
+          organizationId: ctx.user.organizationId,
+          status: 'COMPLETED',
+          endedAt: {
+            gte: previousStartDate,
+            lt: startDate,
+          },
+        },
+        select: {
+          overallScore: true,
+          toneScore: true,
+          empathyScore: true,
+          scriptAdherenceScore: true,
+          timingScore: true,
+        },
+      });
+
+      // Calculate metrics
+      const currentMetrics = calculatePeriodMetrics(sessions);
+      const previousMetrics = calculatePeriodMetrics(previousSessions);
+      const improvement = calculateImprovement(currentMetrics, previousMetrics);
+
+      // Build timeline data
+      const timeline = buildTimelineData(sessions, input.category);
+
+      return {
+        userId: targetUserId,
+        period: {
+          start: startDate.toISOString(),
+          end: new Date().toISOString(),
+          days: input.periodDays,
+        },
+        currentPeriod: currentMetrics,
+        previousPeriod: previousMetrics,
+        improvement,
+        timeline,
+        sessionsCount: sessions.length,
+        trend: determineTrend(improvement),
+        insights: generateImprovementInsights(currentMetrics, previousMetrics, improvement),
+      };
+    }),
+
+  /**
+   * Get micro-learning suggestions based on recent performance
+   */
+  getMicroLearningSuggestions: protectedProcedure
+    .input(
+      z.object({
+        limit: z.number().int().min(1).max(10).default(5),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      // Get recent sessions
+      const recentSessionsRaw = await ctx.prisma.practiceSession.findMany({
+        where: {
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+          status: 'COMPLETED',
+        },
+        orderBy: { endedAt: 'desc' },
+        take: 10,
+        include: {
+          scenario: { select: { type: true } },
+          feedback: true,
+        },
+      });
+
+      // Map to expected format
+      const recentSessions = recentSessionsRaw.map(s => ({
+        overallScore: s.overallScore,
+        toneScore: s.toneScore,
+        empathyScore: s.empathyScore,
+        scriptAdherenceScore: s.scriptAdherenceScore,
+        timingScore: s.timingScore,
+        scenario: s.scenario,
+        feedback: s.feedback,
+      }));
+
+      // Identify weak areas
+      const weakAreas = identifyWeakAreas(recentSessions);
+
+      // Generate micro-learning suggestions
+      const suggestions = weakAreas
+        .slice(0, input.limit)
+        .map((area) => generateMicroLearningForArea(area));
+
+      return {
+        suggestions,
+        basedOnSessionsCount: recentSessions.length,
+        weakestAreas: weakAreas.slice(0, 3).map((a) => a.category),
+        lastUpdated: new Date().toISOString(),
+      };
+    }),
+
+  /**
+   * Get peer comparison (anonymized)
+   */
+  getPeerComparison: protectedProcedure
+    .input(
+      z.object({
+        category: z.enum(['TONE', 'EMPATHY', 'SCRIPT_ADHERENCE', 'TIMING', 'PROBLEM_SOLVING', 'OVERALL']).optional(),
+        periodDays: z.number().int().min(7).max(90).default(30),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - input.periodDays);
+
+      // Get user's scores
+      const userSessions = await ctx.prisma.practiceSession.findMany({
+        where: {
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+          status: 'COMPLETED',
+          endedAt: { gte: startDate },
+        },
+        select: {
+          overallScore: true,
+          toneScore: true,
+          empathyScore: true,
+          scriptAdherenceScore: true,
+          timingScore: true,
+        },
+      });
+
+      // Get all org scores (anonymized)
+      const allSessions = await ctx.prisma.practiceSession.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: 'COMPLETED',
+          endedAt: { gte: startDate },
+        },
+        select: {
+          overallScore: true,
+          toneScore: true,
+          empathyScore: true,
+          scriptAdherenceScore: true,
+          timingScore: true,
+        },
+      });
+
+      // Calculate percentiles and rankings
+      const userAvgs = calculateAverageScores(userSessions);
+      const orgStats = calculateOrgStatistics(allSessions);
+
+      // Calculate percentile rank for each category
+      const percentiles = calculatePercentileRanks(userAvgs, allSessions);
+
+      return {
+        userScores: userAvgs,
+        orgStatistics: {
+          average: orgStats.average,
+          median: orgStats.median,
+          top25Percent: orgStats.top25,
+          bottom25Percent: orgStats.bottom25,
+        },
+        percentileRanks: percentiles,
+        peerCount: await ctx.prisma.user.count({
+          where: { organizationId: ctx.user.organizationId },
+        }),
+        period: {
+          start: startDate.toISOString(),
+          end: new Date().toISOString(),
+          days: input.periodDays,
+        },
+        insights: generatePeerComparisonInsights(userAvgs, orgStats, percentiles),
+      };
+    }),
+
+  /**
+   * Set and track performance goals
+   */
+  setGoal: protectedProcedure
+    .input(
+      z.object({
+        category: z.enum(['TONE', 'EMPATHY', 'SCRIPT_ADHERENCE', 'TIMING', 'PROBLEM_SOLVING', 'OVERALL']),
+        targetScore: z.number().int().min(1).max(100),
+        targetDate: z.string(), // ISO date string
+        description: z.string().max(500).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Get current score for baseline
+      const recentSessions = await ctx.prisma.practiceSession.findMany({
+        where: {
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+          status: 'COMPLETED',
+        },
+        orderBy: { endedAt: 'desc' },
+        take: 5,
+        select: {
+          overallScore: true,
+          toneScore: true,
+          empathyScore: true,
+          scriptAdherenceScore: true,
+          timingScore: true,
+        },
+      });
+
+      const currentAvg = calculateCategoryAverage(recentSessions, input.category);
+
+      // Store goal in training progress (using JSON field for goals)
+      // First, check if user has a goals record
+      let goalsModule = await ctx.prisma.trainingModule.findFirst({
+        where: {
+          organizationId: ctx.user.organizationId,
+          type: 'SKILL_BUILDING',
+          name: 'Performance Goals',
+        },
+      });
+
+      if (!goalsModule) {
+        goalsModule = await ctx.prisma.trainingModule.create({
+          data: {
+            name: 'Performance Goals',
+            type: 'SKILL_BUILDING',
+            organizationId: ctx.user.organizationId,
+            content: { isGoalsTracker: true } as unknown as Prisma.InputJsonValue,
+            duration: 0,
+            passingScore: 0,
+          },
+        });
+      }
+
+      // Create or update progress for this goal
+      const goalId = `goal-${input.category}-${Date.now()}`;
+      const goalData = {
+        goalId,
+        category: input.category,
+        targetScore: input.targetScore,
+        baselineScore: currentAvg,
+        targetDate: input.targetDate,
+        description: input.description,
+        createdAt: new Date().toISOString(),
+        status: 'ACTIVE',
+        checkpoints: [] as Array<{ date: string; score: number }>,
+      };
+
+      await ctx.prisma.trainingProgress.create({
+        data: {
+          userId: ctx.user.id,
+          moduleId: goalsModule.id,
+          organizationId: ctx.user.organizationId,
+          status: 'IN_PROGRESS',
+          currentStep: 0,
+          totalSteps: 1,
+          progressData: goalData as unknown as Prisma.InputJsonValue,
+        },
+      });
+
+      await auditLog('CREATE', 'PerformanceGoal', {
+        entityId: goalId,
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+        changes: { category: input.category, targetScore: input.targetScore },
+      });
+
+      return {
+        goalId,
+        category: input.category,
+        baselineScore: currentAvg,
+        targetScore: input.targetScore,
+        targetDate: input.targetDate,
+        gapToClose: input.targetScore - currentAvg,
+        daysToTarget: Math.ceil((new Date(input.targetDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
+        recommendations: generateGoalRecommendations(input.category, currentAvg, input.targetScore),
+      };
+    }),
+
+  /**
+   * Get all active goals and their progress
+   */
+  getGoals: protectedProcedure
+    .input(
+      z.object({
+        status: z.enum(['ACTIVE', 'COMPLETED', 'EXPIRED', 'ALL']).default('ACTIVE'),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const goalsModule = await ctx.prisma.trainingModule.findFirst({
+        where: {
+          organizationId: ctx.user.organizationId,
+          type: 'SKILL_BUILDING',
+          name: 'Performance Goals',
+        },
+      });
+
+      if (!goalsModule) {
+        return { goals: [], summary: { total: 0, active: 0, completed: 0, expired: 0 } };
+      }
+
+      const goalRecords = await ctx.prisma.trainingProgress.findMany({
+        where: {
+          userId: ctx.user.id,
+          moduleId: goalsModule.id,
+          organizationId: ctx.user.organizationId,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      // Get current scores for progress calculation
+      const recentSessions = await ctx.prisma.practiceSession.findMany({
+        where: {
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+          status: 'COMPLETED',
+        },
+        orderBy: { endedAt: 'desc' },
+        take: 10,
+        select: {
+          overallScore: true,
+          toneScore: true,
+          empathyScore: true,
+          scriptAdherenceScore: true,
+          timingScore: true,
+          endedAt: true,
+        },
+      });
+
+      const goals = goalRecords.map((record) => {
+        const goalData = record.progressData as unknown as {
+          goalId: string;
+          category: string;
+          targetScore: number;
+          baselineScore: number;
+          targetDate: string;
+          description?: string;
+          createdAt: string;
+          status: string;
+        };
+
+        const currentScore = calculateCategoryAverage(recentSessions, goalData.category as CategoryType);
+        const progress = calculateGoalProgress(goalData.baselineScore, currentScore, goalData.targetScore);
+        const isExpired = new Date(goalData.targetDate) < new Date();
+        const isCompleted = currentScore >= goalData.targetScore;
+
+        let status = goalData.status;
+        if (isCompleted && status === 'ACTIVE') status = 'COMPLETED';
+        if (isExpired && status === 'ACTIVE') status = 'EXPIRED';
+
+        return {
+          ...goalData,
+          currentScore,
+          progress,
+          status,
+          daysRemaining: Math.max(
+            0,
+            Math.ceil((new Date(goalData.targetDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+          ),
+        };
+      });
+
+      // Filter by status
+      const filteredGoals =
+        input.status === 'ALL' ? goals : goals.filter((g) => g.status === input.status);
+
+      return {
+        goals: filteredGoals,
+        summary: {
+          total: goals.length,
+          active: goals.filter((g) => g.status === 'ACTIVE').length,
+          completed: goals.filter((g) => g.status === 'COMPLETED').length,
+          expired: goals.filter((g) => g.status === 'EXPIRED').length,
+        },
+      };
+    }),
+
+  /**
+   * Update goal progress checkpoint
+   */
+  updateGoalCheckpoint: protectedProcedure
+    .input(
+      z.object({
+        goalId: z.string(),
+        notes: z.string().max(500).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const goalsModule = await ctx.prisma.trainingModule.findFirst({
+        where: {
+          organizationId: ctx.user.organizationId,
+          type: 'SKILL_BUILDING',
+          name: 'Performance Goals',
+        },
+      });
+
+      if (!goalsModule) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Goals module not found' });
+      }
+
+      const goalRecord = await ctx.prisma.trainingProgress.findFirst({
+        where: {
+          userId: ctx.user.id,
+          moduleId: goalsModule.id,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!goalRecord) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Goal not found' });
+      }
+
+      const goalData = goalRecord.progressData as unknown as {
+        goalId: string;
+        category: string;
+        targetScore: number;
+        baselineScore: number;
+        checkpoints: Array<{ date: string; score: number; notes?: string }>;
+      };
+
+      if (goalData.goalId !== input.goalId) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Goal not found' });
+      }
+
+      // Get current score
+      const recentSessions = await ctx.prisma.practiceSession.findMany({
+        where: {
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+          status: 'COMPLETED',
+        },
+        orderBy: { endedAt: 'desc' },
+        take: 5,
+        select: {
+          overallScore: true,
+          toneScore: true,
+          empathyScore: true,
+          scriptAdherenceScore: true,
+          timingScore: true,
+        },
+      });
+
+      const currentScore = calculateCategoryAverage(recentSessions, goalData.category as CategoryType);
+
+      // Add checkpoint
+      goalData.checkpoints = goalData.checkpoints || [];
+      goalData.checkpoints.push({
+        date: new Date().toISOString(),
+        score: currentScore,
+        notes: input.notes,
+      });
+
+      await ctx.prisma.trainingProgress.update({
+        where: { id: goalRecord.id },
+        data: { progressData: goalData as unknown as Prisma.InputJsonValue },
+      });
+
+      return {
+        goalId: input.goalId,
+        currentScore,
+        targetScore: goalData.targetScore,
+        checkpointsCount: goalData.checkpoints.length,
+        progress: calculateGoalProgress(goalData.baselineScore, currentScore, goalData.targetScore),
+      };
+    }),
+
+  /**
+   * Get coaching dashboard for managers
+   */
+  getCoachingDashboard: adminProcedure
+    .input(
+      z.object({
+        periodDays: z.number().int().min(7).max(90).default(30),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - input.periodDays);
+
+      // Get all staff in organization
+      const staffRaw = await ctx.prisma.user.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          role: { in: ['STAFF', 'BILLER'] },
+        },
+        select: { id: true, firstName: true, lastName: true, role: true },
+      });
+
+      // Map to expected format
+      const staff = staffRaw.map(s => ({
+        id: s.id,
+        name: `${s.firstName} ${s.lastName}`,
+        role: s.role,
+      }));
+
+      // Get sessions for all staff
+      const allSessions = await ctx.prisma.practiceSession.findMany({
+        where: {
+          organizationId: ctx.user.organizationId,
+          status: 'COMPLETED',
+          endedAt: { gte: startDate },
+        },
+        select: {
+          userId: true,
+          overallScore: true,
+          toneScore: true,
+          empathyScore: true,
+          scriptAdherenceScore: true,
+          timingScore: true,
+          endedAt: true,
+        },
+      });
+
+      // Build staff performance summaries
+      const staffPerformance = staff.map((s) => {
+        const sessions = allSessions.filter((sess) => sess.userId === s.id);
+        const avgScores = calculateAverageScores(sessions);
+
+        return {
+          userId: s.id,
+          name: s.name,
+          role: s.role,
+          sessionsCount: sessions.length,
+          averageScores: avgScores,
+          needsAttention: avgScores.overall < 70 || sessions.length < 3,
+          topStrength: identifyTopStrength(avgScores),
+          primaryWeakness: identifyPrimaryWeakness(avgScores),
+        };
+      });
+
+      // Calculate org-wide metrics
+      const orgMetrics = calculateOrgStatistics(allSessions);
+
+      // Identify coaching priorities
+      const coachingPriorities = staffPerformance
+        .filter((s) => s.needsAttention)
+        .sort((a, b) => a.averageScores.overall - b.averageScores.overall)
+        .slice(0, 5);
+
+      return {
+        period: {
+          start: startDate.toISOString(),
+          end: new Date().toISOString(),
+          days: input.periodDays,
+        },
+        staffPerformance,
+        organizationMetrics: orgMetrics,
+        coachingPriorities,
+        totalSessions: allSessions.length,
+        averageSessionsPerStaff: allSessions.length / staff.length || 0,
+        improvementOpportunities: generateOrgImprovementOpportunities(staffPerformance),
+      };
     }),
 });

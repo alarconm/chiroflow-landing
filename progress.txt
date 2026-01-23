@@ -664,3 +664,133 @@ Added comprehensive compliance training system to `app/src/server/routers/aiTrai
 --- Iteration 6 completed at 2026-01-22 ---
 Story: US-368 - Compliance training
 
+--- Iteration 6 completed at 2026-01-22 18:51:18 ---
+Story: US-368 - Compliance training
+
+### US-369: Performance coaching ✅ COMPLETED
+
+**Date:** 2026-01-22
+**Status:** PASSED
+
+**Implementation:**
+
+Added comprehensive performance coaching system to `app/src/server/routers/aiTraining.ts`.
+
+**New tRPC Procedures:**
+
+1. **coachFromCall** - Analyze real calls for coaching opportunities (Main US-369 procedure)
+   - Analyzes call transcripts for coaching insights
+   - Evaluates tone, empathy, problem-solving, professionalism, timing
+   - Compares to historical performance for trends
+   - Generates personalized coaching insights
+   - Creates PerformanceFeedback records
+   - Provides micro-learning suggestions
+
+2. **generateImprovementPlan** - Create personalized improvement plans
+   - Builds comprehensive performance profile
+   - Identifies strengths and weaknesses
+   - Creates multi-week improvement plan with focus areas
+   - Generates milestones and success criteria
+   - Admin can view other users' plans
+
+3. **getImprovementTracking** - Track improvement over time
+   - Compares current vs previous period metrics
+   - Calculates improvement across all categories
+   - Provides timeline data for charting
+   - Identifies trends (improving/stable/declining)
+   - Generates insights on performance changes
+
+4. **getMicroLearningSuggestions** - Get personalized micro-learning
+   - Identifies weak areas from recent sessions
+   - Generates targeted 5-15 minute exercises
+   - Provides difficulty-appropriate content
+   - Includes tips and practice activities
+
+5. **getPeerComparison** - Anonymized peer comparison
+   - Calculates user's percentile rank vs organization
+   - Shows average, median, top 25%, bottom 25%
+   - Compares across all scoring categories
+   - Generates insights about relative standing
+
+6. **setGoal** - Set and track performance goals
+   - Creates goal with baseline and target scores
+   - Tracks progress toward goals
+   - Generates recommendations for achieving goals
+   - Supports all scoring categories
+
+7. **getGoals** - Get all active/completed/expired goals
+   - Returns goals with current progress
+   - Auto-updates goal status (completed/expired)
+   - Shows days remaining and gap to close
+
+8. **updateGoalCheckpoint** - Update goal progress checkpoint
+   - Records current score at checkpoint
+   - Tracks progress over time
+   - Supports notes for each checkpoint
+
+9. **getCoachingDashboard** - Manager view of staff performance (admin)
+   - Shows all staff performance summaries
+   - Identifies coaching priorities
+   - Calculates organization-wide metrics
+   - Generates improvement opportunities
+   - Lists staff needing attention
+
+**Helper Functions Added (~800 lines):**
+
+1. **analyzeRealCallForCoaching()** - Analyze call transcript
+2. **calculatePerformanceTrends()** - Calculate trends from historical data
+3. **generateCoachingInsights()** - Generate personalized coaching insights
+4. **generateMicroLearningSuggestions()** - Create micro-learning content
+5. **buildPerformanceProfile()** - Build comprehensive performance profile
+6. **generateImprovementPlan()** - Create improvement plan structure
+7. **generateMilestones()** - Create plan milestones
+8. **calculatePeriodMetrics()** - Calculate metrics for time period
+9. **calculateImprovement()** - Calculate improvement between periods
+10. **determineTrend()** - Determine overall trend direction
+11. **buildTimelineData()** - Build timeline for charting
+12. **generateImprovementInsights()** - Generate improvement insights
+13. **identifyWeakAreas()** - Find areas needing work
+14. **generateMicroLearningForArea()** - Create micro-learning for specific area
+15. **calculateAverageScores()** - Calculate average scores from sessions
+16. **calculateOrgStatistics()** - Calculate org-wide statistics
+17. **calculatePercentileRanks()** - Calculate percentile rankings
+18. **generatePeerComparisonInsights()** - Create peer comparison insights
+19. **calculateCategoryAverage()** - Calculate average for specific category
+20. **calculateGoalProgress()** - Calculate goal progress percentage
+21. **generateGoalRecommendations()** - Generate goal achievement recommendations
+22. **identifyTopStrength()** - Find user's strongest area
+23. **identifyPrimaryWeakness()** - Find user's weakest area
+24. **generateOrgImprovementOpportunities()** - Find org-wide improvement areas
+25. **getLetterGrade()** - Convert score to letter grade
+26. Various tone/empathy/problem-solving analysis functions
+
+**Key Features:**
+
+- Coaching from real calls (not just practice sessions)
+- Personalized improvement plans with weekly schedules
+- Progress tracking with trend analysis
+- Micro-learning suggestions based on weaknesses
+- Anonymized peer comparison for context
+- Goal setting and tracking with checkpoints
+- Manager dashboard for coaching oversight
+
+**Acceptance Criteria Fulfilled:**
+- ✅ aiTraining.coachFromCall - Analyze real calls for coaching
+- ✅ Identify coaching opportunities from actual patient interactions
+- ✅ Generate personalized improvement plans
+- ✅ Track improvement over time
+- ✅ Micro-learning suggestions
+- ✅ Peer comparison (anonymized)
+- ✅ Goal setting and tracking
+
+**Files Modified:**
+- app/src/server/routers/aiTraining.ts (added ~1500 lines)
+
+---
+
+## Stories Remaining: 1
+
+- US-370: Training dashboard
+--- Iteration 7 completed at 2026-01-22 ---
+Story: US-369 - Performance coaching
+
