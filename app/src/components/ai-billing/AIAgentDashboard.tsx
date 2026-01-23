@@ -192,11 +192,16 @@ function TaskTypeBadge({ type }: { type: string }) {
 
 function ActivityFeed() {
   const [filter, setFilter] = useState<string>('all');
+  const [limit, setLimit] = useState(20);
 
   const { data, isLoading, refetch } = trpc.aiBilling.getAgentActivityFeed.useQuery({
-    limit: 20,
+    limit,
     taskTypes: filter !== 'all' ? [filter as any] : undefined,
   });
+
+  const handleLoadMore = () => {
+    setLimit((prev) => prev + 20);
+  };
 
   if (isLoading) {
     return (
@@ -322,7 +327,7 @@ function ActivityFeed() {
         </ScrollArea>
         {data?.hasMore && (
           <div className="mt-4 text-center">
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={handleLoadMore}>
               Load More
               <ChevronRight className="h-4 w-4 ml-1" />
             </Button>

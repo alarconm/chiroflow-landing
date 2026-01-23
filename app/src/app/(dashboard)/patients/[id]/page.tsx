@@ -34,14 +34,31 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { trpc } from '@/trpc/client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { DocumentList } from '@/components/patients';
+import { DocumentList, InsuranceForm } from '@/components/patients';
+import type { InsuranceFormData } from '@/components/patients/InsuranceForm';
 import { ClinicalHistoryView } from '@/components/clinical';
 import { PatientEligibilityCard } from '@/components/clearinghouse';
 import { WearableDataDashboard } from '@/components/wearables';
 import { usePermissions } from '@/hooks';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 const statusColors: Record<string, string> = {
   ACTIVE: 'bg-green-100 text-green-800 border-green-200',
@@ -61,6 +78,10 @@ export default function PatientDetailPage() {
   const router = useRouter();
   const patientId = params.id as string;
   const [activeTab, setActiveTab] = useState('overview');
+  const [isInsuranceDialogOpen, setIsInsuranceDialogOpen] = useState(false);
+  const [isFamilyDialogOpen, setIsFamilyDialogOpen] = useState(false);
+  const [familySearchQuery, setFamilySearchQuery] = useState('');
+  const [selectedRelationship, setSelectedRelationship] = useState('');
   const { isAtLeast } = usePermissions();
   const canDeleteDocuments = isAtLeast('ADMIN');
 
@@ -89,6 +110,48 @@ export default function PatientDetailPage() {
     },
     onError: (error) => toast.error(error.message),
   });
+
+  const createInsuranceMutation = trpc.patient.addInsurance.useMutation({
+    onSuccess: () => {
+      toast.success('Insurance added successfully');
+      setIsInsuranceDialogOpen(false);
+      refetch();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const handleAddInsurance = async (data: InsuranceFormData) => {
+    createInsuranceMutation.mutate({
+      patientId,
+      insurance: {
+        payerName: data.payerName,
+        policyNumber: data.policyNumber,
+        type: data.type,
+        payerId: data.payerId || undefined,
+        planName: data.planName || undefined,
+        planType: data.planType || undefined,
+        groupNumber: data.groupNumber || undefined,
+        subscriberRelationship: data.subscriberRelationship,
+        subscriberId: data.subscriberId || undefined,
+        subscriberFirstName: data.subscriberFirstName || undefined,
+        subscriberLastName: data.subscriberLastName || undefined,
+        subscriberDob: data.subscriberDob || undefined,
+        effectiveDate: data.effectiveDate || undefined,
+        terminationDate: data.terminationDate || undefined,
+        copay: data.copay || undefined,
+        deductible: data.deductible || undefined,
+        deductibleMet: data.deductibleMet || undefined,
+        outOfPocketMax: data.outOfPocketMax || undefined,
+        outOfPocketMet: data.outOfPocketMet || undefined,
+      },
+    });
+  };
+
+  const handleAddFamilyMember = () => {
+    // For now, show toast and close dialog - full implementation would require patient search
+    toast.info('Family member linking will be available in the next update');
+    setIsFamilyDialogOpen(false);
+  };
 
   if (isLoading) {
     return (
@@ -571,7 +634,7 @@ export default function PatientDetailPage() {
               <CardContent className="py-10 text-center">
                 <Shield className="h-10 w-10 text-stone-300 mx-auto mb-3" />
                 <p className="text-stone-500 mb-4">No insurance on file</p>
-                <Button variant="outline">
+                <Button variant="outline" onClick={() => setIsInsuranceDialogOpen(true)}>
                   <Plus className="h-4 w-4 mr-2" />
                   Add Insurance
                 </Button>
@@ -659,7 +722,7 @@ export default function PatientDetailPage() {
                   <p className="text-stone-500 mb-4">
                     No family members linked to this patient
                   </p>
-                  <Button variant="outline">
+                  <Button variant="outline" onClick={() => setIsFamilyDialogOpen(true)}>
                     <Plus className="h-4 w-4 mr-2" />
                     Add Family Member
                   </Button>
@@ -692,6 +755,80 @@ export default function PatientDetailPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Add Insurance Dialog */}
+      <Dialog open={isInsuranceDialogOpen} onOpenChange={setIsInsuranceDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5 text-[#053e67]" />
+              Add Insurance
+            </DialogTitle>
+            <DialogDescription>
+              Add a new insurance policy for this patient
+            </DialogDescription>
+          </DialogHeader>
+          <InsuranceForm
+            onSubmit={handleAddInsurance}
+            isLoading={createInsuranceMutation.isPending}
+            mode="create"
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Family Member Dialog */}
+      <Dialog open={isFamilyDialogOpen} onOpenChange={setIsFamilyDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-[#053e67]" />
+              Add Family Member
+            </DialogTitle>
+            <DialogDescription>
+              Link an existing patient as a family member
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="familySearch">Search Patient</Label>
+              <Input
+                id="familySearch"
+                placeholder="Search by name or MRN..."
+                value={familySearchQuery}
+                onChange={(e) => setFamilySearchQuery(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="relationship">Relationship</Label>
+              <Select value={selectedRelationship} onValueChange={setSelectedRelationship}>
+                <SelectTrigger id="relationship">
+                  <SelectValue placeholder="Select relationship" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="SPOUSE">Spouse</SelectItem>
+                  <SelectItem value="PARENT">Parent</SelectItem>
+                  <SelectItem value="CHILD">Child</SelectItem>
+                  <SelectItem value="SIBLING">Sibling</SelectItem>
+                  <SelectItem value="OTHER">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="outline" onClick={() => setIsFamilyDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                className="bg-[#053e67] hover:bg-blue-800"
+                onClick={handleAddFamilyMember}
+                disabled={!familySearchQuery || !selectedRelationship}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Link Family Member
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

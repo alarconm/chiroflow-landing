@@ -16,6 +16,7 @@
 
 import React, { useState } from 'react';
 import { format, addDays } from 'date-fns';
+import { toast } from 'sonner';
 import {
   Bot,
   MessageSquare,
@@ -405,11 +406,11 @@ export function AICommunicationDashboard({ className }: AICommunicationDashboard
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" className="border-stone-300">
+          <Button variant="outline" className="border-stone-300" onClick={() => setActiveTab('analytics')}>
             <BarChart3 className="h-4 w-4 mr-2" />
             Analytics
           </Button>
-          <Button variant="outline" className="border-stone-300">
+          <Button variant="outline" className="border-stone-300" onClick={() => toast.info('Settings coming soon')}>
             <Settings className="h-4 w-4 mr-2" />
             Settings
           </Button>
@@ -576,27 +577,27 @@ export function AICommunicationDashboard({ className }: AICommunicationDashboard
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                <Button variant="outline" className="h-auto py-4 flex flex-col items-center gap-2 border-stone-200 hover:border-blue-500 hover:bg-blue-50">
+                <Button variant="outline" className="h-auto py-4 flex flex-col items-center gap-2 border-stone-200 hover:border-blue-500 hover:bg-blue-50" onClick={() => toast.info('Send Broadcast feature coming soon')}>
                   <MessageSquare className="h-5 w-5 text-[#053e67]" />
                   <span className="text-xs">Send Broadcast</span>
                 </Button>
-                <Button variant="outline" className="h-auto py-4 flex flex-col items-center gap-2 border-stone-200 hover:border-blue-500 hover:bg-blue-50">
+                <Button variant="outline" className="h-auto py-4 flex flex-col items-center gap-2 border-stone-200 hover:border-blue-500 hover:bg-blue-50" onClick={() => toast.info('Send Reminders feature coming soon')}>
                   <Bell className="h-5 w-5 text-green-600" />
                   <span className="text-xs">Send Reminders</span>
                 </Button>
-                <Button variant="outline" className="h-auto py-4 flex flex-col items-center gap-2 border-stone-200 hover:border-blue-500 hover:bg-blue-50">
+                <Button variant="outline" className="h-auto py-4 flex flex-col items-center gap-2 border-stone-200 hover:border-blue-500 hover:bg-blue-50" onClick={() => toast.info('Request Reviews feature coming soon')}>
                   <Star className="h-5 w-5 text-[#053e67]" />
                   <span className="text-xs">Request Reviews</span>
                 </Button>
-                <Button variant="outline" className="h-auto py-4 flex flex-col items-center gap-2 border-stone-200 hover:border-blue-500 hover:bg-blue-50">
+                <Button variant="outline" className="h-auto py-4 flex flex-col items-center gap-2 border-stone-200 hover:border-blue-500 hover:bg-blue-50" onClick={() => toast.info('No-Show Follow-up feature coming soon')}>
                   <UserX className="h-5 w-5 text-red-600" />
                   <span className="text-xs">No-Show Follow-up</span>
                 </Button>
-                <Button variant="outline" className="h-auto py-4 flex flex-col items-center gap-2 border-stone-200 hover:border-blue-500 hover:bg-blue-50">
+                <Button variant="outline" className="h-auto py-4 flex flex-col items-center gap-2 border-stone-200 hover:border-blue-500 hover:bg-blue-50" onClick={() => setActiveTab('recall')}>
                   <RefreshCcw className="h-5 w-5 text-purple-600" />
                   <span className="text-xs">Start Recall</span>
                 </Button>
-                <Button variant="outline" className="h-auto py-4 flex flex-col items-center gap-2 border-stone-200 hover:border-blue-500 hover:bg-blue-50">
+                <Button variant="outline" className="h-auto py-4 flex flex-col items-center gap-2 border-stone-200 hover:border-blue-500 hover:bg-blue-50" onClick={() => toast.info('New Campaign feature coming soon')}>
                   <Plus className="h-5 w-5 text-stone-600" />
                   <span className="text-xs">New Campaign</span>
                 </Button>
@@ -713,7 +714,7 @@ export function AICommunicationDashboard({ className }: AICommunicationDashboard
                   <div className="text-center py-8">
                     <RefreshCcw className="h-10 w-10 text-stone-300 mx-auto mb-3" />
                     <p className="text-stone-500">No campaigns yet</p>
-                    <Button variant="outline" className="mt-4 border-stone-300">
+                    <Button variant="outline" className="mt-4 border-stone-300" onClick={() => setActiveTab('recall')}>
                       <Plus className="h-4 w-4 mr-2" />
                       Create Campaign
                     </Button>
@@ -951,11 +952,11 @@ export function AICommunicationDashboard({ className }: AICommunicationDashboard
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" className="border-stone-300">
+              <Button variant="outline" className="border-stone-300" onClick={() => toast.info('Reminder settings coming soon')}>
                 <Settings className="h-4 w-4 mr-2" />
                 Settings
               </Button>
-              <Button className="bg-[#053e67] hover:bg-[#053e67]">
+              <Button className="bg-[#053e67] hover:bg-[#053e67]" onClick={() => toast.info('Send reminders feature coming soon')}>
                 <Send className="h-4 w-4 mr-2" />
                 Send Now
               </Button>
@@ -1164,7 +1165,7 @@ export function AICommunicationDashboard({ className }: AICommunicationDashboard
                 Automated review requests after patient visits
               </p>
             </div>
-            <Button className="bg-[#053e67] hover:bg-[#053e67]">
+            <Button className="bg-[#053e67] hover:bg-[#053e67]" onClick={() => toast.info('New review campaign feature coming soon')}>
               <Plus className="h-4 w-4 mr-2" />
               New Campaign
             </Button>
@@ -1334,7 +1335,7 @@ export function AICommunicationDashboard({ className }: AICommunicationDashboard
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="sm">
+                        <Button variant="ghost" size="sm" onClick={() => toast.info('Review request options coming soon')}>
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </TableCell>
@@ -1358,7 +1359,7 @@ export function AICommunicationDashboard({ className }: AICommunicationDashboard
                 Automated celebratory messages with special offers
               </p>
             </div>
-            <Button className="bg-[#053e67] hover:bg-[#053e67]">
+            <Button className="bg-[#053e67] hover:bg-[#053e67]" onClick={() => toast.info('Birthday message configuration coming soon')}>
               <Settings className="h-4 w-4 mr-2" />
               Configure
             </Button>
@@ -1495,7 +1496,7 @@ export function AICommunicationDashboard({ className }: AICommunicationDashboard
                       </TableCell>
                       <TableCell>{msg.offerType || '-'}</TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="sm">
+                        <Button variant="ghost" size="sm" onClick={() => toast.info('Message options coming soon')}>
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </TableCell>
@@ -1519,7 +1520,7 @@ export function AICommunicationDashboard({ className }: AICommunicationDashboard
                 Automated outreach to patients who missed appointments
               </p>
             </div>
-            <Button className="bg-[#053e67] hover:bg-[#053e67]">
+            <Button className="bg-[#053e67] hover:bg-[#053e67]" onClick={() => toast.info('Send follow-ups feature coming soon')}>
               <Send className="h-4 w-4 mr-2" />
               Send Follow-ups
             </Button>
@@ -1635,7 +1636,7 @@ export function AICommunicationDashboard({ className }: AICommunicationDashboard
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button variant="outline" size="sm">
+                        <Button variant="outline" size="sm" onClick={() => toast.info('Reschedule feature coming soon')}>
                           <Calendar className="h-4 w-4 mr-1" />
                           Reschedule
                         </Button>
@@ -1660,7 +1661,7 @@ export function AICommunicationDashboard({ className }: AICommunicationDashboard
                 Automated progress updates and appointment reminders for active treatment plans
               </p>
             </div>
-            <Button className="bg-[#053e67] hover:bg-[#053e67]">
+            <Button className="bg-[#053e67] hover:bg-[#053e67]" onClick={() => toast.info('New sequence feature coming soon')}>
               <Plus className="h-4 w-4 mr-2" />
               New Sequence
             </Button>
@@ -1745,7 +1746,7 @@ export function AICommunicationDashboard({ className }: AICommunicationDashboard
                       </TableCell>
                       <TableCell>{getStatusBadge(plan.status)}</TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="sm">
+                        <Button variant="ghost" size="sm" onClick={() => toast.info('Treatment plan options coming soon')}>
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </TableCell>
@@ -2232,7 +2233,10 @@ export function AICommunicationDashboard({ className }: AICommunicationDashboard
             <Button variant="outline" onClick={() => setShowTemplateDialog(false)}>
               Cancel
             </Button>
-            <Button className="bg-[#053e67] hover:bg-[#053e67]">
+            <Button className="bg-[#053e67] hover:bg-[#053e67]" onClick={() => {
+              toast.success(selectedTemplate ? 'Template saved' : 'Template created');
+              setShowTemplateDialog(false);
+            }}>
               {selectedTemplate ? 'Save Changes' : 'Create Template'}
             </Button>
           </DialogFooter>
