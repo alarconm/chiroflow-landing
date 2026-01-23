@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { router, protectedProcedure, providerProcedure } from '../trpc';
 import { auditLog } from '@/lib/audit';
-import type { CareOutreachType, CareOutreachStatus, Prisma } from '@prisma/client';
+import type { CareOutreachType, CareOutreachStatus, Prisma, AssessmentType } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 
 // Types for treatment plan monitoring
@@ -3954,7 +3954,7 @@ export const aiCareRouter = router({
             },
           },
           outcomeAssessments: {
-            orderBy: { assessmentDate: 'desc' },
+            orderBy: { administeredAt: 'desc' },
             take: 10,
           },
           careGaps: includeResolved ? undefined : {
@@ -4107,7 +4107,7 @@ export const aiCareRouter = router({
               for (const goal of plan.goals) {
                 if (goal.status === 'ACHIEVED' || !goal.targetDate) continue;
 
-                if (goal.targetDate < now && goal.status !== 'ACHIEVED') {
+                if (goal.targetDate < now) {
                   const gapKey = `MISSED_MILESTONE:${goal.id}`;
                   const isNew = !existingGapTypes.has(gapKey);
                   const daysOverdue = Math.floor((now.getTime() - goal.targetDate.getTime()) / (1000 * 60 * 60 * 24));
@@ -4141,7 +4141,7 @@ export const aiCareRouter = router({
           const hasActivePlan = patient.treatmentPlans.some(p => p.status === 'ACTIVE');
           const recentAssessments = patient.outcomeAssessments || [];
           const lastAssessmentDate = recentAssessments.length > 0
-            ? new Date(Math.max(...recentAssessments.map(a => a.assessmentDate.getTime())))
+            ? new Date(Math.max(...recentAssessments.map(a => a.administeredAt.getTime())))
             : null;
           const daysSinceAssessment = lastAssessmentDate
             ? Math.floor((now.getTime() - lastAssessmentDate.getTime()) / (1000 * 60 * 60 * 24))
@@ -4315,12 +4315,10 @@ export const aiCareRouter = router({
       }
 
       // Log audit
-      await auditLog({
+      await auditLog('AI_CARE_GAP_IDENTIFY', 'CareGap', {
         organizationId: ctx.user.organizationId,
         userId: ctx.user.id,
-        action: 'AI_CARE_GAP_IDENTIFY',
-        resourceType: 'CareGap',
-        details: {
+        metadata: {
           totalPatientsScanned: patients.length,
           totalGapsFound: identifiedGaps.length,
           newGapsCreated: createdGaps.length,
@@ -4387,7 +4385,12 @@ export const aiCareRouter = router({
           patient: {
             include: {
               demographics: {
-                select: { firstName: true, lastName: true, phone: true, email: true },
+                select: { firstName: true, lastName: true },
+              },
+              contacts: {
+                where: { isPrimary: true },
+                take: 1,
+                select: { mobilePhone: true, email: true },
               },
               appointments: {
                 where: {
@@ -4422,8 +4425,8 @@ export const aiCareRouter = router({
         return {
           patientId: plan.patientId,
           patientName: getPatientName(plan.patient),
-          phone: plan.patient.demographics?.phone,
-          email: plan.patient.demographics?.email,
+          phone: plan.patient.contacts?.[0]?.mobilePhone,
+          email: plan.patient.contacts?.[0]?.email,
           treatmentPlanId: plan.id,
           treatmentPlanName: plan.name,
           providerId: plan.providerId,
@@ -4481,7 +4484,7 @@ export const aiCareRouter = router({
             select: { id: true },
           },
           goals: {
-            select: { id: true, name: true, status: true, progress: true },
+            select: { id: true, description: true, status: true, progress: true },
           },
         },
       });
@@ -4556,7 +4559,7 @@ export const aiCareRouter = router({
       const patients = await ctx.prisma.patient.findMany({
         where: {
           organizationId: ctx.user.organizationId,
-          isActive: true,
+          status: 'ACTIVE',
           treatmentPlans: {
             some: { status: 'ACTIVE' },
           },
@@ -4574,9 +4577,9 @@ export const aiCareRouter = router({
             orderBy: { encounterDate: 'desc' },
             take: 10,
             include: {
-              outcomeAssessments: {
-                ...(assessmentType ? { where: { type: assessmentType } } : {}),
-                orderBy: { assessmentDate: 'desc' },
+              assessments: {
+                ...(assessmentType ? { where: { assessmentType: assessmentType as AssessmentType } } : {}),
+                orderBy: { administeredAt: 'desc' },
               },
             },
           },
@@ -4585,15 +4588,15 @@ export const aiCareRouter = router({
 
       const missingAssessments = patients
         .map(patient => {
-          const allAssessments = patient.encounters.flatMap(e => e.outcomeAssessments);
+          const allAssessments = patient.encounters.flatMap(e => e.assessments);
           const lastAssessment = allAssessments.length > 0
             ? allAssessments.reduce((latest, a) =>
-                a.assessmentDate > latest.assessmentDate ? a : latest
+                a.administeredAt > latest.administeredAt ? a : latest
               )
             : null;
 
           const daysSinceAssessment = lastAssessment
-            ? Math.floor((now.getTime() - lastAssessment.assessmentDate.getTime()) / (1000 * 60 * 60 * 24))
+            ? Math.floor((now.getTime() - lastAssessment.administeredAt.getTime()) / (1000 * 60 * 60 * 24))
             : null;
 
           return {
@@ -4603,9 +4606,9 @@ export const aiCareRouter = router({
               id: p.id,
               name: p.name,
             })),
-            lastAssessmentDate: lastAssessment?.assessmentDate || null,
-            lastAssessmentType: lastAssessment?.type || null,
-            lastAssessmentScore: lastAssessment?.score || null,
+            lastAssessmentDate: lastAssessment?.administeredAt || null,
+            lastAssessmentType: lastAssessment?.assessmentType || null,
+            lastAssessmentScore: lastAssessment?.percentScore ? Number(lastAssessment.percentScore) : null,
             daysSinceAssessment,
             totalAssessmentsOnRecord: allAssessments.length,
             needsAssessment: !lastAssessment || daysSinceAssessment! > minDaysSinceAssessment,
@@ -4642,7 +4645,7 @@ export const aiCareRouter = router({
       const lapsedPatients = await ctx.prisma.patient.findMany({
         where: {
           organizationId: ctx.user.organizationId,
-          isActive: true,
+          status: 'ACTIVE',
           appointments: {
             some: {
               status: 'COMPLETED',
@@ -4670,7 +4673,7 @@ export const aiCareRouter = router({
         take: limit,
         include: {
           demographics: {
-            select: { firstName: true, lastName: true, phone: true, email: true },
+            select: { firstName: true, lastName: true },
           },
           appointments: {
             where: { status: 'COMPLETED' },
@@ -4682,7 +4685,7 @@ export const aiCareRouter = router({
             take: 1,
             select: { id: true, name: true, status: true },
           },
-          careOutreaches: {
+          careOutreach: {
             where: { type: 'REACTIVATION' },
             orderBy: { createdAt: 'desc' },
             take: 1,
@@ -4695,13 +4698,13 @@ export const aiCareRouter = router({
         const daysSinceVisit = lastVisit
           ? Math.floor((now.getTime() - lastVisit.getTime()) / (1000 * 60 * 60 * 24))
           : null;
-        const lastOutreach = patient.careOutreaches[0];
+        const lastOutreach = patient.careOutreach[0];
 
         return {
           patientId: patient.id,
           patientName: getPatientName(patient),
-          phone: patient.demographics?.phone,
-          email: patient.demographics?.email,
+          phone: undefined, // TODO: Add contacts include to get phone
+          email: undefined, // TODO: Add contacts include to get email
           lastVisitDate: lastVisit,
           daysSinceVisit,
           lastTreatmentPlan: patient.treatmentPlans[0] || null,
@@ -4744,7 +4747,7 @@ export const aiCareRouter = router({
           status: 'COMPLETED',
           diagnoses: {
             some: {
-              ...(conditionCode ? { code: { contains: conditionCode } } : {}),
+              ...(conditionCode ? { icd10Code: { contains: conditionCode } } : {}),
             },
           },
         },
@@ -4790,8 +4793,8 @@ export const aiCareRouter = router({
 
           // Determine expected follow-up based on condition characteristics
           // This is a simplified heuristic - real implementation would use condition-specific protocols
-          const isAcute = diagnosis?.code?.startsWith('S') || diagnosis?.code?.startsWith('M54');
-          const isChronic = diagnosis?.code?.startsWith('M') && !isAcute;
+          const isAcute = diagnosis?.icd10Code?.startsWith('S') || diagnosis?.icd10Code?.startsWith('M54');
+          const isChronic = diagnosis?.icd10Code?.startsWith('M') && !isAcute;
 
           let expectedFollowupDays: number;
           let conditionType: string;
@@ -4823,7 +4826,7 @@ export const aiCareRouter = router({
           return {
             patientId: enc.patientId,
             patientName: getPatientName(enc.patient),
-            conditionCode: diagnosis?.code,
+            conditionCode: diagnosis?.icd10Code,
             conditionDescription: diagnosis?.description,
             conditionType,
             lastEncounterDate: enc.encounterDate,
@@ -4879,9 +4882,9 @@ export const aiCareRouter = router({
           patient: {
             include: {
               demographics: {
-                select: { firstName: true, lastName: true, phone: true, email: true },
+                select: { firstName: true, lastName: true },
               },
-              communicationPreferences: true,
+              communicationPreference: true,
             },
           },
         },
@@ -4935,9 +4938,9 @@ export const aiCareRouter = router({
         }
 
         // Determine preferred channel
-        const prefs = gap.patient.communicationPreferences;
-        const prefersSMS = prefs?.find(p => p.channel === 'sms' && p.optIn);
-        const prefersEmail = prefs?.find(p => p.channel === 'email' && p.optIn);
+        const prefs = gap.patient.communicationPreference;
+        const prefersSMS = prefs?.allowSms;
+        const prefersEmail = prefs?.allowEmail;
         const channel = prefersSMS ? 'sms' : prefersEmail ? 'email' : 'sms';
 
         // Schedule outreach for tomorrow morning by default
@@ -5006,12 +5009,10 @@ export const aiCareRouter = router({
       }
 
       // Log audit
-      await auditLog({
+      await auditLog('AI_CARE_OUTREACH_RECOMMEND', 'CareOutreach', {
         organizationId: ctx.user.organizationId,
         userId: ctx.user.id,
-        action: 'AI_CARE_OUTREACH_RECOMMEND',
-        resourceType: 'CareOutreach',
-        details: {
+        metadata: {
           gapsProcessed: gaps.length,
           tasksGenerated: tasks.length,
           outreachScheduled: scheduleOutreach,

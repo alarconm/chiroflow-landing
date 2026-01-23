@@ -44,8 +44,14 @@ const envSchema = z.object({
   CLEARINGHOUSE_USE_MOCK_IN_DEV: z.string().transform((v) => v === 'true').optional(),
 });
 
-// Parse and validate environment variables
+// Parse and validate environment variables (lazy initialization)
+let _env: z.infer<typeof envSchema> | null = null;
+
 function validateEnv() {
+  if (_env !== null) {
+    return _env;
+  }
+
   const result = envSchema.safeParse({
     DATABASE_URL: process.env.DATABASE_URL,
     NEXTAUTH_URL: process.env.NEXTAUTH_URL,
@@ -77,39 +83,76 @@ function validateEnv() {
       .map((issue) => `  - ${issue.path.join('.')}: ${issue.message}`)
       .join('\n');
 
+    // In development, log warning instead of throwing for non-critical vars
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(`Environment validation warning:\n${errors}`);
+      // Return partial/default values for development
+      _env = {
+        DATABASE_URL: process.env.DATABASE_URL || '',
+        NEXTAUTH_URL: process.env.NEXTAUTH_URL || 'http://localhost:3000',
+        NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET || 'development-secret-min-32-chars-here',
+        NODE_ENV: 'development',
+        APP_NAME: process.env.APP_NAME || 'ChiroFlow',
+        APP_URL: process.env.APP_URL,
+        SMTP_HOST: process.env.SMTP_HOST,
+        SMTP_PORT: process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : undefined,
+        SMTP_USER: process.env.SMTP_USER,
+        SMTP_PASSWORD: process.env.SMTP_PASSWORD,
+        SMTP_FROM: process.env.SMTP_FROM,
+        S3_BUCKET: process.env.S3_BUCKET,
+        S3_REGION: process.env.S3_REGION,
+        S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID,
+        S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY,
+        SENTRY_DSN: process.env.SENTRY_DSN,
+        ANALYTICS_ID: process.env.ANALYTICS_ID,
+        OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+        GOOGLE_AI_API_KEY: process.env.GOOGLE_AI_API_KEY,
+        CLEARINGHOUSE_ENCRYPTION_KEY: process.env.CLEARINGHOUSE_ENCRYPTION_KEY,
+        CLEARINGHOUSE_DEFAULT_PROVIDER: process.env.CLEARINGHOUSE_DEFAULT_PROVIDER as any,
+        CLEARINGHOUSE_USE_MOCK_IN_DEV: process.env.CLEARINGHOUSE_USE_MOCK_IN_DEV === 'true',
+      };
+      return _env;
+    }
+
     throw new Error(`Environment validation failed:\n${errors}`);
   }
 
-  return result.data;
+  _env = result.data;
+  return _env;
 }
 
-// Export validated environment variables
-export const env = validateEnv();
+// Export validated environment variables via getter for lazy initialization
+export const env = new Proxy({} as z.infer<typeof envSchema>, {
+  get(_, prop: string) {
+    return validateEnv()[prop as keyof z.infer<typeof envSchema>];
+  },
+});
 
 // Type-safe environment variable access
 export type Env = z.infer<typeof envSchema>;
 
 // Helper to check if we're in production
-export const isProduction = env.NODE_ENV === 'production';
+export const isProduction = process.env.NODE_ENV === 'production';
 
 // Helper to check if we're in development
-export const isDevelopment = env.NODE_ENV === 'development';
+export const isDevelopment = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
 
 // Helper to check if we're in test
-export const isTest = env.NODE_ENV === 'test';
+export const isTest = process.env.NODE_ENV === 'test';
 
 // Helper to check if email is configured
 export const hasEmailConfig = Boolean(
-  env.SMTP_HOST && env.SMTP_PORT && env.SMTP_USER && env.SMTP_PASSWORD
+  process.env.SMTP_HOST && process.env.SMTP_PORT && process.env.SMTP_USER && process.env.SMTP_PASSWORD
 );
 
 // Helper to check if S3 is configured
 export const hasS3Config = Boolean(
-  env.S3_BUCKET && env.S3_REGION && env.S3_ACCESS_KEY_ID && env.S3_SECRET_ACCESS_KEY
+  process.env.S3_BUCKET && process.env.S3_REGION && process.env.S3_ACCESS_KEY_ID && process.env.S3_SECRET_ACCESS_KEY
 );
 
 // Helper to check if AI features are enabled
-export const hasAIConfig = Boolean(env.ANTHROPIC_API_KEY || env.OPENAI_API_KEY || env.GOOGLE_AI_API_KEY);
+export const hasAIConfig = Boolean(process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || process.env.GOOGLE_AI_API_KEY);
 
 // Helper to check which AI provider is available (priority: Claude > Gemini > OpenAI)
 export const getAIProvider = (): 'anthropic' | 'google' | 'openai' | 'mock' => {
@@ -127,7 +170,7 @@ export const getClearinghouseProvider = ():
   | 'AVAILITY'
   | 'OFFICE_ALLY' => {
   // In development, optionally use mock provider
-  if (isDevelopment && env.CLEARINGHOUSE_USE_MOCK_IN_DEV) {
+  if (process.env.NODE_ENV === 'development' && env.CLEARINGHOUSE_USE_MOCK_IN_DEV) {
     return 'MOCK';
   }
 
@@ -137,5 +180,5 @@ export const getClearinghouseProvider = ():
 
 // Helper to check if clearinghouse encryption is configured
 export const hasClearinghouseEncryption = Boolean(
-  env.CLEARINGHOUSE_ENCRYPTION_KEY || env.NEXTAUTH_SECRET
+  process.env.CLEARINGHOUSE_ENCRYPTION_KEY || process.env.NEXTAUTH_SECRET
 );

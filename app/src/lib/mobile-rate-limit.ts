@@ -203,11 +203,12 @@ export function addRateLimitHeaders(
 }
 
 // Rate limit middleware wrapper
+// Compatible with Next.js 16 route handler signature
 export function withMobileRateLimit(endpoint: string) {
-  return function <T>(
-    handler: (req: NextRequest, context?: { params?: T }) => Promise<NextResponse>
+  return function <T = Record<string, string>>(
+    handler: (req: NextRequest, context: { params: Promise<T> }) => Promise<NextResponse>
   ) {
-    return async (req: NextRequest, context?: { params?: T }): Promise<NextResponse> => {
+    return async (req: NextRequest, context: { params: Promise<T> }): Promise<NextResponse> => {
       const result = await checkRateLimit(req, endpoint);
       const config = getRateLimitConfig(endpoint);
 

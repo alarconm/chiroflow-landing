@@ -14,6 +14,7 @@ import {
   Clock,
   Loader2,
 } from 'lucide-react';
+import Link from 'next/link';
 import type { AuthUser } from '@/lib/auth';
 import { trpc } from '@/trpc/client';
 
@@ -206,9 +207,10 @@ export default function DashboardPage() {
             ) : appointments && appointments.length > 0 ? (
               <div className="space-y-3">
                 {appointments.map((apt) => (
-                  <div
+                  <Link
                     key={apt.id}
-                    className="flex items-center justify-between p-3 rounded-lg bg-stone-50 hover:bg-stone-100 transition-colors"
+                    href={`/schedule?appointment=${apt.id}`}
+                    className="flex items-center justify-between p-3 rounded-lg bg-stone-50 hover:bg-stone-100 transition-colors cursor-pointer"
                   >
                     <div className="flex items-center gap-3">
                       <div className="flex items-center gap-1 text-sm text-stone-500 min-w-[80px]">
@@ -221,7 +223,7 @@ export default function DashboardPage() {
                       </div>
                     </div>
                     {getStatusBadge(apt.status)}
-                  </div>
+                  </Link>
                 ))}
               </div>
             ) : (

@@ -263,7 +263,9 @@ export function EnhancedClaimsTab({ dateRange }: EnhancedClaimsTabProps) {
   const deniedClaims = demoClaims.filter((c) => c.status === 'DENIED').length;
   const paidClaims = demoClaims.filter((c) => ['PAID', 'PARTIAL'].includes(c.status)).length;
 
-  const uniquePayers = [...new Set(demoClaims.map((c) => ({ id: c.payerId, name: c.payerName })))];
+  const uniquePayers = Array.from(
+    new Map(demoClaims.map((c) => [c.payerId, { id: c.payerId, name: c.payerName }])).values()
+  );
 
   return (
     <div className="space-y-4">

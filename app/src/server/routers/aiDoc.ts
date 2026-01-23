@@ -14,7 +14,7 @@ import { router, providerProcedure } from '../trpc';
 import { TRPCError } from '@trpc/server';
 import { auditLog } from '@/lib/audit';
 import { aiService } from '@/lib/ai-service';
-import { Prisma } from '@prisma/client';
+import { Prisma, EncounterType } from '@prisma/client';
 
 // ============================================
 // US-316: Real-time encounter transcription
@@ -2118,7 +2118,7 @@ export const aiDocRouter = router({
           patient: {
             include: {
               demographics: true,
-              insuranceInfo: true,
+              insurances: true,
             },
           },
           provider: true,
@@ -2244,7 +2244,7 @@ export const aiDocRouter = router({
       const billingBlocked = preBillingGate && (hasCriticalIssues || (hasErrors && auditRiskScore > 50));
 
       // Store compliance checks in database
-      const createdChecks = [];
+      const createdChecks: Awaited<ReturnType<typeof ctx.prisma.aIComplianceCheck.create>>[] = [];
       for (const issue of issues) {
         const check = await ctx.prisma.aIComplianceCheck.create({
           data: {
@@ -2648,7 +2648,7 @@ export const aiDocRouter = router({
           ...(encounterType
             ? {
                 encounter: {
-                  encounterType,
+                  encounterType: encounterType as EncounterType,
                 },
               }
             : {}),

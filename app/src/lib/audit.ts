@@ -1,6 +1,8 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from './prisma';
-import { headers } from 'next/headers';
+
+// Note: 'next/headers' is imported dynamically in getRequestMetadata() to avoid
+// issues when this file is imported in client components
 
 export type AuditAction =
   // Auth actions
@@ -454,8 +456,11 @@ export type AuditLogInput = {
 };
 
 // Get request metadata (IP and user agent)
+// Only works in server components/API routes - returns 'unknown' in client context
 export async function getRequestMetadata(): Promise<{ ipAddress: string; userAgent: string }> {
   try {
+    // Dynamic import to avoid issues when this module is imported in client components
+    const { headers } = await import('next/headers');
     const headersList = await headers();
     const forwardedFor = headersList.get('x-forwarded-for');
     const realIp = headersList.get('x-real-ip');

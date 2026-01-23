@@ -353,15 +353,18 @@ type MobileHandler<T = unknown> = (
 ) => Promise<NextResponse> | NextResponse;
 
 // Wrapper to require mobile JWT authentication
-export function withMobileAuth<T = unknown>(handler: MobileHandler<T>) {
-  return async (req: NextRequest, context?: { params?: T }): Promise<NextResponse> => {
+// Compatible with Next.js 16 route handler signature
+export function withMobileAuth<T = Record<string, string>>(handler: MobileHandler<T>) {
+  return async (req: NextRequest, context: { params: Promise<T> }): Promise<NextResponse> => {
     const user = getMobileUser(req);
 
     if (!user) {
       return mobileUnauthorizedResponse('Invalid or expired token');
     }
 
-    return handler(req, { user, params: context?.params });
+    // In Next.js 16, params is a Promise
+    const params = await context.params;
+    return handler(req, { user, params });
   };
 }
 
