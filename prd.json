@@ -134,7 +134,7 @@
         "Evidence and reasoning display"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true
     }
   ]
 }
