@@ -169,3 +169,147 @@ Created comprehensive tRPC router for AI-powered video practice sessions at `app
 --- Iteration 2 completed at 2026-01-22 ---
 Story: US-364 - Video practice sessions
 
+--- Iteration 2 completed at 2026-01-22 18:19:30 ---
+Story: US-364 - Video practice sessions
+
+### US-365: Real-time practice feedback ✅ COMPLETED
+
+**Date:** 2026-01-22
+**Status:** PASSED
+
+**Implementation:**
+
+Added comprehensive real-time feedback analysis system to `app/src/server/routers/aiTraining.ts`.
+
+**New Types and Interfaces (600+ lines added):**
+
+1. **DetailedAnalysis** - Complete session analysis structure
+   - Overall score with letter grade (A-F)
+   - Category breakdowns for all metrics
+   - Missed opportunities identification
+   - Alternative responses suggestions
+   - Ideal comparison analysis
+   - Strengths and improvements lists
+   - Conversation flow analysis
+   - Recommended practice suggestions
+
+2. **CategoryAnalysis** - Per-category detailed feedback
+   - Score and grade
+   - Observations array
+   - Key moments with timestamps and impact
+   - Improvement tips
+
+3. **MissedOpportunity** - Identifies coaching moments
+   - Timestamp and context
+   - What was missed and better approach
+   - Impact level (minor/moderate/significant)
+   - Category (empathy/resolution/information/rapport/upsell)
+
+4. **AlternativeResponse** - Suggests better responses
+   - Original message reference
+   - Multiple alternatives with reasoning
+   - Expected impact description
+
+5. **IdealComparison** - Compare to best practices
+   - Overall alignment percentage
+   - Key differences breakdown
+   - Matched/missed key phrases
+   - Used avoid phrases
+
+6. **ConversationFlowAnalysis** - Call structure analysis
+   - Phases (greeting/main issue/closing) with quality ratings
+   - Transition smoothness
+   - Pacing assessment
+   - Call control analysis
+
+**New Analysis Helper Functions:**
+
+1. **analyzeTone()** - Professional tone assessment
+   - Positive/negative indicator detection
+   - Key moment identification
+   - Improvement suggestions
+
+2. **analyzeEmpathy()** - Empathy measurement
+   - Empathetic phrase detection
+   - Emotional acknowledgment scoring
+   - AI emotion response analysis
+
+3. **analyzeScriptAdherence()** - Script compliance
+   - Key phrase usage tracking
+   - Avoid phrase detection
+   - Compliance ratio calculation
+
+4. **analyzeTiming()** - Response timing evaluation
+   - Duration vs target comparison
+   - Response time analysis
+   - Pacing recommendations
+
+5. **analyzeProblemSolving()** - Solution-oriented assessment
+   - Solution language detection
+   - Outcome achievement tracking
+
+6. **analyzeProfessionalism()** - Professional image assessment
+   - Professional phrase usage
+   - Casual language detection
+   - Greeting/closing evaluation
+
+7. **findMissedOpportunities()** - Coaching moment identification
+
+8. **generateAlternativeResponses()** - Better response suggestions
+
+9. **compareToIdeal()** - Best practice comparison
+
+10. **analyzeConversationFlow()** - Call structure analysis
+
+11. **generateDetailedAnalysis()** - Main analysis orchestration
+
+12. **getCategoryTrainingResources()** - Training recommendations
+
+**New tRPC Procedures:**
+
+1. **aiTraining.analyzePractice** (Main US-365 procedure)
+   - Full session analysis with all metrics
+   - Stores analysis in aiAnalysis JSON field
+   - Creates PerformanceFeedback entries
+   - Optional: alternativeResponses, idealComparison
+
+2. **aiTraining.getLiveFeedback**
+   - Real-time feedback during active sessions
+   - Contextual suggestions based on conversation progress
+   - Progress indicators (message count, key phrase usage)
+
+3. **aiTraining.getFeedbackTrends**
+   - Performance comparison across sessions
+   - Trend analysis (improving/stable/declining)
+   - Insights and recommendations
+
+4. **aiTraining.getCategoryFeedback**
+   - Detailed feedback for specific category
+   - Training resource recommendations
+   - Examples from conversation
+
+**Acceptance Criteria Fulfilled:**
+- ✅ aiTraining.analyzePractice - Evaluate practice session
+- ✅ Tone and empathy assessment
+- ✅ Script adherence scoring
+- ✅ Response timing evaluation
+- ✅ Identify missed opportunities
+- ✅ Suggest alternative responses
+- ✅ Compare to ideal handling
+- ✅ Highlight strengths and areas for improvement
+
+**Files Modified:**
+- app/src/server/routers/aiTraining.ts (added ~900 lines)
+
+---
+
+## Stories Remaining: 5
+
+- US-366: Onboarding workflows
+- US-367: Script training and practice
+- US-368: Compliance training
+- US-369: Performance coaching
+- US-370: Training dashboard
+--- Iteration 3 completed at 2026-01-22 ---
+Story: US-365 - Real-time practice feedback
+

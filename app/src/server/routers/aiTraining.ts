@@ -477,6 +477,979 @@ function calculateSessionScores(
 // Router Definition
 // ============================================
 
+// ============================================
+// US-365: Real-time Practice Feedback Types
+// ============================================
+
+interface DetailedAnalysis {
+  overall: {
+    score: number;
+    grade: 'A' | 'B' | 'C' | 'D' | 'F';
+    summary: string;
+  };
+  categories: {
+    tone: CategoryAnalysis;
+    empathy: CategoryAnalysis;
+    scriptAdherence: CategoryAnalysis;
+    timing: CategoryAnalysis;
+    problemSolving: CategoryAnalysis;
+    professionalism: CategoryAnalysis;
+  };
+  missedOpportunities: MissedOpportunity[];
+  alternativeResponses: AlternativeResponse[];
+  idealComparison: IdealComparison;
+  strengthsAndImprovements: {
+    strengths: StrengthItem[];
+    improvements: ImprovementItem[];
+  };
+  conversationFlow: ConversationFlowAnalysis;
+  recommendedPractice: string[];
+}
+
+interface CategoryAnalysis {
+  score: number;
+  grade: 'A' | 'B' | 'C' | 'D' | 'F';
+  observations: string[];
+  keyMoments: {
+    timestamp: number;
+    description: string;
+    impact: 'positive' | 'negative' | 'neutral';
+  }[];
+  improvementTips: string[];
+}
+
+interface MissedOpportunity {
+  timestamp: number;
+  userMessage: string;
+  missedAction: string;
+  betterApproach: string;
+  impact: 'minor' | 'moderate' | 'significant';
+  category: 'empathy' | 'resolution' | 'information' | 'rapport' | 'upsell';
+}
+
+interface AlternativeResponse {
+  originalMessage: string;
+  timestamp: number;
+  alternatives: {
+    text: string;
+    reasoning: string;
+    expectedImpact: string;
+  }[];
+}
+
+interface IdealComparison {
+  overallAlignment: number; // 0-100
+  keyDifferences: {
+    aspect: string;
+    userApproach: string;
+    idealApproach: string;
+    alignmentScore: number;
+  }[];
+  matchedKeyPhrases: string[];
+  missedKeyPhrases: string[];
+  usedAvoidPhrases: string[];
+}
+
+interface StrengthItem {
+  category: string;
+  description: string;
+  example?: string;
+  timestamp?: number;
+}
+
+interface ImprovementItem {
+  category: string;
+  description: string;
+  suggestion: string;
+  priority: 'low' | 'medium' | 'high';
+  practiceResource?: string;
+}
+
+interface ConversationFlowAnalysis {
+  phases: {
+    name: string;
+    startTimestamp: number;
+    endTimestamp: number;
+    quality: 'excellent' | 'good' | 'fair' | 'poor';
+    notes: string;
+  }[];
+  transitions: {
+    from: string;
+    to: string;
+    smooth: boolean;
+    notes: string;
+  }[];
+  pacing: 'too_fast' | 'appropriate' | 'too_slow';
+  callControl: 'user_led' | 'balanced' | 'customer_led';
+}
+
+// ============================================
+// US-365: Feedback Analysis Helpers
+// ============================================
+
+function getScoreGrade(score: number): 'A' | 'B' | 'C' | 'D' | 'F' {
+  if (score >= 90) return 'A';
+  if (score >= 80) return 'B';
+  if (score >= 70) return 'C';
+  if (score >= 60) return 'D';
+  return 'F';
+}
+
+function analyzeTone(
+  conversationHistory: ConversationMessage[],
+  userMessages: string[]
+): CategoryAnalysis {
+  const allText = userMessages.join(' ').toLowerCase();
+
+  // Check for positive tone indicators
+  const positiveIndicators = [
+    'please', 'thank you', 'thanks', 'appreciate', 'certainly',
+    'happy to', 'glad to', 'of course', 'absolutely', 'wonderful'
+  ];
+  const positiveCount = positiveIndicators.filter(p => allText.includes(p)).length;
+
+  // Check for negative tone indicators
+  const negativeIndicators = [
+    'no', 'can\'t', 'won\'t', 'don\'t', 'unfortunately',
+    'sorry but', 'that\'s not', 'you need to', 'you have to'
+  ];
+  const negativeCount = negativeIndicators.filter(n => allText.includes(n)).length;
+
+  // Calculate base score
+  let score = 70 + (positiveCount * 5) - (negativeCount * 8);
+  score = Math.min(100, Math.max(0, score));
+
+  const observations: string[] = [];
+  const keyMoments: CategoryAnalysis['keyMoments'] = [];
+  const improvementTips: string[] = [];
+
+  if (positiveCount >= 3) {
+    observations.push('Consistent use of polite and professional language');
+  } else if (positiveCount === 0) {
+    observations.push('Limited use of courteous phrases');
+    improvementTips.push('Try incorporating phrases like "certainly" and "happy to help"');
+  }
+
+  if (negativeCount > 2) {
+    observations.push('Multiple instances of negative framing detected');
+    improvementTips.push('Reframe negative responses positively - instead of "I can\'t do that", try "Here\'s what I can do"');
+  }
+
+  // Find specific moments
+  conversationHistory.forEach((msg, idx) => {
+    if (msg.role === 'user') {
+      const lower = msg.content.toLowerCase();
+      if (positiveIndicators.some(p => lower.includes(p))) {
+        keyMoments.push({
+          timestamp: msg.timestamp,
+          description: 'Positive professional tone',
+          impact: 'positive'
+        });
+      }
+      if (negativeIndicators.filter(n => lower.includes(n)).length > 1) {
+        keyMoments.push({
+          timestamp: msg.timestamp,
+          description: 'Potentially defensive or negative framing',
+          impact: 'negative'
+        });
+      }
+    }
+  });
+
+  return {
+    score,
+    grade: getScoreGrade(score),
+    observations,
+    keyMoments: keyMoments.slice(0, 5), // Limit to 5 moments
+    improvementTips
+  };
+}
+
+function analyzeEmpathy(
+  conversationHistory: ConversationMessage[],
+  userMessages: string[],
+  aiMessages: string[]
+): CategoryAnalysis {
+  const allText = userMessages.join(' ').toLowerCase();
+
+  // Empathy phrases
+  const empathyPhrases = [
+    'i understand', 'i can see', 'that must be', 'i hear you',
+    'i\'m sorry to hear', 'i appreciate', 'i know', 'you\'re right',
+    'that sounds', 'it sounds like', 'i can imagine'
+  ];
+  const empathyCount = empathyPhrases.filter(p => allText.includes(p)).length;
+
+  // Check if user acknowledged customer emotions
+  const emotionalAcknowledgment = [
+    'frustrating', 'difficult', 'worried', 'concerned', 'upset',
+    'stressful', 'confusing', 'overwhelming'
+  ];
+  const emotionalCount = emotionalAcknowledgment.filter(e => allText.includes(e)).length;
+
+  let score = 60 + (empathyCount * 10) + (emotionalCount * 5);
+  score = Math.min(100, Math.max(0, score));
+
+  const observations: string[] = [];
+  const keyMoments: CategoryAnalysis['keyMoments'] = [];
+  const improvementTips: string[] = [];
+
+  if (empathyCount >= 2) {
+    observations.push('Good use of empathetic language');
+  } else if (empathyCount === 0) {
+    observations.push('Limited empathetic acknowledgment');
+    improvementTips.push('Try using phrases like "I understand how you feel" or "I can see why that would be frustrating"');
+  }
+
+  // Check if user responded to AI emotional states
+  const aiEmotions = aiMessages.some(m =>
+    m.toLowerCase().includes('frustrated') ||
+    m.toLowerCase().includes('worried') ||
+    m.toLowerCase().includes('upset')
+  );
+
+  if (aiEmotions && emotionalCount === 0) {
+    observations.push('Customer expressed emotional distress that wasn\'t directly acknowledged');
+    improvementTips.push('When a customer expresses frustration or worry, acknowledge their feelings before offering solutions');
+    score -= 10;
+  }
+
+  conversationHistory.forEach((msg) => {
+    if (msg.role === 'user') {
+      const lower = msg.content.toLowerCase();
+      if (empathyPhrases.some(p => lower.includes(p))) {
+        keyMoments.push({
+          timestamp: msg.timestamp,
+          description: 'Demonstrated empathy',
+          impact: 'positive'
+        });
+      }
+    }
+  });
+
+  return {
+    score: Math.max(0, score),
+    grade: getScoreGrade(Math.max(0, score)),
+    observations,
+    keyMoments: keyMoments.slice(0, 5),
+    improvementTips
+  };
+}
+
+function analyzeScriptAdherence(
+  userMessages: string[],
+  keyPhrases: string[],
+  avoidPhrases: string[]
+): CategoryAnalysis {
+  const allText = userMessages.join(' ').toLowerCase();
+
+  const matchedPhrases = keyPhrases.filter(p => allText.includes(p.toLowerCase()));
+  const usedAvoidPhrases = avoidPhrases.filter(p => allText.includes(p.toLowerCase()));
+
+  const keyPhraseRatio = keyPhrases.length > 0
+    ? matchedPhrases.length / keyPhrases.length
+    : 1;
+
+  let score = Math.round(60 + (keyPhraseRatio * 30) - (usedAvoidPhrases.length * 10));
+  score = Math.min(100, Math.max(0, score));
+
+  const observations: string[] = [];
+  const improvementTips: string[] = [];
+
+  if (matchedPhrases.length > 0) {
+    observations.push(`Used ${matchedPhrases.length} of ${keyPhrases.length} key phrases`);
+  }
+
+  if (keyPhrases.length > 0 && matchedPhrases.length < keyPhrases.length / 2) {
+    const missed = keyPhrases.filter(p => !allText.includes(p.toLowerCase()));
+    improvementTips.push(`Try incorporating these key phrases: ${missed.slice(0, 3).join(', ')}`);
+  }
+
+  if (usedAvoidPhrases.length > 0) {
+    observations.push(`Used ${usedAvoidPhrases.length} phrases that should be avoided`);
+    improvementTips.push(`Avoid using: ${usedAvoidPhrases.join(', ')}`);
+  }
+
+  return {
+    score,
+    grade: getScoreGrade(score),
+    observations,
+    keyMoments: [],
+    improvementTips
+  };
+}
+
+function analyzeTiming(
+  conversationHistory: ConversationMessage[],
+  targetDuration: number,
+  actualDuration: number
+): CategoryAnalysis {
+  const observations: string[] = [];
+  const keyMoments: CategoryAnalysis['keyMoments'] = [];
+  const improvementTips: string[] = [];
+
+  // Calculate response times
+  const responseTimes: number[] = [];
+  for (let i = 1; i < conversationHistory.length; i++) {
+    if (conversationHistory[i].role === 'user' && conversationHistory[i - 1].role === 'ai') {
+      const responseTime = conversationHistory[i].timestamp - conversationHistory[i - 1].timestamp;
+      responseTimes.push(responseTime);
+    }
+  }
+
+  const avgResponseTime = responseTimes.length > 0
+    ? responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length
+    : 0;
+
+  // Evaluate duration
+  const durationRatio = actualDuration / targetDuration;
+  let score = 100;
+
+  if (durationRatio < 0.5) {
+    score -= 30;
+    observations.push('Call was significantly shorter than expected');
+    improvementTips.push('Ensure all customer concerns are fully addressed before ending the call');
+  } else if (durationRatio > 2) {
+    score -= 30;
+    observations.push('Call duration exceeded expected time significantly');
+    improvementTips.push('Work on being more concise while still being helpful');
+  } else if (durationRatio > 1.5) {
+    score -= 15;
+    observations.push('Call ran longer than target duration');
+  } else if (durationRatio >= 0.8 && durationRatio <= 1.2) {
+    observations.push('Call duration was within target range');
+  }
+
+  // Evaluate response times
+  if (avgResponseTime > 10) {
+    score -= 20;
+    observations.push('Long pauses between responses may indicate hesitation');
+    improvementTips.push('Practice common scenarios to improve response confidence');
+  } else if (avgResponseTime < 2 && responseTimes.length > 2) {
+    score -= 10;
+    observations.push('Very quick responses may not allow time for active listening');
+    improvementTips.push('Take a moment to fully process what the customer said before responding');
+  } else if (avgResponseTime >= 2 && avgResponseTime <= 6) {
+    observations.push('Response timing was appropriate - not rushed, not delayed');
+  }
+
+  // Find specific timing issues
+  responseTimes.forEach((time, idx) => {
+    if (time > 15) {
+      keyMoments.push({
+        timestamp: conversationHistory[idx * 2 + 1]?.timestamp || 0,
+        description: 'Long pause before responding',
+        impact: 'negative'
+      });
+    }
+  });
+
+  return {
+    score: Math.max(0, score),
+    grade: getScoreGrade(Math.max(0, score)),
+    observations,
+    keyMoments: keyMoments.slice(0, 3),
+    improvementTips
+  };
+}
+
+function analyzeProblemSolving(
+  conversationHistory: ConversationMessage[],
+  expectedOutcomes: string[],
+  userMessages: string[]
+): CategoryAnalysis {
+  const allText = userMessages.join(' ').toLowerCase();
+
+  // Check for solution-oriented language
+  const solutionPhrases = [
+    'let me', 'i can', 'we can', 'here\'s what', 'option',
+    'suggest', 'recommend', 'how about', 'would you like',
+    'i\'ll', 'we\'ll', 'schedule', 'book', 'arrange'
+  ];
+  const solutionCount = solutionPhrases.filter(p => allText.includes(p)).length;
+
+  // Check if outcomes were addressed
+  const outcomesAddressed = expectedOutcomes.filter(outcome =>
+    allText.includes(outcome.toLowerCase().split(' ')[0])
+  );
+
+  const outcomeRatio = expectedOutcomes.length > 0
+    ? outcomesAddressed.length / expectedOutcomes.length
+    : 1;
+
+  let score = 50 + (solutionCount * 8) + (outcomeRatio * 30);
+  score = Math.min(100, Math.max(0, score));
+
+  const observations: string[] = [];
+  const improvementTips: string[] = [];
+
+  if (solutionCount >= 3) {
+    observations.push('Consistently offered solutions and options');
+  } else if (solutionCount === 0) {
+    observations.push('Limited proactive solution offering');
+    improvementTips.push('Focus on what you CAN do, not what you can\'t');
+  }
+
+  if (outcomeRatio >= 0.8) {
+    observations.push('Successfully addressed main customer concerns');
+  } else if (outcomeRatio < 0.5) {
+    observations.push('Some key customer needs may have been left unaddressed');
+    improvementTips.push('Review the expected outcomes and ensure each is addressed');
+  }
+
+  return {
+    score,
+    grade: getScoreGrade(score),
+    observations,
+    keyMoments: [],
+    improvementTips
+  };
+}
+
+function analyzeProfessionalism(
+  conversationHistory: ConversationMessage[],
+  userMessages: string[]
+): CategoryAnalysis {
+  const allText = userMessages.join(' ').toLowerCase();
+
+  // Professional indicators
+  const professionalPhrases = [
+    'certainly', 'absolutely', 'of course', 'i\'d be happy',
+    'thank you for', 'is there anything else', 'have a great day',
+    'please', 'my pleasure'
+  ];
+  const profCount = professionalPhrases.filter(p => allText.includes(p)).length;
+
+  // Unprofessional indicators
+  const unprofessionalPhrases = [
+    'yeah', 'nope', 'uh', 'um', 'like', 'basically',
+    'whatever', 'i guess', 'kinda', 'sorta'
+  ];
+  const unprofCount = unprofessionalPhrases.filter(p => allText.includes(p)).length;
+
+  let score = 75 + (profCount * 5) - (unprofCount * 8);
+  score = Math.min(100, Math.max(0, score));
+
+  const observations: string[] = [];
+  const improvementTips: string[] = [];
+
+  if (profCount >= 3) {
+    observations.push('Maintained professional language throughout');
+  }
+
+  if (unprofCount > 2) {
+    observations.push('Casual language may undermine professional image');
+    improvementTips.push('Replace casual fillers like "yeah" and "um" with professional alternatives');
+  }
+
+  // Check greeting and closing
+  const hasProperGreeting = userMessages.length > 0 &&
+    (userMessages[0].toLowerCase().includes('hello') ||
+     userMessages[0].toLowerCase().includes('hi') ||
+     userMessages[0].toLowerCase().includes('good'));
+
+  const lastMessage = userMessages[userMessages.length - 1]?.toLowerCase() || '';
+  const hasProperClosing =
+    lastMessage.includes('thank') ||
+    lastMessage.includes('have a') ||
+    lastMessage.includes('take care') ||
+    lastMessage.includes('goodbye');
+
+  if (hasProperGreeting) {
+    observations.push('Proper professional greeting');
+  } else {
+    improvementTips.push('Start with a warm, professional greeting');
+    score -= 5;
+  }
+
+  if (hasProperClosing) {
+    observations.push('Professional call closing');
+  } else {
+    improvementTips.push('End calls with a professional closing and offer for further assistance');
+    score -= 5;
+  }
+
+  return {
+    score: Math.max(0, score),
+    grade: getScoreGrade(Math.max(0, score)),
+    observations,
+    keyMoments: [],
+    improvementTips
+  };
+}
+
+function findMissedOpportunities(
+  conversationHistory: ConversationMessage[],
+  expectedOutcomes: string[]
+): MissedOpportunity[] {
+  const opportunities: MissedOpportunity[] = [];
+
+  conversationHistory.forEach((msg, idx) => {
+    if (msg.role === 'ai' && idx < conversationHistory.length - 1) {
+      const aiMsg = msg.content.toLowerCase();
+      const userResponse = conversationHistory[idx + 1];
+
+      if (!userResponse || userResponse.role !== 'user') return;
+
+      const userMsg = userResponse.content.toLowerCase();
+
+      // Check for empathy opportunities
+      if ((aiMsg.includes('frustrated') || aiMsg.includes('worried') || aiMsg.includes('upset')) &&
+          !userMsg.includes('understand') && !userMsg.includes('sorry')) {
+        opportunities.push({
+          timestamp: userResponse.timestamp,
+          userMessage: userResponse.content.substring(0, 100),
+          missedAction: 'Acknowledge customer emotion',
+          betterApproach: 'When a customer expresses frustration, acknowledge their feelings: "I completely understand your frustration..."',
+          impact: 'moderate',
+          category: 'empathy'
+        });
+      }
+
+      // Check for information gathering opportunities
+      if (aiMsg.includes('?') && userMsg.length < 30 && !userMsg.includes('?')) {
+        opportunities.push({
+          timestamp: userResponse.timestamp,
+          userMessage: userResponse.content.substring(0, 100),
+          missedAction: 'Ask follow-up question',
+          betterApproach: 'Gather more information to better understand the customer\'s needs',
+          impact: 'minor',
+          category: 'information'
+        });
+      }
+
+      // Check for rapport building opportunities
+      if (idx === 0 && !userMsg.includes('how are you') && !userMsg.includes('good to hear')) {
+        opportunities.push({
+          timestamp: userResponse.timestamp,
+          userMessage: userResponse.content.substring(0, 100),
+          missedAction: 'Build rapport',
+          betterApproach: 'Start with a brief rapport-building moment: "Thank you for calling! How can I help you today?"',
+          impact: 'minor',
+          category: 'rapport'
+        });
+      }
+    }
+  });
+
+  return opportunities.slice(0, 5);
+}
+
+function generateAlternativeResponses(
+  conversationHistory: ConversationMessage[],
+  keyPhrases: string[]
+): AlternativeResponse[] {
+  const alternatives: AlternativeResponse[] = [];
+
+  conversationHistory.forEach((msg, idx) => {
+    if (msg.role === 'user' && idx > 0) {
+      const userMsg = msg.content;
+      const aiMsg = conversationHistory[idx - 1];
+
+      if (!aiMsg || aiMsg.role !== 'ai') return;
+
+      const aiContent = aiMsg.content.toLowerCase();
+
+      // Generate alternatives for responses that could be improved
+      const userLower = userMsg.toLowerCase();
+
+      // If response is very short
+      if (userMsg.length < 50) {
+        const relevantKeyPhrases = keyPhrases.filter(p =>
+          !userLower.includes(p.toLowerCase())
+        ).slice(0, 2);
+
+        if (relevantKeyPhrases.length > 0) {
+          alternatives.push({
+            originalMessage: userMsg,
+            timestamp: msg.timestamp,
+            alternatives: [
+              {
+                text: `${userMsg} ${relevantKeyPhrases[0]}`,
+                reasoning: 'Incorporate key phrases for better script adherence',
+                expectedImpact: 'Higher customer satisfaction and compliance with best practices'
+              }
+            ]
+          });
+        }
+      }
+
+      // If response lacks empathy
+      if (aiContent.includes('problem') || aiContent.includes('issue')) {
+        if (!userLower.includes('understand') && !userLower.includes('sorry')) {
+          alternatives.push({
+            originalMessage: userMsg,
+            timestamp: msg.timestamp,
+            alternatives: [
+              {
+                text: `I understand that can be frustrating. ${userMsg}`,
+                reasoning: 'Lead with empathy before providing solutions',
+                expectedImpact: 'Customer feels heard and validated'
+              }
+            ]
+          });
+        }
+      }
+    }
+  });
+
+  return alternatives.slice(0, 3);
+}
+
+function compareToIdeal(
+  userMessages: string[],
+  keyPhrases: string[],
+  avoidPhrases: string[],
+  idealResponse: string | null
+): IdealComparison {
+  const allText = userMessages.join(' ').toLowerCase();
+
+  const matchedKeyPhrases = keyPhrases.filter(p => allText.includes(p.toLowerCase()));
+  const missedKeyPhrases = keyPhrases.filter(p => !allText.includes(p.toLowerCase()));
+  const usedAvoidPhrases = avoidPhrases.filter(p => allText.includes(p.toLowerCase()));
+
+  const keyDifferences: IdealComparison['keyDifferences'] = [];
+
+  // Assess key phrase alignment
+  const keyPhraseAlignment = keyPhrases.length > 0
+    ? (matchedKeyPhrases.length / keyPhrases.length) * 100
+    : 100;
+
+  keyDifferences.push({
+    aspect: 'Key Phrases Usage',
+    userApproach: `Used ${matchedKeyPhrases.length} of ${keyPhrases.length} key phrases`,
+    idealApproach: 'Use all recommended key phrases naturally in conversation',
+    alignmentScore: Math.round(keyPhraseAlignment)
+  });
+
+  // Assess avoid phrases
+  const avoidPhraseAlignment = avoidPhrases.length > 0
+    ? ((avoidPhrases.length - usedAvoidPhrases.length) / avoidPhrases.length) * 100
+    : 100;
+
+  keyDifferences.push({
+    aspect: 'Avoided Phrases',
+    userApproach: usedAvoidPhrases.length > 0
+      ? `Used ${usedAvoidPhrases.length} phrases to avoid`
+      : 'Successfully avoided all negative phrases',
+    idealApproach: 'Avoid all discouraged phrases',
+    alignmentScore: Math.round(avoidPhraseAlignment)
+  });
+
+  // Calculate overall alignment
+  const overallAlignment = Math.round((keyPhraseAlignment + avoidPhraseAlignment) / 2);
+
+  return {
+    overallAlignment,
+    keyDifferences,
+    matchedKeyPhrases,
+    missedKeyPhrases,
+    usedAvoidPhrases
+  };
+}
+
+function analyzeConversationFlow(
+  conversationHistory: ConversationMessage[],
+  targetDuration: number
+): ConversationFlowAnalysis {
+  const phases: ConversationFlowAnalysis['phases'] = [];
+  const transitions: ConversationFlowAnalysis['transitions'] = [];
+
+  // Identify conversation phases
+  const totalMessages = conversationHistory.length;
+  const greetingEnd = Math.min(2, totalMessages);
+  const mainEnd = Math.max(greetingEnd, totalMessages - 2);
+
+  if (greetingEnd > 0) {
+    phases.push({
+      name: 'Greeting',
+      startTimestamp: conversationHistory[0]?.timestamp || 0,
+      endTimestamp: conversationHistory[greetingEnd - 1]?.timestamp || 0,
+      quality: 'good',
+      notes: 'Opening of the conversation'
+    });
+  }
+
+  if (mainEnd > greetingEnd) {
+    phases.push({
+      name: 'Main Issue',
+      startTimestamp: conversationHistory[greetingEnd]?.timestamp || 0,
+      endTimestamp: conversationHistory[mainEnd - 1]?.timestamp || 0,
+      quality: 'good',
+      notes: 'Core of the conversation addressing customer needs'
+    });
+  }
+
+  if (totalMessages > mainEnd) {
+    phases.push({
+      name: 'Closing',
+      startTimestamp: conversationHistory[mainEnd]?.timestamp || 0,
+      endTimestamp: conversationHistory[totalMessages - 1]?.timestamp || 0,
+      quality: 'good',
+      notes: 'Wrapping up the conversation'
+    });
+  }
+
+  // Analyze transitions
+  if (phases.length >= 2) {
+    transitions.push({
+      from: 'Greeting',
+      to: 'Main Issue',
+      smooth: true,
+      notes: 'Transition to addressing customer concern'
+    });
+  }
+
+  if (phases.length >= 3) {
+    transitions.push({
+      from: 'Main Issue',
+      to: 'Closing',
+      smooth: true,
+      notes: 'Transition to call conclusion'
+    });
+  }
+
+  // Determine pacing
+  const lastTimestamp = conversationHistory[conversationHistory.length - 1]?.timestamp || 0;
+  const pacing: ConversationFlowAnalysis['pacing'] =
+    lastTimestamp < targetDuration * 0.5 ? 'too_fast' :
+    lastTimestamp > targetDuration * 1.5 ? 'too_slow' : 'appropriate';
+
+  // Determine call control
+  const userMessages = conversationHistory.filter(m => m.role === 'user').length;
+  const aiMessages = conversationHistory.filter(m => m.role === 'ai').length;
+  const callControl: ConversationFlowAnalysis['callControl'] =
+    userMessages > aiMessages * 1.2 ? 'user_led' :
+    aiMessages > userMessages * 1.2 ? 'customer_led' : 'balanced';
+
+  return {
+    phases,
+    transitions,
+    pacing,
+    callControl
+  };
+}
+
+function generateDetailedAnalysis(
+  conversationHistory: ConversationMessage[],
+  scenario: {
+    expectedOutcomes: string[];
+    keyPhrases: string[];
+    avoidPhrases: string[];
+    targetDurationSecs: number;
+    idealResponse: string | null;
+  },
+  durationSecs: number
+): DetailedAnalysis {
+  const userMessages = conversationHistory
+    .filter(m => m.role === 'user')
+    .map(m => m.content);
+
+  const aiMessages = conversationHistory
+    .filter(m => m.role === 'ai')
+    .map(m => m.content);
+
+  // Analyze each category
+  const tone = analyzeTone(conversationHistory, userMessages);
+  const empathy = analyzeEmpathy(conversationHistory, userMessages, aiMessages);
+  const scriptAdherence = analyzeScriptAdherence(userMessages, scenario.keyPhrases, scenario.avoidPhrases);
+  const timing = analyzeTiming(conversationHistory, scenario.targetDurationSecs, durationSecs);
+  const problemSolving = analyzeProblemSolving(conversationHistory, scenario.expectedOutcomes, userMessages);
+  const professionalism = analyzeProfessionalism(conversationHistory, userMessages);
+
+  // Calculate overall score
+  const overallScore = Math.round(
+    (tone.score * 0.15) +
+    (empathy.score * 0.20) +
+    (scriptAdherence.score * 0.20) +
+    (timing.score * 0.15) +
+    (problemSolving.score * 0.15) +
+    (professionalism.score * 0.15)
+  );
+
+  // Compile strengths and improvements
+  const strengths: StrengthItem[] = [];
+  const improvements: ImprovementItem[] = [];
+
+  const categories = { tone, empathy, scriptAdherence, timing, problemSolving, professionalism };
+  Object.entries(categories).forEach(([name, analysis]) => {
+    if (analysis.score >= 80) {
+      analysis.observations.forEach(obs => {
+        strengths.push({
+          category: name,
+          description: obs
+        });
+      });
+    }
+    if (analysis.score < 70) {
+      analysis.improvementTips.forEach(tip => {
+        improvements.push({
+          category: name,
+          description: `${name}: needs improvement`,
+          suggestion: tip,
+          priority: analysis.score < 50 ? 'high' : 'medium'
+        });
+      });
+    }
+  });
+
+  // Generate recommended practice based on lowest scores
+  const recommendedPractice: string[] = [];
+  const sortedCategories = Object.entries(categories)
+    .sort(([, a], [, b]) => a.score - b.score);
+
+  sortedCategories.slice(0, 2).forEach(([name]) => {
+    recommendedPractice.push(`Practice scenarios focused on ${name.replace(/([A-Z])/g, ' $1').toLowerCase().trim()}`);
+  });
+
+  return {
+    overall: {
+      score: overallScore,
+      grade: getScoreGrade(overallScore),
+      summary: `Overall performance: ${getScoreGrade(overallScore)} (${overallScore}/100). ` +
+        `${strengths.length > 0 ? 'Key strengths in ' + strengths.slice(0, 2).map(s => s.category).join(', ') + '. ' : ''}` +
+        `${improvements.length > 0 ? 'Focus on improving ' + improvements.slice(0, 2).map(i => i.category).join(', ') + '.' : ''}`
+    },
+    categories: {
+      tone,
+      empathy,
+      scriptAdherence,
+      timing,
+      problemSolving,
+      professionalism
+    },
+    missedOpportunities: findMissedOpportunities(conversationHistory, scenario.expectedOutcomes),
+    alternativeResponses: generateAlternativeResponses(conversationHistory, scenario.keyPhrases),
+    idealComparison: compareToIdeal(userMessages, scenario.keyPhrases, scenario.avoidPhrases, scenario.idealResponse),
+    strengthsAndImprovements: {
+      strengths,
+      improvements
+    },
+    conversationFlow: analyzeConversationFlow(conversationHistory, scenario.targetDurationSecs),
+    recommendedPractice
+  };
+}
+
+/**
+ * Get training resources for a specific feedback category
+ */
+function getCategoryTrainingResources(category: string): {
+  title: string;
+  description: string;
+  moduleType: string;
+  practiceScenarios: string[];
+}[] {
+  const resources: Record<string, {
+    title: string;
+    description: string;
+    moduleType: string;
+    practiceScenarios: string[];
+  }[]> = {
+    TONE: [
+      {
+        title: 'Professional Communication Fundamentals',
+        description: 'Learn the basics of maintaining a professional tone in all patient interactions.',
+        moduleType: 'SKILL_BUILDING',
+        practiceScenarios: ['SCHEDULING_CALL', 'BILLING_INQUIRY']
+      },
+      {
+        title: 'Positive Language Techniques',
+        description: 'Transform negative phrases into positive, solution-focused language.',
+        moduleType: 'SKILL_BUILDING',
+        practiceScenarios: ['COMPLAINT_HANDLING', 'CANCELLATION']
+      }
+    ],
+    EMPATHY: [
+      {
+        title: 'Active Listening Skills',
+        description: 'Develop skills to truly hear and acknowledge patient concerns.',
+        moduleType: 'SKILL_BUILDING',
+        practiceScenarios: ['COMPLAINT_HANDLING', 'EMERGENCY_TRIAGE']
+      },
+      {
+        title: 'Emotional Intelligence in Healthcare',
+        description: 'Understand and respond appropriately to patient emotions.',
+        moduleType: 'SKILL_BUILDING',
+        practiceScenarios: ['COMPLAINT_HANDLING', 'FOLLOW_UP_CALL']
+      }
+    ],
+    SCRIPT_ADHERENCE: [
+      {
+        title: 'Call Script Mastery',
+        description: 'Learn to follow scripts while maintaining natural conversation flow.',
+        moduleType: 'SCRIPT_TRAINING',
+        practiceScenarios: ['SCHEDULING_CALL', 'NEW_PATIENT_INTAKE']
+      },
+      {
+        title: 'Key Phrase Integration',
+        description: 'Practice incorporating required phrases naturally.',
+        moduleType: 'SCRIPT_TRAINING',
+        practiceScenarios: ['INSURANCE_QUESTIONS', 'BILLING_INQUIRY']
+      }
+    ],
+    RESPONSE_TIME: [
+      {
+        title: 'Efficient Call Handling',
+        description: 'Balance thoroughness with efficiency in patient calls.',
+        moduleType: 'SKILL_BUILDING',
+        practiceScenarios: ['SCHEDULING_CALL', 'CANCELLATION']
+      },
+      {
+        title: 'Managing Call Duration',
+        description: 'Techniques for keeping calls focused without rushing.',
+        moduleType: 'SKILL_BUILDING',
+        practiceScenarios: ['BILLING_INQUIRY', 'INSURANCE_QUESTIONS']
+      }
+    ],
+    PROBLEM_SOLVING: [
+      {
+        title: 'Solution-Oriented Communication',
+        description: 'Focus on what can be done rather than limitations.',
+        moduleType: 'SKILL_BUILDING',
+        practiceScenarios: ['COMPLAINT_HANDLING', 'BILLING_INQUIRY']
+      },
+      {
+        title: 'Quick Thinking for Common Issues',
+        description: 'Develop rapid response strategies for frequent patient concerns.',
+        moduleType: 'SKILL_BUILDING',
+        practiceScenarios: ['EMERGENCY_TRIAGE', 'CANCELLATION']
+      }
+    ],
+    PROFESSIONALISM: [
+      {
+        title: 'Professional Image Training',
+        description: 'Maintain a consistent professional presence in all interactions.',
+        moduleType: 'SKILL_BUILDING',
+        practiceScenarios: ['NEW_PATIENT_INTAKE', 'COMPLAINT_HANDLING']
+      },
+      {
+        title: 'Opening and Closing Excellence',
+        description: 'Master the art of professional greetings and call closings.',
+        moduleType: 'SKILL_BUILDING',
+        practiceScenarios: ['SCHEDULING_CALL', 'FOLLOW_UP_CALL']
+      }
+    ],
+    KNOWLEDGE: [
+      {
+        title: 'Practice Policies and Procedures',
+        description: 'Deep dive into office policies and common patient questions.',
+        moduleType: 'COMPLIANCE',
+        practiceScenarios: ['INSURANCE_QUESTIONS', 'BILLING_INQUIRY']
+      }
+    ],
+    COMMUNICATION: [
+      {
+        title: 'Clear Communication Techniques',
+        description: 'Learn to communicate complex information simply and clearly.',
+        moduleType: 'SKILL_BUILDING',
+        practiceScenarios: ['INSURANCE_QUESTIONS', 'NEW_PATIENT_INTAKE']
+      }
+    ]
+  };
+
+  return resources[category] || [];
+}
+
 export const aiTrainingRouter = router({
   // ============================================
   // US-364: Video Practice Sessions
@@ -1130,6 +2103,513 @@ export const aiTrainingRouter = router({
       });
 
       return { success: true };
+    }),
+
+  // ============================================
+  // US-365: Real-time Practice Feedback
+  // ============================================
+
+  /**
+   * Analyze a practice session and generate detailed feedback
+   * This is the core procedure for US-365
+   */
+  analyzePractice: protectedProcedure
+    .input(
+      z.object({
+        sessionId: z.string(),
+        includeAlternatives: z.boolean().default(true),
+        includeIdealComparison: z.boolean().default(true),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { sessionId, includeAlternatives, includeIdealComparison } = input;
+
+      // Get session with scenario details
+      const session = await ctx.prisma.practiceSession.findFirst({
+        where: {
+          id: sessionId,
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          scenario: true,
+          feedback: {
+            orderBy: { category: 'asc' },
+          },
+        },
+      });
+
+      if (!session) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Session not found',
+        });
+      }
+
+      if (session.status === 'IN_PROGRESS') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Cannot analyze session that is still in progress',
+        });
+      }
+
+      // Parse conversation history
+      let conversationHistory: ConversationMessage[] = [];
+      if (session.transcript) {
+        try {
+          conversationHistory = JSON.parse(session.transcript);
+        } catch {
+          conversationHistory = [];
+        }
+      }
+
+      if (conversationHistory.length === 0) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Session has no conversation history to analyze',
+        });
+      }
+
+      // Generate detailed analysis
+      const analysis = generateDetailedAnalysis(
+        conversationHistory,
+        {
+          expectedOutcomes: session.scenario.expectedOutcomes,
+          keyPhrases: session.scenario.keyPhrases,
+          avoidPhrases: session.scenario.avoidPhrases,
+          targetDurationSecs: session.scenario.targetDurationSecs,
+          idealResponse: session.scenario.idealResponse,
+        },
+        session.durationSecs || 0
+      );
+
+      // Store analysis in session if not already stored
+      if (!session.aiAnalysis) {
+        await ctx.prisma.practiceSession.update({
+          where: { id: sessionId },
+          data: {
+            aiAnalysis: analysis as unknown as Prisma.InputJsonValue,
+          },
+        });
+      }
+
+      // Create detailed performance feedback entries if they don't exist
+      const existingFeedbackCategories = new Set(session.feedback.map(f => f.category));
+      const newFeedbackEntries: Prisma.PerformanceFeedbackCreateManyInput[] = [];
+
+      const categoryMappings: { key: keyof typeof analysis.categories; dbCategory: 'TONE' | 'EMPATHY' | 'SCRIPT_ADHERENCE' | 'RESPONSE_TIME' | 'PROBLEM_SOLVING' | 'PROFESSIONALISM' }[] = [
+        { key: 'tone', dbCategory: 'TONE' },
+        { key: 'empathy', dbCategory: 'EMPATHY' },
+        { key: 'scriptAdherence', dbCategory: 'SCRIPT_ADHERENCE' },
+        { key: 'timing', dbCategory: 'RESPONSE_TIME' },
+        { key: 'problemSolving', dbCategory: 'PROBLEM_SOLVING' },
+        { key: 'professionalism', dbCategory: 'PROFESSIONALISM' },
+      ];
+
+      for (const mapping of categoryMappings) {
+        if (!existingFeedbackCategories.has(mapping.dbCategory)) {
+          const categoryAnalysis = analysis.categories[mapping.key];
+          newFeedbackEntries.push({
+            sessionId: session.id,
+            organizationId: ctx.user.organizationId,
+            category: mapping.dbCategory,
+            feedback: categoryAnalysis.observations.join('. '),
+            score: categoryAnalysis.score,
+            suggestions: categoryAnalysis.improvementTips,
+            priority: categoryAnalysis.score < 50 ? 'HIGH' : categoryAnalysis.score < 70 ? 'NORMAL' : 'LOW',
+            isAIGenerated: true,
+          });
+        }
+      }
+
+      if (newFeedbackEntries.length > 0) {
+        await ctx.prisma.performanceFeedback.createMany({
+          data: newFeedbackEntries,
+        });
+      }
+
+      // Build response
+      const response: {
+        sessionId: string;
+        scenario: { name: string; type: string; difficulty: string };
+        overall: typeof analysis.overall;
+        categories: typeof analysis.categories;
+        strengthsAndImprovements: typeof analysis.strengthsAndImprovements;
+        conversationFlow: typeof analysis.conversationFlow;
+        missedOpportunities: typeof analysis.missedOpportunities;
+        recommendedPractice: typeof analysis.recommendedPractice;
+        alternativeResponses?: typeof analysis.alternativeResponses;
+        idealComparison?: typeof analysis.idealComparison;
+      } = {
+        sessionId: session.id,
+        scenario: {
+          name: session.scenario.name,
+          type: session.scenario.type,
+          difficulty: session.scenario.difficulty,
+        },
+        overall: analysis.overall,
+        categories: analysis.categories,
+        strengthsAndImprovements: analysis.strengthsAndImprovements,
+        conversationFlow: analysis.conversationFlow,
+        missedOpportunities: analysis.missedOpportunities,
+        recommendedPractice: analysis.recommendedPractice,
+      };
+
+      if (includeAlternatives) {
+        response.alternativeResponses = analysis.alternativeResponses;
+      }
+
+      if (includeIdealComparison) {
+        response.idealComparison = analysis.idealComparison;
+      }
+
+      return response;
+    }),
+
+  /**
+   * Get real-time feedback during an active session
+   * Provides live guidance without ending the session
+   */
+  getLiveFeedback: protectedProcedure
+    .input(
+      z.object({
+        sessionId: z.string(),
+        lastMessageTimestamp: z.number().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { sessionId, lastMessageTimestamp } = input;
+
+      const session = await ctx.prisma.practiceSession.findFirst({
+        where: {
+          id: sessionId,
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+          status: 'IN_PROGRESS',
+        },
+        include: {
+          scenario: true,
+        },
+      });
+
+      if (!session) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Active session not found',
+        });
+      }
+
+      // Parse conversation history
+      let conversationHistory: ConversationMessage[] = [];
+      if (session.transcript) {
+        try {
+          conversationHistory = JSON.parse(session.transcript);
+        } catch {
+          conversationHistory = [];
+        }
+      }
+
+      // Get messages since last timestamp
+      const recentMessages = lastMessageTimestamp
+        ? conversationHistory.filter(m => m.timestamp > lastMessageTimestamp)
+        : conversationHistory;
+
+      if (recentMessages.length === 0) {
+        return {
+          sessionId,
+          currentStatus: 'waiting_for_input',
+          liveFeedback: [],
+          suggestions: [],
+          progressIndicators: {
+            messageCount: conversationHistory.length,
+            estimatedProgress: Math.min(100, (conversationHistory.length / 10) * 100),
+          },
+        };
+      }
+
+      // Analyze recent messages for live feedback
+      const userMessages = recentMessages
+        .filter(m => m.role === 'user')
+        .map(m => m.content);
+
+      const liveFeedback: {
+        type: 'positive' | 'suggestion' | 'warning';
+        message: string;
+        category: string;
+      }[] = [];
+
+      // Check for positive indicators
+      const empathyPhrases = ['understand', 'sorry to hear', 'i can see'];
+      const hasEmpathy = userMessages.some(m =>
+        empathyPhrases.some(p => m.toLowerCase().includes(p))
+      );
+
+      if (hasEmpathy) {
+        liveFeedback.push({
+          type: 'positive',
+          message: 'Great use of empathetic language!',
+          category: 'empathy',
+        });
+      }
+
+      // Check for areas needing improvement
+      const lastUserMessage = userMessages[userMessages.length - 1];
+      if (lastUserMessage) {
+        if (lastUserMessage.length < 20) {
+          liveFeedback.push({
+            type: 'suggestion',
+            message: 'Consider providing more detail in your response',
+            category: 'communication',
+          });
+        }
+
+        if (!lastUserMessage.toLowerCase().includes('?') &&
+            conversationHistory.length < 4) {
+          liveFeedback.push({
+            type: 'suggestion',
+            message: 'Ask clarifying questions to better understand the caller\'s needs',
+            category: 'problem_solving',
+          });
+        }
+      }
+
+      // Generate contextual suggestions
+      const suggestions: string[] = [];
+      const conversationLength = conversationHistory.length;
+
+      if (conversationLength < 3) {
+        suggestions.push('Build rapport with the caller');
+        suggestions.push('Gather information about their main concern');
+      } else if (conversationLength < 6) {
+        suggestions.push('Work toward resolving the main issue');
+        if (!hasEmpathy) {
+          suggestions.push('Acknowledge the caller\'s feelings');
+        }
+      } else {
+        suggestions.push('Begin wrapping up the call');
+        suggestions.push('Confirm the resolution meets their needs');
+        suggestions.push('Offer additional assistance');
+      }
+
+      // Calculate progress
+      const targetMessages = 10; // Typical call length
+      const estimatedProgress = Math.min(100, Math.round((conversationLength / targetMessages) * 100));
+
+      return {
+        sessionId,
+        currentStatus: 'in_progress',
+        liveFeedback,
+        suggestions: suggestions.slice(0, 3),
+        progressIndicators: {
+          messageCount: conversationLength,
+          estimatedProgress,
+          keyPhrasesUsed: session.scenario.keyPhrases.filter(p =>
+            userMessages.some(m => m.toLowerCase().includes(p.toLowerCase()))
+          ).length,
+          totalKeyPhrases: session.scenario.keyPhrases.length,
+        },
+      };
+    }),
+
+  /**
+   * Get feedback comparison across multiple sessions
+   * Shows improvement trends over time
+   */
+  getFeedbackTrends: protectedProcedure
+    .input(
+      z.object({
+        scenarioType: scenarioTypeEnum.optional(),
+        limit: z.number().min(2).max(20).default(10),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { scenarioType, limit } = input;
+
+      const sessions = await ctx.prisma.practiceSession.findMany({
+        where: {
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+          status: 'COMPLETED',
+          ...(scenarioType && { scenario: { type: scenarioType } }),
+        },
+        orderBy: { startedAt: 'desc' },
+        take: limit,
+        select: {
+          id: true,
+          startedAt: true,
+          overallScore: true,
+          toneScore: true,
+          empathyScore: true,
+          scriptAdherenceScore: true,
+          timingScore: true,
+          outcomeAchieved: true,
+          scenario: {
+            select: {
+              name: true,
+              type: true,
+              difficulty: true,
+            },
+          },
+        },
+      });
+
+      if (sessions.length < 2) {
+        return {
+          message: 'Need at least 2 completed sessions to show trends',
+          sessions: sessions,
+          trends: null,
+        };
+      }
+
+      // Calculate trends (newest to oldest)
+      const sortedSessions = [...sessions].reverse(); // oldest first for trend calculation
+
+      const calculateTrend = (scores: (number | null)[]): { direction: 'improving' | 'stable' | 'declining'; percentage: number } => {
+        const validScores = scores.filter((s): s is number => s !== null);
+        if (validScores.length < 2) return { direction: 'stable', percentage: 0 };
+
+        const firstHalf = validScores.slice(0, Math.floor(validScores.length / 2));
+        const secondHalf = validScores.slice(Math.floor(validScores.length / 2));
+
+        const firstAvg = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
+        const secondAvg = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
+
+        const change = ((secondAvg - firstAvg) / firstAvg) * 100;
+
+        if (change > 5) return { direction: 'improving', percentage: Math.round(change) };
+        if (change < -5) return { direction: 'declining', percentage: Math.round(Math.abs(change)) };
+        return { direction: 'stable', percentage: 0 };
+      };
+
+      const trends = {
+        overall: calculateTrend(sortedSessions.map(s => s.overallScore)),
+        tone: calculateTrend(sortedSessions.map(s => s.toneScore)),
+        empathy: calculateTrend(sortedSessions.map(s => s.empathyScore)),
+        scriptAdherence: calculateTrend(sortedSessions.map(s => s.scriptAdherenceScore)),
+        timing: calculateTrend(sortedSessions.map(s => s.timingScore)),
+        outcomeRate: {
+          current: Math.round((sessions.filter(s => s.outcomeAchieved).length / sessions.length) * 100),
+          sessions: sessions.length,
+        },
+      };
+
+      // Identify areas of most improvement and areas needing focus
+      const categoryTrends = [
+        { name: 'tone', ...trends.tone },
+        { name: 'empathy', ...trends.empathy },
+        { name: 'scriptAdherence', ...trends.scriptAdherence },
+        { name: 'timing', ...trends.timing },
+      ];
+
+      const improving = categoryTrends
+        .filter(t => t.direction === 'improving')
+        .sort((a, b) => b.percentage - a.percentage);
+
+      const declining = categoryTrends
+        .filter(t => t.direction === 'declining')
+        .sort((a, b) => b.percentage - a.percentage);
+
+      return {
+        sessions: sessions.map(s => ({
+          id: s.id,
+          date: s.startedAt,
+          scenario: s.scenario.name,
+          type: s.scenario.type,
+          difficulty: s.scenario.difficulty,
+          overallScore: s.overallScore,
+          outcomeAchieved: s.outcomeAchieved,
+        })),
+        trends,
+        insights: {
+          improving: improving.map(t => t.name),
+          needsWork: declining.map(t => t.name),
+          recommendation: declining.length > 0
+            ? `Focus on improving ${declining[0].name.replace(/([A-Z])/g, ' $1').toLowerCase()}`
+            : improving.length > 0
+              ? `Great progress on ${improving[0].name.replace(/([A-Z])/g, ' $1').toLowerCase()}! Keep it up.`
+              : 'Maintain consistent practice to see improvement trends.',
+        },
+      };
+    }),
+
+  /**
+   * Get specific feedback for a category
+   */
+  getCategoryFeedback: protectedProcedure
+    .input(
+      z.object({
+        sessionId: z.string(),
+        category: z.enum(['TONE', 'EMPATHY', 'SCRIPT_ADHERENCE', 'RESPONSE_TIME', 'PROBLEM_SOLVING', 'PROFESSIONALISM', 'KNOWLEDGE', 'COMMUNICATION']),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { sessionId, category } = input;
+
+      const session = await ctx.prisma.practiceSession.findFirst({
+        where: {
+          id: sessionId,
+          userId: ctx.user.id,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          scenario: true,
+          feedback: {
+            where: { category },
+          },
+        },
+      });
+
+      if (!session) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Session not found',
+        });
+      }
+
+      // Parse conversation for specific examples
+      let conversationHistory: ConversationMessage[] = [];
+      if (session.transcript) {
+        try {
+          conversationHistory = JSON.parse(session.transcript);
+        } catch {
+          conversationHistory = [];
+        }
+      }
+
+      const userMessages = conversationHistory
+        .filter(m => m.role === 'user')
+        .map(m => m.content);
+
+      // Get the stored feedback
+      const feedback = session.feedback[0];
+
+      // Generate category-specific analysis
+      const categoryAnalysis = (() => {
+        switch (category) {
+          case 'TONE':
+            return analyzeTone(conversationHistory, userMessages);
+          case 'EMPATHY':
+            return analyzeEmpathy(conversationHistory, userMessages, conversationHistory.filter(m => m.role === 'ai').map(m => m.content));
+          case 'SCRIPT_ADHERENCE':
+            return analyzeScriptAdherence(userMessages, session.scenario.keyPhrases, session.scenario.avoidPhrases);
+          case 'RESPONSE_TIME':
+            return analyzeTiming(conversationHistory, session.scenario.targetDurationSecs, session.durationSecs || 0);
+          case 'PROBLEM_SOLVING':
+            return analyzeProblemSolving(conversationHistory, session.scenario.expectedOutcomes, userMessages);
+          case 'PROFESSIONALISM':
+            return analyzeProfessionalism(conversationHistory, userMessages);
+          default:
+            return null;
+        }
+      })();
+
+      return {
+        sessionId,
+        category,
+        storedFeedback: feedback || null,
+        detailedAnalysis: categoryAnalysis,
+        relatedTrainingResources: getCategoryTrainingResources(category),
+      };
     }),
 
   // ============================================
