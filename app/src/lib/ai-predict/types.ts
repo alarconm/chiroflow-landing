@@ -201,3 +201,265 @@ export interface BatchChurnPredictionResult {
   processingTimeMs: number;
   topAtRiskPatients: ChurnPredictionResult[];
 }
+
+// ============================================
+// DEMAND FORECASTING TYPES
+// ============================================
+
+export type ForecastGranularity = 'hourly' | 'daily' | 'weekly' | 'monthly';
+
+export interface DemandForecastConfig {
+  // Analysis parameters
+  lookbackWeeks: number;           // How many weeks of historical data to use
+  forecastHorizonDays: number;     // How many days ahead to forecast
+  minDataPoints: number;           // Minimum appointments for reliable forecast
+
+  // Seasonality
+  includeSeasonalFactors: boolean;
+  includeDayOfWeekFactors: boolean;
+  includeHolidayFactors: boolean;
+
+  // Confidence intervals
+  confidenceLevel: number;         // 0.95 for 95% confidence intervals
+}
+
+export interface SeasonalPattern {
+  pattern: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  strength: number;                // 0-1, how strong the pattern is
+  peakPeriods: string[];           // e.g., ["Monday", "Wednesday"] or ["January", "September"]
+  troughPeriods: string[];         // e.g., ["Friday"] or ["July", "December"]
+  description: string;
+}
+
+export interface DayOfWeekFactor {
+  dayOfWeek: number;               // 0=Sunday, 6=Saturday
+  dayName: string;
+  factor: number;                  // Multiplier relative to average (1.0 = average)
+  averageVolume: number;
+  description: string;
+}
+
+export interface HolidayImpact {
+  holiday: string;
+  date: Date;
+  impactFactor: number;            // 0.5 = 50% reduction, 1.5 = 50% increase
+  daysBeforeAffected: number;      // Days before holiday with impact
+  daysAfterAffected: number;       // Days after holiday with impact
+  description: string;
+}
+
+export interface ForecastConfidenceInterval {
+  min: number;
+  max: number;
+  p25: number;                     // 25th percentile
+  p50: number;                     // Median
+  p75: number;                     // 75th percentile
+}
+
+export interface DailyForecast {
+  date: Date;
+  dayOfWeek: number;
+  dayName: string;
+  predictedVolume: number;
+  confidenceInterval: ForecastConfidenceInterval;
+  confidence: number;              // 0-1
+
+  // Factors applied
+  seasonalFactor: number;
+  dayOfWeekFactor: number;
+  holidayImpact: number | null;
+  holidayName: string | null;
+
+  // Is this a special day?
+  isWeekend: boolean;
+  isHoliday: boolean;
+
+  // Comparison
+  sameWeekdayAverage: number;
+  varianceFromAverage: number;
+}
+
+export interface WeeklyForecast {
+  weekStartDate: Date;
+  weekEndDate: Date;
+  weekNumber: number;
+  year: number;
+
+  predictedVolume: number;
+  confidenceInterval: ForecastConfidenceInterval;
+  confidence: number;
+
+  dailyForecasts: DailyForecast[];
+
+  // Weekly patterns
+  peakDay: string;
+  lowestDay: string;
+}
+
+export interface MonthlyForecast {
+  month: number;                   // 1-12
+  year: number;
+  monthName: string;
+
+  predictedVolume: number;
+  confidenceInterval: ForecastConfidenceInterval;
+  confidence: number;
+
+  weeklyForecasts: WeeklyForecast[];
+
+  // Monthly patterns
+  seasonalFactor: number;
+  trend: TrendDirection;
+}
+
+export interface AppointmentTypeForecast {
+  appointmentTypeId: string;
+  appointmentTypeName: string;
+  appointmentTypeCode: string | null;
+
+  predictedVolume: number;
+  confidenceInterval: ForecastConfidenceInterval;
+  confidence: number;
+
+  // Share of total
+  percentOfTotal: number;
+
+  // Trend
+  trend: TrendDirection;
+  changeFromPrevious: number;
+}
+
+export interface ProviderForecast {
+  providerId: string;
+  providerName: string;
+
+  predictedVolume: number;
+  confidenceInterval: ForecastConfidenceInterval;
+  confidence: number;
+
+  // Capacity
+  estimatedCapacity: number;       // Based on available hours
+  utilizationRate: number;         // Predicted volume / capacity
+
+  // By appointment type
+  byAppointmentType: AppointmentTypeForecast[];
+}
+
+export interface StaffingRecommendation {
+  date: Date;
+  dayOfWeek: number;
+
+  // Volume forecast
+  predictedVolume: number;
+  peakHour: number;                // 0-23
+  peakHourVolume: number;
+
+  // Staffing
+  recommendedProviders: number;
+  recommendedStaff: number;        // Front desk, support
+  recommendedRooms: number;
+
+  // Alerts
+  isOverCapacity: boolean;
+  capacityWarning: string | null;
+
+  // Historical comparison
+  sameWeekdayStaffAverage: number;
+}
+
+export interface CapacityPlanningInsight {
+  type: 'understaffed' | 'overstaffed' | 'optimal' | 'bottleneck';
+  severity: 'low' | 'medium' | 'high';
+
+  description: string;
+  recommendation: string;
+
+  affectedDates: Date[];
+  affectedProviders: string[];
+
+  potentialImpact: string;         // e.g., "May result in 15% longer wait times"
+  actionRequired: boolean;
+}
+
+export interface EventImpactModel {
+  eventType: 'holiday' | 'weather' | 'local_event' | 'marketing_campaign' | 'seasonal';
+  eventName: string;
+  startDate: Date;
+  endDate: Date;
+
+  impactFactor: number;            // Multiplier on normal volume
+  confidence: number;
+
+  description: string;
+  historicalBasis: string | null;  // What historical data supports this
+}
+
+export interface DemandForecastResult {
+  organizationId: string;
+
+  // Forecast parameters
+  forecastStartDate: Date;
+  forecastEndDate: Date;
+  granularity: ForecastGranularity;
+
+  // Summary
+  totalPredictedVolume: number;
+  averageDailyVolume: number;
+  confidence: number;
+
+  // Detailed forecasts
+  dailyForecasts: DailyForecast[];
+  weeklyForecasts: WeeklyForecast[];
+  monthlyForecasts: MonthlyForecast[];
+
+  // By segment
+  byAppointmentType: AppointmentTypeForecast[];
+  byProvider: ProviderForecast[];
+
+  // Patterns detected
+  seasonalPatterns: SeasonalPattern[];
+  dayOfWeekFactors: DayOfWeekFactor[];
+  holidayImpacts: HolidayImpact[];
+  eventImpacts: EventImpactModel[];
+
+  // Staffing recommendations
+  staffingRecommendations: StaffingRecommendation[];
+  capacityInsights: CapacityPlanningInsight[];
+
+  // Model info
+  modelVersion: string;
+  dataPointsUsed: number;
+  forecastGeneratedAt: Date;
+  validUntil: Date;
+}
+
+export interface ForecastAccuracyMetrics {
+  forecastDate: Date;
+  granularity: ForecastGranularity;
+
+  // Predictions vs actuals
+  predictedVolume: number;
+  actualVolume: number;
+  variance: number;
+  variancePercent: number;
+
+  // Accuracy metrics
+  mape: number;                    // Mean Absolute Percentage Error
+  rmse: number;                    // Root Mean Square Error
+  withinConfidenceInterval: boolean;
+
+  // By segment accuracy
+  byAppointmentTypeAccuracy: {
+    appointmentType: string;
+    predicted: number;
+    actual: number;
+    variancePercent: number;
+  }[];
+
+  byProviderAccuracy: {
+    providerId: string;
+    predicted: number;
+    actual: number;
+    variancePercent: number;
+  }[];
+}

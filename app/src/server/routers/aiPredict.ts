@@ -13,7 +13,12 @@ import {
   saveChurnPrediction,
   trackChurnPredictionAccuracy,
   getChurnPredictionAccuracy,
+  forecastDemand,
+  saveDemandForecast,
+  trackForecastAccuracy,
+  getForecastAccuracySummary,
   type ChurnPredictionConfig,
+  type DemandForecastConfig,
 } from '@/lib/ai-predict';
 
 // Zod schemas for input validation
@@ -415,4 +420,329 @@ export const aiPredictRouter = router({
 
       return updated;
     }),
+
+  // ============================================
+  // DEMAND FORECASTING
+  // ============================================
+
+  // Forecast demand for the organization
+  forecastDemand: protectedProcedure
+    .input(
+      z.object({
+        config: z.object({
+          lookbackWeeks: z.number().min(4).max(52).optional(),
+          forecastHorizonDays: z.number().min(7).max(90).optional(),
+          minDataPoints: z.number().min(5).max(100).optional(),
+          includeSeasonalFactors: z.boolean().optional(),
+          includeDayOfWeekFactors: z.boolean().optional(),
+          includeHolidayFactors: z.boolean().optional(),
+          confidenceLevel: z.number().min(0.8).max(0.99).optional(),
+        }).optional(),
+        filters: z.object({
+          appointmentTypeId: z.string().optional(),
+          providerId: z.string().optional(),
+          locationId: z.string().optional(),
+        }).optional(),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const forecast = await forecastDemand(
+        ctx.user.organizationId,
+        input?.config as Partial<DemandForecastConfig> | undefined,
+        input?.filters || {}
+      );
+
+      return forecast;
+    }),
+
+  // Get daily forecasts
+  getDailyForecasts: protectedProcedure
+    .input(
+      z.object({
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+        appointmentTypeId: z.string().optional(),
+        providerId: z.string().optional(),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const forecast = await forecastDemand(
+        ctx.user.organizationId,
+        {
+          forecastHorizonDays: input?.endDate
+            ? Math.ceil((input.endDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+            : 30,
+        },
+        {
+          appointmentTypeId: input?.appointmentTypeId,
+          providerId: input?.providerId,
+        }
+      );
+
+      let dailyForecasts = forecast.dailyForecasts;
+
+      // Filter by date range if specified
+      if (input?.startDate) {
+        dailyForecasts = dailyForecasts.filter(d => d.date >= input.startDate!);
+      }
+      if (input?.endDate) {
+        dailyForecasts = dailyForecasts.filter(d => d.date <= input.endDate!);
+      }
+
+      return {
+        forecasts: dailyForecasts,
+        totalPredictedVolume: dailyForecasts.reduce((sum, d) => sum + d.predictedVolume, 0),
+        averageDailyVolume: forecast.averageDailyVolume,
+        confidence: forecast.confidence,
+      };
+    }),
+
+  // Get weekly forecasts
+  getWeeklyForecasts: protectedProcedure
+    .input(
+      z.object({
+        weeks: z.number().min(1).max(12).default(4),
+        appointmentTypeId: z.string().optional(),
+        providerId: z.string().optional(),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const forecast = await forecastDemand(
+        ctx.user.organizationId,
+        { forecastHorizonDays: (input?.weeks || 4) * 7 },
+        {
+          appointmentTypeId: input?.appointmentTypeId,
+          providerId: input?.providerId,
+        }
+      );
+
+      return {
+        forecasts: forecast.weeklyForecasts,
+        totalPredictedVolume: forecast.totalPredictedVolume,
+        confidence: forecast.confidence,
+      };
+    }),
+
+  // Get monthly forecasts
+  getMonthlyForecasts: protectedProcedure
+    .input(
+      z.object({
+        months: z.number().min(1).max(3).default(1),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const forecast = await forecastDemand(
+        ctx.user.organizationId,
+        { forecastHorizonDays: (input?.months || 1) * 30 }
+      );
+
+      return {
+        forecasts: forecast.monthlyForecasts,
+        totalPredictedVolume: forecast.totalPredictedVolume,
+        confidence: forecast.confidence,
+      };
+    }),
+
+  // Get forecast by appointment type
+  getForecastByAppointmentType: protectedProcedure
+    .input(
+      z.object({
+        forecastDays: z.number().min(7).max(90).default(30),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const forecast = await forecastDemand(
+        ctx.user.organizationId,
+        { forecastHorizonDays: input?.forecastDays || 30 }
+      );
+
+      return {
+        byAppointmentType: forecast.byAppointmentType,
+        totalPredictedVolume: forecast.totalPredictedVolume,
+        confidence: forecast.confidence,
+      };
+    }),
+
+  // Get forecast by provider
+  getForecastByProvider: protectedProcedure
+    .input(
+      z.object({
+        forecastDays: z.number().min(7).max(90).default(30),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const forecast = await forecastDemand(
+        ctx.user.organizationId,
+        { forecastHorizonDays: input?.forecastDays || 30 }
+      );
+
+      return {
+        byProvider: forecast.byProvider,
+        totalPredictedVolume: forecast.totalPredictedVolume,
+        confidence: forecast.confidence,
+      };
+    }),
+
+  // Get staffing recommendations
+  getStaffingRecommendations: protectedProcedure
+    .input(
+      z.object({
+        forecastDays: z.number().min(7).max(30).default(14),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const forecast = await forecastDemand(
+        ctx.user.organizationId,
+        { forecastHorizonDays: input?.forecastDays || 14 }
+      );
+
+      return {
+        recommendations: forecast.staffingRecommendations,
+        capacityInsights: forecast.capacityInsights,
+        totalPredictedVolume: forecast.totalPredictedVolume,
+      };
+    }),
+
+  // Get capacity planning insights
+  getCapacityInsights: protectedProcedure.query(async ({ ctx }) => {
+    const forecast = await forecastDemand(ctx.user.organizationId);
+
+    return {
+      insights: forecast.capacityInsights,
+      staffingRecommendations: forecast.staffingRecommendations,
+      seasonalPatterns: forecast.seasonalPatterns,
+      dayOfWeekFactors: forecast.dayOfWeekFactors,
+    };
+  }),
+
+  // Get seasonal patterns
+  getSeasonalPatterns: protectedProcedure.query(async ({ ctx }) => {
+    const forecast = await forecastDemand(ctx.user.organizationId, {
+      lookbackWeeks: 24, // Look back further for seasonal patterns
+    });
+
+    return {
+      seasonalPatterns: forecast.seasonalPatterns,
+      dayOfWeekFactors: forecast.dayOfWeekFactors,
+      holidayImpacts: forecast.holidayImpacts,
+    };
+  }),
+
+  // Save forecast to database
+  saveForecast: adminProcedure
+    .input(
+      z.object({
+        forecastDays: z.number().min(7).max(90).default(30),
+      }).optional()
+    )
+    .mutation(async ({ ctx, input }) => {
+      const forecast = await forecastDemand(
+        ctx.user.organizationId,
+        { forecastHorizonDays: input?.forecastDays || 30 }
+      );
+
+      await saveDemandForecast(ctx.user.organizationId, forecast);
+
+      await auditLog('AI_DEMAND_FORECAST_SAVED', 'DemandForecast', {
+        changes: {
+          forecastDays: input?.forecastDays || 30,
+          totalPredictedVolume: forecast.totalPredictedVolume,
+          dataPointsUsed: forecast.dataPointsUsed,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        success: true,
+        forecastsCreated: forecast.dailyForecasts.length,
+        totalPredictedVolume: forecast.totalPredictedVolume,
+      };
+    }),
+
+  // Track forecast accuracy for a specific date
+  trackForecastAccuracy: adminProcedure
+    .input(
+      z.object({
+        date: z.date(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const accuracy = await trackForecastAccuracy(
+        ctx.user.organizationId,
+        input.date
+      );
+
+      if (!accuracy) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'No forecast found for this date',
+        });
+      }
+
+      await auditLog('AI_FORECAST_ACCURACY_TRACKED', 'DemandForecast', {
+        changes: {
+          date: input.date,
+          predictedVolume: accuracy.predictedVolume,
+          actualVolume: accuracy.actualVolume,
+          variance: accuracy.variance,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return accuracy;
+    }),
+
+  // Get forecast accuracy summary
+  getForecastAccuracySummary: protectedProcedure
+    .input(
+      z.object({
+        lookbackDays: z.number().min(7).max(90).default(30),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      return getForecastAccuracySummary(
+        ctx.user.organizationId,
+        input?.lookbackDays || 30
+      );
+    }),
+
+  // Get demand forecast summary for dashboard
+  getDemandSummary: protectedProcedure.query(async ({ ctx }) => {
+    const forecast = await forecastDemand(ctx.user.organizationId);
+    const accuracy = await getForecastAccuracySummary(ctx.user.organizationId);
+
+    // Get next 7 days forecast
+    const next7Days = forecast.dailyForecasts.slice(0, 7);
+    const peakDay = next7Days.reduce((max, d) =>
+      d.predictedVolume > max.predictedVolume ? d : max
+    , next7Days[0]);
+    const lowestDay = next7Days.reduce((min, d) =>
+      d.predictedVolume < min.predictedVolume ? d : min
+    , next7Days[0]);
+
+    return {
+      next7DaysTotal: next7Days.reduce((sum, d) => sum + d.predictedVolume, 0),
+      next7DaysAverage: next7Days.reduce((sum, d) => sum + d.predictedVolume, 0) / 7,
+      next30DaysTotal: forecast.totalPredictedVolume,
+      peakDay: {
+        date: peakDay?.date,
+        dayName: peakDay?.dayName,
+        predictedVolume: peakDay?.predictedVolume,
+      },
+      lowestDay: {
+        date: lowestDay?.date,
+        dayName: lowestDay?.dayName,
+        predictedVolume: lowestDay?.predictedVolume,
+      },
+      capacityAlerts: forecast.capacityInsights.filter(i => i.actionRequired).length,
+      seasonalPatternsDetected: forecast.seasonalPatterns.length,
+      accuracy: {
+        averageMape: accuracy.averageMape,
+        withinConfidenceRate: accuracy.withinConfidenceRate,
+      },
+      lastUpdated: forecast.forecastGeneratedAt,
+    };
+  }),
 });

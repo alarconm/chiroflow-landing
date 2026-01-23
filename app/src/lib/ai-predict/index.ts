@@ -12,3 +12,11 @@ export {
   trackChurnPredictionAccuracy,
   getChurnPredictionAccuracy,
 } from './churn-prediction';
+
+// Demand Forecasting
+export {
+  forecastDemand,
+  saveDemandForecast,
+  trackForecastAccuracy,
+  getForecastAccuracySummary,
+} from './demand-forecast';

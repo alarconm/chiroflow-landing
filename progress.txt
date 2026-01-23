@@ -159,3 +159,97 @@ Date: 2026-01-22
 --- Iteration 2 completed at 2026-01-22 ---
 Story: US-380 - Patient churn prediction
 
+--- Iteration 2 completed at 2026-01-22 21:01:58 ---
+Story: US-380 - Patient churn prediction
+
+## US-381: Demand forecasting - COMPLETED
+
+Date: 2026-01-22
+
+### What was done:
+1. Created `app/src/lib/ai-predict/demand-forecast.ts` library with:
+   - `forecastDemand()` - Main function to generate demand forecasts
+   - `saveDemandForecast()` - Persist forecasts to database
+   - `trackForecastAccuracy()` - Track prediction vs actual outcomes
+   - `getForecastAccuracySummary()` - Get accuracy metrics over time
+
+2. Added comprehensive types in `types.ts`:
+   - DemandForecastConfig (lookbackWeeks, horizon, seasonality flags)
+   - DailyForecast, WeeklyForecast, MonthlyForecast structures
+   - AppointmentTypeForecast, ProviderForecast breakdowns
+   - SeasonalPattern, DayOfWeekFactor, HolidayImpact detection
+   - StaffingRecommendation with capacity planning
+   - CapacityPlanningInsight for actionable alerts
+   - EventImpactModel for special events
+   - ForecastAccuracyMetrics for validation
+
+3. Implemented forecasting algorithms:
+   - Day-of-week factor calculation from historical data
+   - Seasonal pattern detection (weekly, monthly, yearly)
+   - Holiday impact calculation with US federal holidays
+   - Confidence interval calculation with percentiles
+   - Daily forecast generation with all factors applied
+   - Weekly and monthly forecast aggregation
+
+4. Staffing recommendations engine:
+   - Provider count recommendations based on volume
+   - Support staff calculations
+   - Room requirements
+   - Capacity utilization tracking
+   - Over-capacity warnings
+
+5. Capacity planning insights:
+   - Understaffed detection
+   - Overstaffed detection
+   - Bottleneck pattern identification
+   - Actionable recommendations
+
+6. Added tRPC procedures in `aiPredict.ts`:
+   - `forecastDemand` - Generate full forecast with config
+   - `getDailyForecasts` - Get daily forecasts with filters
+   - `getWeeklyForecasts` - Get weekly aggregations
+   - `getMonthlyForecasts` - Get monthly aggregations
+   - `getForecastByAppointmentType` - Breakdown by type
+   - `getForecastByProvider` - Breakdown by provider
+   - `getStaffingRecommendations` - Get staffing guidance
+   - `getCapacityInsights` - Get capacity planning alerts
+   - `getSeasonalPatterns` - Get detected patterns
+   - `saveForecast` - Persist forecast to database
+   - `trackForecastAccuracy` - Record actual outcomes
+   - `getForecastAccuracySummary` - Get accuracy metrics
+   - `getDemandSummary` - Dashboard summary data
+
+7. Added audit actions in `audit.ts`:
+   - AI_DEMAND_FORECAST_SAVED
+   - AI_FORECAST_ACCURACY_TRACKED
+
+8. Updated `index.ts` exports for demand forecasting module
+
+### Files created:
+- app/src/lib/ai-predict/demand-forecast.ts
+
+### Files modified:
+- app/src/lib/ai-predict/types.ts (added demand forecasting types)
+- app/src/lib/ai-predict/index.ts (exported demand forecasting functions)
+- app/src/server/routers/aiPredict.ts (added demand forecasting procedures)
+- app/src/lib/audit.ts (added new audit actions)
+
+### Acceptance Criteria Met:
+- ✅ aiPredict.forecastDemand - Predict volume
+- ✅ Daily/weekly/monthly forecasts
+- ✅ By appointment type
+- ✅ By provider
+- ✅ Seasonal pattern recognition
+- ✅ Event impact modeling (holiday impacts)
+- ✅ Staffing recommendations
+- ✅ Capacity planning insights
+
+### Notes:
+- Uses existing DemandForecast model from Epic 40 schema
+- Includes US federal holidays for 2024-2026
+- Confidence intervals calculated with configurable confidence level
+- Supports filtering by appointment type, provider, and location
+- Accuracy tracking enabled for model improvement
+--- Iteration 3 completed at 2026-01-22 ---
+Story: US-381 - Demand forecasting
+
