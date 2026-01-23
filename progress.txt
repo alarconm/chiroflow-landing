@@ -413,3 +413,120 @@ Each guideline includes:
 --- Iteration 5 completed at 2026-01-22 ---
 Story: US-375 - Clinical guidelines integration
 
+--- Iteration 5 completed at 2026-01-22 19:58:47 ---
+Story: US-375 - Clinical guidelines integration
+
+## 2026-01-22 - US-376: Outcome prediction
+
+### Completed
+- Added comprehensive outcome prediction functionality to aiClinical.ts router:
+
+**New Prisma Model:**
+- **OutcomePrediction**: AI-predicted treatment outcomes with:
+  - Condition and treatment context (diagnosisCode, treatmentApproach, techniquesSuggested)
+  - Prediction details (predictedOutcome, confidenceScore, expectedTimeline, improvementPercent)
+  - Risk assessment (riskOfChronicity, treatmentResponse, prognosticFactors)
+  - Similar cases analysis (similarCasesCount, similarCasesAvgOutcome, similarCasesData)
+  - Patient factors (patientAge, symptomDuration, comorbidities, riskFactors)
+  - Patient communication (patientExplanation, expectationSetting)
+  - Provider action tracking (isAccepted, isRejected, reviewedAt)
+  - Actual outcome tracking for model improvement (actualOutcome, wasAccurate)
+
+**Main Endpoints:**
+1. `aiClinical.predictOutcome` - Forecast treatment outcome
+   - Analyzes patient data, diagnosis, and treatment approach
+   - Queries similar cases for outcome comparison
+   - Calculates expected improvement timeline
+   - Identifies prognostic factors (favorable/unfavorable)
+   - Calculates risk of chronicity (0-100%)
+   - Determines treatment response likelihood (EXCELLENT/GOOD/MODERATE/POOR)
+   - Generates patient-friendly explanation for communication
+   - Creates expectation setting points
+   - Integrates Claude Opus 4.5 for AI-enhanced predictions (when API key present)
+   - Creates OUTCOME_ALERT if high chronicity risk detected
+
+2. `aiClinical.acceptOutcomePrediction` - Accept a prediction
+   - Marks prediction as accepted for tracking
+   - Full audit logging
+
+3. `aiClinical.rejectOutcomePrediction` - Reject with reason
+   - Documents rejection reason for learning
+   - Audit trail for improvement
+
+4. `aiClinical.recordActualOutcome` - Record actual outcome for accuracy tracking
+   - Captures actual outcome and improvement percentage
+   - Calculates if prediction was accurate (within 15% threshold)
+   - Enables continuous model improvement
+
+5. `aiClinical.getPatientOutcomePredictions` - List predictions for patient
+   - Filter by encounter
+   - Include/exclude resolved predictions
+
+6. `aiClinical.getOutcomePredictionStats` - Analytics for prediction accuracy
+   - Total predictions count
+   - Acceptance/rejection rates
+   - Accuracy rate for predictions with outcomes
+   - Response distribution (EXCELLENT/GOOD/MODERATE/POOR)
+   - Top conditions predicted
+
+7. `aiClinical.getOutcomeCommunicationSummary` - Patient communication document
+   - Generates comprehensive document for patient education
+   - Includes expected outcome, timeline, treatment plan
+   - Key expectation points
+   - Recommendations
+   - Appropriate disclaimer
+
+**Helper Functions (~600 lines):**
+- `determineSymptomDuration()` - Categorize symptom duration from clinical notes
+- `identifyRiskFactors()` - Identify prognostic risk factors from patient data
+- `analyzeSimilarCases()` - Query and analyze similar cases for outcome comparison
+- `getBaselineOutcome()` - Get baseline outcome expectation by condition
+- `adjustOutcomeForFactors()` - Adjust prediction for individual patient factors
+- `calculateChronicityRisk()` - Calculate risk of condition becoming chronic
+- `determineTreatmentResponse()` - Categorize expected treatment response
+- `getResponseDescription()` - Get description for response category
+- `generatePrognosticFactors()` - Generate prognostic factors summary
+- `generatePatientExplanation()` - Create patient-friendly explanation
+- `generateExpectationSetting()` - Generate expectation setting points
+- `generateAIOutcomePrediction()` - AI-enhanced prediction using Claude API
+
+**Risk Factors Detected:**
+- Age-related risks (advanced age, elderly, pediatric)
+- Duration-related risks (chronic symptoms)
+- Lifestyle factors (sedentary, smoking, obesity)
+- Psychological factors (depression, anxiety, fear avoidance)
+- Work-related factors (heavy physical work, workers comp)
+- Previous treatment failures
+- Comorbidities
+- Neurological involvement
+
+**Baseline Outcomes by Condition:**
+- M54.5 (LBP): 75% improvement, 4-8 weeks
+- M54.2 (Neck): 70% improvement, 4-6 weeks
+- M54.6 (Thoracic): 75% improvement, 3-6 weeks
+- M99.0 (Dysfunction): 80% improvement, 2-4 weeks
+- M51.1 (Disc): 60% improvement, 6-12 weeks
+- M47.8 (Spondylosis): 55% improvement, 8-12 weeks
+- S13.4/S33.5 (Sprains): 70-75% improvement, 4-8 weeks
+
+### Files Modified
+- app/prisma/schema.prisma - Added OutcomePrediction model with full tracking
+- app/prisma/schema.prisma - Added relations to Organization, Patient, Encounter
+- app/src/server/routers/aiClinical.ts - Added ~1200 lines:
+  - 12 helper functions for outcome prediction
+  - 7 new tRPC endpoints
+  - generateAIOutcomePrediction for Claude integration
+- prd.json - Marked US-376 as passes: true
+
+### Technical Notes
+- Follows existing aiClinical patterns from US-372 through US-375
+- Uses providerProcedure for write operations
+- Uses protectedProcedure for read-only queries
+- Full Prisma type safety with OutcomePrediction model
+- Similar cases analysis queries existing predictions for data-driven insights
+- Integrates with existing ClinicalAlert for high-risk notifications
+- Pre-existing errors in mobile app and aiCare.ts are unrelated
+
+--- Iteration 6 completed at 2026-01-22 ---
+Story: US-376 - Outcome prediction
+

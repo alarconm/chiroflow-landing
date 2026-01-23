@@ -2135,6 +2135,681 @@ Focus on common chiropractic ICD-10 codes:
 }
 
 // ============================================
+// US-376: Outcome Prediction Helper Functions
+// ============================================
+
+/**
+ * Determine symptom duration category based on clinical notes
+ */
+function determineSymptomDuration(text: string): 'acute' | 'subacute' | 'chronic' | 'unknown' {
+  const lowerText = text.toLowerCase();
+
+  // Check for explicit duration mentions
+  const acutePatterns = [
+    /\b(\d+)\s*(days?|day)\b/i,
+    /\brecent(ly)?\b/,
+    /\bsuddenly\b/,
+    /\bjust started\b/,
+    /\bthis (week|morning|yesterday)\b/,
+    /\ba (few|couple) days\b/,
+    /\b(1|2)\s*weeks?\b/,
+  ];
+
+  const subacutePatterns = [
+    /\b(3|4|5|6|7|8)\s*weeks?\b/,
+    /\b(1|2|3)\s*months?\b/,
+    /\bfor weeks\b/,
+    /\bgradual(ly)?\b/,
+    /\bprogressive\b/,
+  ];
+
+  const chronicPatterns = [
+    /\b(4|5|6|7|8|9|10|11|12)\s*months?\b/,
+    /\byears?\b/,
+    /\blong[- ]?term\b/,
+    /\bchronic\b/,
+    /\bpersistent\b/,
+    /\bongoing\b/,
+    /\bhistory of\b/,
+    /\brecurrent\b/,
+  ];
+
+  // Check patterns in order of specificity
+  for (const pattern of chronicPatterns) {
+    if (pattern.test(lowerText)) return 'chronic';
+  }
+
+  for (const pattern of subacutePatterns) {
+    if (pattern.test(lowerText)) return 'subacute';
+  }
+
+  for (const pattern of acutePatterns) {
+    if (pattern.test(lowerText)) return 'acute';
+  }
+
+  return 'unknown';
+}
+
+/**
+ * Identify risk factors from patient data
+ */
+function identifyRiskFactors(data: {
+  age: number | null;
+  symptomDuration: string;
+  comorbidities: string[];
+  chiefComplaint: string;
+  subjective: string;
+  objective: string;
+}): string[] {
+  const riskFactors: string[] = [];
+  const combinedText = `${data.chiefComplaint} ${data.subjective} ${data.objective}`.toLowerCase();
+
+  // Age-related risks
+  if (data.age) {
+    if (data.age > 65) riskFactors.push('Advanced age (>65)');
+    if (data.age > 75) riskFactors.push('Elderly patient (>75)');
+    if (data.age < 18) riskFactors.push('Pediatric patient');
+  }
+
+  // Duration-related risks
+  if (data.symptomDuration === 'chronic') {
+    riskFactors.push('Chronic symptom duration');
+  }
+
+  // Lifestyle factors
+  if (/sedentary|inactive|desk job|sits? all day/i.test(combinedText)) {
+    riskFactors.push('Sedentary lifestyle');
+  }
+  if (/smok(e|ing|er)/i.test(combinedText)) {
+    riskFactors.push('Smoking history');
+  }
+  if (/overweight|obese|obes/i.test(combinedText)) {
+    riskFactors.push('Overweight/obesity');
+  }
+
+  // Psychological factors
+  if (/depress|anxiety|stress(ed|ful)?|anxious/i.test(combinedText)) {
+    riskFactors.push('Psychological distress');
+  }
+  if (/fear[- ]?avoid|catastroph/i.test(combinedText)) {
+    riskFactors.push('Fear avoidance behavior');
+  }
+
+  // Work-related factors
+  if (/heavy lifting|physical labor|manual work/i.test(combinedText)) {
+    riskFactors.push('Heavy physical work');
+  }
+  if (/worker'?s? comp|work[- ]?related|on the job/i.test(combinedText)) {
+    riskFactors.push('Workers compensation case');
+  }
+
+  // Previous treatment failures
+  if (/failed|not respond|didn'?t (help|work)|previous treatment/i.test(combinedText)) {
+    riskFactors.push('Previous treatment failure');
+  }
+
+  // Comorbidity-related risks
+  const highRiskConditions = ['diabetes', 'fibromyalgia', 'depression', 'anxiety', 'obesity'];
+  for (const condition of data.comorbidities) {
+    if (highRiskConditions.some(hrc => condition.toLowerCase().includes(hrc))) {
+      riskFactors.push(`Comorbidity: ${condition}`);
+    }
+  }
+
+  // Neurological involvement
+  if (/radiating|radicular|sciatica|numbness|tingling|weakness/i.test(combinedText)) {
+    riskFactors.push('Neurological involvement');
+  }
+
+  return riskFactors;
+}
+
+/**
+ * Analyze similar cases for outcome comparison
+ */
+async function analyzeSimilarCases(
+  prisma: any,
+  params: {
+    diagnosisCode: string;
+    organizationId: string;
+    ageRange?: { min: number; max: number };
+    symptomDuration?: string;
+  }
+): Promise<{
+  count: number;
+  averageImprovement: number | null;
+  distribution: { excellent: number; good: number; moderate: number; poor: number };
+  anonymizedData: any;
+}> {
+  // Query for similar outcome predictions with recorded outcomes
+  const whereClause: any = {
+    organizationId: params.organizationId,
+    conditionCode: { startsWith: params.diagnosisCode.substring(0, 5) },
+    actualImprovement: { not: null },
+  };
+
+  if (params.ageRange) {
+    whereClause.patientAge = {
+      gte: params.ageRange.min,
+      lte: params.ageRange.max,
+    };
+  }
+
+  if (params.symptomDuration && params.symptomDuration !== 'unknown') {
+    whereClause.symptomDuration = params.symptomDuration;
+  }
+
+  try {
+    const similarCases = await prisma.outcomePrediction.findMany({
+      where: whereClause,
+      select: {
+        actualImprovement: true,
+        treatmentResponse: true,
+        wasAccurate: true,
+      },
+      take: 100, // Limit for performance
+    });
+
+    if (similarCases.length === 0) {
+      return {
+        count: 0,
+        averageImprovement: null,
+        distribution: { excellent: 0, good: 0, moderate: 0, poor: 0 },
+        anonymizedData: null,
+      };
+    }
+
+    // Calculate statistics
+    const improvements = similarCases
+      .map((c: any) => Number(c.actualImprovement))
+      .filter((i: number) => !isNaN(i));
+
+    const avgImprovement = improvements.length > 0
+      ? improvements.reduce((a: number, b: number) => a + b, 0) / improvements.length
+      : null;
+
+    // Distribution based on improvement percentage
+    const distribution = {
+      excellent: improvements.filter((i: number) => i >= 75).length,
+      good: improvements.filter((i: number) => i >= 50 && i < 75).length,
+      moderate: improvements.filter((i: number) => i >= 25 && i < 50).length,
+      poor: improvements.filter((i: number) => i < 25).length,
+    };
+
+    return {
+      count: similarCases.length,
+      averageImprovement: avgImprovement,
+      distribution,
+      anonymizedData: {
+        totalCases: similarCases.length,
+        avgImprovement,
+        outcomeDistribution: distribution,
+      },
+    };
+  } catch (error) {
+    // If table doesn't exist yet or query fails, return empty results
+    return {
+      count: 0,
+      averageImprovement: null,
+      distribution: { excellent: 0, good: 0, moderate: 0, poor: 0 },
+      anonymizedData: null,
+    };
+  }
+}
+
+/**
+ * Get baseline outcome expectation based on condition
+ */
+function getBaselineOutcome(diagnosisCode: string, symptomDuration: string): {
+  description: string;
+  expectedImprovement: number;
+  timeline: string;
+  confidence: number;
+} {
+  // Baseline outcomes by condition type
+  const baselineByCode: Record<string, { improvement: number; timeline: string; description: string }> = {
+    'M54.5': { improvement: 75, timeline: '4-8 weeks', description: 'Good prognosis for low back pain with conservative care' },
+    'M54.2': { improvement: 70, timeline: '4-6 weeks', description: 'Good prognosis for neck pain with appropriate treatment' },
+    'M54.6': { improvement: 75, timeline: '3-6 weeks', description: 'Thoracic pain typically responds well to treatment' },
+    'M99.0': { improvement: 80, timeline: '2-4 weeks', description: 'Segmental dysfunction responds well to chiropractic care' },
+    'M51.1': { improvement: 60, timeline: '6-12 weeks', description: 'Disc conditions may require longer treatment course' },
+    'M47.8': { improvement: 55, timeline: '8-12 weeks', description: 'Spondylosis management focuses on function improvement' },
+    'S13.4': { improvement: 70, timeline: '4-8 weeks', description: 'Cervical sprain typically resolves with care' },
+    'S33.5': { improvement: 75, timeline: '4-8 weeks', description: 'Lumbar sprain typically resolves with care' },
+  };
+
+  // Find matching baseline
+  let baseline = baselineByCode['M54.5']; // Default to LBP
+  for (const [code, data] of Object.entries(baselineByCode)) {
+    if (diagnosisCode.startsWith(code)) {
+      baseline = data;
+      break;
+    }
+  }
+
+  // Adjust for symptom duration
+  let improvement = baseline.improvement;
+  let timeline = baseline.timeline;
+  let confidence = 70;
+
+  switch (symptomDuration) {
+    case 'acute':
+      improvement = Math.min(improvement + 15, 95);
+      timeline = baseline.timeline.replace(/(\d+)-(\d+)/, (_, a, b) => `${Math.max(1, parseInt(a) - 2)}-${parseInt(b) - 2}`);
+      confidence = 80;
+      break;
+    case 'subacute':
+      // Keep baseline
+      confidence = 75;
+      break;
+    case 'chronic':
+      improvement = Math.max(improvement - 25, 30);
+      timeline = baseline.timeline.replace(/(\d+)-(\d+) weeks/, (_, a, b) => `${parseInt(a) * 2}-${parseInt(b) * 2} weeks`);
+      confidence = 60;
+      break;
+    default:
+      confidence = 65;
+  }
+
+  return {
+    description: baseline.description,
+    expectedImprovement: improvement,
+    timeline,
+    confidence,
+  };
+}
+
+/**
+ * Adjust outcome prediction based on individual patient factors
+ */
+function adjustOutcomeForFactors(
+  baseline: { description: string; expectedImprovement: number; timeline: string; confidence: number },
+  factors: {
+    age: number | null;
+    riskFactors: string[];
+    comorbidities: string[];
+    symptomDuration: string;
+    similarCasesAverage: number | null;
+  }
+): {
+  description: string;
+  expectedImprovement: number;
+  timeline: string;
+  confidence: number;
+  favorableFactors: string[];
+  unfavorableFactors: string[];
+  neutralFactors: string[];
+} {
+  let improvement = baseline.expectedImprovement;
+  let confidence = baseline.confidence;
+  const favorableFactors: string[] = [];
+  const unfavorableFactors: string[] = [];
+  const neutralFactors: string[] = [];
+
+  // Age adjustments
+  if (factors.age) {
+    if (factors.age < 40) {
+      improvement += 5;
+      favorableFactors.push('Younger age associated with better outcomes');
+    } else if (factors.age > 65) {
+      improvement -= 10;
+      unfavorableFactors.push('Advanced age may slow recovery');
+    } else {
+      neutralFactors.push('Age within typical range');
+    }
+  }
+
+  // Risk factor adjustments
+  const highRiskFactors = [
+    'Chronic symptom duration',
+    'Previous treatment failure',
+    'Psychological distress',
+    'Workers compensation case',
+    'Fear avoidance behavior',
+  ];
+
+  const moderateRiskFactors = [
+    'Sedentary lifestyle',
+    'Smoking history',
+    'Overweight/obesity',
+    'Heavy physical work',
+    'Neurological involvement',
+  ];
+
+  for (const rf of factors.riskFactors) {
+    if (highRiskFactors.some(hrf => rf.includes(hrf))) {
+      improvement -= 10;
+      confidence -= 5;
+      unfavorableFactors.push(rf);
+    } else if (moderateRiskFactors.some(mrf => rf.includes(mrf))) {
+      improvement -= 5;
+      unfavorableFactors.push(rf);
+    }
+  }
+
+  // Comorbidity adjustments
+  if (factors.comorbidities.length > 2) {
+    improvement -= 10;
+    unfavorableFactors.push('Multiple comorbidities');
+  } else if (factors.comorbidities.length > 0) {
+    improvement -= 5;
+    neutralFactors.push('Some comorbidities present');
+  } else {
+    favorableFactors.push('No significant comorbidities');
+  }
+
+  // Incorporate similar cases data if available
+  if (factors.similarCasesAverage !== null) {
+    // Blend baseline with actual outcomes from similar cases
+    const blendWeight = 0.3; // 30% weight to similar cases
+    improvement = improvement * (1 - blendWeight) + factors.similarCasesAverage * blendWeight;
+    confidence += 10; // More confident with real data
+    favorableFactors.push(`Based on ${factors.similarCasesAverage.toFixed(0)}% avg improvement in similar cases`);
+  }
+
+  // Add favorable factors if no major risks
+  if (factors.riskFactors.length === 0) {
+    favorableFactors.push('No identified risk factors');
+    improvement += 5;
+  }
+
+  if (factors.symptomDuration === 'acute') {
+    favorableFactors.push('Acute presentation with good prognosis');
+  }
+
+  // Cap values
+  improvement = Math.min(Math.max(improvement, 10), 95);
+  confidence = Math.min(Math.max(confidence, 40), 95);
+
+  // Update description based on adjustment
+  let description = baseline.description;
+  if (improvement >= 70) {
+    description = `Good prognosis expected. ${baseline.description}`;
+  } else if (improvement >= 50) {
+    description = `Moderate improvement expected with consistent care. Some factors may affect recovery.`;
+  } else {
+    description = `Conservative improvement expected. Multiple factors may extend recovery time.`;
+  }
+
+  return {
+    description,
+    expectedImprovement: improvement,
+    timeline: baseline.timeline,
+    confidence,
+    favorableFactors,
+    unfavorableFactors,
+    neutralFactors,
+  };
+}
+
+/**
+ * Calculate risk of condition becoming chronic
+ */
+function calculateChronicityRisk(factors: {
+  diagnosisCode: string;
+  symptomDuration: string;
+  age: number | null;
+  riskFactors: string[];
+  previousTreatments: string[];
+}): number {
+  let risk = 15; // Base risk
+
+  // Duration impact
+  switch (factors.symptomDuration) {
+    case 'acute':
+      risk -= 5;
+      break;
+    case 'subacute':
+      risk += 10;
+      break;
+    case 'chronic':
+      risk += 30;
+      break;
+  }
+
+  // Age impact
+  if (factors.age && factors.age > 55) {
+    risk += 10;
+  }
+
+  // Risk factors impact
+  const chronicityRiskFactors = [
+    'Psychological distress',
+    'Fear avoidance behavior',
+    'Workers compensation case',
+    'Previous treatment failure',
+    'Chronic symptom duration',
+  ];
+
+  for (const rf of factors.riskFactors) {
+    if (chronicityRiskFactors.some(crf => rf.includes(crf))) {
+      risk += 15;
+    }
+  }
+
+  // Condition-specific risks
+  if (factors.diagnosisCode.startsWith('M51')) {
+    risk += 15; // Disc conditions higher chronicity risk
+  }
+  if (factors.diagnosisCode.startsWith('M47')) {
+    risk += 10; // Spondylosis tends toward chronic
+  }
+
+  return Math.min(Math.max(risk, 5), 95);
+}
+
+/**
+ * Determine treatment response category
+ */
+function determineTreatmentResponse(expectedImprovement: number): string {
+  if (expectedImprovement >= 75) return 'EXCELLENT';
+  if (expectedImprovement >= 60) return 'GOOD';
+  if (expectedImprovement >= 40) return 'MODERATE';
+  return 'POOR';
+}
+
+/**
+ * Get description for treatment response
+ */
+function getResponseDescription(response: string): string {
+  const descriptions: Record<string, string> = {
+    EXCELLENT: 'Patient expected to respond very well to treatment with significant improvement',
+    GOOD: 'Patient expected to respond well with notable improvement in symptoms and function',
+    MODERATE: 'Patient expected to show moderate improvement; consistent care important',
+    POOR: 'Response may be limited; consider multimodal approach and managing expectations',
+  };
+  return descriptions[response] || descriptions['MODERATE'];
+}
+
+/**
+ * Generate prognostic factors summary
+ */
+function generatePrognosticFactors(factors: {
+  favorable: string[];
+  unfavorable: string[];
+  neutral: string[];
+}): any {
+  return {
+    favorable: factors.favorable,
+    unfavorable: factors.unfavorable,
+    neutral: factors.neutral,
+    summary: factors.favorable.length > factors.unfavorable.length
+      ? 'More favorable than unfavorable prognostic factors identified'
+      : factors.unfavorable.length > factors.favorable.length
+        ? 'Some unfavorable prognostic factors present that may affect recovery'
+        : 'Balanced prognostic picture',
+  };
+}
+
+/**
+ * Generate patient-friendly explanation of outcome prediction
+ */
+function generatePatientExplanation(data: {
+  condition: string;
+  expectedOutcome: string;
+  timeline: string;
+  treatmentResponse: string;
+  factors: any;
+}): string {
+  const responseExplanations: Record<string, string> = {
+    EXCELLENT: 'Based on your condition and health profile, we expect you to respond very well to treatment.',
+    GOOD: 'Based on your condition and health profile, we expect you to respond well to treatment.',
+    MODERATE: 'Based on your condition and health profile, we expect gradual improvement with consistent treatment.',
+    POOR: 'Your condition has some factors that may require a more comprehensive treatment approach.',
+  };
+
+  let explanation = `For your ${data.condition}, ${responseExplanations[data.treatmentResponse] || responseExplanations['MODERATE']} `;
+  explanation += `We typically see meaningful improvement within ${data.timeline}. `;
+
+  if (data.factors.favorable && data.factors.favorable.length > 0) {
+    explanation += `In your favor: ${data.factors.favorable.slice(0, 2).join('; ')}. `;
+  }
+
+  if (data.factors.unfavorable && data.factors.unfavorable.length > 0) {
+    explanation += `We'll pay special attention to: ${data.factors.unfavorable.slice(0, 2).join('; ')}. `;
+  }
+
+  explanation += 'Your active participation in treatment and following home care recommendations will optimize your results.';
+
+  return explanation;
+}
+
+/**
+ * Generate expectation setting points
+ */
+function generateExpectationSetting(data: {
+  expectedImprovement: number;
+  timeline: string;
+  treatmentResponse: string;
+  riskOfChronicity: number;
+}): any {
+  const points: string[] = [];
+
+  // Timeline expectations
+  points.push(`Expected treatment timeline: ${data.timeline}`);
+
+  // Improvement expectations
+  if (data.expectedImprovement >= 70) {
+    points.push('Significant improvement in pain and function expected');
+  } else if (data.expectedImprovement >= 50) {
+    points.push('Moderate improvement expected with consistent care');
+  } else {
+    points.push('Gradual improvement expected; patience and consistency important');
+  }
+
+  // Phase expectations
+  points.push('Initial phase focuses on pain relief and mobility');
+  points.push('Subsequent phases focus on strengthening and prevention');
+
+  // Chronicity warning if needed
+  if (data.riskOfChronicity > 40) {
+    points.push('Early and consistent treatment important to prevent chronic pain');
+  }
+
+  // Active participation
+  points.push('Home exercises and lifestyle modifications enhance outcomes');
+
+  return {
+    keyPoints: points,
+    improvementTarget: `${data.expectedImprovement.toFixed(0)}% improvement expected`,
+    timeline: data.timeline,
+    responseLevel: data.treatmentResponse,
+    chronicityRisk: data.riskOfChronicity > 30 ? 'Moderate' : 'Low',
+  };
+}
+
+/**
+ * Generate AI-enhanced outcome prediction using Claude API
+ */
+async function generateAIOutcomePrediction(context: {
+  diagnosis: { code: string; description: string };
+  patientProfile: { age?: number; gender?: string; comorbidities: string[]; riskFactors: string[] };
+  treatmentApproach: string;
+  techniquesSuggested: string[];
+  symptomDuration: string;
+  chiefComplaint: string;
+  subjective?: string;
+  objective?: string;
+  similarCasesData: any;
+  baselinePrediction: any;
+}): Promise<{
+  predictedOutcome: string;
+  timeline: string;
+  additionalFactors: string[];
+} | null> {
+  // If no API key, return null to use rule-based prediction
+  if (!env.ANTHROPIC_API_KEY) {
+    return null;
+  }
+
+  try {
+    const Anthropic = (await import('@anthropic-ai/sdk')).default;
+    const client = new Anthropic({
+      apiKey: env.ANTHROPIC_API_KEY,
+    });
+
+    const systemPrompt = `You are a clinical decision support system specializing in outcome prediction for chiropractic care.
+Provide evidence-based outcome predictions considering patient-specific factors.
+Be realistic and balanced - avoid overly optimistic or pessimistic predictions.
+
+IMPORTANT: Respond ONLY with valid JSON, no markdown code blocks.`;
+
+    const userPrompt = `Predict treatment outcome for this patient:
+
+Diagnosis: ${context.diagnosis.code} - ${context.diagnosis.description}
+Symptom Duration: ${context.symptomDuration}
+Treatment Approach: ${context.treatmentApproach}
+Techniques: ${context.techniquesSuggested.join(', ') || 'Standard chiropractic care'}
+
+${context.patientProfile.age ? `Patient Age: ${context.patientProfile.age}` : ''}
+${context.patientProfile.gender ? `Gender: ${context.patientProfile.gender}` : ''}
+${context.patientProfile.comorbidities.length ? `Comorbidities: ${context.patientProfile.comorbidities.join(', ')}` : ''}
+${context.patientProfile.riskFactors.length ? `Risk Factors: ${context.patientProfile.riskFactors.join(', ')}` : ''}
+
+Chief Complaint: ${context.chiefComplaint || 'Not specified'}
+${context.subjective ? `Patient Reports: ${context.subjective}` : ''}
+${context.objective ? `Exam Findings: ${context.objective}` : ''}
+
+Baseline Prediction:
+- Expected Improvement: ${context.baselinePrediction.expectedImprovement}%
+- Timeline: ${context.baselinePrediction.timeline}
+
+${context.similarCasesData.count > 0 ? `Similar Cases: ${context.similarCasesData.count} cases with avg ${context.similarCasesData.averageImprovement?.toFixed(0) || 'N/A'}% improvement` : ''}
+
+Respond with JSON:
+{
+  "predictedOutcome": "Refined prediction description incorporating all factors",
+  "timeline": "Adjusted timeline if warranted",
+  "additionalFactors": ["Any additional prognostic factors identified"]
+}`;
+
+    const response = await client.messages.create({
+      model: 'claude-opus-4-5-20251101',
+      max_tokens: 800,
+      messages: [
+        { role: 'user', content: userPrompt },
+      ],
+      system: systemPrompt,
+    });
+
+    const content = response.content[0];
+    if (content.type !== 'text') {
+      return null;
+    }
+
+    const parsed = JSON.parse(content.text);
+    return {
+      predictedOutcome: parsed.predictedOutcome || '',
+      timeline: parsed.timeline || '',
+      additionalFactors: Array.isArray(parsed.additionalFactors) ? parsed.additionalFactors : [],
+    };
+  } catch (error) {
+    console.error('AI outcome prediction error:', error);
+    return null;
+  }
+}
+
+// ============================================
 // US-372: Diagnosis Suggestion Router
 // ============================================
 
@@ -5185,5 +5860,738 @@ export const aiClinicalRouter = router({
         builtInCount: input.includeBuiltIn ? CHIROPRACTIC_GUIDELINES.length : 0,
         customCount: guidelines.filter(g => !g.isBuiltIn).length,
       };
+    }),
+
+  // ============================================
+  // US-376: Outcome Prediction Endpoints
+  // ============================================
+
+  /**
+   * Predict treatment outcome based on patient data and similar cases
+   */
+  predictOutcome: providerProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        encounterId: z.string().optional(),
+        diagnosisCode: z.string(),
+        diagnosisDescription: z.string().optional(),
+        treatmentApproach: z.string(),
+        techniquesSuggested: z.array(z.string()).optional(),
+        includeAI: z.boolean().default(true),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const {
+        patientId,
+        encounterId,
+        diagnosisCode,
+        diagnosisDescription,
+        treatmentApproach,
+        techniquesSuggested = [],
+        includeAI,
+      } = input;
+
+      // Verify patient access
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          demographics: true,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      // Get encounter data if provided
+      let encounter = null;
+      let chiefComplaint = '';
+      let subjective = '';
+      let objective = '';
+      let currentDiagnoses: string[] = [];
+
+      if (encounterId) {
+        encounter = await ctx.prisma.encounter.findFirst({
+          where: {
+            id: encounterId,
+            organizationId: ctx.user.organizationId,
+          },
+          include: {
+            diagnoses: true,
+            soapNote: true,
+          },
+        });
+
+        if (encounter?.soapNote) {
+          const soap = encounter.soapNote as { chiefComplaint?: string; subjective?: string; objective?: string };
+          chiefComplaint = soap.chiefComplaint || '';
+          subjective = soap.subjective || '';
+          objective = soap.objective || '';
+        }
+
+        currentDiagnoses = encounter?.diagnoses.map(d => d.icd10Code) || [];
+      }
+
+      // Calculate patient age
+      const patientAge = patient.demographics?.dateOfBirth
+        ? Math.floor((Date.now() - new Date(patient.demographics.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+        : null;
+
+      // Determine symptom duration based on clinical notes
+      const symptomDuration = determineSymptomDuration(chiefComplaint + ' ' + subjective);
+
+      // Get patient comorbidities (from problem list or conditions)
+      const patientConditions = await ctx.prisma.diagnosis.findMany({
+        where: {
+          encounter: {
+            patientId,
+            organizationId: ctx.user.organizationId,
+          },
+          status: 'ACTIVE',
+        },
+        distinct: ['icd10Code'],
+        select: {
+          icd10Code: true,
+          description: true,
+        },
+      });
+
+      const comorbidities = patientConditions
+        .filter(c => c.icd10Code !== diagnosisCode)
+        .map(c => c.description);
+
+      // Identify risk factors
+      const riskFactors = identifyRiskFactors({
+        age: patientAge,
+        symptomDuration,
+        comorbidities,
+        chiefComplaint,
+        subjective,
+        objective,
+      });
+
+      // Find similar cases for outcome analysis
+      const similarCasesAnalysis = await analyzeSimilarCases(ctx.prisma, {
+        diagnosisCode,
+        organizationId: ctx.user.organizationId,
+        ageRange: patientAge ? { min: patientAge - 10, max: patientAge + 10 } : undefined,
+        symptomDuration,
+      });
+
+      // Get outcome baseline from protocol data
+      const protocol = TREATMENT_PROTOCOLS.find(p =>
+        p.icdCodes.some(code => diagnosisCode.startsWith(code.replace(/X+A?$/, '')))
+      );
+
+      // Calculate predicted outcome
+      const baselineOutcome = getBaselineOutcome(diagnosisCode, symptomDuration);
+      const adjustedOutcome = adjustOutcomeForFactors(baselineOutcome, {
+        age: patientAge,
+        riskFactors,
+        comorbidities,
+        symptomDuration,
+        similarCasesAverage: similarCasesAnalysis.averageImprovement,
+      });
+
+      // Calculate risk of chronicity
+      const chronicityRisk = calculateChronicityRisk({
+        diagnosisCode,
+        symptomDuration,
+        age: patientAge,
+        riskFactors,
+        previousTreatments: [], // Could be enhanced with actual history
+      });
+
+      // Determine treatment response likelihood
+      const treatmentResponse = determineTreatmentResponse(adjustedOutcome.expectedImprovement);
+
+      // Generate prognostic factors explanation
+      const prognosticFactors = generatePrognosticFactors({
+        favorable: adjustedOutcome.favorableFactors,
+        unfavorable: adjustedOutcome.unfavorableFactors,
+        neutral: adjustedOutcome.neutralFactors,
+      });
+
+      // Generate patient-friendly explanation
+      const patientExplanation = generatePatientExplanation({
+        condition: diagnosisDescription || diagnosisCode,
+        expectedOutcome: adjustedOutcome.description,
+        timeline: adjustedOutcome.timeline,
+        treatmentResponse,
+        factors: prognosticFactors,
+      });
+
+      // Generate expectation setting points
+      const expectationSetting = generateExpectationSetting({
+        expectedImprovement: adjustedOutcome.expectedImprovement,
+        timeline: adjustedOutcome.timeline,
+        treatmentResponse,
+        riskOfChronicity: chronicityRisk,
+      });
+
+      // Try AI enhancement if enabled
+      let aiPrediction = null;
+      if (includeAI) {
+        aiPrediction = await generateAIOutcomePrediction({
+          diagnosis: { code: diagnosisCode, description: diagnosisDescription || '' },
+          patientProfile: {
+            age: patientAge ?? undefined,
+            gender: patient.demographics?.gender || undefined,
+            comorbidities,
+            riskFactors,
+          },
+          treatmentApproach,
+          techniquesSuggested,
+          symptomDuration,
+          chiefComplaint,
+          subjective,
+          objective,
+          similarCasesData: similarCasesAnalysis,
+          baselinePrediction: adjustedOutcome,
+        });
+
+        if (aiPrediction) {
+          // Blend AI insights with rule-based prediction
+          adjustedOutcome.description = aiPrediction.predictedOutcome || adjustedOutcome.description;
+          if (aiPrediction.timeline) {
+            adjustedOutcome.timeline = aiPrediction.timeline;
+          }
+          if (aiPrediction.additionalFactors) {
+            prognosticFactors.aiInsights = aiPrediction.additionalFactors;
+          }
+        }
+      }
+
+      // Create outcome prediction record
+      const prediction = await ctx.prisma.outcomePrediction.create({
+        data: {
+          patientId,
+          encounterId,
+          organizationId: ctx.user.organizationId,
+          conditionCode: diagnosisCode,
+          conditionDescription: diagnosisDescription || diagnosisCode,
+          treatmentApproach,
+          techniquesSuggested,
+          predictedOutcome: adjustedOutcome.description,
+          confidenceScore: adjustedOutcome.confidence,
+          expectedTimeline: adjustedOutcome.timeline,
+          improvementPercent: adjustedOutcome.expectedImprovement,
+          riskOfChronicity: chronicityRisk,
+          treatmentResponse,
+          prognosticFactors,
+          similarCasesCount: similarCasesAnalysis.count,
+          similarCasesAvgOutcome: similarCasesAnalysis.averageImprovement,
+          similarCasesData: similarCasesAnalysis.anonymizedData,
+          patientAge,
+          symptomDuration,
+          comorbidities,
+          riskFactors,
+          patientExplanation,
+          expectationSetting,
+        },
+      });
+
+      // Create alert if high risk of chronicity
+      if (chronicityRisk > 50) {
+        await ctx.prisma.clinicalAlert.create({
+          data: {
+            patientId,
+            encounterId,
+            organizationId: ctx.user.organizationId,
+            alertType: 'OUTCOME_ALERT',
+            severity: chronicityRisk > 70 ? 'HIGH' : 'MODERATE',
+            message: `Patient has ${chronicityRisk.toFixed(0)}% risk of condition becoming chronic`,
+            recommendation: 'Consider more aggressive early intervention and patient education on prevention',
+            triggeredBy: 'AI Outcome Prediction',
+          },
+        });
+      }
+
+      // Audit log
+      await auditLog('AI_OUTCOME_PREDICTION', 'OutcomePrediction', {
+        entityId: prediction.id,
+        changes: {
+          diagnosisCode,
+          treatmentApproach,
+          confidenceScore: adjustedOutcome.confidence,
+          expectedImprovement: adjustedOutcome.expectedImprovement,
+          chronicityRisk,
+          similarCasesCount: similarCasesAnalysis.count,
+          aiEnhanced: !!aiPrediction,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        id: prediction.id,
+        prediction: {
+          outcome: adjustedOutcome.description,
+          confidence: adjustedOutcome.confidence,
+          improvementExpected: adjustedOutcome.expectedImprovement,
+          timeline: adjustedOutcome.timeline,
+        },
+        riskAssessment: {
+          chronicityRisk,
+          treatmentResponse,
+          responseDescription: getResponseDescription(treatmentResponse),
+        },
+        factors: {
+          favorable: adjustedOutcome.favorableFactors,
+          unfavorable: adjustedOutcome.unfavorableFactors,
+          prognostic: prognosticFactors,
+        },
+        similarCases: {
+          count: similarCasesAnalysis.count,
+          averageImprovement: similarCasesAnalysis.averageImprovement,
+          outcomeDistribution: similarCasesAnalysis.distribution,
+        },
+        patientCommunication: {
+          explanation: patientExplanation,
+          expectationPoints: expectationSetting,
+        },
+        sourceInfo: {
+          hasProtocol: !!protocol,
+          aiEnhanced: !!aiPrediction,
+          dataPoints: similarCasesAnalysis.count,
+        },
+      };
+    }),
+
+  /**
+   * Accept an outcome prediction
+   */
+  acceptOutcomePrediction: providerProcedure
+    .input(
+      z.object({
+        predictionId: z.string(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { predictionId, notes } = input;
+
+      const prediction = await ctx.prisma.outcomePrediction.findFirst({
+        where: {
+          id: predictionId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!prediction) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Outcome prediction not found',
+        });
+      }
+
+      const updated = await ctx.prisma.outcomePrediction.update({
+        where: { id: predictionId },
+        data: {
+          isAccepted: true,
+          isRejected: false,
+          reviewedAt: new Date(),
+          reviewedBy: ctx.user.id,
+        },
+      });
+
+      await auditLog('AI_OUTCOME_PREDICTION', 'OutcomePrediction', {
+        entityId: predictionId,
+        changes: { action: 'accepted', notes },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        id: updated.id,
+        accepted: true,
+        reviewedAt: updated.reviewedAt,
+      };
+    }),
+
+  /**
+   * Reject an outcome prediction with reason
+   */
+  rejectOutcomePrediction: providerProcedure
+    .input(
+      z.object({
+        predictionId: z.string(),
+        reason: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { predictionId, reason } = input;
+
+      const prediction = await ctx.prisma.outcomePrediction.findFirst({
+        where: {
+          id: predictionId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!prediction) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Outcome prediction not found',
+        });
+      }
+
+      const updated = await ctx.prisma.outcomePrediction.update({
+        where: { id: predictionId },
+        data: {
+          isAccepted: false,
+          isRejected: true,
+          rejectionReason: reason,
+          reviewedAt: new Date(),
+          reviewedBy: ctx.user.id,
+        },
+      });
+
+      await auditLog('AI_OUTCOME_PREDICTION', 'OutcomePrediction', {
+        entityId: predictionId,
+        changes: { action: 'rejected', reason },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        id: updated.id,
+        rejected: true,
+        reason,
+        reviewedAt: updated.reviewedAt,
+      };
+    }),
+
+  /**
+   * Record actual outcome for prediction accuracy tracking
+   */
+  recordActualOutcome: providerProcedure
+    .input(
+      z.object({
+        predictionId: z.string(),
+        actualOutcome: z.string(),
+        actualImprovement: z.number().min(0).max(100).optional(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { predictionId, actualOutcome, actualImprovement, notes } = input;
+
+      const prediction = await ctx.prisma.outcomePrediction.findFirst({
+        where: {
+          id: predictionId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!prediction) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Outcome prediction not found',
+        });
+      }
+
+      // Calculate if prediction was accurate
+      let wasAccurate: boolean | null = null;
+      if (actualImprovement !== undefined && prediction.improvementPercent) {
+        const predictedImprovement = Number(prediction.improvementPercent);
+        const difference = Math.abs(actualImprovement - predictedImprovement);
+        // Consider accurate if within 15% of predicted
+        wasAccurate = difference <= 15;
+      }
+
+      const updated = await ctx.prisma.outcomePrediction.update({
+        where: { id: predictionId },
+        data: {
+          actualOutcome,
+          actualImprovement,
+          outcomeMeasuredAt: new Date(),
+          wasAccurate,
+          accuracyNotes: notes,
+        },
+      });
+
+      await auditLog('AI_OUTCOME_PREDICTION', 'OutcomePrediction', {
+        entityId: predictionId,
+        changes: {
+          action: 'outcome_recorded',
+          actualOutcome,
+          actualImprovement,
+          wasAccurate,
+        },
+        userId: ctx.user.id,
+        organizationId: ctx.user.organizationId,
+      });
+
+      return {
+        id: updated.id,
+        actualOutcome,
+        actualImprovement,
+        wasAccurate,
+        predictedImprovement: prediction.improvementPercent ? Number(prediction.improvementPercent) : null,
+        measuredAt: updated.outcomeMeasuredAt,
+      };
+    }),
+
+  /**
+   * Get outcome predictions for a patient
+   */
+  getPatientOutcomePredictions: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string(),
+        encounterId: z.string().optional(),
+        includeResolved: z.boolean().default(false),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { patientId, encounterId, includeResolved } = input;
+
+      // Verify patient access
+      const patient = await ctx.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          organizationId: ctx.user.organizationId,
+        },
+      });
+
+      if (!patient) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      const where: Prisma.OutcomePredictionWhereInput = {
+        patientId,
+        organizationId: ctx.user.organizationId,
+      };
+
+      if (encounterId) {
+        where.encounterId = encounterId;
+      }
+
+      if (!includeResolved) {
+        where.actualOutcome = null;
+      }
+
+      const predictions = await ctx.prisma.outcomePrediction.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+      });
+
+      return predictions.map(p => ({
+        id: p.id,
+        condition: {
+          code: p.conditionCode,
+          description: p.conditionDescription,
+        },
+        treatmentApproach: p.treatmentApproach,
+        prediction: {
+          outcome: p.predictedOutcome,
+          confidence: p.confidenceScore,
+          improvementExpected: p.improvementPercent,
+          timeline: p.expectedTimeline,
+        },
+        riskAssessment: {
+          chronicityRisk: p.riskOfChronicity,
+          treatmentResponse: p.treatmentResponse,
+        },
+        status: {
+          isAccepted: p.isAccepted,
+          isRejected: p.isRejected,
+          hasActualOutcome: !!p.actualOutcome,
+          wasAccurate: p.wasAccurate,
+        },
+        actualOutcome: p.actualOutcome ? {
+          outcome: p.actualOutcome,
+          improvement: p.actualImprovement,
+          measuredAt: p.outcomeMeasuredAt,
+        } : null,
+        encounterId: p.encounterId,
+        createdAt: p.createdAt,
+      }));
+    }),
+
+  /**
+   * Get outcome prediction statistics for analytics
+   */
+  getOutcomePredictionStats: protectedProcedure
+    .input(
+      z.object({
+        dateFrom: z.coerce.date().optional(),
+        dateTo: z.coerce.date().optional(),
+        conditionCode: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { dateFrom, dateTo, conditionCode } = input;
+
+      const where: Prisma.OutcomePredictionWhereInput = {
+        organizationId: ctx.user.organizationId,
+      };
+
+      if (dateFrom || dateTo) {
+        where.createdAt = {};
+        if (dateFrom) where.createdAt.gte = dateFrom;
+        if (dateTo) where.createdAt.lte = dateTo;
+      }
+
+      if (conditionCode) {
+        where.conditionCode = { startsWith: conditionCode };
+      }
+
+      const predictions = await ctx.prisma.outcomePrediction.findMany({
+        where,
+        select: {
+          id: true,
+          confidenceScore: true,
+          improvementPercent: true,
+          riskOfChronicity: true,
+          treatmentResponse: true,
+          isAccepted: true,
+          isRejected: true,
+          wasAccurate: true,
+          actualImprovement: true,
+          conditionCode: true,
+        },
+      });
+
+      const total = predictions.length;
+      const accepted = predictions.filter(p => p.isAccepted).length;
+      const rejected = predictions.filter(p => p.isRejected).length;
+      const withOutcomes = predictions.filter(p => p.wasAccurate !== null);
+      const accurate = withOutcomes.filter(p => p.wasAccurate === true).length;
+
+      // Calculate average confidence
+      const avgConfidence = total > 0
+        ? predictions.reduce((sum, p) => sum + Number(p.confidenceScore), 0) / total
+        : 0;
+
+      // Calculate accuracy rate
+      const accuracyRate = withOutcomes.length > 0
+        ? (accurate / withOutcomes.length) * 100
+        : null;
+
+      // Response distribution
+      const responseDistribution = {
+        EXCELLENT: predictions.filter(p => p.treatmentResponse === 'EXCELLENT').length,
+        GOOD: predictions.filter(p => p.treatmentResponse === 'GOOD').length,
+        MODERATE: predictions.filter(p => p.treatmentResponse === 'MODERATE').length,
+        POOR: predictions.filter(p => p.treatmentResponse === 'POOR').length,
+      };
+
+      // Top conditions
+      const conditionCounts: Record<string, number> = {};
+      for (const p of predictions) {
+        const code = p.conditionCode.substring(0, 5); // Group by first 5 chars
+        conditionCounts[code] = (conditionCounts[code] || 0) + 1;
+      }
+      const topConditions = Object.entries(conditionCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([code, count]) => ({ code, count }));
+
+      return {
+        total,
+        accepted,
+        rejected,
+        pending: total - accepted - rejected,
+        acceptanceRate: total > 0 ? (accepted / total) * 100 : 0,
+        withOutcomes: withOutcomes.length,
+        accurate,
+        accuracyRate,
+        averageConfidence: avgConfidence,
+        responseDistribution,
+        topConditions,
+      };
+    }),
+
+  /**
+   * Get patient communication summary for outcome expectations
+   */
+  getOutcomeCommunicationSummary: protectedProcedure
+    .input(
+      z.object({
+        predictionId: z.string(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const prediction = await ctx.prisma.outcomePrediction.findFirst({
+        where: {
+          id: input.predictionId,
+          organizationId: ctx.user.organizationId,
+        },
+        include: {
+          patient: {
+            include: {
+              demographics: true,
+            },
+          },
+        },
+      });
+
+      if (!prediction) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Outcome prediction not found',
+        });
+      }
+
+      const patientName = prediction.patient.demographics
+        ? `${prediction.patient.demographics.firstName || ''} ${prediction.patient.demographics.lastName || ''}`.trim()
+        : 'Patient';
+
+      // Build communication document
+      const communicationDoc = {
+        patientName,
+        condition: prediction.conditionDescription,
+        date: new Date().toLocaleDateString(),
+
+        summary: prediction.patientExplanation,
+
+        expectedOutcome: {
+          description: prediction.predictedOutcome,
+          timeline: prediction.expectedTimeline,
+          improvementTarget: prediction.improvementPercent
+            ? `${Number(prediction.improvementPercent).toFixed(0)}% improvement expected`
+            : 'Gradual improvement expected',
+        },
+
+        treatmentPlan: {
+          approach: prediction.treatmentApproach,
+          techniques: prediction.techniquesSuggested,
+        },
+
+        expectations: prediction.expectationSetting,
+
+        factors: {
+          riskOfChronicity: prediction.riskOfChronicity
+            ? `${Number(prediction.riskOfChronicity).toFixed(0)}%`
+            : 'Not assessed',
+          responseLevel: prediction.treatmentResponse || 'Not assessed',
+          prognostic: prediction.prognosticFactors,
+        },
+
+        recommendations: [
+          'Follow the recommended treatment schedule',
+          'Report any significant changes in symptoms',
+          'Practice prescribed home exercises',
+          prediction.riskOfChronicity && Number(prediction.riskOfChronicity) > 30
+            ? 'Early and consistent treatment is important for your condition'
+            : null,
+        ].filter(Boolean),
+
+        disclaimer: 'This is an AI-generated prediction based on clinical data and similar cases. Individual outcomes may vary. Please discuss any concerns with your healthcare provider.',
+      };
+
+      return communicationDoc;
     }),
 });

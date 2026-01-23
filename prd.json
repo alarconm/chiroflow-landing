@@ -101,7 +101,7 @@
         "Patient communication of expectations"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-377",

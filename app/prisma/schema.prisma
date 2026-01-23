@@ -300,6 +300,7 @@ model Organization {
   treatmentRecommendations  TreatmentRecommendation[]
   contraindications         Contraindication[]
   clinicalGuidelines        ClinicalGuideline[]
+  outcomePredictions        OutcomePrediction[]
 
   @@index([subdomain])
 }
@@ -632,6 +633,7 @@ model Patient {
   clinicalAlerts           ClinicalAlert[]
   treatmentRecommendations TreatmentRecommendation[]
   contraindications        Contraindication[]
+  outcomePredictions       OutcomePrediction[]
 
   @@unique([mrn, organizationId])
   @@index([organizationId])
@@ -1496,6 +1498,7 @@ model Encounter {
   clinicalAlerts           ClinicalAlert[]
   diagnosisSuggestions     DiagnosisSuggestion[]
   treatmentRecommendations TreatmentRecommendation[]
+  outcomePredictions       OutcomePrediction[]
 
   @@index([organizationId])
   @@index([patientId])
@@ -14134,4 +14137,75 @@ model ClinicalGuideline {
   @@index([condition])
   @@index([isActive])
   @@index([evidenceLevel])
+}
+
+// Outcome prediction - AI-predicted treatment outcomes
+model OutcomePrediction {
+  id String @id @default(cuid())
+
+  // Condition and treatment context
+  conditionCode        String           // ICD-10 code
+  conditionDescription String           // Condition description
+  treatmentApproach    String           // Treatment approach being considered
+  techniquesSuggested  String[]         // Specific techniques
+
+  // Prediction details
+  predictedOutcome     String   @db.Text // Expected outcome description
+  confidenceScore      Decimal  @db.Decimal(5, 2) // 0-100 confidence
+  expectedTimeline     String           // Timeline for improvement
+  improvementPercent   Decimal? @db.Decimal(5, 2) // Expected % improvement
+
+  // Risk assessment
+  riskOfChronicity     Decimal? @db.Decimal(5, 2) // 0-100 risk of becoming chronic
+  treatmentResponse    String?          // Expected response: EXCELLENT, GOOD, MODERATE, POOR
+  prognosticFactors    Json             // Factors affecting prognosis
+
+  // Similar cases analysis
+  similarCasesCount    Int      @default(0)
+  similarCasesAvgOutcome Decimal? @db.Decimal(5, 2) // Average outcome score
+  similarCasesData     Json?            // Anonymous aggregated data from similar cases
+
+  // Patient factors considered
+  patientAge           Int?
+  symptomDuration      String?          // Acute, subacute, chronic
+  comorbidities        String[]         // Relevant comorbidities
+  riskFactors          String[]         // Risk factors identified
+
+  // Communication helper
+  patientExplanation   String?  @db.Text // Plain-language explanation for patient
+  expectationSetting   Json?            // Key points for setting expectations
+
+  // Provider action
+  isAccepted           Boolean  @default(false)
+  isRejected           Boolean  @default(false)
+  rejectionReason      String?
+  reviewedAt           DateTime?
+  reviewedBy           String?          // User ID who reviewed
+
+  // Actual outcome tracking (for model improvement)
+  actualOutcome        String?  @db.Text
+  actualImprovement    Decimal? @db.Decimal(5, 2)
+  outcomeMeasuredAt    DateTime?
+  wasAccurate          Boolean?         // Was prediction accurate?
+  accuracyNotes        String?  @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  encounterId String?
+  encounter   Encounter? @relation(fields: [encounterId], references: [id], onDelete: SetNull)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([encounterId])
+  @@index([conditionCode])
+  @@index([confidenceScore])
+  @@index([wasAccurate])
 }
